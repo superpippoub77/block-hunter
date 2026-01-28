@@ -28,19 +28,38 @@
         :root {
             /* overlay alpha for attract screen to tune readability */
             --attract-overlay: 0.65;
-            --attract-color1: 26,31,58; /* rgb triplet */
-            --attract-color2: 10,14,39;  /* rgb triplet */
+            --attract-color1: 26, 31, 58;
+            /* rgb triplet */
+            --attract-color2: 10, 14, 39;
+            /* rgb triplet */
         }
 
+        /* Default container (no decorative frame) - frame applied only when playing */
         #gameContainer {
             position: relative;
             background: linear-gradient(135deg, #1a1f3a 0%, #0f1229 100%);
-            border: 4px solid #00ffff;
+            border-radius: 8px;
+            /* prepare animatable border and shadow (transparent by default) */
+            border: 4px solid rgba(0, 255, 255, 0);
+            box-shadow: none;
+            transition: border-color 360ms ease, box-shadow 360ms ease, transform 300ms ease;
+        }
+
+        /* Decorative arcade frame applied only during gameplay */
+        body.in-game #gameContainer {
+            border-color: rgba(0, 255, 255, 1);
             box-shadow:
                 0 0 20px rgba(0, 255, 255, 0.5),
                 0 0 40px rgba(0, 255, 255, 0.3),
                 inset 0 0 30px rgba(0, 0, 0, 0.5);
-            border-radius: 8px;
+            transform: scale(1.005);
+        }
+
+        /* subtle fade for overlays when removed */
+        .fade-out {
+            opacity: 0 !important;
+            transition: opacity 320ms ease;
+            pointer-events: none;
         }
 
         canvas {
@@ -50,11 +69,11 @@
         }
 
         #attractScreen {
-            position: absolute;
+            position: fixed;
             top: 0;
             left: 0;
-            width: 100%;
-            height: 100%;
+            width: 100vw;
+            height: 100vh;
             /* Use provided background image for attract screen with adjustable overlay via CSS variable */
             background: radial-gradient(circle, rgba(var(--attract-color1), var(--attract-overlay)) 0%, rgba(var(--attract-color2), var(--attract-overlay)) 100%), url('images/bg.png') center/cover no-repeat;
             display: flex;
@@ -255,7 +274,15 @@
             <div>GEMS: <span id="gems">0</span>/<span id="gemsReq">20</span></div>
             <div>KEYS: <span id="keys">0</span></div>
             <div>OUTSIDE: <span id="outside">NO</span></div>
+            <div>DYNAMITE: <span id="dynamiteCount">0</span>
+                <div id="dynamiteBar"
+                    style="display:inline-block; vertical-align:middle; width:120px; height:12px; background:#222; border:1px solid #444; margin-left:8px;">
+                    <div id="dynamiteFill" style="height:100%; width:0%; background:#ff3333;"></div>
+                </div>
+            </div>
+            <div>INVUL: <span id="invul">NO</span></div>
             <div>CREDITS: <span id="credits">0</span></div>
+            <div><button id="hudSoundToggle" style="margin-top:6px; padding:4px 8px; font-size:12px; background:#111; color:#0ff; border:1px solid #0ff; cursor:pointer;">SOUND: ON</button></div>
         </div>
 
         <canvas id="gameCanvas" width="800" height="600"></canvas>
@@ -274,14 +301,14 @@
         let gameLevel = 1;
         let subLevel = 1;
         let stageConfig = {};
-    // Credits and players
-    let credits = 0;
-    let numPlayers = 1;
-    const CONTINUE_FRAMES = 600; // 10s at ~60fps
-    let continueDiv = null;
-    let continueTimer = 0;
-    let continueEligibleTopTen = false;
-    let storedFinalScore = 0;
+        // Credits and players
+        let credits = 0;
+        let numPlayers = 1;
+        const CONTINUE_FRAMES = 600; // 10s at ~60fps
+        let continueDiv = null;
+        let continueTimer = 0;
+        let continueEligibleTopTen = false;
+        let storedFinalScore = 0;
         // Gems and transitions
         const GEMS_PER_STAGE = 20;
         let gemsCollected = 0;
@@ -330,8 +357,23 @@
             currentLife: 0
         };
 
-        // Game objects
-        let blocks = [];
+    // Game objects
+    let blocks = [];
+    let dynamiteBoxes = [];
+    let doubloonBoxes = [];
+    // Explosion visuals
+    let explosions = [];
+    // Screen shake state for strong explosions
+    let screenShake = { time: 0, maxTime: 0, intensity: 0 };
+    const STRONG_EXPLOSION_THRESHOLD = 4; // blocks destroyed to trigger shake
+        // Invulnerability (doubloon) state
+        let playerInvulnerable = false;
+        let invulTimer = 0;
+    const DOUBLOON_DURATION_FRAMES = 5 * 60; // ~5 seconds
+        // Sound and dynamite settings
+        let soundEnabled = true;
+        const DYNAMITE_MAX = 50; // fixed per level
+        let playerDynamite = DYNAMITE_MAX;
         // Inizializza le porte ai bordi del canvas
         function setupDoors() {
             doors = [
@@ -344,8 +386,8 @@
         let bullets = [];
         let particles = [];
         let bulletsBlock = [];
-    const DOOR_ICON = '\u{1F6AA}'; // 🚪 (legacy, replaced by pixel art)
-    const KEY_ICON = '\u{1F511}'; // 🔑 (legacy, replaced by pixel art)
+        const DOOR_ICON = '\u{1F6AA}'; // 🚪 (legacy, replaced by pixel art)
+        const KEY_ICON = '\u{1F511}'; // 🔑 (legacy, replaced by pixel art)
         let doors = [];
         let levelKeys = [];
         let playerKeys = 0;
@@ -367,7 +409,7 @@
 
         // Simple pixel-sprite renderer (programmatic sprites so we don't need assets)
         // pattern arrays: numbers map to palette indices (0 = transparent)
-        const SPRITES = {
+    const SPRITES = {
             player: [
                 '00110000',
                 '01111000',
@@ -406,6 +448,23 @@
                 '00100',
                 '01110',
                 '11111',
+                '01110',
+                '00100'
+            ],
+            dynamite: [
+                '00100',
+                '01110',
+                '11111',
+                '11111',
+                '01110',
+                '00100'
+            ]
+            ,
+            coin: [
+                '00100',
+                '01110',
+                '11110',
+                '11110',
                 '01110',
                 '00100'
             ]
@@ -456,15 +515,15 @@
             drawSpritePattern(ctx, SPRITES.key, cx, cy, size, ['#ffff00']);
             ctx.strokeStyle = '#ff00ff';
             ctx.lineWidth = 1;
-            ctx.strokeRect(Math.round(cx - size/3), Math.round(cy - size/3), Math.round(size/1.5), Math.round(size/1.5));
+            ctx.strokeRect(Math.round(cx - size / 3), Math.round(cy - size / 3), Math.round(size / 1.5), Math.round(size / 1.5));
         }
 
         function drawDoorSpriteAt(ctx, cx, cy, size, open) {
-            drawSpritePattern(ctx, SPRITES.door, cx, cy - (size*0.1), size, [open ? '#00ff00' : '#ff4444']);
+            drawSpritePattern(ctx, SPRITES.door, cx, cy - (size * 0.1), size, [open ? '#00ff00' : '#ff4444']);
             // small frame
             ctx.strokeStyle = '#ffff00';
             ctx.lineWidth = 1.5;
-            ctx.strokeRect(Math.round(cx - size/2), Math.round(cy - size/2), Math.round(size), Math.round(size));
+            ctx.strokeRect(Math.round(cx - size / 2), Math.round(cy - size / 2), Math.round(size), Math.round(size));
         }
 
         function drawTargetSpriteAt(ctx, cx, cy, size) {
@@ -472,8 +531,32 @@
             ctx.strokeStyle = '#ff00ff';
             ctx.lineWidth = 1;
             ctx.beginPath();
-            ctx.arc(cx, cy, size*0.45, 0, Math.PI*2);
+            ctx.arc(cx, cy, size * 0.45, 0, Math.PI * 2);
             ctx.stroke();
+        }
+
+        function drawDynamiteSpriteAt(ctx, cx, cy, size) {
+            drawSpritePattern(ctx, SPRITES.dynamite, cx, cy, size, ['#ff3333']);
+            // fuse line
+            const flick = (Math.sin(Date.now() * 0.02) + 1) * 0.5;
+            ctx.strokeStyle = `rgba(255,200,50,${0.6 + 0.4 * flick})`;
+            ctx.lineWidth = Math.max(1, size * 0.06);
+            ctx.beginPath();
+            ctx.moveTo(cx + size * 0.45, cy - size * 0.3);
+            ctx.lineTo(cx + size * 0.8, cy - size * 0.55);
+            ctx.stroke();
+        }
+
+        function drawCoinSpriteAt(ctx, cx, cy, size) {
+            drawSpritePattern(ctx, SPRITES.coin, cx, cy, size, ['#ffd700']);
+            // inner shine
+            ctx.fillStyle = 'rgba(255,255,255,0.35)';
+            ctx.beginPath();
+            ctx.ellipse(cx - size*0.12, cy - size*0.12, size*0.18, size*0.12, 0, 0, Math.PI*2);
+            ctx.fill();
+            ctx.strokeStyle = '#ffb400';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(Math.round(cx - size/2), Math.round(cy - size/2), Math.round(size), Math.round(size));
         }
 
         // Initialize target position
@@ -549,6 +632,12 @@
 
             // Setup doors according to new config
             setupDoorsForStage(stageConfig.doorsCount || 0);
+            // Setup doubloons for this gameLevel
+            let doubloonCount = 1;
+            if (gameLevel <= 2) doubloonCount = 1;
+            else if (gameLevel === 3) doubloonCount = 2;
+            else if (gameLevel >= 4) doubloonCount = 4;
+            setupDoubloonsForStage(doubloonCount);
         }
 
         // Clean fields and advance after transition
@@ -598,6 +687,22 @@
             }
         }
 
+        // Place doubloons (gold coins) for this stage
+        function setupDoubloonsForStage(count) {
+            doubloonBoxes = [];
+            if (!count || count <= 0) return;
+            for (let i = 0; i < count; i++) {
+                const box = {
+                    x: Math.random() * (canvas.width - 80) + 40,
+                    y: Math.random() * (canvas.height - 160) + 80,
+                    width: 20,
+                    height: 20,
+                    collected: false
+                };
+                doubloonBoxes.push(box);
+            }
+        }
+
         // Advance sublevel/level when player progresses
         function advanceSublevel() {
             if (gameLevel === 5 && subLevel === 5) {
@@ -630,6 +735,28 @@
                     collected: false
                 };
                 levelKeys.push(key);
+            }
+        }
+
+        // Spawn dynamite box occasionally which replenishes player's dynamite
+        function spawnDynamiteBox() {
+            // limit number of boxes active
+            const active = dynamiteBoxes.find(b => !b.collected);
+            if (active) return;
+            // chance scaled by level
+            const baseChance = 0.0008;
+            const chance = baseChance + Math.min(level * 0.0008, 0.01);
+            if (Math.random() < chance) {
+                const box = {
+                    x: Math.random() * (canvas.width - 60) + 30,
+                    y: Math.random() * (canvas.height - 120) + 60,
+                    width: 22,
+                    height: 16,
+                    amount: 10,
+                    collected: false,
+                    life: 600 // frames before it disappears (~10s)
+                };
+                dynamiteBoxes.push(box);
             }
         }
 
@@ -779,8 +906,10 @@
                     configureStage();
                     // show player count chooser
                     selectDiv.innerHTML = `
-                        <div class="title" style="margin-bottom:20px;">PLAYERS</div>
-                        <div style="margin-bottom:16px;">Credits: <span id="selectCredits">${credits}</span></div>
+                        <div class="title" style="margin-bottom:20px;">PLAYERS & OPTIONS</div>
+                        <div style="margin-bottom:10px;">Credits: <span id="selectCredits">${credits}</span></div>
+                        <div style="margin-bottom:10px;"><button id="soundToggle" class="optBtn">SOUND: ${soundEnabled ? 'ON' : 'OFF'}</button></div>
+                        <div style="margin-bottom:10px;">DYNAMITE PER LIVELLO: ${DYNAMITE_MAX}</div>
                         <button class="playerBtn" data-p="1">1 PLAYER</button>
                         <button class="playerBtn" data-p="2">2 PLAYERS (2 COINS)</button>
                         <div style="margin-top:20px;"><button class="startNow">START</button></div>
@@ -796,23 +925,31 @@
                     });
                     // default 1 player
                     numPlayers = 1;
+                    // wire sound toggle
+                    const soundToggle = selectDiv.querySelector('#soundToggle');
+                    if (soundToggle) {
+                        soundToggle.onclick = function () {
+                            soundEnabled = !soundEnabled;
+                            soundToggle.textContent = `SOUND: ${soundEnabled ? 'ON' : 'OFF'}`;
+                        };
+                    }
                     const startNow = selectDiv.querySelector('.startNow');
-                            startNow.onclick = function () {
-                                // require credits equal to number of players (1 or 2)
-                                if (credits < numPlayers) {
-                                    addFloatingText(canvas.width/2, canvas.height/2 + 80, `INSERT ${numPlayers} COIN${numPlayers>1?'S':''}`, '#ffcc00');
-                                    return;
-                                }
-                                credits -= numPlayers;
-                                // update selection credit display if present
-                                const sc = document.getElementById('selectCredits'); if (sc) sc.textContent = credits;
-                                // remove UI and start
-                                selectDiv.remove();
-                                style.remove();
-                                document.getElementById('attractScreen').classList.add('hidden');
-                                startGame();
-                                updateHUD();
-                            };
+                    startNow.onclick = function () {
+                        // require credits equal to number of players (1 or 2)
+                        if (credits < numPlayers) {
+                            addFloatingText(canvas.width / 2, canvas.height / 2 + 80, `INSERT ${numPlayers} COIN${numPlayers > 1 ? 'S' : ''}`, '#ffcc00');
+                            return;
+                        }
+                        credits -= numPlayers;
+                        // update selection credit display if present
+                        const sc = document.getElementById('selectCredits'); if (sc) sc.textContent = credits;
+                        // remove UI and start
+                        selectDiv.remove();
+                        style.remove();
+                        document.getElementById('attractScreen').classList.add('hidden');
+                        startGame();
+                        updateHUD();
+                    };
                 };
             });
         }
@@ -820,6 +957,8 @@
         // Start game
         function startGame() {
             console.log('Starting game...');
+            // apply the in-game decorative frame
+            document.body.classList.add('in-game');
             gameState = 'playing';
             score = 0;
             // level viene impostato dalla selezione
@@ -834,6 +973,8 @@
             player.speed = PLAYER_INITIAL_SPEED;
             playerKeys = 0;
             gemsCollected = 0;
+            // give player full dynamite for the level
+            playerDynamite = DYNAMITE_MAX;
             inTransition = false;
             // configure initial stage (sets doors according to difficulty)
             configureStage();
@@ -846,12 +987,132 @@
                 oldGameOver.remove();
             }
 
-            document.getElementById('attractScreen').classList.add('hidden');
-            document.getElementById('hud').classList.remove('hidden');
+            // hide any attract overlays with a short fade, then start
+            hideAttractOverlaysWithFade(() => {
+                document.getElementById('hud').classList.remove('hidden');
+                spawnTarget();
+                updateHUD();
+                gameLoop();
+            });
+        }
 
-            spawnTarget();
+        // Fade and remove attract overlays (static and dynamic), then call cb
+        function hideAttractOverlaysWithFade(cb) {
+            // play a short transition cue if sound enabled
+            if (soundEnabled) playTransitionSound();
+            const els = [];
+            const staticAttract = document.getElementById('attractScreen');
+            if (staticAttract && !staticAttract.classList.contains('hidden')) els.push(staticAttract);
+            const customAttract = document.getElementById('attractScreenCustom');
+            if (customAttract) els.push(customAttract);
+            const topDiv = document.querySelector('.gameOver');
+            if (topDiv) els.push(topDiv);
+
+            if (els.length === 0) {
+                cb();
+                return;
+            }
+
+            els.forEach(el => {
+                el.classList.add('fade-out');
+            });
+
+            // remove after transition
+            setTimeout(() => {
+                els.forEach(el => {
+                    try { el.remove(); } catch (e) { /* ignore */ }
+                });
+                cb();
+            }, 360);
+        }
+
+        // Use one dynamite: clears nearby blocks
+        function useDynamite() {
+            if (playerDynamite <= 0) {
+                addFloatingText(player.x + player.width / 2, player.y, 'NO DYNAMITE', '#ff4444');
+                return;
+            }
+            playerDynamite--;
             updateHUD();
-            gameLoop();
+            const cx = player.x + player.width / 2;
+            const cy = player.y + player.height / 2;
+            const radius = 90;
+            let destroyed = 0;
+            for (let i = blocks.length - 1; i >= 0; i--) {
+                const b = blocks[i];
+                const bx = b.x + b.width / 2;
+                const by = b.y + b.height / 2;
+                const dist = Math.hypot(bx - cx, by - cy);
+                if (dist <= radius) {
+                    createParticles(b.x + b.width / 2, b.y + b.height / 2, '#ff6622');
+                    blocks.splice(i, 1);
+                    destroyed++;
+                }
+            }
+            if (destroyed > 0) {
+                addFloatingText(cx, cy - 10, `BOOM x${destroyed}`, '#ffcc00');
+                // add visual explosion effect
+                explosions.push({ x: cx, y: cy, life: 30, maxLife: 30, maxRadius: radius });
+                // screen shake on strong explosions (intensity scales with destroyed count)
+                if (destroyed >= STRONG_EXPLOSION_THRESHOLD) {
+                    screenShake.intensity = Math.min(28, destroyed * 4);
+                    screenShake.time = 18 + destroyed * 3;
+                    screenShake.maxTime = screenShake.time;
+                }
+                // small explosion sound
+                if (soundEnabled) playExplosionSound();
+            } else {
+                addFloatingText(cx, cy - 10, 'BOOM', '#ffcc00');
+            }
+        }
+
+        function playExplosionSound() {
+            try {
+                const AudioCtx = window.AudioContext || window.webkitAudioContext;
+                if (!AudioCtx) return;
+                if (!_audioCtx) _audioCtx = new AudioCtx();
+                const ctx = _audioCtx;
+                const now = ctx.currentTime;
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.type = 'square';
+                osc.frequency.setValueAtTime(180, now);
+                osc.frequency.exponentialRampToValueAtTime(60, now + 0.18);
+                gain.gain.setValueAtTime(0.0001, now);
+                gain.gain.linearRampToValueAtTime(0.18, now + 0.005);
+                gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.35);
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                osc.start(now);
+                osc.stop(now + 0.36);
+            } catch (e) { }
+        }
+
+        // Short transition sound generated with WebAudio (no external file)
+        let _audioCtx = null;
+        function playTransitionSound() {
+            try {
+                const AudioCtx = window.AudioContext || window.webkitAudioContext;
+                if (!AudioCtx) return;
+                if (!_audioCtx) _audioCtx = new AudioCtx();
+                const ctx = _audioCtx;
+                const now = ctx.currentTime;
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                // gentle metallic/chime effect: start high, sweep down
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(1000, now);
+                osc.frequency.exponentialRampToValueAtTime(420, now + 0.28);
+                gain.gain.setValueAtTime(0.0001, now);
+                gain.gain.linearRampToValueAtTime(0.12, now + 0.01);
+                gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.45);
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                osc.start(now);
+                osc.stop(now + 0.46);
+            } catch (e) {
+                // WebAudio may be blocked; ignore silently
+            }
         }
 
         // Game loop
@@ -879,6 +1140,19 @@
             // Clear canvas
             ctx.fillStyle = '#0a0e27';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Apply screen shake by translating the canvas element (keeps ctx state intact)
+            if (screenShake.time > 0) {
+                const prog = screenShake.time / Math.max(1, screenShake.maxTime);
+                const mag = screenShake.intensity * prog;
+                const sx = (Math.random() * 2 - 1) * mag;
+                const sy = (Math.random() * 2 - 1) * mag;
+                try { canvas.style.transform = `translate(${sx}px, ${sy}px)`; } catch (e) { }
+                screenShake.time--;
+            } else {
+                // clear any leftover transform
+                if (canvas.style.transform) canvas.style.transform = '';
+            }
 
             // Grid background
             ctx.strokeStyle = 'rgba(0, 255, 255, 0.1)';
@@ -1118,15 +1392,20 @@
 
                 // Check collision with player (only if fully spawned)
                 if (block.spawnAnimation >= block.maxSpawnAnimation && checkCollision(player, block)) {
-                    lives--;
-                    createParticles(player.x + player.width / 2, player.y + player.height / 2, '#ff0000');
-                    blocks.splice(i, 1);
+                    if (!playerInvulnerable) {
+                        lives--;
+                        createParticles(player.x + player.width / 2, player.y + player.height / 2, '#ff0000');
+                        blocks.splice(i, 1);
 
-                    if (lives <= 0) {
-                        endGame();
-                        return;
+                        if (lives <= 0) {
+                            endGame();
+                            return;
+                        }
+                        updateHUD();
+                    } else {
+                        // while invulnerable, obstacles have no effect
+                        addFloatingText(blockCenterX, blockCenterY, 'INVUL', '#ffd700');
                     }
-                    updateHUD();
                     continue;
                 }
 
@@ -1163,17 +1442,23 @@
 
                 // Check collision with player (auto-hit)
                 if (checkCollision(bullet, player)) {
+                    // always remove projectile, but only apply effects when not invulnerable
                     bullets.splice(i, 1);
-                    player.speed = Math.max(PLAYER_MIN_SPEED, player.speed - 1);
-                    createParticles(player.x + player.width / 2, player.y + player.height / 2, '#00ff00');
-                    if (player.speed <= PLAYER_MIN_SPEED) {
-                        lives--;
-                        player.speed = PLAYER_INITIAL_SPEED;
-                        updateHUD();
-                        if (lives <= 0) {
-                            endGame();
-                            return;
+                    if (!playerInvulnerable) {
+                        player.speed = Math.max(PLAYER_MIN_SPEED, player.speed - 1);
+                        createParticles(player.x + player.width / 2, player.y + player.height / 2, '#00ff00');
+                        if (player.speed <= PLAYER_MIN_SPEED) {
+                            lives--;
+                            player.speed = PLAYER_INITIAL_SPEED;
+                            updateHUD();
+                            if (lives <= 0) {
+                                endGame();
+                                return;
+                            }
                         }
+                    } else {
+                        // invulnerable: indicate harmless hit
+                        addFloatingText(player.x + player.width / 2, player.y, 'INVUL HIT', '#ffd700');
                     }
                     continue;
                 }
@@ -1229,6 +1514,22 @@
                 if (p.life <= 0) {
                     particles.splice(i, 1);
                 }
+            }
+
+            // Draw explosions (expanding rings)
+            for (let i = explosions.length - 1; i >= 0; i--) {
+                const ex = explosions[i];
+                ex.life--;
+                const t = ex.life / ex.maxLife;
+                const r = ex.maxRadius * (1 - t);
+                const alpha = Math.max(0, t);
+                // radial ring
+                ctx.beginPath();
+                ctx.strokeStyle = `rgba(255,160,32,${alpha * 0.8})`;
+                ctx.lineWidth = Math.max(2, r * 0.08);
+                ctx.arc(ex.x, ex.y, r, 0, Math.PI * 2);
+                ctx.stroke();
+                if (ex.life <= 0) explosions.splice(i, 1);
             }
 
             // Floating texts (score, key, door messages)
@@ -1333,10 +1634,14 @@
                             door.open = false;
                             // If player overlapping door when it closes, lose a life
                             if (checkCollision(player, { x: door.x - 16, y: door.y - 16, width: 32, height: 32 })) {
-                                lives--;
-                                createParticles(player.x + player.width / 2, player.y + player.height / 2, '#ff0000');
-                                addFloatingText(door.x, door.y, '-1 LIFE', '#ff4444');
-                                updateHUD();
+                                if (!playerInvulnerable) {
+                                    lives--;
+                                    createParticles(player.x + player.width / 2, player.y + player.height / 2, '#ff0000');
+                                    addFloatingText(door.x, door.y, '-1 LIFE', '#ff4444');
+                                    updateHUD();
+                                } else {
+                                    addFloatingText(door.x, door.y, 'INVUL', '#ffd700');
+                                }
                             }
                         }
                     }
@@ -1375,6 +1680,48 @@
             });
             // Spawn chiave se necessario
             spawnKey();
+            // Spawn dynamite box occasionally
+            spawnDynamiteBox();
+
+            // Disegna scatolotti di dinamite
+            for (let i = dynamiteBoxes.length - 1; i >= 0; i--) {
+                const box = dynamiteBoxes[i];
+                if (box.collected) continue;
+                // life countdown
+                box.life--;
+                if (box.life <= 0) {
+                    dynamiteBoxes.splice(i, 1);
+                    continue;
+                }
+                // draw dynamite box sprite
+                drawDynamiteSpriteAt(ctx, box.x, box.y, Math.max(box.width, box.height));
+                // collision with player
+                if (checkCollision(player, { x: box.x - box.width / 2, y: box.y - box.height / 2, width: box.width, height: box.height })) {
+                    box.collected = true;
+                    playerDynamite = Math.min(DYNAMITE_MAX, playerDynamite + box.amount);
+                    addFloatingText(box.x, box.y, `+${box.amount} DYNAMITE`, '#ffcc00');
+                    dynamiteBoxes.splice(i, 1);
+                    updateHUD();
+                }
+            }
+            // Disegna dobloni d'oro (per invulnerabilità)
+            for (let i = doubloonBoxes.length - 1; i >= 0; i--) {
+                const d = doubloonBoxes[i];
+                if (d.collected) continue;
+                // draw coin sprite
+                drawCoinSpriteAt(ctx, d.x, d.y, Math.max(d.width, d.height));
+                // collision with player
+                if (checkCollision(player, { x: d.x - d.width / 2, y: d.y - d.height / 2, width: d.width, height: d.height })) {
+                    d.collected = true;
+                    playerInvulnerable = true;
+                    invulTimer = DOUBLOON_DURATION_FRAMES;
+                    addFloatingText(d.x, d.y, 'DOUBLOON! INVUL', '#ffd700');
+                    // play a pickup chime
+                    if (soundEnabled) playTransitionSound();
+                    doubloonBoxes.splice(i, 1);
+                    updateHUD();
+                }
+            }
 
             // Door interactions: open, exit to outside and re-enter
             for (let door of doors) {
@@ -1514,6 +1861,17 @@
                 }
             }
 
+            // Decrement invulnerability timer if active
+            if (playerInvulnerable && invulTimer > 0) {
+                invulTimer--;
+                if (invulTimer <= 0) {
+                    playerInvulnerable = false;
+                    invulTimer = 0;
+                    addFloatingText(player.x + player.width / 2, player.y, 'INVUL END', '#ffffff');
+                    updateHUD();
+                }
+            }
+
             // Richiama sempre gameLoop se lo stato è ancora 'playing'
             if (gameState === 'playing') {
                 requestAnimationFrame(gameLoop);
@@ -1536,6 +1894,18 @@
             if (gemsReqEl) gemsReqEl.textContent = GEMS_PER_STAGE;
             const creditsEl = document.getElementById('credits');
             if (creditsEl) creditsEl.textContent = credits;
+            const dynCount = document.getElementById('dynamiteCount');
+            const dynFill = document.getElementById('dynamiteFill');
+            if (dynCount) dynCount.textContent = playerDynamite;
+            if (dynFill) dynFill.style.width = `${Math.round((playerDynamite / DYNAMITE_MAX) * 100)}%`;
+            const invEl = document.getElementById('invul');
+            if (invEl) {
+                if (playerInvulnerable && invulTimer > 0) {
+                    invEl.textContent = Math.ceil(invulTimer / 60) + 's';
+                } else {
+                    invEl.textContent = 'NO';
+                }
+            }
         }
 
         // End game
@@ -1563,7 +1933,7 @@
                 <h2>GAME OVER</h2>
                 <p>SCORE: ${score}</p>
                 <p>INSERT COIN TO CONTINUE</p>
-                <p id="continueTimer">TIME: ${Math.ceil(CONTINUE_FRAMES/60)}</p>
+                <p id="continueTimer">TIME: ${Math.ceil(CONTINUE_FRAMES / 60)}</p>
                 <p>Press '5' to insert coin</p>
             `;
             document.getElementById('gameContainer').appendChild(contDiv);
@@ -1578,7 +1948,7 @@
                 }
                 continueTimer--;
                 const el = document.getElementById('continueTimer');
-                if (el) el.textContent = 'TIME: ' + Math.ceil(continueTimer/60);
+                if (el) el.textContent = 'TIME: ' + Math.ceil(continueTimer / 60);
                 if (continueTimer <= 0) {
                     // time up: remove overlay and proceed to top ten or game over screen
                     if (continueDiv) continueDiv.remove();
@@ -1599,7 +1969,7 @@
                         document.getElementById('gameContainer').appendChild(gameOverDiv);
                     }
                 }
-            }, 1000/60);
+            }, 1000 / 60);
         }
 
         // Mostra schermata top ten a fine gara
@@ -1684,6 +2054,11 @@
                     dy: dy
                 });
             }
+            // Use dynamite with 'D'
+            if (e.key.toLowerCase && e.key.toLowerCase() === 'd' && gameState === 'playing') {
+                e.preventDefault();
+                useDynamite();
+            }
         });
 
         document.addEventListener('keyup', (e) => {
@@ -1742,11 +2117,13 @@
         function showAttractScreen() {
             const attractDiv = document.createElement('div');
             attractDiv.id = 'attractScreenCustom';
-            attractDiv.style.position = 'absolute';
+            // ensure the attract overlay is full-viewport and remove in-game frame
+            document.body.classList.remove('in-game');
+            attractDiv.style.position = 'fixed';
             attractDiv.style.top = '0';
             attractDiv.style.left = '0';
-            attractDiv.style.width = '100%';
-            attractDiv.style.height = '100%';
+            attractDiv.style.width = '100vw';
+            attractDiv.style.height = '100vh';
             // use class to get same overlay background (CSS variable controls darkness)
             attractDiv.classList.add('attract-bg');
             attractDiv.style.display = 'flex';
@@ -1787,6 +2164,14 @@
 
         window.onload = function () {
             showAttractOrTopTen();
+            // wire HUD sound toggle if present
+            const hudBtn = document.getElementById('hudSoundToggle');
+            if (hudBtn) {
+                hudBtn.addEventListener('click', function () {
+                    soundEnabled = !soundEnabled;
+                    hudBtn.textContent = `SOUND: ${soundEnabled ? 'ON' : 'OFF'}`;
+                });
+            }
         };
 
         attractAnimation();
