@@ -282,7 +282,9 @@
             </div>
             <div>INVUL: <span id="invul">NO</span></div>
             <div>CREDITS: <span id="credits">0</span></div>
-            <div><button id="hudSoundToggle" style="margin-top:6px; padding:4px 8px; font-size:12px; background:#111; color:#0ff; border:1px solid #0ff; cursor:pointer;">SOUND: ON</button></div>
+            <div><button id="hudSoundToggle"
+                    style="margin-top:6px; padding:4px 8px; font-size:12px; background:#111; color:#0ff; border:1px solid #0ff; cursor:pointer;">SOUND:
+                    ON</button></div>
         </div>
 
         <canvas id="gameCanvas" width="800" height="600"></canvas>
@@ -291,6 +293,9 @@
     <script>
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
+    // Global size scale for all in-game objects (increase to make everything larger)
+    const SIZE_SCALE = 1.5;
+    function scale(n) { return Math.max(1, Math.round(n * SIZE_SCALE)); }
 
         // Game state
         let gameState = 'attract'; // attract, playing, gameOver
@@ -332,8 +337,8 @@
         const player = {
             x: 400,
             y: 550,
-            width: 20,
-            height: 20,
+            width: scale(20),
+            height: scale(20),
             speed: PLAYER_INITIAL_SPEED,
             color: '#00ff00',
             direction: 'up', // 'up', 'down', 'left', 'right', 'up-left', ...
@@ -350,26 +355,26 @@
         const target = {
             x: 0,
             y: 0,
-            width: 28,
-            height: 28,
+            width: scale(28),
+            height: scale(28),
             color: '#ffff00',
             lifetime: 300, // frames before moving
             currentLife: 0
         };
 
-    // Game objects
-    let blocks = [];
-    let dynamiteBoxes = [];
-    let doubloonBoxes = [];
-    // Explosion visuals
-    let explosions = [];
-    // Screen shake state for strong explosions
-    let screenShake = { time: 0, maxTime: 0, intensity: 0 };
-    const STRONG_EXPLOSION_THRESHOLD = 4; // blocks destroyed to trigger shake
+        // Game objects
+        let blocks = [];
+        let dynamiteBoxes = [];
+        let doubloonBoxes = [];
+        // Explosion visuals
+        let explosions = [];
+        // Screen shake state for strong explosions
+        let screenShake = { time: 0, maxTime: 0, intensity: 0 };
+        const STRONG_EXPLOSION_THRESHOLD = 4; // blocks destroyed to trigger shake
         // Invulnerability (doubloon) state
         let playerInvulnerable = false;
         let invulTimer = 0;
-    const DOUBLOON_DURATION_FRAMES = 5 * 60; // ~5 seconds
+        const DOUBLOON_DURATION_FRAMES = 5 * 60; // ~5 seconds
         // Sound and dynamite settings
         let soundEnabled = true;
         const DYNAMITE_MAX = 50; // fixed per level
@@ -377,10 +382,10 @@
         // Inizializza le porte ai bordi del canvas
         function setupDoors() {
             doors = [
-                { x: 32, y: canvas.height / 2, open: false }, // sinistra
-                { x: canvas.width - 32, y: canvas.height / 2, open: false }, // destra
-                { x: canvas.width / 2, y: 32, open: false }, // alto
-                { x: canvas.width / 2, y: canvas.height - 32, open: false } // basso
+                { x: scale(32), y: canvas.height / 2, open: false }, // sinistra
+                { x: canvas.width - scale(32), y: canvas.height / 2, open: false }, // destra
+                { x: canvas.width / 2, y: scale(32), open: false }, // alto
+                { x: canvas.width / 2, y: canvas.height - scale(32), open: false } // basso
             ];
         }
         let bullets = [];
@@ -403,13 +408,12 @@
 
         // Legacy emoji (kept as references) - we use programmatic pixel sprites now
         const PLAYER_ICON = '\u{1F47B}'; // 👻 (legacy)
-             spawnRate: Math.max(48 - getCombinedLevel() * 1.2, 14)
         const BLOCK_PULSE_ICON = '\u{1F525}'; // 🔥 (legacy)
         const TARGET_ICON = '\u{1F4A1}'; // 💡 (legacy)
 
         // Simple pixel-sprite renderer (programmatic sprites so we don't need assets)
         // pattern arrays: numbers map to palette indices (0 = transparent)
-    const SPRITES = {
+        const SPRITES = {
             player: [
                 '00110000',
                 '01111000',
@@ -470,24 +474,36 @@
             ]
         };
 
-        // Sprite sheet support: images/sprite.png is a 3x3 grid (left-to-right, top-to-bottom):
-        // [0] dynamite, [1] heart, [2] rock,
-        // [3] helmet, [4] dynamite, [5] door,
-        // [6] diamond, [7] shards, [8] doubloon
-        const sheetCols = 3, sheetRows = 3;
+        // Sprite sheet support: images/sprite.png is a 4x4 grid (left-to-right, top-to-bottom):
+        // Row 0: dynamite, heart, rock, helmet
+        // Row 1: dynamite, door, diamond, shards
+        // Row 2: key, sand, ghost, doubloon
+        // Row 3: wall, mine_tile, hole, explosion
+        const sheetCols = 4, sheetRows = 4;
         let spriteSheet = new Image();
         let spriteReady = false;
         let spriteCellW = 0, spriteCellH = 0;
         const SPRITE_SHEET_MAP = {
+            // row 0
             dynamite: { r: 0, c: 0 },
             heart: { r: 0, c: 1 },
             rock: { r: 0, c: 2 },
-            helmet: { r: 1, c: 0 },
-            dynamite2: { r: 1, c: 1 },
-            door_img: { r: 1, c: 2 },
-            diamond: { r: 2, c: 0 },
-            shards: { r: 2, c: 1 },
-            doubloon: { r: 2, c: 2 }
+            helmet: { r: 0, c: 3 },
+            // row 1
+            dynamite2: { r: 1, c: 0 },
+            door_img: { r: 1, c: 1 },
+            diamond: { r: 1, c: 2 },
+            shards: { r: 1, c: 3 },
+            // row 2
+            key: { r: 2, c: 0 },
+            sand: { r: 2, c: 1 },
+            ghost: { r: 2, c: 2 },
+            doubloon: { r: 2, c: 3 },
+            // row 3
+            wall: { r: 3, c: 0 },
+            mine_tile: { r: 3, c: 1 },
+            hole: { r: 3, c: 2 },
+            explosion: { r: 3, c: 3 }
         };
         // load sprite sheet and compute cell size
         spriteSheet.onload = function () {
@@ -561,8 +577,8 @@
         }
 
         function drawKeySpriteAt(ctx, cx, cy, size) {
-            // sprite sheet doesn't contain a key; use heart as representative key sprite
-            if (drawFromSheet(ctx, 'heart', cx, cy, size)) return;
+            // Prefer key sprite from sprite sheet when available
+            if (drawFromSheet(ctx, 'key', cx, cy, size)) return;
             drawSpritePattern(ctx, SPRITES.key, cx, cy, size, ['#ffff00']);
             ctx.strokeStyle = '#ff00ff';
             ctx.lineWidth = 1;
@@ -608,17 +624,17 @@
             // inner shine
             ctx.fillStyle = 'rgba(255,255,255,0.35)';
             ctx.beginPath();
-            ctx.ellipse(cx - size*0.12, cy - size*0.12, size*0.18, size*0.12, 0, 0, Math.PI*2);
+            ctx.ellipse(cx - size * 0.12, cy - size * 0.12, size * 0.18, size * 0.12, 0, 0, Math.PI * 2);
             ctx.fill();
             ctx.strokeStyle = '#ffb400';
             ctx.lineWidth = 1;
-            ctx.strokeRect(Math.round(cx - size/2), Math.round(cy - size/2), Math.round(size), Math.round(size));
+            ctx.strokeRect(Math.round(cx - size / 2), Math.round(cy - size / 2), Math.round(size), Math.round(size));
         }
 
         // Initialize target position
         function spawnTarget() {
             target.x = Math.random() * (canvas.width - target.width);
-            target.y = Math.random() * (canvas.height - 100 - target.height) + 50;
+            target.y = Math.random() * (canvas.height - scale(100) - target.height) + scale(50);
             target.currentLife = 0;
         }
 
@@ -681,7 +697,8 @@
             }
 
             // spawnRate inversely proportional to difficulty (larger = slower spawns)
-            stageConfig.spawnRate = Math.max(48 - getCombinedLevel() * 1.2, 18);
+            // Use integer spawn rates (round) and a sensible minimum so modulo checks work
+            stageConfig.spawnRate = Math.max(Math.round(48 - getCombinedLevel() * 1.2), 14);
 
             // Update global legacy level var
             level = getCombinedLevel();
@@ -734,10 +751,10 @@
                 const t = 0.2 + (idx + (i % edges.length) / Math.max(1, Math.floor((count + edges.length - 1) / edges.length))) * 0.6;
                 let x = canvas.width / 2, y = canvas.height / 2;
                 switch (edge) {
-                    case 'left': x = 32; y = Math.round(canvas.height * t); break;
-                    case 'right': x = canvas.width - 32; y = Math.round(canvas.height * t); break;
-                    case 'top': y = 32; x = Math.round(canvas.width * t); break;
-                    case 'bottom': y = canvas.height - 32; x = Math.round(canvas.width * t); break;
+                    case 'left': x = scale(32); y = Math.round(canvas.height * t); break;
+                    case 'right': x = canvas.width - scale(32); y = Math.round(canvas.height * t); break;
+                    case 'top': y = scale(32); x = Math.round(canvas.width * t); break;
+                    case 'bottom': y = canvas.height - scale(32); x = Math.round(canvas.width * t); break;
                 }
                 doors.push({ x: x, y: y, open: false });
             }
@@ -749,10 +766,10 @@
             if (!count || count <= 0) return;
             for (let i = 0; i < count; i++) {
                 const box = {
-                    x: Math.random() * (canvas.width - 120) + 60,
-                    y: Math.random() * (canvas.height - 240) + 120,
-                    width: 32,
-                    height: 32,
+                    x: Math.random() * (canvas.width - scale(120)) + scale(60),
+                    y: Math.random() * (canvas.height - scale(240)) + scale(120),
+                    width: scale(32),
+                    height: scale(32),
                     collected: false
                 };
                 doubloonBoxes.push(box);
@@ -786,8 +803,8 @@
             const chance = baseChance + Math.min(level * 0.0005, 0.01);
             if (Math.random() < chance) {
                 const key = {
-                    x: Math.random() * (canvas.width - 60) + 30,
-                    y: Math.random() * (canvas.height - 120) + 60,
+                    x: Math.random() * (canvas.width - scale(60)) + scale(30),
+                    y: Math.random() * (canvas.height - scale(120)) + scale(60),
                     collected: false
                 };
                 levelKeys.push(key);
@@ -804,10 +821,10 @@
             const chance = baseChance + Math.min(level * 0.0008, 0.01);
             if (Math.random() < chance) {
                 const box = {
-                    x: Math.random() * (canvas.width - 80) + 40,
-                    y: Math.random() * (canvas.height - 160) + 80,
-                    width: 34,
-                    height: 26,
+                    x: Math.random() * (canvas.width - scale(80)) + scale(40),
+                    y: Math.random() * (canvas.height - scale(160)) + scale(80),
+                    width: scale(34),
+                    height: scale(26),
                     amount: 10,
                     collected: false,
                     life: 600 // frames before it disappears (~10s)
@@ -818,19 +835,18 @@
 
         // Block spawning based on level
         function spawnBlock() {
-            // increase base size so blocks are visually larger
-            const baseSize = 36;
+            // increase base size so blocks are visually larger (apply global scale)
+            const baseSize = scale(36);
             const bs = stageConfig.blockSpeed || 1;
             const baseWidth = baseSize;
             const baseHeight = baseSize;
             const pulse = Math.random() < (stageConfig.pulseChance || 0);
             const pulsePhase = Math.random() * Math.PI * 2;
-
             const block = {
-                width: baseWidth,
-                height: baseHeight,
-                color: '#ff00ff',
-                hit: false,
+                x: Math.random() * (canvas.width - scale(80)) + scale(40),
+                y: Math.random() * (canvas.height - scale(160)) + scale(80),
+                width: scale(34),
+                height: scale(26),
                 vx: 0,
                 vy: 0,
                 falling: false,
@@ -847,8 +863,8 @@
 
             switch (spawnType) {
                 case 'random':
-                    block.x = Math.random() * (canvas.width - block.width - 40) + 20;
-                    block.y = Math.random() * (canvas.height - block.height - 100) + 50;
+                    block.x = Math.random() * (canvas.width - block.width - scale(40)) + scale(20);
+                    block.y = Math.random() * (canvas.height - block.height - scale(100)) + scale(50);
                     block.landed = true;
                     break;
                 case 'top':
@@ -866,19 +882,19 @@
                     break;
                 case 'left':
                     block.x = -block.width;
-                    block.y = Math.random() * (canvas.height - block.height - 40) + 20;
+                    block.y = Math.random() * (canvas.height - block.height - scale(40)) + scale(20);
                     block.vx = 1 + bs;
                     block.landed = false;
                     break;
                 case 'right':
                     block.x = canvas.width + block.width;
-                    block.y = Math.random() * (canvas.height - block.height - 40) + 20;
+                    block.y = Math.random() * (canvas.height - block.height - scale(40)) + scale(20);
                     block.vx = -(1 + bs);
                     block.landed = false;
                     break;
                 default:
-                    block.x = Math.random() * (canvas.width - block.width - 40) + 20;
-                    block.y = Math.random() * (canvas.height - block.height - 100) + 50;
+                    block.x = Math.random() * (canvas.width - block.width - scale(40)) + scale(20);
+                    block.y = Math.random() * (canvas.height - block.height - scale(100)) + scale(50);
                     block.landed = true;
             }
 
@@ -1339,7 +1355,7 @@
 
             // During transition we don't spawn new blocks
             if (!inTransition) {
-                const spawnRate = stageConfig.spawnRate || Math.max(48 - getCombinedLevel() * 1.2, 14);
+                const spawnRate = stageConfig.spawnRate || Math.max(Math.round(48 - getCombinedLevel() * 1.2), 14);
                 if (frameCount % spawnRate === 0) {
                     spawnBlock();
                 }
@@ -1623,10 +1639,10 @@
                         ];
                         const dir = dirs[Math.floor(Math.random() * dirs.length)];
                         bulletsBlock.push({
-                            x: block.x + block.width / 2 - 4,
-                            y: block.y + block.height / 2 - 4,
-                            width: 8,
-                            height: 8,
+                            x: block.x + block.width / 2 - scale(4),
+                            y: block.y + block.height / 2 - scale(4),
+                            width: scale(8),
+                            height: scale(8),
                             dx: dir.dx,
                             dy: dir.dy
                         });
@@ -1690,7 +1706,7 @@
                             // close the door and if player is near penalize
                             door.open = false;
                             // If player overlapping door when it closes, lose a life
-                            if (checkCollision(player, { x: door.x - 16, y: door.y - 16, width: 32, height: 32 })) {
+                            if (checkCollision(player, { x: door.x - scale(16), y: door.y - scale(16), width: scale(32), height: scale(32) })) {
                                 if (!playerInvulnerable) {
                                     lives--;
                                     createParticles(player.x + player.width / 2, player.y + player.height / 2, '#ff0000');
@@ -1718,17 +1734,17 @@
                 }
 
                 // draw door sprite
-                drawDoorSpriteAt(ctx, cx, cy, 40, door.open);
+                drawDoorSpriteAt(ctx, cx, cy, scale(40), door.open);
             });
             // Disegna chiavi
             levelKeys.forEach(key => {
                 if (!key.collected) {
-                    drawKeySpriteAt(ctx, key.x, key.y, 28);
+                    drawKeySpriteAt(ctx, key.x, key.y, scale(28));
                 }
             });
             // Raccogli chiave
             levelKeys.forEach(key => {
-                if (!key.collected && checkCollision(player, { x: key.x - 14, y: key.y - 14, width: 28, height: 28 })) {
+                if (!key.collected && checkCollision(player, { x: key.x - scale(14), y: key.y - scale(14), width: scale(28), height: scale(28) })) {
                     key.collected = true;
                     playerKeys++;
                     addFloatingText(key.x, key.y, 'KEY!', '#ffff00');
@@ -1782,7 +1798,7 @@
 
             // Door interactions: open, exit to outside and re-enter
             for (let door of doors) {
-                const doorBox = { x: door.x - 16, y: door.y - 16, width: 32, height: 32 };
+                const doorBox = { x: door.x - scale(16), y: door.y - scale(16), width: scale(32), height: scale(32) };
                 if (!isOutside) {
                     // Player is inside and touching a door
                     if (checkCollision(player, doorBox)) {
@@ -1872,10 +1888,10 @@
                         ];
                         const dir = dirs[Math.floor(Math.random() * dirs.length)];
                         bulletsBlock.push({
-                            x: block.x + block.width / 2 - 4,
-                            y: block.y + block.height / 2 - 4,
-                            width: 8,
-                            height: 8,
+                            x: block.x + block.width / 2 - scale(4),
+                            y: block.y + block.height / 2 - scale(4),
+                            width: scale(8),
+                            height: scale(8),
                             dx: dir.dx,
                             dy: dir.dy
                         });
@@ -2095,12 +2111,12 @@
             if (e.key === ' ' && gameState === 'playing') {
                 e.preventDefault();
                 // Determina la direzione
-                let dx = 0, dy = 0, width = 8, height = 8, offsetX = 0, offsetY = 0;
+                let dx = 0, dy = 0, width = scale(8), height = scale(8), offsetX = 0, offsetY = 0;
                 switch (player.direction) {
-                    case 'left': dx = -8; width = 10; height = 4; offsetX = -player.width / 2 - width / 2; break;
-                    case 'right': dx = 8; width = 10; height = 4; offsetX = player.width / 2 + width / 2; break;
-                    case 'up': dy = -8; width = 4; height = 10; offsetY = -player.height / 2 - height / 2; break;
-                    case 'down': dy = 8; width = 4; height = 10; offsetY = player.height / 2 + height / 2; break;
+                    case 'left': dx = -8; width = scale(10); height = scale(4); offsetX = -player.width / 2 - width / 2; break;
+                    case 'right': dx = 8; width = scale(10); height = scale(4); offsetX = player.width / 2 + width / 2; break;
+                    case 'up': dy = -8; width = scale(4); height = scale(10); offsetY = -player.height / 2 - height / 2; break;
+                    case 'down': dy = 8; width = scale(4); height = scale(10); offsetY = player.height / 2 + height / 2; break;
                 }
                 bullets.push({
                     x: player.x + player.width / 2 - width / 2 + offsetX,
