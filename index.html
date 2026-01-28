@@ -350,8 +350,8 @@
         const target = {
             x: 0,
             y: 0,
-            width: 15,
-            height: 15,
+            width: 28,
+            height: 28,
             color: '#ffff00',
             lifetime: 300, // frames before moving
             currentLife: 0
@@ -403,7 +403,7 @@
 
         // Legacy emoji (kept as references) - we use programmatic pixel sprites now
         const PLAYER_ICON = '\u{1F47B}'; // 👻 (legacy)
-        const BLOCK_ICON = '\u{1F4A3}'; // 💣 (legacy)
+             spawnRate: Math.max(48 - getCombinedLevel() * 1.2, 14)
         const BLOCK_PULSE_ICON = '\u{1F525}'; // 🔥 (legacy)
         const TARGET_ICON = '\u{1F4A1}'; // 💡 (legacy)
 
@@ -470,6 +470,51 @@
             ]
         };
 
+        // Sprite sheet support: images/sprite.png is a 3x3 grid (left-to-right, top-to-bottom):
+        // [0] dynamite, [1] heart, [2] rock,
+        // [3] helmet, [4] dynamite, [5] door,
+        // [6] diamond, [7] shards, [8] doubloon
+        const sheetCols = 3, sheetRows = 3;
+        let spriteSheet = new Image();
+        let spriteReady = false;
+        let spriteCellW = 0, spriteCellH = 0;
+        const SPRITE_SHEET_MAP = {
+            dynamite: { r: 0, c: 0 },
+            heart: { r: 0, c: 1 },
+            rock: { r: 0, c: 2 },
+            helmet: { r: 1, c: 0 },
+            dynamite2: { r: 1, c: 1 },
+            door_img: { r: 1, c: 2 },
+            diamond: { r: 2, c: 0 },
+            shards: { r: 2, c: 1 },
+            doubloon: { r: 2, c: 2 }
+        };
+        // load sprite sheet and compute cell size
+        spriteSheet.onload = function () {
+            spriteCellW = Math.floor(spriteSheet.width / sheetCols);
+            spriteCellH = Math.floor(spriteSheet.height / sheetRows);
+            spriteReady = true;
+            // console.log('Sprite sheet ready', spriteCellW, spriteCellH);
+        };
+        spriteSheet.onerror = function () {
+            spriteReady = false;
+        };
+        spriteSheet.src = 'images/sprite.png';
+
+        function drawFromSheet(ctx, keyName, cx, cy, size, rotate = 0) {
+            if (!spriteReady) return false;
+            const entry = SPRITE_SHEET_MAP[keyName];
+            if (!entry) return false;
+            const sx = entry.c * spriteCellW;
+            const sy = entry.r * spriteCellH;
+            ctx.save();
+            ctx.translate(cx, cy);
+            if (rotate) ctx.rotate(rotate);
+            ctx.drawImage(spriteSheet, sx, sy, spriteCellW, spriteCellH, -size / 2, -size / 2, size, size);
+            ctx.restore();
+            return true;
+        }
+
         function drawSpritePattern(ctx, pattern, centerX, centerY, size, palette) {
             const rows = pattern.length;
             const cols = pattern[0].length;
@@ -489,6 +534,8 @@
         }
 
         function drawPlayerSpriteAt(ctx, cx, cy, size, color) {
+            // prefer sprite sheet if available (helmet used for player)
+            if (drawFromSheet(ctx, 'helmet', cx, cy, size, player.angle)) return;
             ctx.save();
             drawSpritePattern(ctx, SPRITES.player, cx, cy, size, [color]);
             // eyes/highlight
@@ -501,6 +548,8 @@
 
         function drawBlockSpriteAt(ctx, cx, cy, size, pulse) {
             const color = pulse ? '#ff6a00' : '#ff00ff';
+            // rock sprite at (0,2)
+            if (drawFromSheet(ctx, 'rock', cx, cy, size)) return;
             drawSpritePattern(ctx, SPRITES.block, cx, cy, size, [color]);
             if (pulse) {
                 ctx.strokeStyle = 'rgba(255,255,0,0.6)';
@@ -512,6 +561,8 @@
         }
 
         function drawKeySpriteAt(ctx, cx, cy, size) {
+            // sprite sheet doesn't contain a key; use heart as representative key sprite
+            if (drawFromSheet(ctx, 'heart', cx, cy, size)) return;
             drawSpritePattern(ctx, SPRITES.key, cx, cy, size, ['#ffff00']);
             ctx.strokeStyle = '#ff00ff';
             ctx.lineWidth = 1;
@@ -519,6 +570,7 @@
         }
 
         function drawDoorSpriteAt(ctx, cx, cy, size, open) {
+            if (drawFromSheet(ctx, 'door_img', cx, cy - (size * 0.1), size)) return;
             drawSpritePattern(ctx, SPRITES.door, cx, cy - (size * 0.1), size, [open ? '#00ff00' : '#ff4444']);
             // small frame
             ctx.strokeStyle = '#ffff00';
@@ -527,6 +579,7 @@
         }
 
         function drawTargetSpriteAt(ctx, cx, cy, size) {
+            if (drawFromSheet(ctx, 'diamond', cx, cy, size)) return;
             drawSpritePattern(ctx, SPRITES.target, cx, cy, size, ['#ffff00']);
             ctx.strokeStyle = '#ff00ff';
             ctx.lineWidth = 1;
@@ -536,6 +589,8 @@
         }
 
         function drawDynamiteSpriteAt(ctx, cx, cy, size) {
+            if (drawFromSheet(ctx, 'dynamite', cx, cy, size)) return;
+            // fallback programmatic dynamite
             drawSpritePattern(ctx, SPRITES.dynamite, cx, cy, size, ['#ff3333']);
             // fuse line
             const flick = (Math.sin(Date.now() * 0.02) + 1) * 0.5;
@@ -548,6 +603,7 @@
         }
 
         function drawCoinSpriteAt(ctx, cx, cy, size) {
+            if (drawFromSheet(ctx, 'doubloon', cx, cy, size)) return;
             drawSpritePattern(ctx, SPRITES.coin, cx, cy, size, ['#ffd700']);
             // inner shine
             ctx.fillStyle = 'rgba(255,255,255,0.35)';
@@ -624,8 +680,8 @@
                 stageConfig.shardFireChance = 0.02 + s * 0.005; // increase with sublevel
             }
 
-            // spawnRate inversely proportional to difficulty
-            stageConfig.spawnRate = Math.max(24 - getCombinedLevel(), 6);
+            // spawnRate inversely proportional to difficulty (larger = slower spawns)
+            stageConfig.spawnRate = Math.max(48 - getCombinedLevel() * 1.2, 18);
 
             // Update global legacy level var
             level = getCombinedLevel();
@@ -693,10 +749,10 @@
             if (!count || count <= 0) return;
             for (let i = 0; i < count; i++) {
                 const box = {
-                    x: Math.random() * (canvas.width - 80) + 40,
-                    y: Math.random() * (canvas.height - 160) + 80,
-                    width: 20,
-                    height: 20,
+                    x: Math.random() * (canvas.width - 120) + 60,
+                    y: Math.random() * (canvas.height - 240) + 120,
+                    width: 32,
+                    height: 32,
                     collected: false
                 };
                 doubloonBoxes.push(box);
@@ -748,10 +804,10 @@
             const chance = baseChance + Math.min(level * 0.0008, 0.01);
             if (Math.random() < chance) {
                 const box = {
-                    x: Math.random() * (canvas.width - 60) + 30,
-                    y: Math.random() * (canvas.height - 120) + 60,
-                    width: 22,
-                    height: 16,
+                    x: Math.random() * (canvas.width - 80) + 40,
+                    y: Math.random() * (canvas.height - 160) + 80,
+                    width: 34,
+                    height: 26,
                     amount: 10,
                     collected: false,
                     life: 600 // frames before it disappears (~10s)
@@ -762,7 +818,8 @@
 
         // Block spawning based on level
         function spawnBlock() {
-            const baseSize = 20;
+            // increase base size so blocks are visually larger
+            const baseSize = 36;
             const bs = stageConfig.blockSpeed || 1;
             const baseWidth = baseSize;
             const baseHeight = baseSize;
@@ -1282,7 +1339,7 @@
 
             // During transition we don't spawn new blocks
             if (!inTransition) {
-                const spawnRate = stageConfig.spawnRate || Math.max(30 - getCombinedLevel() * 1.2, 10);
+                const spawnRate = stageConfig.spawnRate || Math.max(48 - getCombinedLevel() * 1.2, 14);
                 if (frameCount % spawnRate === 0) {
                     spawnBlock();
                 }
@@ -2082,10 +2139,29 @@
         }
 
         // Add click handler for start button -> open level/players/credits selector
-        document.getElementById('startButton').addEventListener('click', function () {
-            console.log('Start button clicked');
-            showLevelSelect();
-        });
+        (function attachStart() {
+            const btn = document.getElementById('startButton');
+            if (!btn) return;
+            btn.setAttribute('tabindex', '0');
+            btn.style.cursor = 'pointer';
+            btn.addEventListener('click', function () {
+                console.log('Start button clicked');
+                try {
+                    if (typeof showLevelSelect === 'function') {
+                        showLevelSelect();
+                    } else {
+                        // fallback: try opening the attract custom flow then select
+                        showAttractScreen();
+                        showLevelSelect();
+                    }
+                } catch (err) {
+                    console.error('Error opening level select', err);
+                    addFloatingText(canvas.width / 2, canvas.height / 2 + 80, 'ERROR: cannot open start', '#ff4444');
+                    // last-resort: try to directly start game (useful for quick testing)
+                    try { startGame(); } catch (e) { /* ignore */ }
+                }
+            });
+        })();
 
         // Attract mode animation
         function attractAnimation() {
