@@ -5,253 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>BLOCK HUNTER</title>
-    <style>
-        @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
-
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
-        body {
-            background: #0a0e27;
-            font-family: 'Press Start 2P', monospace;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            min-height: 100vh;
-            overflow: hidden;
-            color: #fff;
-        }
-
-        :root {
-            /* overlay alpha for attract screen to tune readability */
-            --attract-overlay: 0.65;
-            --attract-color1: 26, 31, 58;
-            /* rgb triplet */
-            --attract-color2: 10, 14, 39;
-            /* rgb triplet */
-        }
-
-        /* Default container (no decorative frame) - frame applied only when playing */
-        #gameContainer {
-            position: relative;
-            background: linear-gradient(135deg, #1a1f3a 0%, #0f1229 100%);
-            border-radius: 8px;
-            /* prepare animatable border and shadow (transparent by default) */
-            border: 4px solid rgba(0, 255, 255, 0);
-            box-shadow: none;
-            transition: border-color 360ms ease, box-shadow 360ms ease, transform 300ms ease;
-        }
-
-        /* Decorative arcade frame applied only during gameplay */
-        body.in-game #gameContainer {
-            border-color: rgba(0, 255, 255, 1);
-            box-shadow:
-                0 0 20px rgba(0, 255, 255, 0.5),
-                0 0 40px rgba(0, 255, 255, 0.3),
-                inset 0 0 30px rgba(0, 0, 0, 0.5);
-            transform: scale(1.005);
-        }
-
-        /* subtle fade for overlays when removed */
-        .fade-out {
-            opacity: 0 !important;
-            transition: opacity 320ms ease;
-            pointer-events: none;
-        }
-
-        canvas {
-            display: block;
-            image-rendering: pixelated;
-            image-rendering: crisp-edges;
-        }
-
-        #attractScreen {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100vw;
-            height: 100vh;
-            /* Use provided background image for attract screen with adjustable overlay via CSS variable */
-            background: radial-gradient(circle, rgba(var(--attract-color1), var(--attract-overlay)) 0%, rgba(var(--attract-color2), var(--attract-overlay)) 100%), url('images/bg.png') center/cover no-repeat;
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
-            z-index: 10;
-            animation: scanline 8s linear infinite;
-        }
-
-        /* helper class for dynamic attract divs to reuse same background + overlay */
-        .attract-bg {
-            background: radial-gradient(circle, rgba(var(--attract-color1), var(--attract-overlay)) 0%, rgba(var(--attract-color2), var(--attract-overlay)) 100%), url('images/bg.png') center/cover no-repeat !important;
-        }
-
-        @keyframes scanline {
-
-            0%,
-            100% {
-                background-position: 0 0;
-            }
-
-            50% {
-                background-position: 0 100%;
-            }
-        }
-
-        #attractScreen::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: repeating-linear-gradient(0deg,
-                    rgba(0, 0, 0, 0.15),
-                    rgba(0, 0, 0, 0.15) 1px,
-                    transparent 1px,
-                    transparent 2px);
-            pointer-events: none;
-            animation: scan 8s linear infinite;
-        }
-
-        @keyframes scan {
-            from {
-                transform: translateY(0);
-            }
-
-            to {
-                transform: translateY(4px);
-            }
-        }
-
-        .title {
-            font-size: 48px;
-            color: #ff00ff;
-            text-shadow:
-                3px 3px 0 #00ffff,
-                -2px -2px 0 #ffff00,
-                0 0 20px #ff00ff,
-                0 0 40px #ff00ff;
-            margin-bottom: 40px;
-            animation: glow 2s ease-in-out infinite alternate, float 3s ease-in-out infinite;
-            letter-spacing: 4px;
-        }
-
-        @keyframes glow {
-            from {
-                text-shadow:
-                    3px 3px 0 #00ffff,
-                    -2px -2px 0 #ffff00,
-                    0 0 20px #ff00ff,
-                    0 0 40px #ff00ff;
-            }
-
-            to {
-                text-shadow:
-                    3px 3px 0 #00ffff,
-                    -2px -2px 0 #ffff00,
-                    0 0 40px #ff00ff,
-                    0 0 80px #ff00ff;
-            }
-        }
-
-        @keyframes float {
-
-            0%,
-            100% {
-                transform: translateY(0px);
-            }
-
-            50% {
-                transform: translateY(-10px);
-            }
-        }
-
-        .instructions {
-            font-size: 14px;
-            color: #00ffff;
-            text-align: center;
-            line-height: 2;
-            margin-bottom: 30px;
-            text-shadow: 2px 2px 0 rgba(0, 0, 0, 0.5);
-        }
-
-        .startButton {
-            padding: 15px 40px;
-            font-family: 'Press Start 2P', monospace;
-            font-size: 16px;
-            background: linear-gradient(45deg, #ff00ff, #00ffff);
-            border: 3px solid #ffff00;
-            color: #000;
-            cursor: pointer;
-            text-transform: uppercase;
-            animation: pulse 1.5s ease-in-out infinite;
-            box-shadow: 0 0 20px rgba(255, 0, 255, 0.6);
-            transition: all 0.3s;
-        }
-
-        .startButton:hover {
-            transform: scale(1.1);
-            box-shadow: 0 0 40px rgba(255, 0, 255, 0.9);
-        }
-
-        @keyframes pulse {
-
-            0%,
-            100% {
-                opacity: 1;
-            }
-
-            50% {
-                opacity: 0.7;
-            }
-        }
-
-        .hud {
-            position: absolute;
-            top: 10px;
-            left: 10px;
-            font-size: 14px;
-            color: #00ffff;
-            text-shadow: 2px 2px 0 rgba(0, 0, 0, 0.7);
-            z-index: 5;
-            line-height: 1.8;
-        }
-
-        .gameOver {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            text-align: center;
-            z-index: 15;
-            background: rgba(0, 0, 0, 0.9);
-            padding: 40px;
-            border: 4px solid #ff00ff;
-            border-radius: 10px;
-            box-shadow: 0 0 40px rgba(255, 0, 255, 0.8);
-        }
-
-        .gameOver h2 {
-            font-size: 36px;
-            color: #ff0000;
-            margin-bottom: 20px;
-            text-shadow: 3px 3px 0 #ffff00;
-        }
-
-        .gameOver p {
-            font-size: 16px;
-            color: #00ffff;
-            margin-bottom: 30px;
-        }
-
-        .hidden {
-            display: none !important;
-        }
-    </style>
+    <link rel="stylesheet" href="css/style.css">
 </head>
 
 <body>
@@ -290,50 +44,29 @@
         <canvas id="gameCanvas" width="800" height="600"></canvas>
     </div>
 
+    <script src="js/game-config.js"></script>
+    <script src="js/game-state.js"></script>
     <script>
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
-    // Global size scale for all in-game objects (increase to make everything larger)
-    const SIZE_SCALE = 1.5;
-    function scale(n) { return Math.max(1, Math.round(n * SIZE_SCALE)); }
+        // Global size scale for all in-game objects (increase to make everything larger)
+        const SIZE_SCALE = (window.GAME_CONFIG && window.GAME_CONFIG.SIZE_SCALE) || 1.5;
+        function scale(n) { return Math.max(1, Math.round(n * SIZE_SCALE)); }
 
-        // Game state
-        let gameState = 'attract'; // attract, playing, gameOver
-        let score = 0;
-        // level kept for compatibility (combined stage = (gameLevel-1)*5 + subLevel)
-        let level = 1;
-        // New structured levels: gameLevel (1..5) and subLevel (1..5)
-        let gameLevel = 1;
-        let subLevel = 1;
-        let stageConfig = {};
-        // Credits and players
-        let credits = 0;
-        let numPlayers = 1;
-        const CONTINUE_FRAMES = 600; // 10s at ~60fps
-        let continueDiv = null;
-        let continueTimer = 0;
-        let continueEligibleTopTen = false;
-        let storedFinalScore = 0;
-        // Gems and transitions
-        const GEMS_PER_STAGE = 20;
-        let gemsCollected = 0;
-        let inTransition = false;
-        let transitionTimer = 0;
-        const TRANSITION_FRAMES = 150; // ~2.5s at 60fps
-        let transitionText = '';
+        // Runtime game state is initialized in `js/game-state.js` (loaded before this script)
+        // Here we only keep derived or config-backed constants.
+        const CONTINUE_FRAMES = (window.GAME_CONFIG && window.GAME_CONFIG.CONTINUE_FRAMES) || 600; // 10s at ~60fps
+        const GEMS_PER_STAGE = (window.GAME_CONFIG && window.GAME_CONFIG.GEMS_PER_STAGE) || 20;
+        const TRANSITION_FRAMES = (window.GAME_CONFIG && window.GAME_CONFIG.TRANSITION_FRAMES) || 150; // ~2.5s at 60fps
 
-        // Floating texts (score, key, door messages)
-        let floatingTexts = [];
-
+        // Floating texts helper (runtime array `floatingTexts` is defined in js/game-state.js)
         function addFloatingText(x, y, text, color = '#ffffff') {
             floatingTexts.push({ x: x, y: y, text: text, color: color, life: 60, vy: -0.5 });
         }
-        let lives = 3;
-        let frameCount = 0;
 
         // Player
-        const PLAYER_INITIAL_SPEED = 5;
-        const PLAYER_MIN_SPEED = 1;
+        const PLAYER_INITIAL_SPEED = (window.GAME_CONFIG && window.GAME_CONFIG.PLAYER_INITIAL_SPEED) || 5;
+        const PLAYER_MIN_SPEED = (window.GAME_CONFIG && window.GAME_CONFIG.PLAYER_MIN_SPEED) || 1;
         const player = {
             x: 400,
             y: 550,
@@ -349,7 +82,7 @@
         let playerIsMoving = false;
         // Whether the player is outside (walking the outer border)
         let isOutside = false;
-        const OUTER_BAND = 80; // how wide the outside path is along the edges (tuned)
+        const OUTER_BAND = (window.GAME_CONFIG && window.GAME_CONFIG.OUTER_BAND) || 80; // how wide the outside path is along the edges (tuned)
 
         // Target object
         const target = {
@@ -370,24 +103,17 @@
         let explosions = [];
         // Screen shake state for strong explosions
         let screenShake = { time: 0, maxTime: 0, intensity: 0 };
-        const STRONG_EXPLOSION_THRESHOLD = 4; // blocks destroyed to trigger shake
+        const STRONG_EXPLOSION_THRESHOLD = (window.GAME_CONFIG && window.GAME_CONFIG.STRONG_EXPLOSION_THRESHOLD) || 4; // blocks destroyed to trigger shake
         // Invulnerability (doubloon) state
         let playerInvulnerable = false;
         let invulTimer = 0;
-        const DOUBLOON_DURATION_FRAMES = 5 * 60; // ~5 seconds
+        const DOUBLOON_DURATION_FRAMES = (window.GAME_CONFIG && window.GAME_CONFIG.DOUBLOON_DURATION_FRAMES) || (5 * 60); // ~5 seconds
         // Sound and dynamite settings
         let soundEnabled = true;
-        const DYNAMITE_MAX = 50; // fixed per level
+        const DYNAMITE_MAX = (window.GAME_CONFIG && window.GAME_CONFIG.DYNAMITE_MAX) || 50; // fixed per level
         let playerDynamite = DYNAMITE_MAX;
         // Inizializza le porte ai bordi del canvas
-        function setupDoors() {
-            doors = [
-                { x: scale(32), y: canvas.height / 2, open: false }, // sinistra
-                { x: canvas.width - scale(32), y: canvas.height / 2, open: false }, // destra
-                { x: canvas.width / 2, y: scale(32), open: false }, // alto
-                { x: canvas.width / 2, y: canvas.height - scale(32), open: false } // basso
-            ];
-        }
+
         let bullets = [];
         let particles = [];
         let bulletsBlock = [];
@@ -397,6 +123,16 @@
         let levelKeys = [];
         let playerKeys = 0;
         let doorCloseTimer = 0;
+
+        // Config globale per le dimensioni dei blocchi (esposta su window per testing dinamico)
+        // distribution: probabilità per small/medium/large (devono sommare a ~1)
+        // multipliers: fattori di scala applicati alla dimensione base
+        const BLOCK_SIZE_CONFIG = {
+            distribution: { small: 0.35, medium: 0.5, large: 0.15 },
+            multipliers: { small: 0.7, medium: 1.0, large: 1.5 }
+        };
+        // Rendi modificabile a runtime dalla console: window.BLOCK_SIZE_CONFIG
+        window.BLOCK_SIZE_CONFIG = BLOCK_SIZE_CONFIG;
 
         // Input
         const keys = {};
@@ -411,8 +147,8 @@
         const BLOCK_PULSE_ICON = '\u{1F525}'; // 🔥 (legacy)
         const TARGET_ICON = '\u{1F4A1}'; // 💡 (legacy)
 
-        // Simple pixel-sprite renderer (programmatic sprites so we don't need assets)
-        // pattern arrays: numbers map to palette indices (0 = transparent)
+        // Semplice renderer di pixel-sprite (sprite programmati in modo da non richiedere asset esterni)
+        // array di pattern: i caratteri mappano sugli indici della palette (0 = trasparente)
         const SPRITES = {
             player: [
                 '00110000',
@@ -474,15 +210,16 @@
             ]
         };
 
-        // Sprite sheet support: images/sprite.png is a 4x4 grid (left-to-right, top-to-bottom):
-        // Row 0: dynamite, heart, rock, helmet
-        // Row 1: dynamite, door, diamond, shards
-        // Row 2: key, sand, ghost, doubloon
-        // Row 3: wall, mine_tile, hole, explosion
+        // Supporto per sprite sheet: images/sprite.png è una griglia 4x4 (da sinistra a destra, dall'alto in basso):
+        // Riga 0: dynamite, heart, rock, helmet
+        // Riga 1: dynamite, door, diamond, shards
+        // Riga 2: key, sand, ghost, doubloon
+        // Riga 3: wall, mine_tile, hole, explosion
         const sheetCols = 4, sheetRows = 4;
         let spriteSheet = new Image();
         let spriteReady = false;
         let spriteCellW = 0, spriteCellH = 0;
+        let spriteSheetPad = 2; // padding inside each cell to avoid bleeding
         const SPRITE_SHEET_MAP = {
             // row 0
             dynamite: { r: 0, c: 0 },
@@ -505,28 +242,49 @@
             hole: { r: 3, c: 2 },
             explosion: { r: 3, c: 3 }
         };
-        // load sprite sheet and compute cell size
+        // carica la sprite sheet e calcola la dimensione delle celle
         spriteSheet.onload = function () {
             spriteCellW = Math.floor(spriteSheet.width / sheetCols);
             spriteCellH = Math.floor(spriteSheet.height / sheetRows);
+            // compute padding as small fraction of cell size to avoid cutting sprites
+            // use a small padding (1% of cell) to avoid bleeding but not cut artwork
+            spriteSheetPad = Math.max(0, Math.floor(Math.min(spriteCellW, spriteCellH) * 0.01));
+            console.log('spriteSheet loaded', { w: spriteSheet.width, h: spriteSheet.height, cellW: spriteCellW, cellH: spriteCellH, pad: spriteSheetPad });
             spriteReady = true;
             // console.log('Sprite sheet ready', spriteCellW, spriteCellH);
         };
         spriteSheet.onerror = function () {
+            // se il caricamento fallisce, manteniamo spriteReady=false e si useranno le sprite programmatiche
             spriteReady = false;
         };
         spriteSheet.src = 'images/sprite.png';
-
+        
+        function setupDoors() {
+            doors = [
+                { x: scale(32), y: canvas.height / 2, open: false }, // sinistra
+                { x: canvas.width - scale(32), y: canvas.height / 2, open: false }, // destra
+                { x: canvas.width / 2, y: scale(32), open: false }, // alto
+                { x: canvas.width / 2, y: canvas.height - scale(32), open: false } // basso
+            ];
+        }
         function drawFromSheet(ctx, keyName, cx, cy, size, rotate = 0) {
             if (!spriteReady) return false;
             const entry = SPRITE_SHEET_MAP[keyName];
             if (!entry) return false;
-            const sx = entry.c * spriteCellW;
-            const sy = entry.r * spriteCellH;
+            // compute source rect with optional inner padding to avoid bleeding/cropped edges
+            const pad = spriteSheetPad || 2; // px padding inside each cell
+            const sx = entry.c * spriteCellW + pad;
+            const sy = entry.r * spriteCellH + pad;
+            const sw = Math.max(4, spriteCellW - pad * 2);
+            const sh = Math.max(4, spriteCellH - pad * 2);
             ctx.save();
             ctx.translate(cx, cy);
             if (rotate) ctx.rotate(rotate);
-            ctx.drawImage(spriteSheet, sx, sy, spriteCellW, spriteCellH, -size / 2, -size / 2, size, size);
+            try {
+                ctx.drawImage(spriteSheet, sx, sy, sw, sh, -size / 2, -size / 2, size, size);
+            } catch (e) {
+                // if drawing fails, don't break the game
+            }
             ctx.restore();
             return true;
         }
@@ -562,18 +320,25 @@
             ctx.restore();
         }
 
-        function drawBlockSpriteAt(ctx, cx, cy, size, pulse) {
+        function drawBlockSpriteAt(ctx, cx, cy, size, pulse, angle = 0) {
             const color = pulse ? '#ff6a00' : '#ff00ff';
-            // rock sprite at (0,2)
-            if (drawFromSheet(ctx, 'rock', cx, cy, size)) return;
-            drawSpritePattern(ctx, SPRITES.block, cx, cy, size, [color]);
+            // rock sprite at (0,2) - passiamo rotate se presente
+            if (drawFromSheet(ctx, 'rock', cx, cy, size, angle)) return;
+
+            // Fallback programmatico: applichiamo la rotazione al contesto
+            ctx.save();
+            ctx.translate(cx, cy);
+            if (angle) ctx.rotate(angle);
+            // drawSpritePattern si aspetta coordinate centrali, con centro a 0,0 dopo translate
+            drawSpritePattern(ctx, SPRITES.block, 0, 0, size, [color]);
             if (pulse) {
                 ctx.strokeStyle = 'rgba(255,255,0,0.6)';
                 ctx.lineWidth = 1.5;
                 ctx.beginPath();
-                ctx.arc(cx, cy, size * 0.6, 0, Math.PI * 2);
+                ctx.arc(0, 0, size * 0.6, 0, Math.PI * 2);
                 ctx.stroke();
             }
+            ctx.restore();
         }
 
         function drawKeySpriteAt(ctx, cx, cy, size) {
@@ -842,11 +607,27 @@
             const baseHeight = baseSize;
             const pulse = Math.random() < (stageConfig.pulseChance || 0);
             const pulsePhase = Math.random() * Math.PI * 2;
+            // varianza dimensionale: small/medium/large (usa BLOCK_SIZE_CONFIG per permettere tuning da runtime)
+            const defaultW = scale(34);
+            const defaultH = scale(26);
+            const roll = Math.random();
+            const dist = (window.BLOCK_SIZE_CONFIG && window.BLOCK_SIZE_CONFIG.distribution) || { small: 0.35, medium: 0.5, large: 0.15 };
+            const mults = (window.BLOCK_SIZE_CONFIG && window.BLOCK_SIZE_CONFIG.multipliers) || { small: 0.7, medium: 1.0, large: 1.5 };
+            let sizeCategory = 'medium';
+            let sizeMult = mults.medium;
+            if (roll < dist.small) { sizeCategory = 'small'; sizeMult = mults.small; }
+            else if (roll < dist.small + dist.medium) { sizeCategory = 'medium'; sizeMult = mults.medium; }
+            else { sizeCategory = 'large'; sizeMult = mults.large; }
+
+            const w = Math.max(8, Math.round(defaultW * sizeMult));
+            const h = Math.max(6, Math.round(defaultH * sizeMult));
+
             const block = {
                 x: Math.random() * (canvas.width - scale(80)) + scale(40),
                 y: Math.random() * (canvas.height - scale(160)) + scale(80),
-                width: scale(34),
-                height: scale(26),
+                width: w,
+                height: h,
+                sizeCategory: sizeCategory,
                 vx: 0,
                 vy: 0,
                 falling: false,
@@ -855,6 +636,17 @@
                 maxSpawnAnimation: 20,
                 pulse: pulse,
                 pulsePhase: pulsePhase
+                ,
+                // angolo iniziale casuale (radianti)
+                angle: Math.random() * Math.PI * 2,
+                // velocità angolare iniziale (radians per frame)
+                angularVel: (Math.random() - 0.5) * 0.12,
+                // alcuni blocchi si 'allineano' a multipli di 90° all'atterraggio (stile pixel-art)
+                snapTo90: Math.random() < 0.45,
+                // bounce visivo al momento dell'atterraggio (px)
+                bounce: 0,
+                // valore ausiliario per animare il bounce
+                bounceVel: 0
             };
 
             // Choose spawn type based on stageConfig
@@ -1027,7 +819,7 @@
             });
         }
 
-        // Start game
+        // Avvia il gioco
         function startGame() {
             console.log('Starting game...');
             // apply the in-game decorative frame
@@ -1069,7 +861,7 @@
             });
         }
 
-        // Fade and remove attract overlays (static and dynamic), then call cb
+        // Dissolvi e rimuovi le overlay di attrazione (statiche e dinamiche), poi chiama cb
         function hideAttractOverlaysWithFade(cb) {
             // play a short transition cue if sound enabled
             if (soundEnabled) playTransitionSound();
@@ -1099,7 +891,7 @@
             }, 360);
         }
 
-        // Use one dynamite: clears nearby blocks
+        // Usa una dinamite: distrugge i blocchi vicini
         function useDynamite() {
             if (playerDynamite <= 0) {
                 addFloatingText(player.x + player.width / 2, player.y, 'NO DYNAMITE', '#ff4444');
@@ -1161,7 +953,7 @@
             } catch (e) { }
         }
 
-        // Short transition sound generated with WebAudio (no external file)
+        // Breve suono di transizione generato con WebAudio (nessun file esterno)
         let _audioCtx = null;
         function playTransitionSound() {
             try {
@@ -1188,10 +980,13 @@
             }
         }
 
-        // Game loop
+        // Loop principale del gioco
         function gameLoop() {
             if (gameState !== 'playing') return;
             frameCount++;
+
+            // valore base della larghezza blocco usata per normalizzare gli effetti di impatto
+            const DEFAULT_BLOCK_W = scale(34);
 
             // If we're in a stage transition, draw an overlay message and count down
             if (inTransition) {
@@ -1325,7 +1120,7 @@
             drawPlayerSpriteAt(ctx, 0, 0, Math.max(player.width, player.height), player.color);
             ctx.restore();
 
-            // Update and draw target
+            // Aggiorna e disegna il target (gemma)
             target.currentLife++;
             if (target.currentLife >= target.lifetime) {
                 spawnTarget();
@@ -1361,13 +1156,43 @@
                 }
             }
 
-            // Update and draw blocks
+            // Aggiorna e disegna i blocchi (massii)
             for (let i = blocks.length - 1; i >= 0; i--) {
                 const block = blocks[i];
 
                 // Spawn animation for mushroom blocks
                 if (block.spawnAnimation < block.maxSpawnAnimation) {
                     block.spawnAnimation++;
+                }
+
+                // Aggiorna angolo/rotazione del blocco ogni frame
+                if (typeof block.angle === 'number') {
+                    // Se il blocco sta cadendo, aumenta leggermente la velocità angolare in base alla velocità di caduta
+                    if (!block.landed) {
+                        const fallSpeed = Math.abs(block.vy || 0);
+                        if (fallSpeed > 0.2) {
+                            // scala molto piccola: solo per dare più rotazione quando cade veloce
+                            const add = fallSpeed * (0.006 + Math.random() * 0.004);
+                            // preserva il verso corrente, se zero scegli un verso casuale
+                            if (!block.angularVel) block.angularVel = (Math.random() < 0.5 ? -1 : 1) * add;
+                            else block.angularVel += (block.angularVel >= 0 ? 1 : -1) * add;
+                        }
+                    }
+
+                    block.angle += block.angularVel || 0;
+
+                    // attrito dell'aria / freno: riduce lentamente la velocità angolare
+                    if (block.angularVel) {
+                        if (block.landed) block.angularVel *= 0.75; else block.angularVel *= 0.995;
+                        if (Math.abs(block.angularVel) < 0.0005) block.angularVel = 0;
+                    }
+                }
+
+                // Aggiorna animazione bounce quando presente
+                if (block.bounce && Math.abs(block.bounce) > 0.01) {
+                    // semplice smorzamento del bounce
+                    block.bounce *= 0.72;
+                    if (Math.abs(block.bounce) < 0.5) block.bounce = 0;
                 }
 
                 if (!block.landed) {
@@ -1389,9 +1214,7 @@
                                 nextY + block.height > blocks[j].y;
 
                             if (willCollide) {
-                                block.landed = true;
-                                block.falling = false;
-
+                                const impactSpeed = Math.hypot(block.vx || 0, block.vy || 0);
                                 // Position block based on collision direction
                                 if (block.vy > 0) {
                                     // Falling from top - land on top of other block
@@ -1407,8 +1230,50 @@
                                     block.x = blocks[j].x + blocks[j].width;
                                 }
 
+                                // set landed state and zero velocities
+                                const wasFalling = !block.landed;
+                                block.landed = true;
+                                block.falling = false;
                                 block.vx = 0;
                                 block.vy = 0;
+
+                                // Landing effects only when we were falling
+                                if (wasFalling) {
+                                    // Amplifica velocità angolare in base all'impatto
+                                    if (!block.angularVel) block.angularVel = (Math.random() < 0.5 ? -1 : 1) * (0.02 + impactSpeed * 0.01);
+                                    else block.angularVel += (block.angularVel >= 0 ? 1 : -1) * (0.02 + impactSpeed * 0.01);
+
+                                    // piccola vibrazione e particelle di polvere
+                                    const sizeFactor = Math.max(1, Math.round(block.width / DEFAULT_BLOCK_W));
+                                    const intensity = Math.min(18, 4 + Math.floor(impactSpeed * 1.8));
+                                    screenShake.intensity = Math.min(28, (screenShake.intensity || 0) + intensity * sizeFactor);
+                                    screenShake.time = Math.max(screenShake.time || 0, 8);
+                                    screenShake.maxTime = screenShake.time;
+
+                                    // bounce visivo (scalato per dimensione)
+                                    block.bounce = Math.min(12 * sizeFactor, 6 + impactSpeed * 1.5 * sizeFactor);
+
+                                    // particelle di polvere (scalate con la dimensione del blocco)
+                                    const baseDust = 6 + Math.min(8, Math.floor(impactSpeed * 1.5));
+                                    const dustCount = Math.floor(baseDust * sizeFactor);
+                                    for (let d = 0; d < dustCount; d++) {
+                                        particles.push({
+                                            x: block.x + block.width / 2 + (Math.random() - 0.5) * block.width * 0.6,
+                                            y: block.y + block.height,
+                                            vx: (Math.random() - 0.5) * (2.2 * sizeFactor),
+                                            vy: -Math.random() * 2.8 - 0.4,
+                                            life: 26 + Math.floor(Math.random() * 12) * sizeFactor,
+                                            color: '#c2b280'
+                                        });
+                                    }
+
+                                    // se il blocco è configurato per snap a 90°, allinealo ora
+                                    if (block.snapTo90) {
+                                        block.angle = Math.round(block.angle / (Math.PI / 2)) * (Math.PI / 2);
+                                        block.angularVel = 0;
+                                    }
+                                }
+
                                 break;
                             }
                         }
@@ -1416,10 +1281,44 @@
 
                     // Check if hit ground
                     if (block.y + block.height >= canvas.height) {
-                        block.landed = true;
-                        block.falling = false;
-                        block.vy = 0;
-                        block.y = canvas.height - block.height;
+                        // Se il blocco sta atterrando ora, attiva piccoli effetti di impatto (polvere, tremolio)
+                        if (!block.landed) {
+                            block.landed = true;
+                            block.falling = false;
+                            block.vy = 0;
+                            block.y = canvas.height - block.height;
+
+                            // Riduci rapidamente la velocà angolare per simulare attrito a terra
+                            if (block.angularVel) block.angularVel *= 0.25;
+
+                            // piccolo tremolio dello schermo e particelle di polvere
+                            const sizeFactor = Math.max(1, Math.round(block.width / DEFAULT_BLOCK_W));
+                            screenShake.intensity = Math.min(12, (screenShake.intensity || 0) + 3 * sizeFactor);
+                            screenShake.time = Math.max(screenShake.time || 0, 8);
+                            screenShake.maxTime = screenShake.time;
+
+                            // Genera particelle 'polvere' verso l'alto scalate per dimensione
+                            const dustCount = Math.floor(4 * sizeFactor);
+                            for (let d = 0; d < dustCount; d++) {
+                                particles.push({
+                                    x: block.x + block.width / 2 + (Math.random() - 0.5) * block.width * 0.6,
+                                    y: block.y + block.height,
+                                    vx: (Math.random() - 0.5) * (1.6 * sizeFactor),
+                                    vy: -Math.random() * (2.8) - 0.6,
+                                    life: 20 + Math.floor(Math.random() * 12),
+                                    color: '#c2b280'
+                                });
+                            }
+
+                            // piccolo salto/bounce visivo proporzionale alla dimensione
+                            block.bounce = Math.min(12 * sizeFactor, 6 * sizeFactor);
+                        } else {
+                            // assicurati che rimanga posizionato correttamente
+                            block.landed = true;
+                            block.falling = false;
+                            block.vy = 0;
+                            block.y = canvas.height - block.height;
+                        }
                     }
 
                     // Check if hit ceiling
@@ -1458,10 +1357,11 @@
                     drawX = block.x + (block.width - drawWidth) / 2;
                     drawY = block.y + (block.height - drawHeight) / 2;
                 }
-                // draw pixel block
+                // draw pixel block (applichiamo bounce grafico sottraendo l'offset dal centro Y)
                 const blockCenterX = drawX + drawWidth / 2;
-                const blockCenterY = drawY + drawHeight / 2;
-                drawBlockSpriteAt(ctx, blockCenterX, blockCenterY, Math.max(drawWidth, drawHeight), block.pulse);
+                const blockCenterY = drawY + drawHeight / 2 - (block.bounce || 0);
+                // Passiamo l'angolo del blocco al renderer in modo che venga disegnato ruotato
+                drawBlockSpriteAt(ctx, blockCenterX, blockCenterY, Math.max(drawWidth, drawHeight), block.pulse, block.angle || 0);
 
                 // Check collision with player (only if fully spawned)
                 if (block.spawnAnimation >= block.maxSpawnAnimation && checkCollision(player, block)) {
@@ -1489,7 +1389,7 @@
                 }
             }
 
-            // Update and draw bullets
+            // Aggiorna e disegna i proiettili
             for (let i = bullets.length - 1; i >= 0; i--) {
                 const bullet = bullets[i];
                 bullet.x += bullet.dx;
@@ -1572,7 +1472,7 @@
                 }
             }
 
-            // Update and draw particles
+            // Aggiorna e disegna le particelle (effetti)
             for (let i = particles.length - 1; i >= 0; i--) {
                 const p = particles[i];
                 p.x += p.vx;
@@ -1589,7 +1489,7 @@
                 }
             }
 
-            // Draw explosions (expanding rings)
+            // Disegna esplosioni (anelli in espansione)
             for (let i = explosions.length - 1; i >= 0; i--) {
                 const ex = explosions[i];
                 ex.life--;
@@ -1620,7 +1520,7 @@
                 if (ft.life <= 0) floatingTexts.splice(i, 1);
             }
 
-            // Check for extra life every 1000 points
+            // Verifica vita extra ogni 1000 punti
             if (score > 0 && score % 1000 === 0) {
                 lives++;
                 updateHUD();
@@ -1869,7 +1769,7 @@
                 }
             }
 
-            // Check for extra life every 1000 points
+            // Verifica vita extra ogni 1000 punti
             if (score > 0 && score % 1000 === 0) {
                 lives++;
                 updateHUD();

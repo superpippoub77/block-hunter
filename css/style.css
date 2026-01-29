@@ -1,0 +1,245 @@
+ @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+
+ * {
+     margin: 0;
+     padding: 0;
+     box-sizing: border-box;
+ }
+
+ body {
+     background: #0a0e27;
+     font-family: 'Press Start 2P', monospace;
+     display: flex;
+     justify-content: center;
+     align-items: center;
+     min-height: 100vh;
+     overflow: hidden;
+     color: #fff;
+ }
+
+ :root {
+     /* opacità overlay per la schermata di attrazione (per regolare la leggibilità) */
+     --attract-overlay: 0.65;
+     --attract-color1: 26, 31, 58;
+     /* triplette RGB */
+     --attract-color2: 10, 14, 39;
+     /* triplette RGB */
+ }
+
+ /* Contenitore principale (nessuna cornice decorativa di default) - la cornice viene applicata solo durante il gioco */
+ #gameContainer {
+     position: relative;
+     background: linear-gradient(135deg, #1a1f3a 0%, #0f1229 100%);
+     border-radius: 8px;
+     /* prepara bordo e ombra animabili (trasparente di default) */
+     border: 4px solid rgba(0, 255, 255, 0);
+     box-shadow: none;
+     transition: border-color 360ms ease, box-shadow 360ms ease, transform 300ms ease;
+ }
+
+ /* Cornice arcade decorativa applicata solo durante il gioco */
+ body.in-game #gameContainer {
+     border-color: rgba(0, 255, 255, 1);
+     box-shadow:
+         0 0 20px rgba(0, 255, 255, 0.5),
+         0 0 40px rgba(0, 255, 255, 0.3),
+         inset 0 0 30px rgba(0, 0, 0, 0.5);
+     transform: scale(1.005);
+ }
+
+ /* leggera dissolvenza per le overlay quando vengono rimosse */
+ .fade-out {
+     opacity: 0 !important;
+     transition: opacity 320ms ease;
+     pointer-events: none;
+ }
+
+ canvas {
+     display: block;
+     image-rendering: pixelated;
+     image-rendering: crisp-edges;
+ }
+
+ #attractScreen {
+     position: fixed;
+     top: 0;
+     left: 0;
+     width: 100vw;
+     height: 100vh;
+     /* Usa l'immagine di sfondo fornita per la schermata di attrazione con overlay regolabile via variabile CSS */
+     background: radial-gradient(circle, rgba(var(--attract-color1), var(--attract-overlay)) 0%, rgba(var(--attract-color2), var(--attract-overlay)) 100%), url('images/bg.png') center/cover no-repeat;
+     display: flex;
+     flex-direction: column;
+     justify-content: center;
+     align-items: center;
+     z-index: 10;
+     animation: scanline 8s linear infinite;
+ }
+
+ /* helper class for dynamic attract divs to reuse same background + overlay */
+ .attract-bg {
+     background: radial-gradient(circle, rgba(var(--attract-color1), var(--attract-overlay)) 0%, rgba(var(--attract-color2), var(--attract-overlay)) 100%), url('images/bg.png') center/cover no-repeat !important;
+ }
+
+ @keyframes scanline {
+
+     0%,
+     100% {
+         background-position: 0 0;
+     }
+
+     50% {
+         background-position: 0 100%;
+     }
+ }
+
+ #attractScreen::before {
+     content: '';
+     position: absolute;
+     top: 0;
+     left: 0;
+     width: 100%;
+     height: 100%;
+     background: repeating-linear-gradient(0deg,
+             rgba(0, 0, 0, 0.15),
+             rgba(0, 0, 0, 0.15) 1px,
+             transparent 1px,
+             transparent 2px);
+     pointer-events: none;
+     animation: scan 8s linear infinite;
+ }
+
+ @keyframes scan {
+     from {
+         transform: translateY(0);
+     }
+
+     to {
+         transform: translateY(4px);
+     }
+ }
+
+ .title {
+     font-size: 48px;
+     color: #ff00ff;
+     text-shadow:
+         3px 3px 0 #00ffff,
+         -2px -2px 0 #ffff00,
+         0 0 20px #ff00ff,
+         0 0 40px #ff00ff;
+     margin-bottom: 40px;
+     animation: glow 2s ease-in-out infinite alternate, float 3s ease-in-out infinite;
+     letter-spacing: 4px;
+ }
+
+ @keyframes glow {
+     from {
+         text-shadow:
+             3px 3px 0 #00ffff,
+             -2px -2px 0 #ffff00,
+             0 0 20px #ff00ff,
+             0 0 40px #ff00ff;
+     }
+
+     to {
+         text-shadow:
+             3px 3px 0 #00ffff,
+             -2px -2px 0 #ffff00,
+             0 0 40px #ff00ff,
+             0 0 80px #ff00ff;
+     }
+ }
+
+ @keyframes float {
+
+     0%,
+     100% {
+         transform: translateY(0px);
+     }
+
+     50% {
+         transform: translateY(-10px);
+     }
+ }
+
+ .instructions {
+     font-size: 14px;
+     color: #00ffff;
+     text-align: center;
+     line-height: 2;
+     margin-bottom: 30px;
+     text-shadow: 2px 2px 0 rgba(0, 0, 0, 0.5);
+ }
+
+ .startButton {
+     padding: 15px 40px;
+     font-family: 'Press Start 2P', monospace;
+     font-size: 16px;
+     background: linear-gradient(45deg, #ff00ff, #00ffff);
+     border: 3px solid #ffff00;
+     color: #000;
+     cursor: pointer;
+     text-transform: uppercase;
+     animation: pulse 1.5s ease-in-out infinite;
+     box-shadow: 0 0 20px rgba(255, 0, 255, 0.6);
+     transition: all 0.3s;
+ }
+
+ .startButton:hover {
+     transform: scale(1.1);
+     box-shadow: 0 0 40px rgba(255, 0, 255, 0.9);
+ }
+
+ @keyframes pulse {
+
+     0%,
+     100% {
+         opacity: 1;
+     }
+
+     50% {
+         opacity: 0.7;
+     }
+ }
+
+ .hud {
+     position: absolute;
+     top: 10px;
+     left: 10px;
+     font-size: 14px;
+     color: #00ffff;
+     text-shadow: 2px 2px 0 rgba(0, 0, 0, 0.7);
+     z-index: 5;
+     line-height: 1.8;
+ }
+
+ .gameOver {
+     position: absolute;
+     top: 50%;
+     left: 50%;
+     transform: translate(-50%, -50%);
+     text-align: center;
+     z-index: 15;
+     background: rgba(0, 0, 0, 0.9);
+     padding: 40px;
+     border: 4px solid #ff00ff;
+     border-radius: 10px;
+     box-shadow: 0 0 40px rgba(255, 0, 255, 0.8);
+ }
+
+ .gameOver h2 {
+     font-size: 36px;
+     color: #ff0000;
+     margin-bottom: 20px;
+     text-shadow: 3px 3px 0 #ffff00;
+ }
+
+ .gameOver p {
+     font-size: 16px;
+     color: #00ffff;
+     margin-bottom: 30px;
+ }
+
+ .hidden {
+     display: none !important;
+ }
