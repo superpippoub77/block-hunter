@@ -66,8 +66,9 @@
      left: 0;
      width: 100vw;
      height: 100vh;
-     /* Usa l'immagine di sfondo fornita per la schermata di attrazione con overlay regolabile via variabile CSS */
-     background: radial-gradient(circle, rgba(var(--attract-color1), var(--attract-overlay)) 0%, rgba(var(--attract-color2), var(--attract-overlay)) 100%), url('images/bg.png') center/cover no-repeat;
+    /* Usa l'immagine di sfondo fornita per la schermata di attrazione con overlay regolabile via variabile CSS */
+    /* Percorso corretto: la CSS si trova in css/, l'immagine in images/ nella root */
+    background: radial-gradient(circle, rgba(var(--attract-color1), var(--attract-overlay)) 0%, rgba(var(--attract-color2), var(--attract-overlay)) 100%), url('../images/bg.png') center/cover no-repeat;
      display: flex;
      flex-direction: column;
      justify-content: center;
@@ -78,7 +79,7 @@
 
  /* helper class for dynamic attract divs to reuse same background + overlay */
  .attract-bg {
-     background: radial-gradient(circle, rgba(var(--attract-color1), var(--attract-overlay)) 0%, rgba(var(--attract-color2), var(--attract-overlay)) 100%), url('images/bg.png') center/cover no-repeat !important;
+    background: radial-gradient(circle, rgba(var(--attract-color1), var(--attract-overlay)) 0%, rgba(var(--attract-color2), var(--attract-overlay)) 100%), url('../images/bg.png') center/cover no-repeat !important;
  }
 
  @keyframes scanline {
