@@ -1192,7 +1192,18 @@
             // Draw visible inner wall (the main walled area). The outer band around it is an open escape path.
             const _ib_draw = getInnerBounds();
             try {
-                const tileSize = Math.max(16, Math.round(scale(32)));
+                // Decide tileSize: when sprite sheet is ready, use the actual sprite cell
+                // dimension for pixel-perfect alignment (scaled by SIZE_SCALE). Otherwise
+                // fall back to the previous scale(32) value.
+                let tileSize;
+                if (spriteReady && spriteCellW && spriteCellH) {
+                    // Use the smaller of cell W/H to avoid non-square distortion, then scale
+                    // by SIZE_SCALE so the art respects the global size multiplier.
+                    tileSize = Math.max(8, Math.round(Math.min(spriteCellW, spriteCellH) * (SIZE_SCALE || 1)));
+                } else {
+                    tileSize = Math.max(16, Math.round(scale(32)));
+                }
+
                 // If sprite sheet is loaded, draw repeated 'wall' tiles along the inner rectangle
                 if (spriteReady && drawFromSheet) {
                     const w = Math.max(0, _ib_draw.maxX - _ib_draw.minX);
@@ -1821,7 +1832,13 @@
                 }
 
                 // draw door sprite
-                drawDoorSpriteAt(ctx, cx, cy, scale(40), door.open);
+                // compute a door tile size: prefer pixel-perfect sprite cell scaled by SIZE_SCALE,
+                // fallback to the previous scale(40)
+                let doorSize = Math.max(20, Math.round(scale(40)));
+                if (spriteReady && spriteCellW && spriteCellH) {
+                    doorSize = Math.max(16, Math.round(Math.min(spriteCellW, spriteCellH) * (SIZE_SCALE || 1)));
+                }
+                drawDoorSpriteAt(ctx, cx, cy, doorSize, door.open);
             });
             // Disegna chiavi
             levelKeys.forEach(key => {
