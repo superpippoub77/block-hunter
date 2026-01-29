@@ -18,7 +18,10 @@
                 RECUPERA L'OGGETTO<br>
                 SCHIVA I BLOCCHI
             </div>
-            <button class="startButton" id="startButton">INSERISCI MONETA</button>
+            <!-- Footer: mostra i crediti nella schermata statica iniziale (nessun pulsante qui) -->
+            <div style="position:absolute; bottom:24px; left:0; right:0; text-align:center; color:#fff; font-size:16px;">
+                CREDITI: <span id="attractStaticCredits">0</span>
+            </div>
         </div>
 
         <div class="hud hidden" id="hud">
@@ -83,6 +86,16 @@
         // Whether the player is outside (walking the outer border)
         let isOutside = false;
         const OUTER_BAND = (window.GAME_CONFIG && window.GAME_CONFIG.OUTER_BAND) || 80; // how wide the outside path is along the edges (tuned)
+
+        // Inner playable area bounds (main walled area). The outer band around it is the escape path.
+        function getInnerBounds() {
+            return {
+                minX: OUTER_BAND,
+                minY: OUTER_BAND,
+                maxX: Math.max(OUTER_BAND, canvas.width - OUTER_BAND),
+                maxY: Math.max(OUTER_BAND, canvas.height - OUTER_BAND)
+            };
+        }
 
         // Target object
         const target = {
@@ -655,38 +668,46 @@
 
             switch (spawnType) {
                 case 'random':
-                    block.x = Math.random() * (canvas.width - block.width - scale(40)) + scale(20);
-                    block.y = Math.random() * (canvas.height - block.height - scale(100)) + scale(50);
+                    // spawn inside the inner walled area
+                    const _ib = getInnerBounds();
+                    block.x = Math.random() * (Math.max(0, _ib.maxX - _ib.minX - block.width - scale(40))) + _ib.minX + scale(20);
+                    block.y = Math.random() * (Math.max(0, _ib.maxY - _ib.minY - block.height - scale(100))) + _ib.minY + scale(50);
                     block.landed = true;
                     break;
                 case 'top':
-                    block.x = Math.random() * (canvas.width - block.width);
+                    const _ib_t = getInnerBounds();
+                    block.x = Math.random() * Math.max(0, (_ib_t.maxX - _ib_t.minX - block.width)) + _ib_t.minX;
                     block.y = -block.height;
                     block.vy = 1 + bs;
                     block.falling = true;
                     block.landed = false;
                     break;
                 case 'bottom':
-                    block.x = Math.random() * (canvas.width - block.width);
+                    const _ib_b = getInnerBounds();
+                    block.x = Math.random() * Math.max(0, (_ib_b.maxX - _ib_b.minX - block.width)) + _ib_b.minX;
                     block.y = canvas.height + block.height;
                     block.vy = -(1 + bs);
                     block.landed = false;
                     break;
                 case 'left':
                     block.x = -block.width;
-                    block.y = Math.random() * (canvas.height - block.height - scale(40)) + scale(20);
+                    // spawn Y within inner area band vertically
+                    const _ib_l = getInnerBounds();
+                    block.y = Math.random() * (Math.max(0, _ib_l.maxY - _ib_l.minY - block.height - scale(40))) + _ib_l.minY + scale(20);
                     block.vx = 1 + bs;
                     block.landed = false;
                     break;
                 case 'right':
                     block.x = canvas.width + block.width;
-                    block.y = Math.random() * (canvas.height - block.height - scale(40)) + scale(20);
+                    const _ib_r = getInnerBounds();
+                    block.y = Math.random() * (Math.max(0, _ib_r.maxY - _ib_r.minY - block.height - scale(40))) + _ib_r.minY + scale(20);
                     block.vx = -(1 + bs);
                     block.landed = false;
                     break;
                 default:
-                    block.x = Math.random() * (canvas.width - block.width - scale(40)) + scale(20);
-                    block.y = Math.random() * (canvas.height - block.height - scale(100)) + scale(50);
+                    const _ib_d = getInnerBounds();
+                    block.x = Math.random() * (Math.max(0, _ib_d.maxX - _ib_d.minX - block.width - scale(40))) + _ib_d.minX + scale(20);
+                    block.y = Math.random() * (Math.max(0, _ib_d.maxY - _ib_d.minY - block.height - scale(100))) + _ib_d.minY + scale(50);
                     block.landed = true;
             }
 
@@ -716,7 +737,10 @@
         }
 
         // Schermata selezione livello
-        function showLevelSelect() {
+        // showLevelSelect(preselectPlayers)
+        // Se viene passato preselectPlayers (1 o 2), dopo che il giocatore sceglie la difficoltà
+        // verrà pre-selezionato automaticamente il numero di giocatori corrispondente.
+        function showLevelSelect(preselectPlayers) {
             const selectDiv = document.createElement('div');
             selectDiv.id = 'levelSelect';
             selectDiv.style.position = 'absolute';
@@ -757,8 +781,51 @@
             .levelButton:hover {
                 transform: scale(1.1);
                 box-shadow: 0 0 40px rgba(255, 0, 255, 0.9);
-            }`;
+            }
+            /* Focus/keyboard selection styling */
+            .levelButton.focused {
+                transform: scale(1.06);
+                box-shadow: 0 0 50px rgba(255, 230, 120, 0.95) !important;
+                outline: 2px solid rgba(255,255,200,0.9);
+            }
+            `;
             document.head.appendChild(style);
+            // Keyboard navigation for difficulty selection (Up/Down to move, Enter to choose, Esc to cancel)
+            const levelButtonsInit = selectDiv.querySelectorAll('.levelButton');
+            let levelFocus = 0;
+            function updateLevelFocus() {
+                const btns = selectDiv.querySelectorAll('.levelButton');
+                btns.forEach((b, i) => {
+                    if (i === levelFocus) {
+                        b.classList.add('focused');
+                        try { b.scrollIntoView({ block: 'center', inline: 'center' }); } catch (e) { }
+                    } else {
+                        b.classList.remove('focused');
+                    }
+                });
+            }
+            updateLevelFocus();
+            const levelKeyHandler = function (ev) {
+                if (!selectDiv || !document.body.contains(selectDiv)) return;
+                if (ev.key === 'ArrowUp' || ev.key === 'ArrowDown' || ev.key === 'Enter' || ev.key === 'Escape') {
+                    ev.preventDefault();
+                    const btns = selectDiv.querySelectorAll('.levelButton');
+                    if (ev.key === 'ArrowUp') {
+                        levelFocus = (levelFocus - 1 + btns.length) % btns.length;
+                        updateLevelFocus();
+                    } else if (ev.key === 'ArrowDown') {
+                        levelFocus = (levelFocus + 1) % btns.length;
+                        updateLevelFocus();
+                    } else if (ev.key === 'Enter') {
+                        const b = btns[levelFocus]; if (b) b.click();
+                    } else if (ev.key === 'Escape') {
+                        try { selectDiv.remove(); } catch (e) { }
+                        try { style.remove(); } catch (e) { }
+                        document.removeEventListener('keydown', levelKeyHandler);
+                    }
+                }
+            };
+            document.addEventListener('keydown', levelKeyHandler);
             // After choosing difficulty, let player choose number of players (1 or 2)
             selectDiv.querySelectorAll('button').forEach(btn => {
                 btn.onclick = function () {
@@ -788,6 +855,13 @@
                             pbtn.style.opacity = '1';
                         };
                     });
+                    // Se è stato richiesto di pre-selezionare il numero di giocatori, esegui il click
+                    if (preselectPlayers && (preselectPlayers === 1 || preselectPlayers === 2)) {
+                        setTimeout(() => {
+                            const autoBtn = selectDiv.querySelector(`.playerBtn[data-p="${preselectPlayers}"]`);
+                            if (autoBtn) autoBtn.click();
+                        }, 60);
+                    }
                     // default 1 player
                     numPlayers = 1;
                     // wire sound toggle
@@ -802,9 +876,11 @@
                     startNow.onclick = function () {
                         // require credits equal to number of players (1 or 2)
                         if (credits < numPlayers) {
-                            addFloatingText(canvas.width / 2, canvas.height / 2 + 80, `INSERT ${numPlayers} COIN${numPlayers > 1 ? 'S' : ''}`, '#ffcc00');
-                            return;
-                        }
+                                // feedback sonoro/visivo quando si clicca START senza crediti
+                                playCoinRequiredSound(numPlayers);
+                                animateCreditHint(numPlayers);
+                                return;
+                            }
                         credits -= numPlayers;
                         // update selection credit display if present
                         const sc = document.getElementById('selectCredits'); if (sc) sc.textContent = credits;
@@ -980,6 +1056,81 @@
             }
         }
 
+        // Suono breve per indicare che servono coins (feedback negativo)
+        function playCoinRequiredSound(required) {
+            try {
+                const AudioCtx = window.AudioContext || window.webkitAudioContext;
+                if (!AudioCtx) return;
+                if (!_audioCtx) _audioCtx = new AudioCtx();
+                const ctx = _audioCtx;
+                const now = ctx.currentTime;
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.type = 'triangle';
+                // frequency depends on required coins (higher for 1, lower for 2) so user can tell
+                const base = required === 1 ? 600 : 360;
+                osc.frequency.setValueAtTime(base, now);
+                osc.frequency.exponentialRampToValueAtTime(base * 0.6, now + 0.18);
+                gain.gain.setValueAtTime(0.0001, now);
+                gain.gain.linearRampToValueAtTime(0.14, now + 0.01);
+                gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.4);
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                osc.start(now);
+                osc.stop(now + 0.42);
+            } catch (e) { /* ignore */ }
+        }
+
+        // Suono breve positivo per inserimento moneta
+        function playCoinInsertSound() {
+            try {
+                const AudioCtx = window.AudioContext || window.webkitAudioContext;
+                if (!AudioCtx) return;
+                if (!_audioCtx) _audioCtx = new AudioCtx();
+                const ctx = _audioCtx;
+                const now = ctx.currentTime;
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.type = 'square';
+                osc.frequency.setValueAtTime(1200, now);
+                osc.frequency.exponentialRampToValueAtTime(1800, now + 0.06);
+                gain.gain.setValueAtTime(0.0001, now);
+                gain.gain.linearRampToValueAtTime(0.18, now + 0.01);
+                gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.12);
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                osc.start(now);
+                osc.stop(now + 0.14);
+            } catch (e) { /* ignore */ }
+        }
+
+        // Animazione visiva breve per evidenziare l'elemento dei crediti
+        function animateCreditHint(required) {
+            // Preferisci elementi dinamici se presenti
+            const els = [];
+            const ac = document.getElementById('attractCredits'); if (ac) els.push(ac);
+            const asc = document.getElementById('attractStaticCredits'); if (asc) els.push(asc);
+            const insetBtn = document.getElementById('insertCoinBtn'); if (insetBtn) els.push(insetBtn);
+            // create a temporary popup in the center as well
+            addFloatingText(canvas.width / 2, canvas.height / 2 + 80, `INSERISCI ${required} COIN${required>1?'S':''}`, '#ffcc00');
+
+            els.forEach(el => {
+                try {
+                    el.style.transition = 'transform 140ms ease, box-shadow 140ms ease';
+                    el.style.transform = 'scale(1.18)';
+                    el.style.boxShadow = '0 0 18px rgba(255,204,0,0.95)';
+                } catch (e) { }
+            });
+            setTimeout(() => {
+                els.forEach(el => {
+                    try {
+                        el.style.transform = '';
+                        el.style.boxShadow = '';
+                    } catch (e) { }
+                });
+            }, 420);
+        }
+
         // Loop principale del gioco
         function gameLoop() {
             if (gameState !== 'playing') return;
@@ -1038,6 +1189,40 @@
                 ctx.stroke();
             }
 
+            // Draw visible inner wall (the main walled area). The outer band around it is an open escape path.
+            const _ib_draw = getInnerBounds();
+            try {
+                const tileSize = Math.max(16, Math.round(scale(32)));
+                // If sprite sheet is loaded, draw repeated 'wall' tiles along the inner rectangle
+                if (spriteReady && drawFromSheet) {
+                    const w = Math.max(0, _ib_draw.maxX - _ib_draw.minX);
+                    const h = Math.max(0, _ib_draw.maxY - _ib_draw.minY);
+                    const cols = Math.max(1, Math.ceil(w / tileSize));
+                    const rows = Math.max(1, Math.ceil(h / tileSize));
+                    // Top and bottom rows
+                    for (let i = 0; i < cols; i++) {
+                        const cx = _ib_draw.minX + i * tileSize + tileSize / 2;
+                        const topY = _ib_draw.minY + tileSize / 2;
+                        const bottomY = _ib_draw.maxY - tileSize / 2;
+                        drawFromSheet(ctx, 'wall', cx, topY, tileSize, 0);
+                        drawFromSheet(ctx, 'wall', cx, bottomY, tileSize, 0);
+                    }
+                    // Left and right columns
+                    for (let j = 0; j < rows; j++) {
+                        const cy = _ib_draw.minY + j * tileSize + tileSize / 2;
+                        const leftX = _ib_draw.minX + tileSize / 2;
+                        const rightX = _ib_draw.maxX - tileSize / 2;
+                        drawFromSheet(ctx, 'wall', leftX, cy, tileSize, 0);
+                        drawFromSheet(ctx, 'wall', rightX, cy, tileSize, 0);
+                    }
+                } else {
+                    // subtle wall border fallback
+                    ctx.strokeStyle = '#444444';
+                    ctx.lineWidth = Math.max(3, Math.round(scale(6)));
+                    ctx.strokeRect(_ib_draw.minX + 1, _ib_draw.minY + 1, Math.max(0, _ib_draw.maxX - _ib_draw.minX - 2), Math.max(0, _ib_draw.maxY - _ib_draw.minY - 2));
+                }
+            } catch (e) { }
+
             // Update player movement
             playerIsMoving = false;
             // Movement with 8 directions and angle rotation
@@ -1058,10 +1243,11 @@
                 player.y += vy;
                 playerIsMoving = true;
 
-                // Clamp inside area when inside
+                // Clamp inside the inner walled area when inside (can't walk into outer band unless outside via doors)
                 if (!isOutside) {
-                    player.x = Math.max(0, Math.min(canvas.width - player.width, player.x));
-                    player.y = Math.max(0, Math.min(canvas.height - player.height, player.y));
+                    const ib = getInnerBounds();
+                    player.x = Math.max(ib.minX, Math.min(ib.maxX - player.width, player.x));
+                    player.y = Math.max(ib.minY, Math.min(ib.maxY - player.height, player.y));
                 }
 
                 // Determine direction string and angle
@@ -1079,7 +1265,7 @@
             }
 
             // If outside, keep player constrained to the outer band (snap to nearest edge band)
-            if (isOutside) {
+                if (isOutside) {
                 const band = OUTER_BAND;
                 // keep within canvas but prefer the band distance from edges
                 player.x = Math.max(0, Math.min(canvas.width - player.width, player.x));
@@ -1280,13 +1466,14 @@
                     }
 
                     // Check if hit ground
-                    if (block.y + block.height >= canvas.height) {
+                    const ib = getInnerBounds();
+                    if (block.y + block.height >= ib.maxY) {
                         // Se il blocco sta atterrando ora, attiva piccoli effetti di impatto (polvere, tremolio)
                         if (!block.landed) {
                             block.landed = true;
                             block.falling = false;
                             block.vy = 0;
-                            block.y = canvas.height - block.height;
+                            block.y = ib.maxY - block.height;
 
                             // Riduci rapidamente la velocà angolare per simulare attrito a terra
                             if (block.angularVel) block.angularVel *= 0.25;
@@ -1317,27 +1504,27 @@
                             block.landed = true;
                             block.falling = false;
                             block.vy = 0;
-                            block.y = canvas.height - block.height;
+                            block.y = ib.maxY - block.height;
                         }
                     }
 
                     // Check if hit ceiling
-                    if (block.y <= 0) {
+                    if (block.y <= ib.minY) {
                         block.landed = true;
                         block.vy = 0;
-                        block.y = 0;
+                        block.y = ib.minY;
                     }
 
                     // Check if hit walls
-                    if (block.x <= 0) {
+                    if (block.x <= ib.minX) {
                         block.landed = true;
                         block.vx = 0;
-                        block.x = 0;
+                        block.x = ib.minX;
                     }
-                    if (block.x + block.width >= canvas.width) {
+                    if (block.x + block.width >= ib.maxX) {
                         block.landed = true;
                         block.vx = 0;
-                        block.x = canvas.width - block.width;
+                        block.x = ib.maxX - block.width;
                     }
                 }
 
@@ -1985,16 +2172,41 @@
             // Start flow from attract: open level/select screen with Enter (so coin check is enforced)
             if (e.key === 'Enter' && gameState === 'attract') {
                 e.preventDefault();
-                showLevelSelect();
+                // apri la selezione solo se ci sono crediti
+                if ((credits || 0) > 0) {
+                    showLevelSelect();
+                } else {
+                    // immediate feedback: sound + animation + floating text
+                    playCoinRequiredSound(1);
+                    animateCreditHint(1);
+                }
                 return;
             }
-            // Insert coin with key '5'
+            // Supporto input stile MAME: premi '1' o '2' per scegliere giocatori nella schermata di attract
+            if ((e.key === '1' || e.key === '2') && gameState === 'attract') {
+                const n = parseInt(e.key, 10);
+                e.preventDefault();
+                if ((credits || 0) >= n) {
+                    // Apri la schermata di selezione e passa il numero di giocatori da pre-selezionare
+                    showLevelSelect(n);
+                } else {
+                    // immediate feedback for required coins: sound + animation + floating text
+                    playCoinRequiredSound(n);
+                    animateCreditHint(n);
+                }
+                return;
+            }
+            // Insert coin with key '5' (MAME coin)
             if (e.key === '5') {
                 credits++;
                 updateHUD();
-                // update select screen if open
-                const sc = document.getElementById('selectCredits');
-                if (sc) sc.textContent = credits;
+                // Aggiorna l'eventuale contatore sulla schermata di selezione/static attract
+                const sc = document.getElementById('selectCredits'); if (sc) sc.textContent = credits;
+                const asc = document.getElementById('attractStaticCredits'); if (asc) asc.textContent = credits;
+                const ac = document.getElementById('attractCredits'); if (ac) ac.textContent = credits;
+                // Positive feedback: sound + small animation
+                if (soundEnabled) playCoinInsertSound();
+                animateCreditHint(1);
                 // If continue overlay present and gameOver, allow immediate continue
                 if (continueDiv && gameState === 'gameOver') {
                     // consume one credit to continue
@@ -2125,37 +2337,91 @@
             attractDiv.style.zIndex = '30';
             attractDiv.innerHTML = `
         <div class="title">BLOCK HUNTER</div>
-        <div style="font-size:32px; color:#ffff00; margin:30px;">INSERT COIN</div>
-        <button class="startButton" id="insertCoinBtn">INSERISCI MONETA</button>
+        <div style="font-size:28px; color:#ffff00; margin:20px;">INSERT COIN</div>
+        <!-- Footer con contatore crediti e pulsante inserisci moneta -->
+        <div style="position:absolute; bottom:40px; left:0; right:0; display:flex; justify-content:center; gap:12px; align-items:center;">
+            <div style="color:#fff; font-size:18px;">CREDITI: <span id="attractCredits">0</span></div>
+            <button class="startButton" id="insertCoinBtn">INSERISCI MONETA</button>
+        </div>
     `;
             document.getElementById('gameContainer').appendChild(attractDiv);
-            document.getElementById('insertCoinBtn').onclick = function () {
-                clearInterval(attractInterval);
-                const topDiv = document.querySelector('.gameOver');
-                if (topDiv) topDiv.remove();
-                attractDiv.remove();
-                showLevelSelect();
-            };
+            // Assicuriamoci che il contatore mostri il valore corrente dei crediti
+            const _acInit = document.getElementById('attractCredits'); if (_acInit) _acInit.textContent = (credits || 0);
+            // Pulsante "inserisci moneta": incrementa crediti e aggiorna HUD/overlay
+            const insertBtn = document.getElementById('insertCoinBtn');
+            if (insertBtn) {
+                insertBtn.onclick = function (ev) {
+                    ev.stopPropagation(); // non far scattare l'overlay click
+                    credits = (credits || 0) + 1;
+                    updateHUD();
+                    const ac = document.getElementById('attractCredits'); if (ac) ac.textContent = credits;
+                    const asc = document.getElementById('attractStaticCredits'); if (asc) asc.textContent = credits;
+                    // Play coin inserted sound + small animation
+                    if (soundEnabled) playCoinInsertSound();
+                    animateCreditHint(1);
+                };
+            }
+            // Clic sull'overlay (fuori dal pulsante) apre la selezione livelli solo se ci sono crediti
+            attractDiv.addEventListener('click', function (ev) {
+                // ignora click sul pulsante stesso
+                if (ev.target && ev.target.id === 'insertCoinBtn') return;
+                if ((credits || 0) > 0) {
+                    clearInterval(attractInterval);
+                    const topDiv = document.querySelector('.gameOver'); if (topDiv) topDiv.remove();
+                    attractDiv.remove();
+                    showLevelSelect();
+                } else {
+                    // Se non ci sono crediti, mostra feedback sonoro e visivo
+                    playCoinRequiredSound(1);
+                    animateCreditHint(1);
+                }
+            });
         }
         function showAttractOrTopTen() {
+            // Alterna tra la schermata statica di attract (senza pulsante) e la Top Ten
             let showTop = false;
             attractInterval = setInterval(() => {
-                const attractDiv = document.getElementById('attractScreenCustom');
-                if (attractDiv) attractDiv.remove();
+                // rimuovi eventuali overlay temporanei
+                const attractDivCustom = document.getElementById('attractScreenCustom');
+                if (attractDivCustom) attractDivCustom.remove();
                 const topDiv = document.querySelector('.gameOver');
                 if (topDiv) topDiv.remove();
+
                 if (showTop && topTen.length > 0) {
+                    // mostra la classifica
                     showTopTen();
+                    // nascondi la statica
+                    const staticAttract = document.getElementById('attractScreen'); if (staticAttract) staticAttract.classList.add('hidden');
                 } else {
-                    showAttractScreen();
+                    // mostra la schermata statica di attract (senza pulsante)
+                    const staticAttract = document.getElementById('attractScreen'); if (staticAttract) staticAttract.classList.remove('hidden');
                 }
                 showTop = !showTop;
-            }, 3500);
-            showAttractScreen();
+            }, 4000);
+            // all'avvio mostra la schermata statica
+            const staticAttract = document.getElementById('attractScreen'); if (staticAttract) staticAttract.classList.remove('hidden');
         }
 
         window.onload = function () {
             showAttractOrTopTen();
+            // Assicuriamoci che il contatore crediti sulla schermata statica sia inizializzato
+            const asc = document.getElementById('attractStaticCredits'); if (asc) asc.textContent = (credits || 0);
+            const ac = document.getElementById('attractCredits'); if (ac) ac.textContent = (credits || 0);
+            // rendi cliccabile la schermata statica: apre la selezione solo se ci sono crediti
+            const staticAttractClick = document.getElementById('attractScreen');
+            if (staticAttractClick) {
+                staticAttractClick.style.cursor = 'pointer';
+                staticAttractClick.addEventListener('click', function () {
+                    if ((credits || 0) > 0) {
+                        clearInterval(attractInterval);
+                        staticAttractClick.classList.add('hidden');
+                        showLevelSelect();
+                    } else {
+                        addFloatingText(canvas.width / 2, canvas.height / 2 + 80, 'INSERISCI MONETA', '#ffcc00');
+                        if (soundEnabled) playTransitionSound();
+                    }
+                });
+            }
             // wire HUD sound toggle if present
             const hudBtn = document.getElementById('hudSoundToggle');
             if (hudBtn) {
