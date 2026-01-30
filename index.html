@@ -12,16 +12,18 @@
     <div id="gameContainer">
         <div id="attractScreen">
             <div class="title">BLOCK HUNTER</div>
-            <div class="instructions">
+            <div class="instructions" id="attractInstructions">
+                <!-- populated by applyTranslations() -->
                 FRECCE - MOVIMENTO<br>
                 SPAZIO - SPARA<br>
                 RECUPERA L'OGGETTO<br>
                 SCHIVA I BLOCCHI
             </div>
             <!-- Footer: mostra i crediti nella schermata statica iniziale (nessun pulsante qui) -->
-            <div style="position:absolute; bottom:24px; left:0; right:0; text-align:center; color:#fff; font-size:16px;">
-                CREDITI: <span id="attractStaticCredits">0</span>
+            <div class="credit-footer" style="position:absolute; bottom:24px; left:0; right:0; text-align:center;">
+                <span id="attractStaticCredits">CREDITI: 0</span>
             </div>
+            <div class="byline">by SpikeCode</div>
         </div>
 
         <div class="hud hidden" id="hud">
@@ -50,6 +52,89 @@
     <script src="js/game-config.js"></script>
     <script src="js/game-state.js"></script>
     <script>
+    // Language loader and helper
+    // Prefer a persisted user choice in localStorage (key: 'bh_lang'), fall back to GAME_CONFIG/default
+    const _persistedLang = (function(){ try { return localStorage.getItem('bh_lang'); } catch(e){ return null; } })();
+    const DEFAULT_LANG = _persistedLang || (window.GAME_CONFIG && window.GAME_CONFIG.DEFAULT_LANG) || 'en';
+        function loadDictionary(lang, cb) {
+            // If already loaded and same lang, call cb
+            if (window.DICT && window.DICT.lang === lang) {
+                if (cb) cb();
+                return;
+            }
+            const existing = document.querySelector(`script[data-dic]`);
+            if (existing) existing.remove();
+            const script = document.createElement('script');
+            script.src = `data/dic/${lang}.js`;
+            script.setAttribute('data-dic', lang);
+            script.onload = function () {
+                try { if (window.DICT && window.DICT.lang) console.log('Loaded DICT', window.DICT.lang); } catch (e) { }
+                if (cb) cb();
+            };
+            script.onerror = function () {
+                console.warn('Failed to load dictionary', lang, 'falling back to en');
+                if (lang !== 'en') loadDictionary('en', cb);
+                else if (cb) cb();
+            };
+            document.head.appendChild(script);
+        }
+
+        function applyTranslations() {
+            const D = window.DICT || {};
+            // HUD
+            const hud = document.getElementById('hud');
+            if (hud) {
+                hud.innerHTML = `
+                    <div>${D.score_label || 'SCORE'}: <span id="score">0</span></div>
+                    <div>${D.level_label || 'LEVEL'}: <span id="level">1</span></div>
+                    <div>${D.lives_label || 'LIVES'}: <span id="lives">3</span></div>
+                    <div>GEMS: <span id="gems">0</span>/<span id="gemsReq">20</span></div>
+                    <div>KEYS: <span id="keys">0</span></div>
+                    <div>OUTSIDE: <span id="outside">NO</span></div>
+                    <div>DYNAMITE: <span id="dynamiteCount">0</span>
+                        <div id="dynamiteBar" style="display:inline-block; vertical-align:middle; width:120px; height:12px; background:#222; border:1px solid #444; margin-left:8px;">
+                            <div id="dynamiteFill" style="height:100%; width:0%; background:#ff3333;"></div>
+                        </div>
+                    </div>
+                    <div>INVUL: <span id="invul">NO</span></div>
+                    <div>${D.credits_word || 'CREDITS'}: <span id="credits">0</span></div>
+                    <div><button id="hudSoundToggle" style="margin-top:6px; padding:4px 8px; font-size:12px; background:#111; color:#0ff; border:1px solid #0ff; cursor:pointer;">${window.soundEnabled ? (D.sound_on || 'SOUND: ON') : (D.sound_off || 'SOUND: OFF')}</button></div>
+                `;
+            }
+            // Update any visible credit footers now
+            const asc = document.getElementById('attractStaticCredits'); if (asc) asc.textContent = (credits && credits > 0) ? `${D.credits_word || 'CREDITS'}: ${credits}` : (D.insert_coin || 'INSERT COIN');
+            const ac = document.getElementById('attractCredits'); if (ac) ac.textContent = (credits && credits > 0) ? `${D.credits_word || 'CREDITS'}: ${credits}` : (D.insert_coin || 'INSERT COIN');
+            // Update attract-screen instructions if present
+            const instrDiv = document.getElementById('attractInstructions');
+            if (instrDiv) {
+                const lines = (D.instructions && Array.isArray(D.instructions)) ? D.instructions : null;
+                if (lines && lines.length) instrDiv.innerHTML = lines.join('<br>');
+            }
+        }
+        
+        // Load a level map defined as JS to avoid CORS (expects files under data/level/levelXY.js)
+        // The level file should set window.LEVEL_MAP = { cols, rows, map: [[tileKey,...],...], tileSize?: number }
+        function loadLevelMap(level, sublevel, cb) {
+            try { window.LEVEL_MAP = null; } catch (e) {}
+            const name = `level${level}${sublevel}`; // e.g. level10 for level=1 sublevel=0
+            const existing = document.querySelector(`script[data-level]`);
+            if (existing) existing.remove();
+            const script = document.createElement('script');
+            script.src = `data/level/${name}.js`;
+            script.setAttribute('data-level', name);
+            script.onload = function () {
+                // LEVEL_MAP should be set by the loaded file
+                setTimeout(() => { // small delay to ensure script executed
+                    if (window.LEVEL_MAP && window.LEVEL_MAP.map) {
+                        cb(window.LEVEL_MAP);
+                    } else {
+                        cb(null);
+                    }
+                }, 4);
+            };
+            script.onerror = function () { cb(null); };
+            document.head.appendChild(script);
+        }
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
         // Global size scale for all in-game objects (increase to make everything larger)
@@ -271,7 +356,61 @@
             spriteReady = false;
         };
         spriteSheet.src = 'images/sprite.png';
-        
+
+        // Additional tilesheet for floor/wall tiles (pavimentazione) as provided by the user
+        // images/tail.png assumed to be a 4x4 grid where rows/cols map to the floor/wall/hole tiles
+        const tailCols = 4, tailRows = 4;
+        let tailSheet = new Image();
+        let tailReady = false;
+        let tailCellW = 0, tailCellH = 0;
+        const TAIL_SHEET_MAP = {
+            // row 0: wall variants
+            wall1: { r: 0, c: 0 },
+            wall2: { r: 0, c: 1 },
+            wall3: { r: 0, c: 2 },
+            wall4: { r: 0, c: 3 },
+            // row 1: hole + sand variants
+            hole: { r: 1, c: 0 },
+            sand1: { r: 1, c: 1 },
+            sand2: { r: 1, c: 2 },
+            sand3: { r: 1, c: 3 },
+            // row 2
+            sand4: { r: 2, c: 0 },
+            sand5: { r: 2, c: 1 },
+            sandPile: { r: 2, c: 2 },
+            sand6: { r: 2, c: 3 },
+            // row 3
+            sand7: { r: 3, c: 0 },
+            sand8: { r: 3, c: 1 },
+            sand9: { r: 3, c: 2 },
+            sand10: { r: 3, c: 3 }
+        };
+        tailSheet.onload = function () {
+            tailCellW = Math.floor(tailSheet.width / tailCols);
+            tailCellH = Math.floor(tailSheet.height / tailRows);
+            tailReady = true;
+            console.log('tailSheet loaded', { w: tailSheet.width, h: tailSheet.height, cellW: tailCellW, cellH: tailCellH });
+        };
+        tailSheet.onerror = function () { tailReady = false; };
+        tailSheet.src = 'images/tail.png';
+
+        function drawFromTail(ctx, keyName, cx, cy, size, rotate = 0) {
+            if (!tailReady) return false;
+            const entry = TAIL_SHEET_MAP[keyName];
+            if (!entry) return false;
+            const pad = 1;
+            const sx = entry.c * tailCellW + pad;
+            const sy = entry.r * tailCellH + pad;
+            const sw = Math.max(4, tailCellW - pad * 2);
+            const sh = Math.max(4, tailCellH - pad * 2);
+            ctx.save();
+            ctx.translate(cx, cy);
+            if (rotate) ctx.rotate(rotate);
+            try { ctx.drawImage(tailSheet, sx, sy, sw, sh, -size / 2, -size / 2, size, size); } catch (e) { }
+            ctx.restore();
+            return true;
+        }
+
         function setupDoors() {
             doors = [
                 { x: scale(32), y: canvas.height / 2, open: false }, // sinistra
@@ -741,6 +880,8 @@
         // Se viene passato preselectPlayers (1 o 2), dopo che il giocatore sceglie la difficoltà
         // verrà pre-selezionato automaticamente il numero di giocatori corrispondente.
         function showLevelSelect(preselectPlayers) {
+            // stop attract/top-ten alternation while selection UI is active
+            try { clearInterval(attractInterval); } catch (e) { }
             const selectDiv = document.createElement('div');
             selectDiv.id = 'levelSelect';
             selectDiv.style.position = 'absolute';
@@ -754,11 +895,13 @@
             selectDiv.style.justifyContent = 'center';
             selectDiv.style.alignItems = 'center';
             selectDiv.style.zIndex = '20';
+            // use dictionary for translated labels where available
+            const D = window.DICT || {};
             selectDiv.innerHTML = `
-                <div class="title" style="margin-bottom:40px;">SELEZIONA LIVELLO</div>
-                <button class="levelButton" data-diff="Beginner">BEGINNER</button>
-                <button class="levelButton" data-diff="Medium">MEDIUM</button>
-                <button class="levelButton" data-diff="Expert">EXPERT</button>
+                <div class="title" style="margin-bottom:40px;">${D.level_select_title || 'SELECT LEVEL'}</div>
+                <button class="levelButton" data-diff="Beginner">${D.beginner || 'BEGINNER'}</button>
+                <button class="levelButton" data-diff="Medium">${D.medium || 'MEDIUM'}</button>
+                <button class="levelButton" data-diff="Expert">${D.expert || 'EXPERT'}</button>
             `;
             document.getElementById('gameContainer').appendChild(selectDiv);
             // Stile pulsanti senza bordo
@@ -822,6 +965,8 @@
                         try { selectDiv.remove(); } catch (e) { }
                         try { style.remove(); } catch (e) { }
                         document.removeEventListener('keydown', levelKeyHandler);
+                        // restart attract/top-ten alternation when selection is cancelled
+                        showAttractOrTopTen();
                     }
                 }
             };
@@ -837,18 +982,28 @@
                     }
                     configureStage();
                     // show player count chooser
+                    // localized players/options panel
+                    const D2 = window.DICT || {};
                     selectDiv.innerHTML = `
-                        <div class="title" style="margin-bottom:20px;">PLAYERS & OPTIONS</div>
-                        <div style="margin-bottom:10px;">Credits: <span id="selectCredits">${credits}</span></div>
-                        <div style="margin-bottom:10px;"><button id="soundToggle" class="optBtn">SOUND: ${soundEnabled ? 'ON' : 'OFF'}</button></div>
-                        <div style="margin-bottom:10px;">DYNAMITE PER LIVELLO: ${DYNAMITE_MAX}</div>
-                        <button class="playerBtn" data-p="1">1 PLAYER</button>
-                        <button class="playerBtn" data-p="2">2 PLAYERS (2 COINS)</button>
-                        <div style="margin-top:20px;"><button class="startNow">START</button></div>
+                        <div class="title" style="margin-bottom:20px;">${D2.players_options || 'PLAYERS & OPTIONS'}</div>
+                        <div style="margin-bottom:10px;">${D2.credits_label || 'Credits'}: <span id="selectCredits">${credits}</span></div>
+                        <div style="margin-bottom:10px;"><button id="soundToggle" class="optBtn">${soundEnabled ? (D2.sound_on || 'SOUND: ON') : (D2.sound_off || 'SOUND: OFF')}</button></div>
+                        <div style="margin-bottom:10px;">${D2.dynamite_per_level || 'DYNAMITE PER LEVEL'}: ${DYNAMITE_MAX}</div>
+                        <button class="playerBtn" data-p="1">${D2.players_1 || '1 PLAYER'}</button>
+                        <button class="playerBtn" data-p="2">${D2.players_2 || '2 PLAYERS (2 COINS)'}</button>
+                        <div style="margin-top:20px;"><button class="startNow">${D2.start || 'START'}</button></div>
                     `;
-                    // wire buttons
+                    // wire buttons and disable 2-player when not enough credits
                     selectDiv.querySelectorAll('.playerBtn').forEach(pbtn => {
+                        const pcount = parseInt(pbtn.getAttribute('data-p'));
+                        if (pcount === 2 && (credits || 0) < 2) {
+                            pbtn.disabled = true;
+                            pbtn.style.opacity = '0.6';
+                            pbtn.title = 'Serve 2 crediti';
+                            pbtn.style.cursor = 'not-allowed';
+                        }
                         pbtn.onclick = function () {
+                            if (pbtn.disabled) return;
                             numPlayers = parseInt(pbtn.getAttribute('data-p'));
                             // highlight selection
                             selectDiv.querySelectorAll('.playerBtn').forEach(x => x.style.opacity = '0.6');
@@ -876,11 +1031,11 @@
                     startNow.onclick = function () {
                         // require credits equal to number of players (1 or 2)
                         if (credits < numPlayers) {
-                                // feedback sonoro/visivo quando si clicca START senza crediti
-                                playCoinRequiredSound(numPlayers);
-                                animateCreditHint(numPlayers);
-                                return;
-                            }
+                            // feedback sonoro/visivo quando si clicca START senza crediti
+                            playCoinRequiredSound(numPlayers);
+                            animateCreditHint(numPlayers);
+                            return;
+                        }
                         credits -= numPlayers;
                         // update selection credit display if present
                         const sc = document.getElementById('selectCredits'); if (sc) sc.textContent = credits;
@@ -919,22 +1074,66 @@
             inTransition = false;
             // configure initial stage (sets doors according to difficulty)
             configureStage();
-            levelKeys = [];
-            doorCloseTimer = 0;
+            // load a predefined level map (JS) or fallback to generated floor map
+            const ib = getInnerBounds();
+            loadLevelMap(gameLevel, subLevel, function (lm) {
+                if (lm && lm.map && Array.isArray(lm.map)) {
+                    // use provided map; allow optional tileSize and origin offsets
+                    const tileSizeProvided = lm.tileSize || (tailReady && tailCellW ? Math.max(8, Math.round(Math.min(tailCellW, tailCellH) * (SIZE_SCALE || 1))) : (spriteReady && spriteCellW ? Math.max(8, Math.round(Math.min(spriteCellW, spriteCellH) * (SIZE_SCALE || 1))) : Math.max(16, Math.round(scale(32)))));
+                    const originX = (typeof lm.originX === 'number') ? (ib.minX + lm.originX) : ib.minX;
+                    const originY = (typeof lm.originY === 'number') ? (ib.minY + lm.originY) : ib.minY;
+                    const cols = lm.cols || (lm.map[0] ? lm.map[0].length : 0);
+                    const rows = lm.rows || lm.map.length;
+                    window.FLOOR_MAP = { originX: originX, originY: originY, cols: cols, rows: rows, tileSize: tileSizeProvided, map: lm.map };
+                } else {
+                    // fallback: procedurally generate a floor map as before
+                    try {
+                        // compute tileSize consistent with gameLoop logic (use tailCell when available)
+                        let fs;
+                        if (tailReady && tailCellW && tailCellH) fs = Math.max(8, Math.round(Math.min(tailCellW, tailCellH) * (SIZE_SCALE || 1)));
+                        else if (spriteReady && spriteCellW && spriteCellH) fs = Math.max(8, Math.round(Math.min(spriteCellW, spriteCellH) * (SIZE_SCALE || 1)));
+                        else fs = Math.max(16, Math.round(scale(32)));
+                        const w = Math.max(0, ib.maxX - ib.minX);
+                        const h = Math.max(0, ib.maxY - ib.minY);
+                        const cols = Math.max(1, Math.floor(w / fs));
+                        const rows = Math.max(1, Math.floor(h / fs));
+                        const map = [];
+                        const sandKeys = ['sand1','sand2','sand3','sand4','sand5','sand6','sand7','sand8','sand9','sand10','sandPile'];
+                        for (let r = 0; r < rows; r++) {
+                            const row = [];
+                            for (let c = 0; c < cols; c++) {
+                                // small chance of hole tile (e.g. 3%)
+                                if (Math.random() < 0.03) row.push('hole');
+                                else {
+                                    const idx = (r * cols + c) % sandKeys.length;
+                                    row.push(sandKeys[idx]);
+                                }
+                            }
+                            map.push(row);
+                        }
+                        window.FLOOR_MAP = { originX: ib.minX, originY: ib.minY, cols: cols, rows: rows, tileSize: fs, map: map };
+                    } catch (e) { window.FLOOR_MAP = null; }
+                }
+                // continue init after floor map ready
+                levelKeys = [];
+                doorCloseTimer = 0;
 
-            // Rimuovi il div gameOver se presente
-            const oldGameOver = document.querySelector('.gameOver');
-            if (oldGameOver) {
-                oldGameOver.remove();
-            }
+                // Rimuovi il div gameOver se presente
+                const oldGameOver = document.querySelector('.gameOver');
+                if (oldGameOver) {
+                    oldGameOver.remove();
+                }
 
-            // hide any attract overlays with a short fade, then start
-            hideAttractOverlaysWithFade(() => {
-                document.getElementById('hud').classList.remove('hidden');
-                spawnTarget();
-                updateHUD();
-                gameLoop();
+                // hide any attract overlays with a short fade, then start
+                hideAttractOverlaysWithFade(() => {
+                    document.getElementById('hud').classList.remove('hidden');
+                    spawnTarget();
+                    updateHUD();
+                    gameLoop();
+                });
             });
+            // NOTE: the rest of startGame's continuation will be executed asynchronously
+            return; // we already started the continuation in the callback
         }
 
         // Dissolvi e rimuovi le overlay di attrazione (statiche e dinamiche), poi chiama cb
@@ -955,6 +1154,8 @@
             }
 
             els.forEach(el => {
+                // if overlay registered a cleanup handler (e.g. lang selector), call it
+                try { if (el.cleanupLang) el.cleanupLang(); } catch (e) { }
                 el.classList.add('fade-out');
             });
 
@@ -1112,7 +1313,7 @@
             const asc = document.getElementById('attractStaticCredits'); if (asc) els.push(asc);
             const insetBtn = document.getElementById('insertCoinBtn'); if (insetBtn) els.push(insetBtn);
             // create a temporary popup in the center as well
-            addFloatingText(canvas.width / 2, canvas.height / 2 + 80, `INSERISCI ${required} COIN${required>1?'S':''}`, '#ffcc00');
+            addFloatingText(canvas.width / 2, canvas.height / 2 + 80, `INSERISCI ${required} COIN${required > 1 ? 'S' : ''}`, '#ffcc00');
 
             els.forEach(el => {
                 try {
@@ -1210,21 +1411,36 @@
                     const h = Math.max(0, _ib_draw.maxY - _ib_draw.minY);
                     const cols = Math.max(1, Math.ceil(w / tileSize));
                     const rows = Math.max(1, Math.ceil(h / tileSize));
-                    // Top and bottom rows
+                    // Top and bottom rows (use tail wall tiles if available, otherwise previous sprite 'wall')
                     for (let i = 0; i < cols; i++) {
                         const cx = _ib_draw.minX + i * tileSize + tileSize / 2;
                         const topY = _ib_draw.minY + tileSize / 2;
                         const bottomY = _ib_draw.maxY - tileSize / 2;
-                        drawFromSheet(ctx, 'wall', cx, topY, tileSize, 0);
-                        drawFromSheet(ctx, 'wall', cx, bottomY, tileSize, 0);
+                        if (tailReady && drawFromTail) {
+                            // pick a wall variant in a tiled pattern for variety
+                            const idx = i % 4;
+                            const wkeys = ['wall1','wall2','wall3','wall4'];
+                            drawFromTail(ctx, wkeys[idx], cx, topY, tileSize, 0) || drawFromSheet(ctx, 'wall', cx, topY, tileSize, 0);
+                            drawFromTail(ctx, wkeys[idx], cx, bottomY, tileSize, 0) || drawFromSheet(ctx, 'wall', cx, bottomY, tileSize, 0);
+                        } else {
+                            drawFromSheet(ctx, 'wall', cx, topY, tileSize, 0);
+                            drawFromSheet(ctx, 'wall', cx, bottomY, tileSize, 0);
+                        }
                     }
                     // Left and right columns
                     for (let j = 0; j < rows; j++) {
                         const cy = _ib_draw.minY + j * tileSize + tileSize / 2;
                         const leftX = _ib_draw.minX + tileSize / 2;
                         const rightX = _ib_draw.maxX - tileSize / 2;
-                        drawFromSheet(ctx, 'wall', leftX, cy, tileSize, 0);
-                        drawFromSheet(ctx, 'wall', rightX, cy, tileSize, 0);
+                        if (tailReady && drawFromTail) {
+                            const idx = j % 4;
+                            const wkeys = ['wall1','wall2','wall3','wall4'];
+                            drawFromTail(ctx, wkeys[idx], leftX, cy, tileSize, 0) || drawFromSheet(ctx, 'wall', leftX, cy, tileSize, 0);
+                            drawFromTail(ctx, wkeys[idx], rightX, cy, tileSize, 0) || drawFromSheet(ctx, 'wall', rightX, cy, tileSize, 0);
+                        } else {
+                            drawFromSheet(ctx, 'wall', leftX, cy, tileSize, 0);
+                            drawFromSheet(ctx, 'wall', rightX, cy, tileSize, 0);
+                        }
                     }
                 } else {
                     // subtle wall border fallback
@@ -1276,7 +1492,7 @@
             }
 
             // If outside, keep player constrained to the outer band (snap to nearest edge band)
-                if (isOutside) {
+            if (isOutside) {
                 const band = OUTER_BAND;
                 // keep within canvas but prefer the band distance from edges
                 player.x = Math.max(0, Math.min(canvas.width - player.width, player.x));
@@ -1299,7 +1515,7 @@
                 }
             }
 
-            // Draw player with rotation based on movement angle
+                // Draw player with rotation based on movement angle
             ctx.font = '32px Arial';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
@@ -1308,6 +1524,30 @@
             ctx.lineWidth = 2;
             const centerX = player.x + player.width / 2;
             const centerY = player.y + player.height / 2;
+            // Check fall into hole (tile 'hole' from FLOOR_MAP)
+            try {
+                if (window.FLOOR_MAP && !playerInvulnerable) {
+                    const fm = window.FLOOR_MAP;
+                    const gx = Math.floor((centerX - fm.originX) / fm.tileSize);
+                    const gy = Math.floor((centerY - fm.originY) / fm.tileSize);
+                    if (gx >= 0 && gx < fm.cols && gy >= 0 && gy < fm.rows) {
+                        const tk = fm.map[gy][gx];
+                        if (tk === 'hole') {
+                            // player falls into hole
+                            lives--;
+                            createParticles(player.x + player.width / 2, player.y + player.height / 2, '#ff0000');
+                            playerInvulnerable = true;
+                            invulTimer = Math.max(90, Math.floor(DOUBLOON_DURATION_FRAMES / 2));
+                            // respawn player to a safe location (center-bottom of inner bounds)
+                            const ib = getInnerBounds();
+                            player.x = Math.max(ib.minX + 8, Math.min(ib.maxX - player.width - 8, (ib.minX + ib.maxX) / 2 - player.width / 2));
+                            player.y = ib.maxY - player.height - 8;
+                            updateHUD();
+                            if (lives <= 0) { endGame(); return; }
+                        }
+                    }
+                }
+            } catch (e) { }
             ctx.save();
             ctx.translate(centerX, centerY);
             // If angle is NaN (no movement yet), default to 0
@@ -1316,6 +1556,30 @@
             // draw pixel-player centered at 0,0 (after translate/rotate)
             drawPlayerSpriteAt(ctx, 0, 0, Math.max(player.width, player.height), player.color);
             ctx.restore();
+
+            // Draw floor tiles (if FLOOR_MAP is present) — must happen after walls so floor is under objects
+            try {
+                if (window.FLOOR_MAP) {
+                    const fm = window.FLOOR_MAP;
+                    for (let ry = 0; ry < fm.rows; ry++) {
+                        for (let cxIdx = 0; cxIdx < fm.cols; cxIdx++) {
+                            const tk = fm.map[ry][cxIdx] || 'sand1';
+                            const drawX = fm.originX + cxIdx * fm.tileSize + fm.tileSize / 2;
+                            const drawY = fm.originY + ry * fm.tileSize + fm.tileSize / 2;
+                            // prefer tail tiles for floor
+                            if (tailReady && drawFromTail) {
+                                drawFromTail(ctx, tk, drawX, drawY, fm.tileSize, 0) || drawFromSheet(ctx, 'rock', drawX, drawY, fm.tileSize, 0);
+                            } else if (spriteReady && drawFromSheet) {
+                                // fallback: use a generic tile if available
+                                drawFromSheet(ctx, 'rock', drawX, drawY, fm.tileSize, 0);
+                            } else {
+                                // programmatic fallback: sandy rectangle
+                                ctx.fillStyle = '#bfa57a'; ctx.fillRect(drawX - fm.tileSize/2, drawY - fm.tileSize/2, fm.tileSize, fm.tileSize);
+                            }
+                        }
+                    }
+                }
+            } catch(e) { }
 
             // Aggiorna e disegna il target (gemma)
             target.currentLife++;
@@ -2071,6 +2335,28 @@
             if (gemsReqEl) gemsReqEl.textContent = GEMS_PER_STAGE;
             const creditsEl = document.getElementById('credits');
             if (creditsEl) creditsEl.textContent = credits;
+            // update any attract overlays' credit displays as well
+            const asc = document.getElementById('attractStaticCredits');
+            const D = window.DICT || {};
+            if (asc) {
+                if ((credits || 0) > 0) {
+                    asc.textContent = `${D.credits_word || 'CREDITS'}: ${credits}`;
+                    asc.classList.remove('insert-prompt');
+                } else {
+                    asc.textContent = D.insert_coin_short || D.insert_coin || 'INSERT COIN';
+                    asc.classList.add('insert-prompt');
+                }
+            }
+            const ac = document.getElementById('attractCredits');
+            if (ac) {
+                if ((credits || 0) > 0) {
+                    ac.textContent = `${D.credits_word || 'CREDITS'}: ${credits}`;
+                    ac.classList.remove('insert-prompt');
+                } else {
+                    ac.textContent = D.insert_coin_short || D.insert_coin || 'INSERT COIN';
+                    ac.classList.add('insert-prompt');
+                }
+            }
             const dynCount = document.getElementById('dynamiteCount');
             const dynFill = document.getElementById('dynamiteFill');
             if (dynCount) dynCount.textContent = playerDynamite;
@@ -2106,12 +2392,13 @@
             const contDiv = document.createElement('div');
             contDiv.className = 'gameOver';
             contDiv.id = 'continueDiv';
+            const Dcont = window.DICT || {};
             contDiv.innerHTML = `
-                <h2>GAME OVER</h2>
-                <p>SCORE: ${score}</p>
-                <p>INSERT COIN TO CONTINUE</p>
-                <p id="continueTimer">TIME: ${Math.ceil(CONTINUE_FRAMES / 60)}</p>
-                <p>Press '5' to insert coin</p>
+                <h2>${Dcont.game_over || 'GAME OVER'}</h2>
+                <p>${Dcont.score_label || 'SCORE'}: ${score}</p>
+                <p>${Dcont.insert_coin_to_continue || 'INSERT COIN TO CONTINUE'}</p>
+                <p id="continueTimer">${Dcont.continue_time_label || 'TIME'}: ${Math.ceil(CONTINUE_FRAMES / 60)}</p>
+                <p>${Dcont.press_5_insert || "Press '5' to insert coin"}</p>
             `;
             document.getElementById('gameContainer').appendChild(contDiv);
             continueDiv = contDiv;
@@ -2174,12 +2461,17 @@
         function showTopTen() {
             const topDiv = document.createElement('div');
             topDiv.className = 'gameOver';
-            let html = `<h2>TOP TEN</h2><table style="margin:auto; color:#fff; font-size:18px;">`;
+            const D = window.DICT || {};
+            let html = `<h2>${D.top_ten || 'TOP TEN'}</h2><table style="margin:auto; color:#fff; font-size:18px;">`;
             html += `<tr><th>#</th><th>INIZIALI</th><th>PUNTI</th><th>DIFFICOLTÀ</th></tr>`;
             topTen.forEach((entry, idx) => {
                 html += `<tr><td>${idx + 1}</td><td>${entry.name}</td><td>${entry.score}</td><td>${entry.diff}</td></tr>`;
             });
             html += `</table><button class="startButton" onclick="location.reload()">RITORNA</button>`;
+            // add a persistent credit footer so the INSERT COIN message/credits remain visible
+            html += `<div class="credit-footer" style="position:absolute; bottom:24px; left:0; right:0; text-align:center;">
+                        <span id="attractCredits">${(D.credits_word || 'CREDITS')}: ${credits || 0}</span>
+                    </div>`;
             topDiv.innerHTML = html;
             document.getElementById('gameContainer').appendChild(topDiv);
         }
@@ -2224,6 +2516,13 @@
                 // Positive feedback: sound + small animation
                 if (soundEnabled) playCoinInsertSound();
                 animateCreditHint(1);
+                // After inserting a coin while in attract state, open player selection immediately
+                if (gameState === 'attract') {
+                    try { clearInterval(attractInterval); } catch (e) { }
+                    const ad = document.getElementById('attractScreenCustom'); if (ad) { try { if (ad.cleanupLang) ad.cleanupLang(); } catch (e) { } ad.remove(); }
+                    const staticAt = document.getElementById('attractScreen'); if (staticAt) staticAt.classList.add('hidden');
+                    showLevelSelect();
+                }
                 // If continue overlay present and gameOver, allow immediate continue
                 if (continueDiv && gameState === 'gameOver') {
                     // consume one credit to continue
@@ -2352,18 +2651,123 @@
             attractDiv.style.justifyContent = 'center';
             attractDiv.style.alignItems = 'center';
             attractDiv.style.zIndex = '30';
+            const D = window.DICT || {};
             attractDiv.innerHTML = `
-        <div class="title">BLOCK HUNTER</div>
-        <div style="font-size:28px; color:#ffff00; margin:20px;">INSERT COIN</div>
+        <div class="title">${D.title || 'BLOCK HUNTER'}</div>
+        <div style="font-size:28px; color:#ffff00; margin:20px;">${D.insert_coin || 'INSERT COIN'}</div>
+        <!-- small demo canvas showing an autoplayed snippet of gameplay (doesn't affect real game state) -->
+        <div style="margin:12px;">
+            <canvas id="demoCanvas" width="320" height="180" style="width:480px; height:270px; image-rendering:pixelated; border:2px solid rgba(255,255,255,0.05);"></canvas>
+        </div>
+        <!-- language selector (pixel flags) -->
+        <div class="lang-selector" id="langSelector">
+                <!-- increased canvas resolution for crisper pixel flags (32x22) -->
+                <div class="lang-flag" data-lang="en"><canvas id="flag_en" width="32" height="22"></canvas><div class="lang-label">EN</div></div>
+                <div class="lang-flag" data-lang="it"><canvas id="flag_it" width="32" height="22"></canvas><div class="lang-label">IT</div></div>
+                <div class="lang-flag" data-lang="fr"><canvas id="flag_fr" width="32" height="22"></canvas><div class="lang-label">FR</div></div>
+        </div>
         <!-- Footer con contatore crediti e pulsante inserisci moneta -->
         <div style="position:absolute; bottom:40px; left:0; right:0; display:flex; justify-content:center; gap:12px; align-items:center;">
-            <div style="color:#fff; font-size:18px;">CREDITI: <span id="attractCredits">0</span></div>
-            <button class="startButton" id="insertCoinBtn">INSERISCI MONETA</button>
+            <div class="credit-footer">${D.credits_word || 'CREDITS'}: <span id="attractCredits">0</span></div>
+            <button class="startButton" id="insertCoinBtn">${D.insert_coin_btn || 'INSERT COIN'}</button>
         </div>
+        <div class="byline">by SpikeCode</div>
     `;
             document.getElementById('gameContainer').appendChild(attractDiv);
+                // start small demo that runs while attract overlay is visible
+                const demoCanvas = attractDiv.querySelector('#demoCanvas');
+                if (demoCanvas) startAttractDemo(demoCanvas, attractDiv);
             // Assicuriamoci che il contatore mostri il valore corrente dei crediti
             const _acInit = document.getElementById('attractCredits'); if (_acInit) _acInit.textContent = (credits || 0);
+            // wire pixel-flag selector: render flags, handle left/right and clicks
+            const LANGS = ['en', 'it', 'fr'];
+            let selectedLangIndex = Math.max(0, LANGS.indexOf((window.DICT && window.DICT.lang) || DEFAULT_LANG));
+            function drawFlag(canvas, lang) {
+                const ctx = canvas.getContext('2d');
+                ctx.imageSmoothingEnabled = false;
+                const W = canvas.width; const H = canvas.height;
+                // clear
+                ctx.clearRect(0, 0, W, H);
+                if (lang === 'it') {
+                    // vertical tricolor: green white red
+                    const w3 = Math.floor(W / 3);
+                    ctx.fillStyle = '#088A29'; ctx.fillRect(0, 0, w3, H);
+                    ctx.fillStyle = '#FFFFFF'; ctx.fillRect(w3, 0, w3, H);
+                    ctx.fillStyle = '#CE2B37'; ctx.fillRect(w3 * 2, 0, W - w3 * 2, H);
+                } else if (lang === 'fr') {
+                    const w3 = Math.floor(W / 3);
+                    ctx.fillStyle = '#0055A4'; ctx.fillRect(0, 0, w3, H);
+                    ctx.fillStyle = '#FFFFFF'; ctx.fillRect(w3, 0, w3, H);
+                    ctx.fillStyle = '#EF4135'; ctx.fillRect(w3 * 2, 0, W - w3 * 2, H);
+                } else {
+                    // improved Union Jack approximation using strokes for diagonals and rectangles for crosses
+                    ctx.fillStyle = '#012169'; ctx.fillRect(0, 0, W, H);
+                    // white diagonals
+                    ctx.lineCap = 'square';
+                    ctx.strokeStyle = '#FFFFFF';
+                    ctx.lineWidth = Math.max(1, Math.floor(Math.min(W, H) * 0.28));
+                    ctx.beginPath(); ctx.moveTo(-W, -W); ctx.lineTo(W * 2, W * 2); ctx.stroke();
+                    ctx.beginPath(); ctx.moveTo(W * 2, -W); ctx.lineTo(-W, W * 2); ctx.stroke();
+                    // red diagonal thinner
+                    ctx.strokeStyle = '#C8102E';
+                    ctx.lineWidth = Math.max(1, Math.floor(Math.min(W, H) * 0.12));
+                    ctx.beginPath(); ctx.moveTo(-W, -W); ctx.lineTo(W * 2, W * 2); ctx.stroke();
+                    ctx.beginPath(); ctx.moveTo(W * 2, -W); ctx.lineTo(-W, W * 2); ctx.stroke();
+                    // white cross (horizontal + vertical)
+                    const whiteCross = Math.max(1, Math.floor(Math.min(W, H) * 0.26));
+                    ctx.fillStyle = '#FFFFFF';
+                    ctx.fillRect(Math.floor(W / 2 - whiteCross / 2), 0, whiteCross, H);
+                    ctx.fillRect(0, Math.floor(H / 2 - whiteCross / 2), W, whiteCross);
+                    // red cross narrower on top
+                    const redCross = Math.max(1, Math.floor(Math.min(W, H) * 0.12));
+                    ctx.fillStyle = '#C8102E';
+                    ctx.fillRect(Math.floor(W / 2 - redCross / 2), 0, redCross, H);
+                    ctx.fillRect(0, Math.floor(H / 2 - redCross / 2), W, redCross);
+                }
+            }
+
+            function updateLangUI() {
+                const boxes = attractDiv.querySelectorAll('.lang-flag');
+                boxes.forEach((b, idx) => {
+                    if (idx === selectedLangIndex) b.classList.add('selected'); else b.classList.remove('selected');
+                });
+            }
+
+            function applySelectedLanguage() {
+                const lang = LANGS[selectedLangIndex];
+                try { localStorage.setItem('bh_lang', lang); } catch (e) { /* ignore */ }
+                loadDictionary(lang, () => { applyTranslations(); });
+            }
+
+            // render flags and wire interactions
+            LANGS.forEach((l, i) => {
+                const c = document.getElementById('flag_' + l);
+                if (c) drawFlag(c, l);
+                const box = attractDiv.querySelector(`.lang-flag[data-lang="${l}"]`);
+                if (box) {
+                    box.addEventListener('click', function (ev) {
+                        selectedLangIndex = i; updateLangUI(); applySelectedLanguage();
+                    });
+                }
+            });
+            updateLangUI();
+
+            // keyboard navigation while attract overlay is present
+            function langKeyHandler(ev) {
+                if (!document.body.contains(attractDiv)) return;
+                if (ev.key === 'ArrowLeft' || ev.key === 'ArrowRight') {
+                    ev.preventDefault();
+                    if (ev.key === 'ArrowLeft') selectedLangIndex = (selectedLangIndex - 1 + LANGS.length) % LANGS.length;
+                    else selectedLangIndex = (selectedLangIndex + 1) % LANGS.length;
+                    updateLangUI();
+                    applySelectedLanguage();
+                }
+            }
+            document.addEventListener('keydown', langKeyHandler);
+            // ensure we remove the handler when attract overlay is removed
+            attractDiv.cleanupLang = function () { document.removeEventListener('keydown', langKeyHandler); };
+            // Demo runner cleanup placeholder
+            attractDiv.demoStop = null;
             // Pulsante "inserisci moneta": incrementa crediti e aggiorna HUD/overlay
             const insertBtn = document.getElementById('insertCoinBtn');
             if (insertBtn) {
@@ -2376,6 +2780,13 @@
                     // Play coin inserted sound + small animation
                     if (soundEnabled) playCoinInsertSound();
                     animateCreditHint(1);
+                    // After inserting a coin on the attract screen, immediately go to player selection
+                    // and stop the attract/top-ten alternation.
+                    try { clearInterval(attractInterval); } catch (e) { }
+                    // stop demo if running, then remove custom attract overlay and open level/player selection
+                    const ad = document.getElementById('attractScreenCustom'); if (ad) { try { if (ad.demoStop) ad.demoStop(); } catch(e){} ad.remove(); }
+                    const staticAt = document.getElementById('attractScreen'); if (staticAt) staticAt.classList.add('hidden');
+                    showLevelSelect();
                 };
             }
             // Clic sull'overlay (fuori dal pulsante) apre la selezione livelli solo se ci sono crediti
@@ -2385,6 +2796,8 @@
                 if ((credits || 0) > 0) {
                     clearInterval(attractInterval);
                     const topDiv = document.querySelector('.gameOver'); if (topDiv) topDiv.remove();
+                    try { if (attractDiv && attractDiv.cleanupLang) attractDiv.cleanupLang(); } catch (e) { }
+                    try { if (attractDiv && attractDiv.demoStop) attractDiv.demoStop(); } catch (e) { }
                     attractDiv.remove();
                     showLevelSelect();
                 } else {
@@ -2404,22 +2817,27 @@
                 const topDiv = document.querySelector('.gameOver');
                 if (topDiv) topDiv.remove();
 
+                // Always keep the static attract visible (it contains the persistent credit footer).
+                // When showing Top Ten we overlay it on top of the static attract so the CREDITI display
+                // remains visible at the bottom as requested.
+                const staticAttract = document.getElementById('attractScreen'); if (staticAttract) staticAttract.classList.remove('hidden');
                 if (showTop && topTen.length > 0) {
-                    // mostra la classifica
+                    // mostra la classifica (overlay) - static attract remains visible underneath
                     showTopTen();
-                    // nascondi la statica
-                    const staticAttract = document.getElementById('attractScreen'); if (staticAttract) staticAttract.classList.add('hidden');
                 } else {
-                    // mostra la schermata statica di attract (senza pulsante)
-                    const staticAttract = document.getElementById('attractScreen'); if (staticAttract) staticAttract.classList.remove('hidden');
+                    // ensure any previous top-ten overlay removed (we already removed above)
                 }
                 showTop = !showTop;
             }, 4000);
-            // all'avvio mostra la schermata statica
-            const staticAttract = document.getElementById('attractScreen'); if (staticAttract) staticAttract.classList.remove('hidden');
+            // all'avvio: load default dictionary then show attract
+            loadDictionary(DEFAULT_LANG, () => {
+                applyTranslations();
+                const staticAttract = document.getElementById('attractScreen'); if (staticAttract) staticAttract.classList.remove('hidden');
+            });
         }
 
         window.onload = function () {
+            // after dictionary loaded (see showAttractOrTopTen), start the alternation
             showAttractOrTopTen();
             // Assicuriamoci che il contatore crediti sulla schermata statica sia inizializzato
             const asc = document.getElementById('attractStaticCredits'); if (asc) asc.textContent = (credits || 0);
@@ -2434,22 +2852,105 @@
                         staticAttractClick.classList.add('hidden');
                         showLevelSelect();
                     } else {
-                        addFloatingText(canvas.width / 2, canvas.height / 2 + 80, 'INSERISCI MONETA', '#ffcc00');
+                        addFloatingText(canvas.width / 2, canvas.height / 2 + 80, (window.DICT && window.DICT.insert_coin_short) || 'INSERT COIN', '#ffcc00');
                         if (soundEnabled) playTransitionSound();
                     }
                 });
+            }
+
+            // --- demo implementation: simple autonomous visual demo on a small canvas ---
+            function startAttractDemo(canvas, container) {
+                const ctx = canvas.getContext('2d');
+                let raf = null;
+                // demo state (isolated from real game state)
+                const demo = {
+                    w: canvas.width,
+                    h: canvas.height,
+                    player: { x: 40, y: 140, vx: 1.3, vy: 0, size: 12, cooldown: 0 },
+                    bullets: [],
+                    pickups: [],
+                    tick: 0
+                };
+
+                function spawnPickup() {
+                    demo.pickups.push({ x: 20 + Math.random() * (demo.w - 40), y: 20 + Math.random() * (demo.h - 60), size: 8, life: 600 });
+                }
+
+                // simple AI: move horizontally, bounce, occasionally jump vertically and shoot
+                function step() {
+                    demo.tick++;
+                    // spawn occasionally
+                    if (demo.tick % 180 === 0 && demo.pickups.length < 4) spawnPickup();
+                    // move player
+                    const p = demo.player;
+                    p.x += p.vx;
+                    if (p.x < 12 || p.x > demo.w - 12) p.vx *= -1;
+                    // small vertical bob
+                    p.y = 120 + Math.sin(demo.tick / 16) * 8;
+                    // shooting
+                    if (p.cooldown > 0) p.cooldown--;
+                    if (Math.random() < 0.02 && p.cooldown === 0) {
+                        demo.bullets.push({ x: p.x + 6 * Math.sign(p.vx||1), y: p.y, vx: 2 * Math.sign(p.vx||1), life: 80 });
+                        p.cooldown = 30 + Math.floor(Math.random() * 30);
+                    }
+                    // update bullets
+                    for (let i = demo.bullets.length - 1; i >= 0; i--) {
+                        const b = demo.bullets[i]; b.x += b.vx; b.life--; if (b.life <= 0) demo.bullets.splice(i, 1);
+                    }
+                    // pickup collisions
+                    for (let i = demo.pickups.length - 1; i >= 0; i--) {
+                        const pk = demo.pickups[i]; pk.life--;
+                        const dx = pk.x - p.x, dy = pk.y - p.y; if (dx * dx + dy * dy < (pk.size + p.size) * (pk.size + p.size)) {
+                            // collect: remove and create small effect
+                            demo.pickups.splice(i, 1);
+                            // small burst of particles - represented as quick bullets in opposite direction
+                            for (let j = 0; j < 6; j++) demo.bullets.push({ x: pk.x, y: pk.y, vx: (Math.random() - 0.5) * 3, life: 30 + Math.random() * 30 });
+                        }
+                        if (pk.life <= 0) demo.pickups.splice(i, 1);
+                    }
+                }
+
+                function draw() {
+                    // background
+                    ctx.fillStyle = '#00102a'; ctx.fillRect(0, 0, demo.w, demo.h);
+                    // arena border
+                    ctx.strokeStyle = '#004466'; ctx.lineWidth = 2; ctx.strokeRect(6, 6, demo.w - 12, demo.h - 12);
+                    // pickups
+                    for (const pk of demo.pickups) {
+                        ctx.fillStyle = '#ffd166'; ctx.beginPath(); ctx.arc(pk.x, pk.y, pk.size / 2, 0, Math.PI * 2); ctx.fill();
+                    }
+                    // player
+                    const p = demo.player;
+                    ctx.fillStyle = '#66ff66'; ctx.fillRect(p.x - p.size/2, p.y - p.size/2, p.size, p.size);
+                    // bullets/particles
+                    for (const b of demo.bullets) { ctx.fillStyle = '#ff9966'; ctx.fillRect(b.x - 2, b.y - 2, 4, 4); }
+                    // HUD small
+                    ctx.fillStyle = '#ffffff'; ctx.font = '10px monospace'; ctx.fillText('DEMO', 8, 14);
+                }
+
+                function loop() {
+                    step(); draw(); raf = requestAnimationFrame(loop);
+                }
+
+                // start
+                raf = requestAnimationFrame(loop);
+
+                // expose stop function on container so caller can cancel
+                container.demoStop = function () {
+                    try { if (raf) cancelAnimationFrame(raf); } catch (e) {}
+                    container.demoStop = null;
+                };
             }
             // wire HUD sound toggle if present
             const hudBtn = document.getElementById('hudSoundToggle');
             if (hudBtn) {
                 hudBtn.addEventListener('click', function () {
                     soundEnabled = !soundEnabled;
-                    hudBtn.textContent = `SOUND: ${soundEnabled ? 'ON' : 'OFF'}`;
+                    hudBtn.textContent = `${soundEnabled ? (window.DICT && window.DICT.sound_on) || 'SOUND: ON' : (window.DICT && window.DICT.sound_off) || 'SOUND: OFF'}`;
                 });
             }
+            attractAnimation();
         };
-
-        attractAnimation();
     </script>
 </body>
 

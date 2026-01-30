@@ -1,0 +1,20 @@
+// Level 5 - sublevel 0 (level50)
+// 18 cols x 12 rows — big, sprawling arena for later stages with multiple holes
+window.LEVEL_MAP = {
+  cols: 18,
+  rows: 12,
+  map: [
+    ['sand1','sand1','sand2','sand2','sand3','sand3','sand4','sand4','sand5','sand5','sand6','sand6','sand7','sand7','sand8','sand8','sand9','sand9'],
+    ['sand2','sand3','sand3','sand4','sand4','sand5','sand5','sand6','sand6','sand7','sand7','sand8','sand8','sand9','sand9','sand10','sand10','sand1'],
+    ['sand3','sand4','sand4','sand5','sand5','sand6','sand6','sand7','sand7','hole' ,'hole' ,'hole' ,'sand8','sand8','sand9','sand9','sand10','sand10'],
+    ['sand4','sand5','sand5','sand6','sand6','sand7','sand7','sand8','sand8','sand9','sand9','sand10','sand10','sand1','sand1','sand2','sand2','sand3'],
+    ['sand5','sand6','sand6','sand7','sand7','sand8','sand8','sandPile','sandPile','sand9','sand9','sand10','sand10','sand1','sand1','sand2','sand2','sand3'],
+    ['sand6','sand7','sand7','sand8','sand8','sand9','sand9','sand10','sand10','sand1','sand1','sand2','sand2','sand3','sand3','sand4','sand4','sand5'],
+    ['sand7','sand8','sand8','sand9','sand9','sand10','sand10','sand1','sand1','sand2','sand2','sand3','sand3','sand4','sand4','sand5','sand5','sand6'],
+    ['sand8','sand9','sand9','sand10','sand10','sand1','sand1','sand2','sand2','sand3','sand3','sand4','sand4','sand5','sand5','sand6','sand6','sand7'],
+    ['sand9','sand10','sand10','sand1','sand1','sand2','sand2','sand3','sand3','sand4','sand4','sand5','sand5','sand6','sand6','sand7','sand7','sand8'],
+    ['sand10','sand1','sand1','sand2','sand2','sand3','sand3','sand4','sand4','sand5','sand5','sand6','sand6','sand7','sand7','sand8','sand8','sand9'],
+    ['sand1','sand2','sand3','sand4','sand5','sand6','sand7','sand8','sand9','sand10','sand1','sand2','sand3','sand4','sand5','sand6','sand7','sand8'],
+    ['sand2','sand3','sand4','sand5','sand6','sand7','sand8','sand9','sand10','sand1','hole' ,'sand2','sand3','sand4','sand5','sand6','sand7','sand8']
+  ]
+};

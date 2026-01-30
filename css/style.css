@@ -60,22 +60,23 @@
      image-rendering: crisp-edges;
  }
 
- #attractScreen {
-     position: fixed;
-     top: 0;
-     left: 0;
-     width: 100vw;
-     height: 100vh;
-    /* Usa l'immagine di sfondo fornita per la schermata di attrazione con overlay regolabile via variabile CSS */
-    /* Percorso corretto: la CSS si trova in css/, l'immagine in images/ nella root */
-    background: radial-gradient(circle, rgba(var(--attract-color1), var(--attract-overlay)) 0%, rgba(var(--attract-color2), var(--attract-overlay)) 100%), url('../images/bg.png') center/cover no-repeat;
-     display: flex;
-     flex-direction: column;
-     justify-content: center;
-     align-items: center;
-     z-index: 10;
-     animation: scanline 8s linear infinite;
- }
+#attractScreen {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+   /* Usa l'immagine di sfondo fornita per la schermata di attrazione con overlay regolabile via variabile CSS */
+   /* Percorso corretto: la CSS si trova in css/, l'immagine in images/ nella root */
+   background: radial-gradient(circle, rgba(var(--attract-color1), var(--attract-overlay)) 0%, rgba(var(--attract-color2), var(--attract-overlay)) 100%), url('../images/bg.png') center/cover no-repeat;
+    /* keep the background image fixed (no scrolling/animation) */
+    background-attachment: fixed;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    z-index: 10;
+}
 
  /* helper class for dynamic attract divs to reuse same background + overlay */
  .attract-bg {
@@ -244,3 +245,75 @@
  .hidden {
      display: none !important;
  }
+
+/* Credit footer styling (prominent) */
+.credit-footer {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 18px;
+    color: #ffff66;
+    text-shadow: 0 0 10px rgba(255,255,120,0.9), 0 0 22px rgba(255,200,0,0.65);
+    background: rgba(0,0,0,0.15);
+    padding: 8px 16px;
+    border-radius: 6px;
+    border: 2px solid rgba(255,220,120,0.12);
+}
+
+/* When there are no credits, show INSERT COIN with a pulsing highlight */
+.insert-prompt {
+    color: #ffcc00 !important;
+    text-shadow: 0 0 18px rgba(255,204,0,0.95), 0 0 32px rgba(255,150,0,0.6);
+    animation: insertPulse 1.2s ease-in-out infinite;
+    font-weight: 700;
+}
+
+@keyframes insertPulse {
+    0% { transform: scale(1); opacity: 1; }
+    50% { transform: scale(1.06); opacity: 0.88; }
+    100% { transform: scale(1); opacity: 1; }
+}
+
+/* Language selector (pixel flags) */
+.lang-selector {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    z-index: 40;
+}
+.lang-flag {
+    width: 64px;
+    height: 48px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 6px;
+    background: rgba(0,0,0,0.25);
+    border-radius: 6px;
+    border: 2px solid rgba(255,255,255,0.03);
+    cursor: pointer;
+}
+.lang-flag.selected {
+    border-color: #ffd700;
+    box-shadow: 0 0 14px rgba(255,200,0,0.6);
+    transform: translateY(-2px);
+}
+.lang-flag canvas { image-rendering: pixelated; width:48px; height:32px; display:block; }
+.lang-flag .lang-label { font-size:10px; color:#fff; margin-top:4px; }
+
+/* Small credit/byline shown at the bottom of attract screens */
+.byline {
+    position: absolute;
+    bottom: 8px;
+    left: 0;
+    right: 0;
+    text-align: center;
+    font-size: 12px;
+    color: #cccccc;
+    opacity: 0.95;
+    text-shadow: 0 0 6px rgba(0, 0, 0, 0.6);
+    z-index: 35;
+    pointer-events: none;
+}
