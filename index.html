@@ -19,9 +19,15 @@
                 RECUPERA L'OGGETTO<br>
                 SCHIVA I BLOCCHI
             </div>
-            <!-- Footer: mostra i crediti nella schermata statica iniziale (nessun pulsante qui) -->
+            <!-- language selector on the static attract screen (pixel flags) -->
+            <div class="lang-selector" id="staticLangSelector" style="position:absolute; top:120px; left:50%; transform:translateX(-50%);">
+                <div class="lang-flag" data-lang="en"><canvas id="flag_static_en" width="32" height="22"></canvas><div class="lang-label">EN</div></div>
+                <div class="lang-flag" data-lang="it"><canvas id="flag_static_it" width="32" height="22"></canvas><div class="lang-label">IT</div></div>
+                <div class="lang-flag" data-lang="fr"><canvas id="flag_static_fr" width="32" height="22"></canvas><div class="lang-label">FR</div></div>
+            </div>
+            <!-- Footer: mostra il testo INSERT COIN o il numero di crediti (aggiornato da applyTranslations) -->
             <div class="credit-footer" style="position:absolute; bottom:24px; left:0; right:0; text-align:center;">
-                <span id="attractStaticCredits">CREDITI: 0</span>
+                <span id="attractStaticCredits">INSERT COIN</span>
             </div>
             <div class="byline">by SpikeCode</div>
         </div>
@@ -79,6 +85,82 @@
             document.head.appendChild(script);
         }
 
+        // Initialize static language flags (on the static attract screen)
+        (function initStaticFlags() {
+            try {
+                const LANGS = ['en','it','fr'];
+                function drawFlagStatic(canvas, lang) {
+                    if (!canvas) return;
+                    const ctx = canvas.getContext('2d'); ctx.imageSmoothingEnabled = false;
+                    const W = canvas.width, H = canvas.height; ctx.clearRect(0,0,W,H);
+                    if (lang === 'it') {
+                        const w3 = Math.floor(W/3);
+                        ctx.fillStyle = '#088A29'; ctx.fillRect(0,0,w3,H);
+                        ctx.fillStyle = '#FFFFFF'; ctx.fillRect(w3,0,w3,H);
+                        ctx.fillStyle = '#CE2B37'; ctx.fillRect(w3*2,0,W-w3*2,H);
+                    } else if (lang === 'fr') {
+                        const w3 = Math.floor(W/3);
+                        ctx.fillStyle = '#0055A4'; ctx.fillRect(0,0,w3,H);
+                        ctx.fillStyle = '#FFFFFF'; ctx.fillRect(w3,0,w3,H);
+                        ctx.fillStyle = '#EF4135'; ctx.fillRect(w3*2,0,W-w3*2,H);
+                    } else {
+                        ctx.fillStyle = '#012169'; ctx.fillRect(0,0,W,H);
+                        ctx.lineCap = 'square'; ctx.strokeStyle = '#FFFFFF'; ctx.lineWidth = Math.max(1, Math.floor(Math.min(W,H)*0.28));
+                        ctx.beginPath(); ctx.moveTo(-W,-W); ctx.lineTo(W*2,W*2); ctx.stroke();
+                        ctx.beginPath(); ctx.moveTo(W*2,-W); ctx.lineTo(-W,W*2); ctx.stroke();
+                        ctx.strokeStyle = '#C8102E'; ctx.lineWidth = Math.max(1, Math.floor(Math.min(W,H)*0.12));
+                        ctx.beginPath(); ctx.moveTo(-W,-W); ctx.lineTo(W*2,W*2); ctx.stroke();
+                        ctx.beginPath(); ctx.moveTo(W*2,-W); ctx.lineTo(-W,W*2); ctx.stroke();
+                        const whiteCross = Math.max(1, Math.floor(Math.min(W,H)*0.26)); ctx.fillStyle = '#FFFFFF';
+                        ctx.fillRect(Math.floor(W/2-whiteCross/2),0,whiteCross,H); ctx.fillRect(0,Math.floor(H/2-whiteCross/2),W,whiteCross);
+                        const redCross = Math.max(1, Math.floor(Math.min(W,H)*0.12)); ctx.fillStyle = '#C8102E';
+                        ctx.fillRect(Math.floor(W/2-redCross/2),0,redCross,H); ctx.fillRect(0,Math.floor(H/2-redCross/2),W,redCross);
+                    }
+                }
+                let selectedIndex = Math.max(0, LANGS.indexOf((window.DICT && window.DICT.lang) || DEFAULT_LANG));
+                function refreshStaticSelection() {
+                    LANGS.forEach((l, idx) => {
+                        const c = document.getElementById('flag_static_' + l);
+                        if (c) drawFlagStatic(c, l);
+                        const box = c && c.parentElement;
+                        if (!box) return;
+                        box.style.cursor = 'pointer';
+                        if (idx === selectedIndex) box.classList.add('selected'); else box.classList.remove('selected');
+                    });
+                }
+
+                LANGS.forEach((l, idx) => {
+                    const box = document.querySelector(`#staticLangSelector .lang-flag[data-lang="${l}"]`);
+                    if (!box) return;
+                    box.addEventListener('click', function() {
+                        selectedIndex = idx;
+                        try { localStorage.setItem('bh_lang', l); } catch (e) {}
+                        refreshStaticSelection();
+                        loadDictionary(l, function() { applyTranslations(); });
+                    });
+                });
+
+                // keyboard support: left/right to change selection, Enter to apply
+                document.addEventListener('keydown', function staticLangKeyHandler(ev) {
+                    const staticRoot = document.getElementById('staticLangSelector');
+                    // only if static selector is visible
+                    if (!staticRoot || staticRoot.classList.contains('hidden')) return;
+                    if (ev.key === 'ArrowLeft' || ev.key === 'ArrowRight') {
+                        ev.preventDefault();
+                        if (ev.key === 'ArrowLeft') selectedIndex = (selectedIndex - 1 + LANGS.length) % LANGS.length;
+                        else selectedIndex = (selectedIndex + 1) % LANGS.length;
+                        refreshStaticSelection();
+                    } else if (ev.key === 'Enter') {
+                        const lang = LANGS[selectedIndex];
+                        try { localStorage.setItem('bh_lang', lang); } catch (e) {}
+                        loadDictionary(lang, function() { applyTranslations(); });
+                    }
+                });
+
+                refreshStaticSelection();
+            } catch (e) { /* ignore */ }
+        })();
+
         function applyTranslations() {
             const D = window.DICT || {};
             // HUD
@@ -104,6 +186,12 @@
             // Update any visible credit footers now
             const asc = document.getElementById('attractStaticCredits'); if (asc) asc.textContent = (credits && credits > 0) ? `${D.credits_word || 'CREDITS'}: ${credits}` : (D.insert_coin || 'INSERT COIN');
             const ac = document.getElementById('attractCredits'); if (ac) ac.textContent = (credits && credits > 0) ? `${D.credits_word || 'CREDITS'}: ${credits}` : (D.insert_coin || 'INSERT COIN');
+            // mark static language selector
+            try {
+                const lang = (D && D.lang) || DEFAULT_LANG;
+                const boxes = document.querySelectorAll('#staticLangSelector .lang-flag');
+                boxes.forEach(b => { if (b.getAttribute('data-lang') === lang) b.classList.add('selected'); else b.classList.remove('selected'); });
+            } catch (e) { }
             // Update attract-screen instructions if present
             const instrDiv = document.getElementById('attractInstructions');
             if (instrDiv) {
@@ -2507,25 +2595,18 @@
             }
             // Insert coin with key '5' (MAME coin)
             if (e.key === '5') {
-                credits++;
+                // increment credits and refresh HUD/attract indicators but do NOT auto-enter player select
+                credits = (credits || 0) + 1;
                 updateHUD();
-                // Aggiorna l'eventuale contatore sulla schermata di selezione/static attract
+                // update any visible counters
                 const sc = document.getElementById('selectCredits'); if (sc) sc.textContent = credits;
-                const asc = document.getElementById('attractStaticCredits'); if (asc) asc.textContent = credits;
+                const asc = document.getElementById('attractStaticCredits'); if (asc) asc.textContent = (credits && credits > 0) ? `${(window.DICT && window.DICT.credits_word) || 'CREDITS'}: ${credits}` : (window.DICT && window.DICT.insert_coin || 'INSERT COIN');
                 const ac = document.getElementById('attractCredits'); if (ac) ac.textContent = credits;
                 // Positive feedback: sound + small animation
                 if (soundEnabled) playCoinInsertSound();
                 animateCreditHint(1);
-                // After inserting a coin while in attract state, open player selection immediately
-                if (gameState === 'attract') {
-                    try { clearInterval(attractInterval); } catch (e) { }
-                    const ad = document.getElementById('attractScreenCustom'); if (ad) { try { if (ad.cleanupLang) ad.cleanupLang(); } catch (e) { } ad.remove(); }
-                    const staticAt = document.getElementById('attractScreen'); if (staticAt) staticAt.classList.add('hidden');
-                    showLevelSelect();
-                }
-                // If continue overlay present and gameOver, allow immediate continue
+                // If continue overlay present and gameOver, allow immediate continue (consume credit)
                 if (continueDiv && gameState === 'gameOver') {
-                    // consume one credit to continue
                     if (credits > 0) {
                         credits--;
                         updateHUD();
@@ -2776,17 +2857,11 @@
                     credits = (credits || 0) + 1;
                     updateHUD();
                     const ac = document.getElementById('attractCredits'); if (ac) ac.textContent = credits;
-                    const asc = document.getElementById('attractStaticCredits'); if (asc) asc.textContent = credits;
+                    const asc = document.getElementById('attractStaticCredits'); if (asc) asc.textContent = (credits && credits > 0) ? `${(window.DICT && window.DICT.credits_word) || 'CREDITS'}: ${credits}` : (window.DICT && window.DICT.insert_coin || 'INSERT COIN');
                     // Play coin inserted sound + small animation
                     if (soundEnabled) playCoinInsertSound();
                     animateCreditHint(1);
-                    // After inserting a coin on the attract screen, immediately go to player selection
-                    // and stop the attract/top-ten alternation.
-                    try { clearInterval(attractInterval); } catch (e) { }
-                    // stop demo if running, then remove custom attract overlay and open level/player selection
-                    const ad = document.getElementById('attractScreenCustom'); if (ad) { try { if (ad.demoStop) ad.demoStop(); } catch(e){} ad.remove(); }
-                    const staticAt = document.getElementById('attractScreen'); if (staticAt) staticAt.classList.add('hidden');
-                    showLevelSelect();
+                    // Do NOT auto-open level selection here; user can click the screen or press Enter/1/2 to proceed.
                 };
             }
             // Clic sull'overlay (fuori dal pulsante) apre la selezione livelli solo se ci sono crediti

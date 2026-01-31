@@ -282,6 +282,14 @@
     align-items: center;
     z-index: 40;
 }
+
+/* Static attract-screen variant: center the selector and override the default top-right placement */
+#staticLangSelector {
+    left: 50% !important;
+    right: auto !important;
+    transform: translateX(-50%) !important;
+    top: 120px !important;
+}
 .lang-flag {
     width: 64px;
     height: 48px;
