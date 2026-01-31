@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>BLOCK HUNTER</title>
+    <title>BLOCK HUNTER - by SpikeCode (AI)</title>
     <link rel="stylesheet" href="css/style.css">
 </head>
 
@@ -21,6 +21,8 @@
             </div>
             <!-- Coin description placed under the rules (will be populated dynamically) -->
             <div id="attractCoinInfo" style="margin-top:10px; font-size:12px; color:#ffd; opacity:0.95; text-align:center;"></div>
+            <!-- Sprite gallery: canvases showing each discovered sprite (sprite-sheet + tail) -->
+            <div id="spriteGallery" style="display:flex; gap:8px; justify-content:center; margin-top:12px; flex-wrap:wrap;"></div>
             <!-- language selector on the static attract screen (pixel flags) -->
             <div class="lang-selector" id="staticLangSelector" style="position:absolute; top:120px; left:50%; transform:translateX(-50%);">
                 <div class="lang-flag" data-lang="en"><canvas id="flag_static_en" width="32" height="22"></canvas><div class="lang-label">EN</div></div>
@@ -216,6 +218,51 @@
 
         // ensure hints are initialized on load
         try { refreshAttractPlayerHints(); } catch (e) { }
+
+        // Build a simple sprite gallery under the attract instructions for testing/preview
+        function initSpriteGallery() {
+            try {
+                const gallery = document.getElementById('spriteGallery');
+                if (!gallery) return;
+                gallery.innerHTML = '';
+                // gather keys from sprite sheet map, tail map, and programmatic SPRITES
+                const keys = [];
+                Object.keys(SPRITE_SHEET_MAP).forEach(k => { if (!keys.includes(k)) keys.push(k); });
+                Object.keys(TAIL_SHEET_MAP).forEach(k => { if (!keys.includes(k)) keys.push(k); });
+                Object.keys(SPRITES).forEach(k => { if (!keys.includes(k)) keys.push(k); });
+
+                keys.forEach(k => {
+                    const item = document.createElement('div'); item.className = 'sprite-item';
+                    const c = document.createElement('canvas'); c.width = 64; c.height = 64; c.setAttribute('data-sprite', k);
+                    const lbl = document.createElement('div'); lbl.className = 'label'; lbl.textContent = k;
+                    item.appendChild(c); item.appendChild(lbl); gallery.appendChild(item);
+                    const ctx = c.getContext('2d'); ctx.imageSmoothingEnabled = false; ctx.clearRect(0,0,c.width,c.height);
+                    // decide how to draw: prefer sprite sheet, then tail, then programmatic
+                    const size = Math.min(c.width, c.height) - 8;
+                    if (spriteReady && SPRITE_SHEET_MAP[k]) {
+                        drawFromSheet(ctx, k, c.width/2, c.height/2, size);
+                    } else if (tailReady && TAIL_SHEET_MAP[k]) {
+                        drawFromTail(ctx, k, c.width/2, c.height/2, size);
+                    } else {
+                        // programmatic patterns: map some common names
+                        if (k === 'player') drawPlayerSpriteAt(ctx, c.width/2, c.height/2, size, '#00ff00');
+                        else if (k === 'block') drawBlockSpriteAt(ctx, c.width/2, c.height/2, size, false, 0);
+                        else if (k === 'key') drawKeySpriteAt(ctx, c.width/2, c.height/2, size);
+                        else if (k === 'door' || k === 'door_img') drawDoorSpriteAt(ctx, c.width/2, c.height/2, size, false);
+                        else if (k === 'target') drawTargetSpriteAt(ctx, c.width/2, c.height/2, size);
+                        else if (k === 'dynamite' || k === 'dynamite2') drawDynamiteSpriteAt(ctx, c.width/2, c.height/2, size);
+                        else if (k === 'coin' || k === 'doubloon') drawCoinSpriteAt(ctx, c.width/2, c.height/2, size);
+                        else {
+                            // fallback: draw cell placeholder
+                            ctx.fillStyle = '#666'; ctx.fillRect(8,8,size,size);
+                        }
+                    }
+                });
+            } catch (e) { /* ignore gallery errors */ }
+        }
+
+        // ensure gallery is built when sheets load
+        try { initSpriteGallery(); } catch (e) { }
 
         function applyTranslations() {
             const D = window.DICT || {};
@@ -498,18 +545,25 @@
         };
         // carica la sprite sheet e calcola la dimensione delle celle
         spriteSheet.onload = function () {
-            spriteCellW = Math.floor(spriteSheet.width / sheetCols);
-            spriteCellH = Math.floor(spriteSheet.height / sheetRows);
-            // compute padding as small fraction of cell size to avoid cutting sprites
-            // use a small padding (1% of cell) to avoid bleeding but not cut artwork
-            spriteSheetPad = Math.max(0, Math.floor(Math.min(spriteCellW, spriteCellH) * 0.01));
+            // compute exact (float) cell sizes to avoid cumulative rounding issues
+            const cellWf = spriteSheet.width / sheetCols;
+            const cellHf = spriteSheet.height / sheetRows;
+            // keep numeric cell sizes (we'll round source rects when drawing)
+            spriteCellW = cellWf;
+            spriteCellH = cellHf;
+            // compute padding as small fraction of cell size to avoid bleeding/cropping
+            // use a slightly larger padding (3%) to be safe for artist margins
+            spriteSheetPad = Math.max(0, Math.round(Math.min(cellWf, cellHf) * 0.03));
             console.log('spriteSheet loaded', { w: spriteSheet.width, h: spriteSheet.height, cellW: spriteCellW, cellH: spriteCellH, pad: spriteSheetPad });
             spriteReady = true;
+            // refresh gallery now that sprite sheet is ready (or re-render fallbacks on error)
+            try { initSpriteGallery(); } catch (e) { }
             // console.log('Sprite sheet ready', spriteCellW, spriteCellH);
         };
         spriteSheet.onerror = function () {
             // se il caricamento fallisce, manteniamo spriteReady=false e si useranno le sprite programmatiche
             spriteReady = false;
+            try { initSpriteGallery(); } catch (e) { }
         };
         spriteSheet.src = 'images/sprite.png';
 
@@ -542,23 +596,29 @@
             sand10: { r: 3, c: 3 }
         };
         tailSheet.onload = function () {
-            tailCellW = Math.floor(tailSheet.width / tailCols);
-            tailCellH = Math.floor(tailSheet.height / tailRows);
+            // use float cell sizes to avoid rounding truncation
+            const tcellWf = tailSheet.width / tailCols;
+            const tcellHf = tailSheet.height / tailRows;
+            tailCellW = tcellWf;
+            tailCellH = tcellHf;
             tailReady = true;
+            // redraw gallery when tail sheet becomes available
+            try { initSpriteGallery(); } catch (e) { }
             console.log('tailSheet loaded', { w: tailSheet.width, h: tailSheet.height, cellW: tailCellW, cellH: tailCellH });
         };
-        tailSheet.onerror = function () { tailReady = false; };
+        tailSheet.onerror = function () { tailReady = false; try { initSpriteGallery(); } catch (e) { } };
         tailSheet.src = 'images/tail.png';
 
         function drawFromTail(ctx, keyName, cx, cy, size, rotate = 0) {
             if (!tailReady) return false;
             const entry = TAIL_SHEET_MAP[keyName];
             if (!entry) return false;
-            const pad = 1;
-            const sx = entry.c * tailCellW + pad;
-            const sy = entry.r * tailCellH + pad;
-            const sw = Math.max(4, tailCellW - pad * 2);
-            const sh = Math.max(4, tailCellH - pad * 2);
+            // use rounded source rects calculated from float cell sizes
+            const pad = Math.max(1, Math.round(Math.min(tailCellW, tailCellH) * 0.02));
+            const sx = Math.round(entry.c * tailCellW + pad);
+            const sy = Math.round(entry.r * tailCellH + pad);
+            const sw = Math.max(4, Math.round(tailCellW - pad * 2));
+            const sh = Math.max(4, Math.round(tailCellH - pad * 2));
             ctx.save();
             ctx.translate(cx, cy);
             if (rotate) ctx.rotate(rotate);
@@ -580,11 +640,12 @@
             const entry = SPRITE_SHEET_MAP[keyName];
             if (!entry) return false;
             // compute source rect with optional inner padding to avoid bleeding/cropped edges
-            const pad = spriteSheetPad || 2; // px padding inside each cell
-            const sx = entry.c * spriteCellW + pad;
-            const sy = entry.r * spriteCellH + pad;
-            const sw = Math.max(4, spriteCellW - pad * 2);
-            const sh = Math.max(4, spriteCellH - pad * 2);
+            // use rounded coordinates derived from float cell sizes to avoid off-by-one truncation
+            const pad = Math.max(1, Math.round(Math.min(spriteCellW, spriteCellH) * 0.03));
+            const sx = Math.round(entry.c * spriteCellW + pad);
+            const sy = Math.round(entry.r * spriteCellH + pad);
+            const sw = Math.max(4, Math.round(spriteCellW - pad * 2));
+            const sh = Math.max(4, Math.round(spriteCellH - pad * 2));
             ctx.save();
             ctx.translate(cx, cy);
             if (rotate) ctx.rotate(rotate);

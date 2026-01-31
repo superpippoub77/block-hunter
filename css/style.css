@@ -353,6 +353,12 @@
     transform: translateY(-2px);
 }
 
+/* Sprite gallery styling */
+#spriteGallery { margin-top: 8px; display:flex; gap:8px; justify-content:center; align-items:center; }
+.sprite-item { display:flex; flex-direction:column; align-items:center; gap:6px; }
+.sprite-item canvas { width:48px; height:48px; image-rendering:pixelated; border:1px solid rgba(255,255,255,0.06); background:rgba(0,0,0,0.12); }
+.sprite-item .label { font-size:10px; color:#fff; opacity:0.85; }
+
 /* brief unlock flash when a new option becomes available */
 .player-hint.unlock {
     animation: unlockFlash 560ms ease-in-out 1;
