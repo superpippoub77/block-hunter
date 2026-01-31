@@ -29,6 +29,11 @@
             <div class="credit-footer" style="position:absolute; bottom:24px; left:0; right:0; text-align:center;">
                 <span id="attractStaticCredits">INSERT COIN</span>
             </div>
+            <!-- Player hints: show which player options are available depending on credits -->
+            <div id="attractPlayerHints" style="position:absolute; bottom:72px; left:0; right:0; text-align:center; display:flex; gap:24px; justify-content:center; pointer-events:none;">
+                <div id="attractHint1" class="player-hint">1 PLAYER</div>
+                <div id="attractHint2" class="player-hint unavailable">2 PLAYERS (2 COINS)</div>
+            </div>
             <div class="byline">by SpikeCode</div>
         </div>
 
@@ -62,6 +67,8 @@
     // Prefer a persisted user choice in localStorage (key: 'bh_lang'), fall back to GAME_CONFIG/default
     const _persistedLang = (function(){ try { return localStorage.getItem('bh_lang'); } catch(e){ return null; } })();
     const DEFAULT_LANG = _persistedLang || (window.GAME_CONFIG && window.GAME_CONFIG.DEFAULT_LANG) || 'en';
+    // whether language selection is currently enabled (can be disabled while user is in player/level selection)
+    window.langSelectionEnabled = true;
         function loadDictionary(lang, cb) {
             // If already loaded and same lang, call cb
             if (window.DICT && window.DICT.lang === lang) {
@@ -133,10 +140,11 @@
                     const box = document.querySelector(`#staticLangSelector .lang-flag[data-lang="${l}"]`);
                     if (!box) return;
                     box.addEventListener('click', function() {
-                        selectedIndex = idx;
-                        try { localStorage.setItem('bh_lang', l); } catch (e) {}
-                        refreshStaticSelection();
-                        loadDictionary(l, function() { applyTranslations(); });
+                            if (!window.langSelectionEnabled) return;
+                            selectedIndex = idx;
+                            try { localStorage.setItem('bh_lang', l); } catch (e) {}
+                            refreshStaticSelection();
+                            loadDictionary(l, function() { applyTranslations(); });
                     });
                 });
 
@@ -144,13 +152,18 @@
                 document.addEventListener('keydown', function staticLangKeyHandler(ev) {
                     const staticRoot = document.getElementById('staticLangSelector');
                     // only if static selector is visible
-                    if (!staticRoot || staticRoot.classList.contains('hidden')) return;
+                        if (!window.langSelectionEnabled || !staticRoot || staticRoot.classList.contains('hidden')) return;
                     if (ev.key === 'ArrowLeft' || ev.key === 'ArrowRight') {
                         ev.preventDefault();
                         if (ev.key === 'ArrowLeft') selectedIndex = (selectedIndex - 1 + LANGS.length) % LANGS.length;
                         else selectedIndex = (selectedIndex + 1) % LANGS.length;
                         refreshStaticSelection();
+                        // auto-apply language as soon as selection moves
+                        const lang = LANGS[selectedIndex];
+                        try { localStorage.setItem('bh_lang', lang); } catch (e) {}
+                        loadDictionary(lang, function() { applyTranslations(); });
                     } else if (ev.key === 'Enter') {
+                        // keep Enter as a fallback (applies language too)
                         const lang = LANGS[selectedIndex];
                         try { localStorage.setItem('bh_lang', lang); } catch (e) {}
                         loadDictionary(lang, function() { applyTranslations(); });
@@ -160,6 +173,45 @@
                 refreshStaticSelection();
             } catch (e) { /* ignore */ }
         })();
+
+        // update the player hints area on the static attract screen according to credits
+        // keep track of previous two-player availability to detect unlock transition
+        let lastTwoAvailable = false;
+        function refreshAttractPlayerHints() {
+            const D = window.DICT || {};
+            const hint1 = document.getElementById('attractHint1');
+            const hint2 = document.getElementById('attractHint2');
+            if (!hint1 || !hint2) return;
+            // use translations if present
+            hint1.textContent = D.players_1 || '1 PLAYER';
+            hint2.textContent = D.players_2 || '2 PLAYERS (2 COINS)';
+            // show only based on credits: if 0 -> both disabled; if 1 -> only 1 enabled; if >1 -> both enabled
+            const c = (credits || 0);
+            if (c === 0) {
+                hint1.classList.remove('available'); hint1.classList.add('unavailable');
+                hint2.classList.remove('available'); hint2.classList.add('unavailable');
+                lastTwoAvailable = false;
+            } else if (c === 1) {
+                hint1.classList.add('available'); hint1.classList.remove('unavailable');
+                hint2.classList.remove('available'); hint2.classList.add('unavailable');
+                lastTwoAvailable = false;
+            } else {
+                hint1.classList.add('available'); hint1.classList.remove('unavailable');
+                // if two-player just became available, trigger an unlock flash
+                const nowTwo = true;
+                hint2.classList.add('available'); hint2.classList.remove('unavailable');
+                if (!lastTwoAvailable) {
+                    try {
+                        hint2.classList.add('unlock');
+                        setTimeout(() => { hint2.classList.remove('unlock'); }, 700);
+                    } catch (e) { }
+                }
+                lastTwoAvailable = nowTwo;
+            }
+        }
+
+        // ensure hints are initialized on load
+        try { refreshAttractPlayerHints(); } catch (e) { }
 
         function applyTranslations() {
             const D = window.DICT || {};
@@ -192,6 +244,8 @@
                 const boxes = document.querySelectorAll('#staticLangSelector .lang-flag');
                 boxes.forEach(b => { if (b.getAttribute('data-lang') === lang) b.classList.add('selected'); else b.classList.remove('selected'); });
             } catch (e) { }
+            // refresh player hints (1/2 player availability)
+            try { refreshAttractPlayerHints(); } catch (e) { }
             // Update attract-screen instructions if present
             const instrDiv = document.getElementById('attractInstructions');
             if (instrDiv) {
@@ -970,6 +1024,9 @@
         function showLevelSelect(preselectPlayers) {
             // stop attract/top-ten alternation while selection UI is active
             try { clearInterval(attractInterval); } catch (e) { }
+            // disable language selection while player/level selection is active
+            try { window.langSelectionEnabled = false; } catch (e) {}
+            try { const staticRoot = document.getElementById('staticLangSelector'); if (staticRoot) staticRoot.classList.add('disabled'); } catch (e) {}
             const selectDiv = document.createElement('div');
             selectDiv.id = 'levelSelect';
             selectDiv.style.position = 'absolute';
@@ -1053,6 +1110,9 @@
                         try { selectDiv.remove(); } catch (e) { }
                         try { style.remove(); } catch (e) { }
                         document.removeEventListener('keydown', levelKeyHandler);
+                        // re-enable language selection when selection is cancelled
+                        try { window.langSelectionEnabled = true; } catch (e) {}
+                        try { const staticRoot2 = document.getElementById('staticLangSelector'); if (staticRoot2) staticRoot2.classList.remove('disabled'); } catch (e) {}
                         // restart attract/top-ten alternation when selection is cancelled
                         showAttractOrTopTen();
                     }
@@ -2605,6 +2665,7 @@
                 // Positive feedback: sound + small animation
                 if (soundEnabled) playCoinInsertSound();
                 animateCreditHint(1);
+                try { refreshAttractPlayerHints(); } catch (e) { }
                 // If continue overlay present and gameOver, allow immediate continue (consume credit)
                 if (continueDiv && gameState === 'gameOver') {
                     if (credits > 0) {
@@ -2861,6 +2922,7 @@
                     // Play coin inserted sound + small animation
                     if (soundEnabled) playCoinInsertSound();
                     animateCreditHint(1);
+                    try { refreshAttractPlayerHints(); } catch (e) { }
                     // Do NOT auto-open level selection here; user can click the screen or press Enter/1/2 to proceed.
                 };
             }

@@ -290,6 +290,13 @@
     transform: translateX(-50%) !important;
     top: 120px !important;
 }
+
+#staticLangSelector.disabled {
+    opacity: 0.45;
+    pointer-events: none;
+    filter: grayscale(70%);
+    transform: translateX(-50%) scale(0.98);
+}
 .lang-flag {
     width: 64px;
     height: 48px;
@@ -324,4 +331,34 @@
     text-shadow: 0 0 6px rgba(0, 0, 0, 0.6);
     z-index: 35;
     pointer-events: none;
+}
+
+.player-hint {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 14px;
+    color: #ffff99;
+    padding: 6px 12px;
+    background: rgba(0,0,0,0.28);
+    border: 2px solid rgba(255,255,255,0.06);
+    border-radius: 6px;
+    text-shadow: 0 0 8px rgba(0,0,0,0.6);
+    pointer-events: none;
+}
+.player-hint.unavailable {
+    opacity: 0.35;
+    filter: grayscale(80%);
+}
+.player-hint.available {
+    box-shadow: 0 0 16px rgba(255,220,64,0.6);
+    transform: translateY(-2px);
+}
+
+/* brief unlock flash when a new option becomes available */
+.player-hint.unlock {
+    animation: unlockFlash 560ms ease-in-out 1;
+}
+@keyframes unlockFlash {
+    0% { transform: translateY(-2px) scale(0.96); box-shadow: 0 0 6px rgba(255,200,64,0.2); }
+    40% { transform: translateY(-6px) scale(1.06); box-shadow: 0 0 30px rgba(255,220,64,0.95); }
+    100% { transform: translateY(-2px) scale(1); box-shadow: 0 0 16px rgba(255,220,64,0.6); }
 }
