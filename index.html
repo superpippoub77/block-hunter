@@ -19,6 +19,8 @@
                 RECUPERA L'OGGETTO<br>
                 SCHIVA I BLOCCHI
             </div>
+            <!-- Coin description placed under the rules (will be populated dynamically) -->
+            <div id="attractCoinInfo" style="margin-top:10px; font-size:12px; color:#ffd; opacity:0.95; text-align:center;"></div>
             <!-- language selector on the static attract screen (pixel flags) -->
             <div class="lang-selector" id="staticLangSelector" style="position:absolute; top:120px; left:50%; transform:translateX(-50%);">
                 <div class="lang-flag" data-lang="en"><canvas id="flag_static_en" width="32" height="22"></canvas><div class="lang-label">EN</div></div>
@@ -32,7 +34,7 @@
             <!-- Player hints: show which player options are available depending on credits -->
             <div id="attractPlayerHints" style="position:absolute; bottom:72px; left:0; right:0; text-align:center; display:flex; gap:24px; justify-content:center; pointer-events:none;">
                 <div id="attractHint1" class="player-hint">1 PLAYER</div>
-                <div id="attractHint2" class="player-hint unavailable">2 PLAYERS (2 COINS)</div>
+                <div id="attractHint2" class="player-hint unavailable">2 PLAYERS</div>
             </div>
             <div class="byline">by SpikeCode</div>
         </div>
@@ -184,27 +186,29 @@
             if (!hint1 || !hint2) return;
             // use translations if present
             hint1.textContent = D.players_1 || '1 PLAYER';
-            hint2.textContent = D.players_2 || '2 PLAYERS (2 COINS)';
-            // show only based on credits: if 0 -> both disabled; if 1 -> only 1 enabled; if >1 -> both enabled
+            hint2.textContent = D.players_2 || '2 PLAYERS';
+            // compute availability based on per-player cost
+            const per = (window.GAME_CONFIG && window.GAME_CONFIG.CREDITS_PER_PLAYER) || 1;
             const c = (credits || 0);
-            if (c === 0) {
+            const needForOne = per;
+            const needForTwo = per * 2;
+            if (c < needForOne) {
+                // none available
                 hint1.classList.remove('available'); hint1.classList.add('unavailable');
                 hint2.classList.remove('available'); hint2.classList.add('unavailable');
                 lastTwoAvailable = false;
-            } else if (c === 1) {
+            } else if (c >= needForOne && c < needForTwo) {
+                // only one available
                 hint1.classList.add('available'); hint1.classList.remove('unavailable');
                 hint2.classList.remove('available'); hint2.classList.add('unavailable');
                 lastTwoAvailable = false;
             } else {
+                // both available
                 hint1.classList.add('available'); hint1.classList.remove('unavailable');
-                // if two-player just became available, trigger an unlock flash
                 const nowTwo = true;
                 hint2.classList.add('available'); hint2.classList.remove('unavailable');
                 if (!lastTwoAvailable) {
-                    try {
-                        hint2.classList.add('unlock');
-                        setTimeout(() => { hint2.classList.remove('unlock'); }, 700);
-                    } catch (e) { }
+                    try { hint2.classList.add('unlock'); setTimeout(() => { hint2.classList.remove('unlock'); }, 700); } catch (e) {}
                 }
                 lastTwoAvailable = nowTwo;
             }
@@ -252,6 +256,16 @@
                 const lines = (D.instructions && Array.isArray(D.instructions)) ? D.instructions : null;
                 if (lines && lines.length) instrDiv.innerHTML = lines.join('<br>');
             }
+            // Update coin description under the rules (dynamic based on configured cost)
+            try {
+                const per = (window.GAME_CONFIG && window.GAME_CONFIG.CREDITS_PER_PLAYER) || 1;
+                const infoEl = document.getElementById('attractCoinInfo');
+                if (infoEl) {
+                    // prefer a dictionary override if present
+                    if (D.coin_info) infoEl.textContent = D.coin_info.replace('{per}', per).replace('{two}', per * 2);
+                    else infoEl.textContent = `1 player: ${per} coin${per>1?'s':''} — 2 players: ${per*2} coins`;
+                }
+            } catch (e) { }
         }
         
         // Load a level map defined as JS to avoid CORS (expects files under data/level/levelXY.js)
@@ -1138,7 +1152,7 @@
                         <div style="margin-bottom:10px;"><button id="soundToggle" class="optBtn">${soundEnabled ? (D2.sound_on || 'SOUND: ON') : (D2.sound_off || 'SOUND: OFF')}</button></div>
                         <div style="margin-bottom:10px;">${D2.dynamite_per_level || 'DYNAMITE PER LEVEL'}: ${DYNAMITE_MAX}</div>
                         <button class="playerBtn" data-p="1">${D2.players_1 || '1 PLAYER'}</button>
-                        <button class="playerBtn" data-p="2">${D2.players_2 || '2 PLAYERS (2 COINS)'}</button>
+                        <button class="playerBtn" data-p="2">${(D2.players_2 || '2 PLAYERS').replace(/\s*\([^\)]*\)\s*$/, '')}</button>
                         <div style="margin-top:20px;"><button class="startNow">${D2.start || 'START'}</button></div>
                     `;
                     // wire buttons and disable 2-player when not enough credits
@@ -1177,14 +1191,16 @@
                     }
                     const startNow = selectDiv.querySelector('.startNow');
                     startNow.onclick = function () {
-                        // require credits equal to number of players (1 or 2)
-                        if (credits < numPlayers) {
+                        // require credits equal to number of players * per-player cost
+                        const per = (window.GAME_CONFIG && window.GAME_CONFIG.CREDITS_PER_PLAYER) || 1;
+                        const required = per * numPlayers;
+                        if (credits < required) {
                             // feedback sonoro/visivo quando si clicca START senza crediti
-                            playCoinRequiredSound(numPlayers);
-                            animateCreditHint(numPlayers);
+                            playCoinRequiredSound(required);
+                            animateCreditHint(required);
                             return;
                         }
-                        credits -= numPlayers;
+                        credits -= required;
                         // update selection credit display if present
                         const sc = document.getElementById('selectCredits'); if (sc) sc.textContent = credits;
                         // remove UI and start
@@ -2643,13 +2659,15 @@
             if ((e.key === '1' || e.key === '2') && gameState === 'attract') {
                 const n = parseInt(e.key, 10);
                 e.preventDefault();
-                if ((credits || 0) >= n) {
+                const per = (window.GAME_CONFIG && window.GAME_CONFIG.CREDITS_PER_PLAYER) || 1;
+                const req = per * n;
+                if ((credits || 0) >= req) {
                     // Apri la schermata di selezione e passa il numero di giocatori da pre-selezionare
                     showLevelSelect(n);
                 } else {
                     // immediate feedback for required coins: sound + animation + floating text
-                    playCoinRequiredSound(n);
-                    animateCreditHint(n);
+                    playCoinRequiredSound(req);
+                    animateCreditHint(req);
                 }
                 return;
             }

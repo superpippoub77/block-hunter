@@ -13,7 +13,7 @@ window.DICT = {
     medium: 'MEDIUM',
     expert: 'EXPERT',
     players_1: '1 PLAYER',
-    players_2: '2 PLAYERS (2 COINS)',
+    players_2: '2 PLAYERS',
     top_ten: 'TOP TEN',
     return_button: 'RETURN',
     sound_on: 'SOUND: ON',

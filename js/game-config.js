@@ -32,6 +32,10 @@ window.GAME_CONFIG = {
         distribution: { small: 0.35, medium: 0.5, large: 0.15 },
         multipliers: { small: 0.7, medium: 1.0, large: 1.5 }
     }
+    ,
+    // How many credits are required per player (set to 1 by default). The second
+    // player requires exactly double this amount.
+    CREDITS_PER_PLAYER: 1
 };
 
 // Make a convenience alias for console tweaking

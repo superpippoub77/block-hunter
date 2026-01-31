@@ -13,7 +13,7 @@ window.DICT = {
     medium: 'MEDIO',
     expert: 'ESPERT0',
     players_1: '1 GIOCATORE',
-    players_2: '2 GIOCATORI (2 COIN)',
+    players_2: '2 GIOCATORI',
     top_ten: 'CLASSIFICA',
     return_button: 'RITORNA',
     sound_on: 'SOUND: ON',
