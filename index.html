@@ -20,21 +20,31 @@
                 SCHIVA I BLOCCHI
             </div>
             <!-- Coin description placed under the rules (will be populated dynamically) -->
-            <div id="attractCoinInfo" style="margin-top:10px; font-size:12px; color:#ffd; opacity:0.95; text-align:center;"></div>
+            <div id="attractCoinInfo"
+                style="margin-top:10px; font-size:12px; color:#ffd; opacity:0.95; text-align:center;"></div>
             <!-- Sprite gallery: canvases showing each discovered sprite (sprite-sheet + tail) -->
-            <div id="spriteGallery" style="display:flex; gap:8px; justify-content:center; margin-top:12px; flex-wrap:wrap;"></div>
+            <div id="spriteGallery"
+                style="display:flex; gap:8px; justify-content:center; margin-top:12px; flex-wrap:wrap;"></div>
             <!-- language selector on the static attract screen (pixel flags) -->
-            <div class="lang-selector" id="staticLangSelector" style="position:absolute; top:120px; left:50%; transform:translateX(-50%);">
-                <div class="lang-flag" data-lang="en"><canvas id="flag_static_en" width="32" height="22"></canvas><div class="lang-label">EN</div></div>
-                <div class="lang-flag" data-lang="it"><canvas id="flag_static_it" width="32" height="22"></canvas><div class="lang-label">IT</div></div>
-                <div class="lang-flag" data-lang="fr"><canvas id="flag_static_fr" width="32" height="22"></canvas><div class="lang-label">FR</div></div>
+            <div class="lang-selector" id="staticLangSelector"
+                style="position:absolute; top:120px; left:50%; transform:translateX(-50%);">
+                <div class="lang-flag" data-lang="en"><canvas id="flag_static_en" width="32" height="22"></canvas>
+                    <div class="lang-label">EN</div>
+                </div>
+                <div class="lang-flag" data-lang="it"><canvas id="flag_static_it" width="32" height="22"></canvas>
+                    <div class="lang-label">IT</div>
+                </div>
+                <div class="lang-flag" data-lang="fr"><canvas id="flag_static_fr" width="32" height="22"></canvas>
+                    <div class="lang-label">FR</div>
+                </div>
             </div>
             <!-- Footer: mostra il testo INSERT COIN o il numero di crediti (aggiornato da applyTranslations) -->
             <div class="credit-footer" style="position:absolute; bottom:24px; left:0; right:0; text-align:center;">
                 <span id="attractStaticCredits">INSERT COIN</span>
             </div>
             <!-- Player hints: show which player options are available depending on credits -->
-            <div id="attractPlayerHints" style="position:absolute; bottom:72px; left:0; right:0; text-align:center; display:flex; gap:24px; justify-content:center; pointer-events:none;">
+            <div id="attractPlayerHints"
+                style="position:absolute; bottom:72px; left:0; right:0; text-align:center; display:flex; gap:24px; justify-content:center; pointer-events:none;">
                 <div id="attractHint1" class="player-hint">1 PLAYER</div>
                 <div id="attractHint2" class="player-hint unavailable">2 PLAYERS</div>
             </div>
@@ -67,12 +77,12 @@
     <script src="js/game-config.js"></script>
     <script src="js/game-state.js"></script>
     <script>
-    // Language loader and helper
-    // Prefer a persisted user choice in localStorage (key: 'bh_lang'), fall back to GAME_CONFIG/default
-    const _persistedLang = (function(){ try { return localStorage.getItem('bh_lang'); } catch(e){ return null; } })();
-    const DEFAULT_LANG = _persistedLang || (window.GAME_CONFIG && window.GAME_CONFIG.DEFAULT_LANG) || 'en';
-    // whether language selection is currently enabled (can be disabled while user is in player/level selection)
-    window.langSelectionEnabled = true;
+        // Language loader and helper
+        // Prefer a persisted user choice in localStorage (key: 'bh_lang'), fall back to GAME_CONFIG/default
+        const _persistedLang = (function () { try { return localStorage.getItem('bh_lang'); } catch (e) { return null; } })();
+        const DEFAULT_LANG = _persistedLang || (window.GAME_CONFIG && window.GAME_CONFIG.DEFAULT_LANG) || 'en';
+        // whether language selection is currently enabled (can be disabled while user is in player/level selection)
+        window.langSelectionEnabled = true;
         function loadDictionary(lang, cb) {
             // If already loaded and same lang, call cb
             if (window.DICT && window.DICT.lang === lang) {
@@ -99,33 +109,33 @@
         // Initialize static language flags (on the static attract screen)
         (function initStaticFlags() {
             try {
-                const LANGS = ['en','it','fr'];
+                const LANGS = ['en', 'it', 'fr'];
                 function drawFlagStatic(canvas, lang) {
                     if (!canvas) return;
                     const ctx = canvas.getContext('2d'); ctx.imageSmoothingEnabled = false;
-                    const W = canvas.width, H = canvas.height; ctx.clearRect(0,0,W,H);
+                    const W = canvas.width, H = canvas.height; ctx.clearRect(0, 0, W, H);
                     if (lang === 'it') {
-                        const w3 = Math.floor(W/3);
-                        ctx.fillStyle = '#088A29'; ctx.fillRect(0,0,w3,H);
-                        ctx.fillStyle = '#FFFFFF'; ctx.fillRect(w3,0,w3,H);
-                        ctx.fillStyle = '#CE2B37'; ctx.fillRect(w3*2,0,W-w3*2,H);
+                        const w3 = Math.floor(W / 3);
+                        ctx.fillStyle = '#088A29'; ctx.fillRect(0, 0, w3, H);
+                        ctx.fillStyle = '#FFFFFF'; ctx.fillRect(w3, 0, w3, H);
+                        ctx.fillStyle = '#CE2B37'; ctx.fillRect(w3 * 2, 0, W - w3 * 2, H);
                     } else if (lang === 'fr') {
-                        const w3 = Math.floor(W/3);
-                        ctx.fillStyle = '#0055A4'; ctx.fillRect(0,0,w3,H);
-                        ctx.fillStyle = '#FFFFFF'; ctx.fillRect(w3,0,w3,H);
-                        ctx.fillStyle = '#EF4135'; ctx.fillRect(w3*2,0,W-w3*2,H);
+                        const w3 = Math.floor(W / 3);
+                        ctx.fillStyle = '#0055A4'; ctx.fillRect(0, 0, w3, H);
+                        ctx.fillStyle = '#FFFFFF'; ctx.fillRect(w3, 0, w3, H);
+                        ctx.fillStyle = '#EF4135'; ctx.fillRect(w3 * 2, 0, W - w3 * 2, H);
                     } else {
-                        ctx.fillStyle = '#012169'; ctx.fillRect(0,0,W,H);
-                        ctx.lineCap = 'square'; ctx.strokeStyle = '#FFFFFF'; ctx.lineWidth = Math.max(1, Math.floor(Math.min(W,H)*0.28));
-                        ctx.beginPath(); ctx.moveTo(-W,-W); ctx.lineTo(W*2,W*2); ctx.stroke();
-                        ctx.beginPath(); ctx.moveTo(W*2,-W); ctx.lineTo(-W,W*2); ctx.stroke();
-                        ctx.strokeStyle = '#C8102E'; ctx.lineWidth = Math.max(1, Math.floor(Math.min(W,H)*0.12));
-                        ctx.beginPath(); ctx.moveTo(-W,-W); ctx.lineTo(W*2,W*2); ctx.stroke();
-                        ctx.beginPath(); ctx.moveTo(W*2,-W); ctx.lineTo(-W,W*2); ctx.stroke();
-                        const whiteCross = Math.max(1, Math.floor(Math.min(W,H)*0.26)); ctx.fillStyle = '#FFFFFF';
-                        ctx.fillRect(Math.floor(W/2-whiteCross/2),0,whiteCross,H); ctx.fillRect(0,Math.floor(H/2-whiteCross/2),W,whiteCross);
-                        const redCross = Math.max(1, Math.floor(Math.min(W,H)*0.12)); ctx.fillStyle = '#C8102E';
-                        ctx.fillRect(Math.floor(W/2-redCross/2),0,redCross,H); ctx.fillRect(0,Math.floor(H/2-redCross/2),W,redCross);
+                        ctx.fillStyle = '#012169'; ctx.fillRect(0, 0, W, H);
+                        ctx.lineCap = 'square'; ctx.strokeStyle = '#FFFFFF'; ctx.lineWidth = Math.max(1, Math.floor(Math.min(W, H) * 0.28));
+                        ctx.beginPath(); ctx.moveTo(-W, -W); ctx.lineTo(W * 2, W * 2); ctx.stroke();
+                        ctx.beginPath(); ctx.moveTo(W * 2, -W); ctx.lineTo(-W, W * 2); ctx.stroke();
+                        ctx.strokeStyle = '#C8102E'; ctx.lineWidth = Math.max(1, Math.floor(Math.min(W, H) * 0.12));
+                        ctx.beginPath(); ctx.moveTo(-W, -W); ctx.lineTo(W * 2, W * 2); ctx.stroke();
+                        ctx.beginPath(); ctx.moveTo(W * 2, -W); ctx.lineTo(-W, W * 2); ctx.stroke();
+                        const whiteCross = Math.max(1, Math.floor(Math.min(W, H) * 0.26)); ctx.fillStyle = '#FFFFFF';
+                        ctx.fillRect(Math.floor(W / 2 - whiteCross / 2), 0, whiteCross, H); ctx.fillRect(0, Math.floor(H / 2 - whiteCross / 2), W, whiteCross);
+                        const redCross = Math.max(1, Math.floor(Math.min(W, H) * 0.12)); ctx.fillStyle = '#C8102E';
+                        ctx.fillRect(Math.floor(W / 2 - redCross / 2), 0, redCross, H); ctx.fillRect(0, Math.floor(H / 2 - redCross / 2), W, redCross);
                     }
                 }
                 let selectedIndex = Math.max(0, LANGS.indexOf((window.DICT && window.DICT.lang) || DEFAULT_LANG));
@@ -143,12 +153,12 @@
                 LANGS.forEach((l, idx) => {
                     const box = document.querySelector(`#staticLangSelector .lang-flag[data-lang="${l}"]`);
                     if (!box) return;
-                    box.addEventListener('click', function() {
-                            if (!window.langSelectionEnabled) return;
-                            selectedIndex = idx;
-                            try { localStorage.setItem('bh_lang', l); } catch (e) {}
-                            refreshStaticSelection();
-                            loadDictionary(l, function() { applyTranslations(); });
+                    box.addEventListener('click', function () {
+                        if (!window.langSelectionEnabled) return;
+                        selectedIndex = idx;
+                        try { localStorage.setItem('bh_lang', l); } catch (e) { }
+                        refreshStaticSelection();
+                        loadDictionary(l, function () { applyTranslations(); });
                     });
                 });
 
@@ -156,7 +166,7 @@
                 document.addEventListener('keydown', function staticLangKeyHandler(ev) {
                     const staticRoot = document.getElementById('staticLangSelector');
                     // only if static selector is visible
-                        if (!window.langSelectionEnabled || !staticRoot || staticRoot.classList.contains('hidden')) return;
+                    if (!window.langSelectionEnabled || !staticRoot || staticRoot.classList.contains('hidden')) return;
                     if (ev.key === 'ArrowLeft' || ev.key === 'ArrowRight') {
                         ev.preventDefault();
                         if (ev.key === 'ArrowLeft') selectedIndex = (selectedIndex - 1 + LANGS.length) % LANGS.length;
@@ -164,13 +174,13 @@
                         refreshStaticSelection();
                         // auto-apply language as soon as selection moves
                         const lang = LANGS[selectedIndex];
-                        try { localStorage.setItem('bh_lang', lang); } catch (e) {}
-                        loadDictionary(lang, function() { applyTranslations(); });
+                        try { localStorage.setItem('bh_lang', lang); } catch (e) { }
+                        loadDictionary(lang, function () { applyTranslations(); });
                     } else if (ev.key === 'Enter') {
                         // keep Enter as a fallback (applies language too)
                         const lang = LANGS[selectedIndex];
-                        try { localStorage.setItem('bh_lang', lang); } catch (e) {}
-                        loadDictionary(lang, function() { applyTranslations(); });
+                        try { localStorage.setItem('bh_lang', lang); } catch (e) { }
+                        loadDictionary(lang, function () { applyTranslations(); });
                     }
                 });
 
@@ -179,8 +189,9 @@
         })();
 
         // update the player hints area on the static attract screen according to credits
-        // keep track of previous two-player availability to detect unlock transition
+        // keep track of previous player availability to detect unlock transitions
         let lastTwoAvailable = false;
+        let lastOneAvailable = false;
         function refreshAttractPlayerHints() {
             const D = window.DICT || {};
             const hint1 = document.getElementById('attractHint1');
@@ -199,20 +210,31 @@
                 hint1.classList.remove('available'); hint1.classList.add('unavailable');
                 hint2.classList.remove('available'); hint2.classList.add('unavailable');
                 lastTwoAvailable = false;
+                lastOneAvailable = false;
             } else if (c >= needForOne && c < needForTwo) {
                 // only one available
                 hint1.classList.add('available'); hint1.classList.remove('unavailable');
                 hint2.classList.remove('available'); hint2.classList.add('unavailable');
+                // trigger an unlock effect when 1-player becomes available (match 2-player behavior)
+                if (!lastOneAvailable) {
+                    try { hint1.classList.add('unlock'); setTimeout(() => { hint1.classList.remove('unlock'); }, 700); } catch (e) { }
+                }
                 lastTwoAvailable = false;
+                lastOneAvailable = true;
             } else {
                 // both available
                 hint1.classList.add('available'); hint1.classList.remove('unavailable');
                 const nowTwo = true;
                 hint2.classList.add('available'); hint2.classList.remove('unavailable');
+                // animate unlock for both hints if either became newly available
+                if (!lastOneAvailable) {
+                    try { hint1.classList.add('unlock'); setTimeout(() => { hint1.classList.remove('unlock'); }, 700); } catch (e) { }
+                }
                 if (!lastTwoAvailable) {
-                    try { hint2.classList.add('unlock'); setTimeout(() => { hint2.classList.remove('unlock'); }, 700); } catch (e) {}
+                    try { hint2.classList.add('unlock'); setTimeout(() => { hint2.classList.remove('unlock'); }, 700); } catch (e) { }
                 }
                 lastTwoAvailable = nowTwo;
+                lastOneAvailable = true;
             }
         }
 
@@ -236,25 +258,25 @@
                     const c = document.createElement('canvas'); c.width = 64; c.height = 64; c.setAttribute('data-sprite', k);
                     const lbl = document.createElement('div'); lbl.className = 'label'; lbl.textContent = k;
                     item.appendChild(c); item.appendChild(lbl); gallery.appendChild(item);
-                    const ctx = c.getContext('2d'); ctx.imageSmoothingEnabled = false; ctx.clearRect(0,0,c.width,c.height);
+                    const ctx = c.getContext('2d'); ctx.imageSmoothingEnabled = false; ctx.clearRect(0, 0, c.width, c.height);
                     // decide how to draw: prefer sprite sheet, then tail, then programmatic
                     const size = Math.min(c.width, c.height) - 8;
                     if (spriteReady && SPRITE_SHEET_MAP[k]) {
-                        drawFromSheet(ctx, k, c.width/2, c.height/2, size);
+                        drawFromSheet(ctx, k, c.width / 2, c.height / 2, size);
                     } else if (tailReady && TAIL_SHEET_MAP[k]) {
-                        drawFromTail(ctx, k, c.width/2, c.height/2, size);
+                        drawFromTail(ctx, k, c.width / 2, c.height / 2, size);
                     } else {
                         // programmatic patterns: map some common names
-                        if (k === 'player') drawPlayerSpriteAt(ctx, c.width/2, c.height/2, size, '#00ff00');
-                        else if (k === 'block') drawBlockSpriteAt(ctx, c.width/2, c.height/2, size, false, 0);
-                        else if (k === 'key') drawKeySpriteAt(ctx, c.width/2, c.height/2, size);
-                        else if (k === 'door' || k === 'door_img') drawDoorSpriteAt(ctx, c.width/2, c.height/2, size, false);
-                        else if (k === 'target') drawTargetSpriteAt(ctx, c.width/2, c.height/2, size);
-                        else if (k === 'dynamite' || k === 'dynamite2') drawDynamiteSpriteAt(ctx, c.width/2, c.height/2, size);
-                        else if (k === 'coin' || k === 'doubloon') drawCoinSpriteAt(ctx, c.width/2, c.height/2, size);
+                        if (k === 'player') drawPlayerSpriteAt(ctx, c.width / 2, c.height / 2, size, '#00ff00');
+                        else if (k === 'block') drawBlockSpriteAt(ctx, c.width / 2, c.height / 2, size, false, 0);
+                        else if (k === 'key') drawKeySpriteAt(ctx, c.width / 2, c.height / 2, size);
+                        else if (k === 'door') drawDoorSpriteAt(ctx, c.width / 2, c.height / 2, size, false);
+                        else if (k === 'target') drawTargetSpriteAt(ctx, c.width / 2, c.height / 2, size);
+                        else if (k === 'dynamite' || k === 'dynamite2') drawDynamiteSpriteAt(ctx, c.width / 2, c.height / 2, size);
+                        else if (k === 'doblon') drawCoinSpriteAt(ctx, c.width / 2, c.height / 2, size);
                         else {
                             // fallback: draw cell placeholder
-                            ctx.fillStyle = '#666'; ctx.fillRect(8,8,size,size);
+                            ctx.fillStyle = '#666'; ctx.fillRect(8, 8, size, size);
                         }
                     }
                 });
@@ -310,15 +332,37 @@
                 if (infoEl) {
                     // prefer a dictionary override if present
                     if (D.coin_info) infoEl.textContent = D.coin_info.replace('{per}', per).replace('{two}', per * 2);
-                    else infoEl.textContent = `1 player: ${per} coin${per>1?'s':''} — 2 players: ${per*2} coins`;
+                    else infoEl.textContent = `1 player: ${per} coin${per > 1 ? 's' : ''} — 2 players: ${per * 2} coins`;
+                }
+            } catch (e) { }
+
+            // Optional: draw dashed border around the inner bounds to visualize the playable room
+            try {
+                if (window._showInnerBoundsBorder) {
+                    const ibb = _ib_draw; // inner bounds used for drawing walls
+                    ctx.save();
+                    ctx.setLineDash([8, 4]);
+                    ctx.strokeStyle = 'rgba(255,200,0,0.95)';
+                    ctx.lineWidth = Math.max(2, Math.round(scale(4)));
+                    ctx.strokeRect(ibb.minX + 0.5, ibb.minY + 0.5, Math.max(0, ibb.maxX - ibb.minX - 1), Math.max(0, ibb.maxY - ibb.minY - 1));
+                    ctx.setLineDash([]);
+                    // label the border with width x height in tiles (approx)
+                    try {
+                        const approxW = Math.round((ibb.maxX - ibb.minX) / (spriteReady && spriteCellW ? Math.max(8, Math.round(Math.min(spriteCellW, spriteCellH) * (SIZE_SCALE || 1))) : Math.round(scale(32))));
+                        const approxH = Math.round((ibb.maxY - ibb.minY) / (spriteReady && spriteCellH ? Math.max(8, Math.round(Math.min(spriteCellW, spriteCellH) * (SIZE_SCALE || 1))) : Math.round(scale(32))));
+                        ctx.fillStyle = 'rgba(255,200,0,0.95)';
+                        ctx.font = '14px monospace';
+                        ctx.fillText(`${approxW}x${approxH}`, ibb.minX + 8, Math.max(ibb.minY + 18, ibb.maxY - 8));
+                    } catch (e) { }
+                    ctx.restore();
                 }
             } catch (e) { }
         }
-        
+
         // Load a level map defined as JS to avoid CORS (expects files under data/level/levelXY.js)
         // The level file should set window.LEVEL_MAP = { cols, rows, map: [[tileKey,...],...], tileSize?: number }
         function loadLevelMap(level, sublevel, cb) {
-            try { window.LEVEL_MAP = null; } catch (e) {}
+            try { window.LEVEL_MAP = null; } catch (e) { }
             const name = `level${level}${sublevel}`; // e.g. level10 for level=1 sublevel=0
             const existing = document.querySelector(`script[data-level]`);
             if (existing) existing.remove();
@@ -399,16 +443,16 @@
         // Game objects
         let blocks = [];
         let dynamiteBoxes = [];
-        let doubloonBoxes = [];
+        let doblonBoxes = [];
         // Explosion visuals
         let explosions = [];
         // Screen shake state for strong explosions
         let screenShake = { time: 0, maxTime: 0, intensity: 0 };
         const STRONG_EXPLOSION_THRESHOLD = (window.GAME_CONFIG && window.GAME_CONFIG.STRONG_EXPLOSION_THRESHOLD) || 4; // blocks destroyed to trigger shake
-        // Invulnerability (doubloon) state
+        // Invulnerability (doblon) state
         let playerInvulnerable = false;
         let invulTimer = 0;
-        const DOUBLOON_DURATION_FRAMES = (window.GAME_CONFIG && window.GAME_CONFIG.DOUBLOON_DURATION_FRAMES) || (5 * 60); // ~5 seconds
+        const DOBLON_DURATION_FRAMES = (window.GAME_CONFIG && window.GAME_CONFIG.DOUBLOON_DURATION_FRAMES) || (5 * 60); // ~5 seconds
         // Sound and dynamite settings
         let soundEnabled = true;
         const DYNAMITE_MAX = (window.GAME_CONFIG && window.GAME_CONFIG.DYNAMITE_MAX) || 50; // fixed per level
@@ -501,7 +545,7 @@
                 '00100'
             ]
             ,
-            coin: [
+            doblon: [
                 '00100',
                 '01110',
                 '11110',
@@ -512,9 +556,9 @@
         };
 
         // Supporto per sprite sheet: images/sprite.png è una griglia 4x4 (da sinistra a destra, dall'alto in basso):
-        // Riga 0: dynamite, heart, rock, helmet
-        // Riga 1: dynamite, door, diamond, shards
-        // Riga 2: key, sand, ghost, doubloon
+        // Riga 0: dynamite, heart, block, player
+        // Riga 1: dynamite, door, dynamon, shards
+        // Riga 2: key, sand, ghost, doblon
         // Riga 3: wall, mine_tile, hole, explosion
         const sheetCols = 4, sheetRows = 4;
         let spriteSheet = new Image();
@@ -525,18 +569,18 @@
             // row 0
             dynamite: { r: 0, c: 0 },
             heart: { r: 0, c: 1 },
-            rock: { r: 0, c: 2 },
-            helmet: { r: 0, c: 3 },
+            block: { r: 0, c: 2 },
+            player: { r: 0, c: 3 },
             // row 1
             dynamite2: { r: 1, c: 0 },
-            door_img: { r: 1, c: 1 },
-            diamond: { r: 1, c: 2 },
+            door: { r: 1, c: 1 },
+            dynamon: { r: 1, c: 2 },
             shards: { r: 1, c: 3 },
             // row 2
             key: { r: 2, c: 0 },
             sand: { r: 2, c: 1 },
             ghost: { r: 2, c: 2 },
-            doubloon: { r: 2, c: 3 },
+            doblon: { r: 2, c: 3 },
             // row 3
             wall: { r: 3, c: 0 },
             mine_tile: { r: 3, c: 1 },
@@ -573,6 +617,69 @@
         let tailSheet = new Image();
         let tailReady = false;
         let tailCellW = 0, tailCellH = 0;
+        // computed bounding boxes per-tail entry (filled after tailSheet loads)
+        const TAIL_SHEET_BBOX = {};
+        // Tiles that block movement (player can't pass through)
+        const IMPASSABLE_TILES = new Set(['wall1', 'wall2', 'wall3', 'wall4', 'wall', 'mine_tile']);
+
+        // Compute tight bounding boxes for each tail sheet entry (callable from console)
+        function computeTailBBoxes() {
+            if (!tailReady) return false;
+            try {
+                // draw the full tail sheet into a temporary canvas
+                const tmp = document.createElement('canvas');
+                tmp.width = tailSheet.width;
+                tmp.height = tailSheet.height;
+                const tctx = tmp.getContext('2d');
+                tctx.imageSmoothingEnabled = false;
+                tctx.clearRect(0, 0, tmp.width, tmp.height);
+                tctx.drawImage(tailSheet, 0, 0);
+                Object.keys(TAIL_SHEET_MAP).forEach(key => {
+                    const e = TAIL_SHEET_MAP[key];
+                    const cx = Math.round(e.c * tailCellW);
+                    const cy = Math.round(e.r * tailCellH);
+                    const cw = Math.max(1, Math.round(tailCellW));
+                    const ch = Math.max(1, Math.round(tailCellH));
+                    let imgData;
+                    try { imgData = tctx.getImageData(cx, cy, cw, ch); } catch (err) { imgData = null; }
+                    if (!imgData) {
+                        const pad = Math.max(1, Math.round(Math.min(tailCellW, tailCellH) * 0.02));
+                        TAIL_SHEET_BBOX[key] = { sx: Math.round(cx + pad), sy: Math.round(cy + pad), sw: Math.max(4, Math.round(cw - pad * 2)), sh: Math.max(4, Math.round(ch - pad * 2)) };
+                        return;
+                    }
+                    const data = imgData.data;
+                    let minX = cw, minY = ch, maxX = -1, maxY = -1;
+                    for (let y = 0; y < ch; y++) {
+                        for (let x = 0; x < cw; x++) {
+                            const idx = (y * cw + x) * 4 + 3;
+                            const a = data[idx];
+                            if (a > 8) {
+                                if (x < minX) minX = x;
+                                if (x > maxX) maxX = x;
+                                if (y < minY) minY = y;
+                                if (y > maxY) maxY = y;
+                            }
+                        }
+                    }
+                    if (maxX < 0) {
+                        const pad = Math.max(1, Math.round(Math.min(tailCellW, tailCellH) * 0.02));
+                        TAIL_SHEET_BBOX[key] = { sx: Math.round(cx + pad), sy: Math.round(cy + pad), sw: Math.max(4, Math.round(cw - pad * 2)), sh: Math.max(4, Math.round(ch - pad * 2)) };
+                    } else {
+                        const pad = 1;
+                        const sx = Math.max(0, cx + minX - pad);
+                        const sy = Math.max(0, cy + minY - pad);
+                        const sw = Math.min(tailSheet.width - sx, (maxX - minX + 1) + pad * 2);
+                        const sh = Math.min(tailSheet.height - sy, (maxY - minY + 1) + pad * 2);
+                        TAIL_SHEET_BBOX[key] = { sx: sx, sy: sy, sw: Math.max(4, Math.round(sw)), sh: Math.max(4, Math.round(sh)) };
+                    }
+                });
+                console.log('Computed TAIL_SHEET_BBOX for', Object.keys(TAIL_SHEET_BBOX).length, 'entries');
+                return true;
+            } catch (e) {
+                console.warn('Failed to compute tail bboxes', e);
+                return false;
+            }
+        }
         const TAIL_SHEET_MAP = {
             // row 0: wall variants
             wall1: { r: 0, c: 0 },
@@ -602,27 +709,94 @@
             tailCellW = tcellWf;
             tailCellH = tcellHf;
             tailReady = true;
+            // Compute tight bounding boxes for each entry to avoid cutting or extra padding
+            try { computeTailBBoxes(); } catch (e) { console.warn('Failed to compute tail bboxes', e); }
             // redraw gallery when tail sheet becomes available
             try { initSpriteGallery(); } catch (e) { }
             console.log('tailSheet loaded', { w: tailSheet.width, h: tailSheet.height, cellW: tailCellW, cellH: tailCellH });
         };
         tailSheet.onerror = function () { tailReady = false; try { initSpriteGallery(); } catch (e) { } };
-        tailSheet.src = 'images/tail.png';
+        // The actual tilesheet filename in the repo is images/tile.png (not tail.png)
+        tailSheet.src = 'images/tile.png';
+        console.log('tailSheet src set to images/tile.png');
+        // expose a helper so you can re-run bbox detection from the console after replacing the image
+        try {
+            window.refreshTileBBoxes = function () { return computeTailBBoxes(); };
+            window.toggleTileDebug = function () { window._debugShowTailBBoxes = !window._debugShowTailBBoxes; console.log('tile debug now', !!window._debugShowTailBBoxes); return !!window._debugShowTailBBoxes; };
+        } catch (e) { }
+
+        // Global toggle to disable floor map creation/drawing and related collision checks (useful to debug map drawing)
+        // Set to `false` to re-enable floor rendering and FLOOR_MAP behavior.
+        try { window.DISABLE_FLOOR = true; } catch (e) { window.DISABLE_FLOOR = true; }
+        // Global toggle to disable the inner wall border drawing
+        // Set to `false` to re-enable walls
+        try { window.DISABLE_WALL = true; } catch (e) { window.DISABLE_WALL = true; }
+        // Toggle to show a visual border around the loaded floor map (schema)
+        try { window._showFloorBorder = true; window.toggleFloorBorder = function () { window._showFloorBorder = !window._showFloorBorder; console.log('floor border', !!window._showFloorBorder); return !!window._showFloorBorder; }; } catch (e) { window._showFloorBorder = true; }
+        try {
+            window._showInnerBoundsBorder = true;
+            window.toggleInnerBoundsBorder = function () { window._showInnerBoundsBorder = !window._showInnerBoundsBorder; console.log('inner bounds', !!window._showInnerBoundsBorder); return !!window._showInnerBoundsBorder; };
+        } catch (e) { window._showInnerBoundsBorder = true; }
 
         function drawFromTail(ctx, keyName, cx, cy, size, rotate = 0) {
             if (!tailReady) return false;
             const entry = TAIL_SHEET_MAP[keyName];
             if (!entry) return false;
-            // use rounded source rects calculated from float cell sizes
-            const pad = Math.max(1, Math.round(Math.min(tailCellW, tailCellH) * 0.02));
-            const sx = Math.round(entry.c * tailCellW + pad);
-            const sy = Math.round(entry.r * tailCellH + pad);
-            const sw = Math.max(4, Math.round(tailCellW - pad * 2));
-            const sh = Math.max(4, Math.round(tailCellH - pad * 2));
+            // prefer tight bounding boxes if we computed them on load
+            let sx, sy, sw, sh;
+            const bbox = TAIL_SHEET_BBOX[keyName];
+            if (bbox) {
+                sx = bbox.sx; sy = bbox.sy; sw = bbox.sw; sh = bbox.sh;
+            } else {
+                // use rounded source rects calculated from float cell sizes as fallback
+                const pad = Math.max(1, Math.round(Math.min(tailCellW, tailCellH) * 0.02));
+                sx = Math.round(entry.c * tailCellW + pad);
+                sy = Math.round(entry.r * tailCellH + pad);
+                sw = Math.max(4, Math.round(tailCellW - pad * 2));
+                sh = Math.max(4, Math.round(tailCellH - pad * 2));
+            }
             ctx.save();
             ctx.translate(cx, cy);
             if (rotate) ctx.rotate(rotate);
-            try { ctx.drawImage(tailSheet, sx, sy, sw, sh, -size / 2, -size / 2, size, size); } catch (e) { }
+            try {
+                // preserve source aspect ratio: scale so the longer source side maps to `size`
+                const aspect = sw / sh;
+                let dw, dh;
+                if (aspect >= 1) {
+                    dw = size;
+                    dh = Math.max(1, Math.round(size / aspect));
+                } else {
+                    dh = size;
+                    dw = Math.max(1, Math.round(size * aspect));
+                }
+                ctx.drawImage(tailSheet, sx, sy, sw, sh, -dw / 2, -dh / 2, dw, dh);
+            } catch (e) { }
+            ctx.restore();
+            return true;
+        }
+
+        // Draw a tail tile stretched to a rectangular target (no aspect-preservation)
+        function drawTailTile(ctx, keyName, cx, cy, targetW, targetH, rotate = 0) {
+            if (!tailReady) return false;
+            const entry = TAIL_SHEET_MAP[keyName];
+            if (!entry) return false;
+            let sx, sy, sw, sh;
+            const bbox = TAIL_SHEET_BBOX[keyName];
+            if (bbox) {
+                sx = bbox.sx; sy = bbox.sy; sw = bbox.sw; sh = bbox.sh;
+            } else {
+                const pad = Math.max(1, Math.round(Math.min(tailCellW, tailCellH) * 0.02));
+                sx = Math.round(entry.c * tailCellW + pad);
+                sy = Math.round(entry.r * tailCellH + pad);
+                sw = Math.max(4, Math.round(tailCellW - pad * 2));
+                sh = Math.max(4, Math.round(tailCellH - pad * 2));
+            }
+            ctx.save();
+            ctx.translate(cx, cy);
+            if (rotate) ctx.rotate(rotate);
+            try {
+                ctx.drawImage(tailSheet, sx, sy, sw, sh, -targetW / 2, -targetH / 2, targetW, targetH);
+            } catch (e) { }
             ctx.restore();
             return true;
         }
@@ -677,8 +851,8 @@
         }
 
         function drawPlayerSpriteAt(ctx, cx, cy, size, color) {
-            // prefer sprite sheet if available (helmet used for player)
-            if (drawFromSheet(ctx, 'helmet', cx, cy, size, player.angle)) return;
+            // prefer sprite sheet if available (player sprite used for player)
+            if (drawFromSheet(ctx, 'player', cx, cy, size, player.angle)) return;
             ctx.save();
             drawSpritePattern(ctx, SPRITES.player, cx, cy, size, [color]);
             // eyes/highlight
@@ -691,8 +865,8 @@
 
         function drawBlockSpriteAt(ctx, cx, cy, size, pulse, angle = 0) {
             const color = pulse ? '#ff6a00' : '#ff00ff';
-            // rock sprite at (0,2) - passiamo rotate se presente
-            if (drawFromSheet(ctx, 'rock', cx, cy, size, angle)) return;
+            // block sprite at (0,2) - passiamo rotate se presente
+            if (drawFromSheet(ctx, 'block', cx, cy, size, angle)) return;
 
             // Fallback programmatico: applichiamo la rotazione al contesto
             ctx.save();
@@ -720,7 +894,7 @@
         }
 
         function drawDoorSpriteAt(ctx, cx, cy, size, open) {
-            if (drawFromSheet(ctx, 'door_img', cx, cy - (size * 0.1), size)) return;
+            if (drawFromSheet(ctx, 'door', cx, cy - (size * 0.1), size)) return;
             drawSpritePattern(ctx, SPRITES.door, cx, cy - (size * 0.1), size, [open ? '#00ff00' : '#ff4444']);
             // small frame
             ctx.strokeStyle = '#ffff00';
@@ -729,7 +903,7 @@
         }
 
         function drawTargetSpriteAt(ctx, cx, cy, size) {
-            if (drawFromSheet(ctx, 'diamond', cx, cy, size)) return;
+            if (drawFromSheet(ctx, 'dynamon', cx, cy, size)) return;
             drawSpritePattern(ctx, SPRITES.target, cx, cy, size, ['#ffff00']);
             ctx.strokeStyle = '#ff00ff';
             ctx.lineWidth = 1;
@@ -753,8 +927,8 @@
         }
 
         function drawCoinSpriteAt(ctx, cx, cy, size) {
-            if (drawFromSheet(ctx, 'doubloon', cx, cy, size)) return;
-            drawSpritePattern(ctx, SPRITES.coin, cx, cy, size, ['#ffd700']);
+            if (drawFromSheet(ctx, 'doblon', cx, cy, size)) return;
+            drawSpritePattern(ctx, SPRITES.doblon, cx, cy, size, ['#ffd700']);
             // inner shine
             ctx.fillStyle = 'rgba(255,255,255,0.35)';
             ctx.beginPath();
@@ -839,12 +1013,12 @@
 
             // Setup doors according to new config
             setupDoorsForStage(stageConfig.doorsCount || 0);
-            // Setup doubloons for this gameLevel
-            let doubloonCount = 1;
-            if (gameLevel <= 2) doubloonCount = 1;
-            else if (gameLevel === 3) doubloonCount = 2;
-            else if (gameLevel >= 4) doubloonCount = 4;
-            setupDoubloonsForStage(doubloonCount);
+            // Setup doblons for this gameLevel
+            let doblonCount = 1;
+            if (gameLevel <= 2) doblonCount = 1;
+            else if (gameLevel === 3) doblonCount = 2;
+            else if (gameLevel >= 4) doblonCount = 4;
+            setupDoblonsForStage(doblonCount);
         }
 
         // Clean fields and advance after transition
@@ -894,9 +1068,9 @@
             }
         }
 
-        // Place doubloons (gold coins) for this stage
-        function setupDoubloonsForStage(count) {
-            doubloonBoxes = [];
+        // Place doblons (gold coins) for this stage
+        function setupDoblonsForStage(count) {
+            doblonBoxes = [];
             if (!count || count <= 0) return;
             for (let i = 0; i < count; i++) {
                 const box = {
@@ -906,7 +1080,7 @@
                     height: scale(32),
                     collected: false
                 };
-                doubloonBoxes.push(box);
+                doblonBoxes.push(box);
             }
         }
 
@@ -1100,33 +1274,55 @@
             // stop attract/top-ten alternation while selection UI is active
             try { clearInterval(attractInterval); } catch (e) { }
             // disable language selection while player/level selection is active
-            try { window.langSelectionEnabled = false; } catch (e) {}
-            try { const staticRoot = document.getElementById('staticLangSelector'); if (staticRoot) staticRoot.classList.add('disabled'); } catch (e) {}
+            try { window.langSelectionEnabled = false; } catch (e) { }
+            try { const staticRoot = document.getElementById('staticLangSelector'); if (staticRoot) staticRoot.classList.add('disabled'); } catch (e) { }
             const selectDiv = document.createElement('div');
             selectDiv.id = 'levelSelect';
-            selectDiv.style.position = 'absolute';
+            // Make Select Level a standalone full-screen attract-like overlay so it's independent
+            selectDiv.style.position = 'fixed';
             selectDiv.style.top = '0';
             selectDiv.style.left = '0';
-            selectDiv.style.width = '100%';
-            selectDiv.style.height = '100%';
-            selectDiv.style.background = 'rgba(10,14,39,0.95)';
+            selectDiv.style.width = '100vw';
+            selectDiv.style.height = '100vh';
+            selectDiv.classList.add('attract-bg');
             selectDiv.style.display = 'flex';
             selectDiv.style.flexDirection = 'column';
             selectDiv.style.justifyContent = 'center';
             selectDiv.style.alignItems = 'center';
-            selectDiv.style.zIndex = '20';
+            selectDiv.style.zIndex = '40';
             // use dictionary for translated labels where available
             const D = window.DICT || {};
+            // Use a centered semi-transparent panel so the attract screen remains visible behind
             selectDiv.innerHTML = `
-                <div class="title" style="margin-bottom:40px;">${D.level_select_title || 'SELECT LEVEL'}</div>
-                <button class="levelButton" data-diff="Beginner">${D.beginner || 'BEGINNER'}</button>
-                <button class="levelButton" data-diff="Medium">${D.medium || 'MEDIUM'}</button>
-                <button class="levelButton" data-diff="Expert">${D.expert || 'EXPERT'}</button>
+                <div class="levelPanel">
+                    <div class="title" style="margin-bottom:18px;">${D.level_select_title || 'SELECT LEVEL'}</div>
+                    <div class="panelButtons">
+                        <button class="levelButton" data-diff="Beginner">${D.beginner || 'BEGINNER'}</button>
+                        <button class="levelButton" data-diff="Medium">${D.medium || 'MEDIUM'}</button>
+                        <button class="levelButton" data-diff="Expert">${D.expert || 'EXPERT'}</button>
+                    </div>
+                </div>
             `;
             document.getElementById('gameContainer').appendChild(selectDiv);
-            // Stile pulsanti senza bordo
+            // Stile pulsanti senza bordo (keep styling but do not hide static attract children)
             const style = document.createElement('style');
-            style.innerHTML = `.levelButton {
+            style.innerHTML = `
+.levelPanel {
+                /* more transparent so the attract background remains the main visual */
+                background: rgba(10,14,39,0.5);
+                padding: 18px 24px;
+                border-radius: 10px;
+                box-shadow: 0 8px 20px rgba(0,0,0,0.45);
+                min-width: 280px;
+                text-align: center;
+                margin: 0 auto;
+            }
+            .panelButtons { display:flex; flex-direction:column; gap:12px; align-items:center; }
+            @media (min-width: 640px) {
+                .panelButtons { flex-direction:row; justify-content:center; gap:18px; }
+            }
+
+.levelButton {
                 padding: 15px 40px;
                 font-family: 'Press Start 2P', monospace;
                 font-size: 16px;
@@ -1186,15 +1382,16 @@
                         try { style.remove(); } catch (e) { }
                         document.removeEventListener('keydown', levelKeyHandler);
                         // re-enable language selection when selection is cancelled
-                        try { window.langSelectionEnabled = true; } catch (e) {}
-                        try { const staticRoot2 = document.getElementById('staticLangSelector'); if (staticRoot2) staticRoot2.classList.remove('disabled'); } catch (e) {}
-                        // restart attract/top-ten alternation when selection is cancelled
+                        try { window.langSelectionEnabled = true; } catch (e) { }
+                        try { const staticRoot2 = document.getElementById('staticLangSelector'); if (staticRoot2) staticRoot2.classList.remove('disabled'); } catch (e) { }
+                        // restore attract screen children (remove bg-only) and restart attract/top-ten alternation when selection is cancelled
+                        try { const staticAttract = document.getElementById('attractScreen'); if (staticAttract) staticAttract.classList.remove('bg-only'); } catch (e) { }
                         showAttractOrTopTen();
                     }
                 }
             };
             document.addEventListener('keydown', levelKeyHandler);
-            // After choosing difficulty, let player choose number of players (1 or 2)
+            // After choosing difficulty, start the game immediately when a difficulty is chosen
             selectDiv.querySelectorAll('button').forEach(btn => {
                 btn.onclick = function () {
                     selectedDifficulty = btn.getAttribute('data-diff');
@@ -1204,73 +1401,24 @@
                         case 'Expert': gameLevel = 3; subLevel = 1; scoreMultiplier = 3; break;
                     }
                     configureStage();
-                    // show player count chooser
-                    // localized players/options panel
-                    const D2 = window.DICT || {};
-                    selectDiv.innerHTML = `
-                        <div class="title" style="margin-bottom:20px;">${D2.players_options || 'PLAYERS & OPTIONS'}</div>
-                        <div style="margin-bottom:10px;">${D2.credits_label || 'Credits'}: <span id="selectCredits">${credits}</span></div>
-                        <div style="margin-bottom:10px;"><button id="soundToggle" class="optBtn">${soundEnabled ? (D2.sound_on || 'SOUND: ON') : (D2.sound_off || 'SOUND: OFF')}</button></div>
-                        <div style="margin-bottom:10px;">${D2.dynamite_per_level || 'DYNAMITE PER LEVEL'}: ${DYNAMITE_MAX}</div>
-                        <button class="playerBtn" data-p="1">${D2.players_1 || '1 PLAYER'}</button>
-                        <button class="playerBtn" data-p="2">${(D2.players_2 || '2 PLAYERS').replace(/\s*\([^\)]*\)\s*$/, '')}</button>
-                        <div style="margin-top:20px;"><button class="startNow">${D2.start || 'START'}</button></div>
-                    `;
-                    // wire buttons and disable 2-player when not enough credits
-                    selectDiv.querySelectorAll('.playerBtn').forEach(pbtn => {
-                        const pcount = parseInt(pbtn.getAttribute('data-p'));
-                        if (pcount === 2 && (credits || 0) < 2) {
-                            pbtn.disabled = true;
-                            pbtn.style.opacity = '0.6';
-                            pbtn.title = 'Serve 2 crediti';
-                            pbtn.style.cursor = 'not-allowed';
-                        }
-                        pbtn.onclick = function () {
-                            if (pbtn.disabled) return;
-                            numPlayers = parseInt(pbtn.getAttribute('data-p'));
-                            // highlight selection
-                            selectDiv.querySelectorAll('.playerBtn').forEach(x => x.style.opacity = '0.6');
-                            pbtn.style.opacity = '1';
-                        };
-                    });
-                    // Se è stato richiesto di pre-selezionare il numero di giocatori, esegui il click
-                    if (preselectPlayers && (preselectPlayers === 1 || preselectPlayers === 2)) {
-                        setTimeout(() => {
-                            const autoBtn = selectDiv.querySelector(`.playerBtn[data-p="${preselectPlayers}"]`);
-                            if (autoBtn) autoBtn.click();
-                        }, 60);
+                    // choose players: use preselectPlayers if supplied, otherwise default to 1
+                    numPlayers = (preselectPlayers === 2) ? 2 : 1;
+                    const per = (window.GAME_CONFIG && window.GAME_CONFIG.CREDITS_PER_PLAYER) || 1;
+                    const required = per * numPlayers;
+                    if (credits < required) {
+                        playCoinRequiredSound(required);
+                        animateCreditHint(required);
+                        return;
                     }
-                    // default 1 player
-                    numPlayers = 1;
-                    // wire sound toggle
-                    const soundToggle = selectDiv.querySelector('#soundToggle');
-                    if (soundToggle) {
-                        soundToggle.onclick = function () {
-                            soundEnabled = !soundEnabled;
-                            soundToggle.textContent = `SOUND: ${soundEnabled ? 'ON' : 'OFF'}`;
-                        };
-                    }
-                    const startNow = selectDiv.querySelector('.startNow');
-                    startNow.onclick = function () {
-                        // require credits equal to number of players * per-player cost
-                        const per = (window.GAME_CONFIG && window.GAME_CONFIG.CREDITS_PER_PLAYER) || 1;
-                        const required = per * numPlayers;
-                        if (credits < required) {
-                            // feedback sonoro/visivo quando si clicca START senza crediti
-                            playCoinRequiredSound(required);
-                            animateCreditHint(required);
-                            return;
-                        }
-                        credits -= required;
-                        // update selection credit display if present
-                        const sc = document.getElementById('selectCredits'); if (sc) sc.textContent = credits;
-                        // remove UI and start
-                        selectDiv.remove();
-                        style.remove();
-                        document.getElementById('attractScreen').classList.add('hidden');
-                        startGame();
-                        updateHUD();
-                    };
+                    credits -= required;
+                    try { const sc = document.getElementById('selectCredits'); if (sc) sc.textContent = credits; } catch (e) { }
+                    try { document.removeEventListener('keydown', levelKeyHandler); } catch (e) { }
+                    try { const staticAttract3 = document.getElementById('attractScreen'); if (staticAttract3) staticAttract3.classList.remove('bg-only'); } catch (e) { }
+                    try { selectDiv.remove(); } catch (e) { }
+                    try { style.remove(); } catch (e) { }
+                    try { document.getElementById('attractScreen').classList.add('hidden'); } catch (e) { }
+                    startGame();
+                    updateHUD();
                 };
             });
         }
@@ -1323,7 +1471,7 @@
                         const cols = Math.max(1, Math.floor(w / fs));
                         const rows = Math.max(1, Math.floor(h / fs));
                         const map = [];
-                        const sandKeys = ['sand1','sand2','sand3','sand4','sand5','sand6','sand7','sand8','sand9','sand10','sandPile'];
+                        const sandKeys = ['sand1', 'sand2', 'sand3', 'sand4', 'sand5', 'sand6', 'sand7', 'sand8', 'sand9', 'sand10', 'sandPile'];
                         for (let r = 0; r < rows; r++) {
                             const row = [];
                             for (let c = 0; c < cols; c++) {
@@ -1631,7 +1779,7 @@
                 }
 
                 // If sprite sheet is loaded, draw repeated 'wall' tiles along the inner rectangle
-                if (spriteReady && drawFromSheet) {
+                if (!window.DISABLE_WALL && spriteReady && drawFromSheet) {
                     const w = Math.max(0, _ib_draw.maxX - _ib_draw.minX);
                     const h = Math.max(0, _ib_draw.maxY - _ib_draw.minY);
                     const cols = Math.max(1, Math.ceil(w / tileSize));
@@ -1644,9 +1792,9 @@
                         if (tailReady && drawFromTail) {
                             // pick a wall variant in a tiled pattern for variety
                             const idx = i % 4;
-                            const wkeys = ['wall1','wall2','wall3','wall4'];
-                            drawFromTail(ctx, wkeys[idx], cx, topY, tileSize, 0) || drawFromSheet(ctx, 'wall', cx, topY, tileSize, 0);
-                            drawFromTail(ctx, wkeys[idx], cx, bottomY, tileSize, 0) || drawFromSheet(ctx, 'wall', cx, bottomY, tileSize, 0);
+                            const wkeys = ['wall1', 'wall2', 'wall3', 'wall4'];
+                            drawTailTile(ctx, wkeys[idx], cx, topY, tileSize, tileSize, 0) || drawFromSheet(ctx, 'wall', cx, topY, tileSize, 0);
+                            drawTailTile(ctx, wkeys[idx], cx, bottomY, tileSize, tileSize, 0) || drawFromSheet(ctx, 'wall', cx, bottomY, tileSize, 0);
                         } else {
                             drawFromSheet(ctx, 'wall', cx, topY, tileSize, 0);
                             drawFromSheet(ctx, 'wall', cx, bottomY, tileSize, 0);
@@ -1659,9 +1807,9 @@
                         const rightX = _ib_draw.maxX - tileSize / 2;
                         if (tailReady && drawFromTail) {
                             const idx = j % 4;
-                            const wkeys = ['wall1','wall2','wall3','wall4'];
-                            drawFromTail(ctx, wkeys[idx], leftX, cy, tileSize, 0) || drawFromSheet(ctx, 'wall', leftX, cy, tileSize, 0);
-                            drawFromTail(ctx, wkeys[idx], rightX, cy, tileSize, 0) || drawFromSheet(ctx, 'wall', rightX, cy, tileSize, 0);
+                            const wkeys = ['wall1', 'wall2', 'wall3', 'wall4'];
+                            drawTailTile(ctx, wkeys[idx], leftX, cy, tileSize, tileSize, 0) || drawFromSheet(ctx, 'wall', leftX, cy, tileSize, 0);
+                            drawTailTile(ctx, wkeys[idx], rightX, cy, tileSize, tileSize, 0) || drawFromSheet(ctx, 'wall', rightX, cy, tileSize, 0);
                         } else {
                             drawFromSheet(ctx, 'wall', leftX, cy, tileSize, 0);
                             drawFromSheet(ctx, 'wall', rightX, cy, tileSize, 0);
@@ -1669,9 +1817,11 @@
                     }
                 } else {
                     // subtle wall border fallback
-                    ctx.strokeStyle = '#444444';
-                    ctx.lineWidth = Math.max(3, Math.round(scale(6)));
-                    ctx.strokeRect(_ib_draw.minX + 1, _ib_draw.minY + 1, Math.max(0, _ib_draw.maxX - _ib_draw.minX - 2), Math.max(0, _ib_draw.maxY - _ib_draw.minY - 2));
+                    if (!window.DISABLE_WALL) {
+                        ctx.strokeStyle = '#444444';
+                        ctx.lineWidth = Math.max(3, Math.round(scale(6)));
+                        ctx.strokeRect(_ib_draw.minX + 1, _ib_draw.minY + 1, Math.max(0, _ib_draw.maxX - _ib_draw.minX - 2), Math.max(0, _ib_draw.maxY - _ib_draw.minY - 2));
+                    }
                 }
             } catch (e) { }
 
@@ -1691,6 +1841,8 @@
                 const vx = inputX * invMag * player.speed;
                 const vy = inputY * invMag * player.speed;
 
+                // remember previous position to allow revert if movement collides with impassable tile
+                const prevX = player.x, prevY = player.y;
                 player.x += vx;
                 player.y += vy;
                 playerIsMoving = true;
@@ -1701,6 +1853,24 @@
                     player.x = Math.max(ib.minX, Math.min(ib.maxX - player.width, player.x));
                     player.y = Math.max(ib.minY, Math.min(ib.maxY - player.height, player.y));
                 }
+
+                // Prevent walking into impassable floor tiles defined by FLOOR_MAP
+                try {
+                    if (!window.DISABLE_FLOOR && window.FLOOR_MAP) {
+                        const fm = window.FLOOR_MAP;
+                        const centerXNew = player.x + player.width / 2;
+                        const centerYNew = player.y + player.height / 2;
+                        const gx = Math.floor((centerXNew - fm.originX) / fm.tileSize);
+                        const gy = Math.floor((centerYNew - fm.originY) / fm.tileSize);
+                        if (gx >= 0 && gx < fm.cols && gy >= 0 && gy < fm.rows) {
+                            const tk = fm.map[gy][gx];
+                            if (tk && IMPASSABLE_TILES.has(tk)) {
+                                // revert movement
+                                player.x = prevX; player.y = prevY; playerIsMoving = false;
+                            }
+                        }
+                    }
+                } catch (e) { }
 
                 // Determine direction string and angle
                 if (inputY < 0 && inputX === 0) player.direction = 'up';
@@ -1740,7 +1910,7 @@
                 }
             }
 
-                // Draw player with rotation based on movement angle
+            // Draw player with rotation based on movement angle
             ctx.font = '32px Arial';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
@@ -1751,7 +1921,7 @@
             const centerY = player.y + player.height / 2;
             // Check fall into hole (tile 'hole' from FLOOR_MAP)
             try {
-                if (window.FLOOR_MAP && !playerInvulnerable) {
+                if (!window.DISABLE_FLOOR && window.FLOOR_MAP && !playerInvulnerable) {
                     const fm = window.FLOOR_MAP;
                     const gx = Math.floor((centerX - fm.originX) / fm.tileSize);
                     const gy = Math.floor((centerY - fm.originY) / fm.tileSize);
@@ -1762,7 +1932,7 @@
                             lives--;
                             createParticles(player.x + player.width / 2, player.y + player.height / 2, '#ff0000');
                             playerInvulnerable = true;
-                            invulTimer = Math.max(90, Math.floor(DOUBLOON_DURATION_FRAMES / 2));
+                            invulTimer = Math.max(90, Math.floor(DOBLON_DURATION_FRAMES / 2));
                             // respawn player to a safe location (center-bottom of inner bounds)
                             const ib = getInnerBounds();
                             player.x = Math.max(ib.minX + 8, Math.min(ib.maxX - player.width - 8, (ib.minX + ib.maxX) / 2 - player.width / 2));
@@ -1784,7 +1954,7 @@
 
             // Draw floor tiles (if FLOOR_MAP is present) — must happen after walls so floor is under objects
             try {
-                if (window.FLOOR_MAP) {
+                if (!window.DISABLE_FLOOR && window.FLOOR_MAP) {
                     const fm = window.FLOOR_MAP;
                     for (let ry = 0; ry < fm.rows; ry++) {
                         for (let cxIdx = 0; cxIdx < fm.cols; cxIdx++) {
@@ -1792,19 +1962,89 @@
                             const drawX = fm.originX + cxIdx * fm.tileSize + fm.tileSize / 2;
                             const drawY = fm.originY + ry * fm.tileSize + fm.tileSize / 2;
                             // prefer tail tiles for floor
-                            if (tailReady && drawFromTail) {
-                                drawFromTail(ctx, tk, drawX, drawY, fm.tileSize, 0) || drawFromSheet(ctx, 'rock', drawX, drawY, fm.tileSize, 0);
+                            if (tailReady && drawTailTile) {
+                                // Use drawTailTile to stretch the tail-sheet source to the grid cell
+                                // This avoids tight-source aspect-preserved drawing that can overlap adjacent tiles
+                                drawTailTile(ctx, tk, drawX, drawY, fm.tileSize, fm.tileSize, 0) || drawFromSheet(ctx, 'block', drawX, drawY, fm.tileSize, 0);
+                            } else if (tailReady && drawFromTail) {
+                                // fallback to aspect-preserving draw if the strict tile-stretch helper isn't available
+                                drawFromTail(ctx, tk, drawX, drawY, fm.tileSize, 0) || drawFromSheet(ctx, 'block', drawX, drawY, fm.tileSize, 0);
                             } else if (spriteReady && drawFromSheet) {
                                 // fallback: use a generic tile if available
-                                drawFromSheet(ctx, 'rock', drawX, drawY, fm.tileSize, 0);
+                                drawFromSheet(ctx, 'block', drawX, drawY, fm.tileSize, 0);
                             } else {
                                 // programmatic fallback: sandy rectangle
-                                ctx.fillStyle = '#bfa57a'; ctx.fillRect(drawX - fm.tileSize/2, drawY - fm.tileSize/2, fm.tileSize, fm.tileSize);
+                                ctx.fillStyle = '#bfa57a'; ctx.fillRect(drawX - fm.tileSize / 2, drawY - fm.tileSize / 2, fm.tileSize, fm.tileSize);
                             }
                         }
                     }
                 }
-            } catch(e) { }
+            } catch (e) { }
+
+            // Debug overlay: show computed tail bboxes and impassable tiles when enabled
+            try {
+                if (window._debugShowTailBBoxes && tailReady) {
+                    // draw bboxes from TAIL_SHEET_BBOX (in source image space) onto a small preview
+                    const previewX = 8, previewY = canvas.height - 8 - Math.min(160, tailSheet.height);
+                    const previewW = Math.min(160, tailSheet.width);
+                    const previewH = Math.min(160, tailSheet.height);
+                    // draw a tiny background for visibility
+                    ctx.save();
+                    ctx.globalAlpha = 0.9;
+                    ctx.fillStyle = '#000';
+                    ctx.fillRect(previewX - 2, previewY - 2, previewW + 4, previewH + 4);
+                    // draw the full tail sheet preview (scaled)
+                    try { ctx.drawImage(tailSheet, 0, 0, tailSheet.width, tailSheet.height, previewX, previewY, previewW, previewH); } catch (e) { }
+                    // overlay bbox rectangles (scaled)
+                    Object.keys(TAIL_SHEET_BBOX).forEach(k => {
+                        const b = TAIL_SHEET_BBOX[k];
+                        if (!b) return;
+                        const sx = previewX + (b.sx / tailSheet.width) * previewW;
+                        const sy = previewY + (b.sy / tailSheet.height) * previewH;
+                        const sw = (b.sw / tailSheet.width) * previewW;
+                        const sh = (b.sh / tailSheet.height) * previewH;
+                        ctx.strokeStyle = '#00ffff'; ctx.lineWidth = 1; ctx.strokeRect(sx, sy, sw, sh);
+                        ctx.fillStyle = 'rgba(0,255,255,0.08)'; ctx.fillRect(sx, sy, sw, sh);
+                        ctx.fillStyle = '#fff'; ctx.font = '10px monospace'; ctx.fillText(k, sx + 2, sy + 10);
+                    });
+                    ctx.restore();
+
+                    // highlight impassable tiles on the floor map (only if floor enabled)
+                    if (!window.DISABLE_FLOOR && window.FLOOR_MAP) {
+                        const fm = window.FLOOR_MAP;
+                        ctx.save();
+                        ctx.strokeStyle = 'rgba(255,0,0,0.9)'; ctx.lineWidth = 2;
+                        for (let ry = 0; ry < fm.rows; ry++) {
+                            for (let cxIdx = 0; cxIdx < fm.cols; cxIdx++) {
+                                const tk = fm.map[ry][cxIdx];
+                                if (tk && IMPASSABLE_TILES.has(tk)) {
+                                    const rx = fm.originX + cxIdx * fm.tileSize;
+                                    const ry_px = fm.originY + ry * fm.tileSize;
+                                    ctx.strokeRect(rx + 1, ry_px + 1, fm.tileSize - 2, fm.tileSize - 2);
+                                }
+                            }
+                        }
+                        ctx.restore();
+                    }
+                    // optionally draw a border around the floor map (visual aid)
+                    try {
+                        if (window._showFloorBorder && window.FLOOR_MAP) {
+                            const fm = window.FLOOR_MAP;
+                            ctx.save();
+                            ctx.setLineDash([6, 4]);
+                            ctx.strokeStyle = 'rgba(0,200,255,0.95)';
+                            ctx.lineWidth = 2;
+                            ctx.strokeRect(fm.originX + 0.5, fm.originY + 0.5, fm.cols * fm.tileSize - 1, fm.rows * fm.tileSize - 1);
+                            ctx.setLineDash([]);
+                            ctx.fillStyle = 'rgba(0,200,255,0.9)';
+                            ctx.font = '14px monospace';
+                            const label = `${fm.cols}x${fm.rows}`;
+                            ctx.fillText(label, fm.originX + 6, Math.max(fm.originY + 16, fm.originY + fm.rows * fm.tileSize - 6));
+                            ctx.restore();
+                        }
+                    } catch (e) { }
+                }
+            } catch (e) { }
 
             // Aggiorna e disegna il target (gemma)
             target.currentLife++;
@@ -2371,8 +2611,8 @@
                 }
             }
             // Disegna dobloni d'oro (per invulnerabilità)
-            for (let i = doubloonBoxes.length - 1; i >= 0; i--) {
-                const d = doubloonBoxes[i];
+            for (let i = doblonBoxes.length - 1; i >= 0; i--) {
+                const d = doblonBoxes[i];
                 if (d.collected) continue;
                 // draw coin sprite
                 drawCoinSpriteAt(ctx, d.x, d.y, Math.max(d.width, d.height));
@@ -2380,11 +2620,11 @@
                 if (checkCollision(player, { x: d.x - d.width / 2, y: d.y - d.height / 2, width: d.width, height: d.height })) {
                     d.collected = true;
                     playerInvulnerable = true;
-                    invulTimer = DOUBLOON_DURATION_FRAMES;
-                    addFloatingText(d.x, d.y, 'DOUBLOON! INVUL', '#ffd700');
+                    invulTimer = DOBLON_DURATION_FRAMES;
+                    addFloatingText(d.x, d.y, 'DOBLON! INVUL', '#ffd700');
                     // play a pickup chime
                     if (soundEnabled) playTransitionSound();
-                    doubloonBoxes.splice(i, 1);
+                    doblonBoxes.splice(i, 1);
                     updateHUD();
                 }
             }
@@ -2895,9 +3135,9 @@
         <div class="byline">by SpikeCode</div>
     `;
             document.getElementById('gameContainer').appendChild(attractDiv);
-                // start small demo that runs while attract overlay is visible
-                const demoCanvas = attractDiv.querySelector('#demoCanvas');
-                if (demoCanvas) startAttractDemo(demoCanvas, attractDiv);
+            // start small demo that runs while attract overlay is visible
+            const demoCanvas = attractDiv.querySelector('#demoCanvas');
+            if (demoCanvas) startAttractDemo(demoCanvas, attractDiv);
             // Assicuriamoci che il contatore mostri il valore corrente dei crediti
             const _acInit = document.getElementById('attractCredits'); if (_acInit) _acInit.textContent = (credits || 0);
             // wire pixel-flag selector: render flags, handle left/right and clicks
@@ -3106,7 +3346,7 @@
                     // shooting
                     if (p.cooldown > 0) p.cooldown--;
                     if (Math.random() < 0.02 && p.cooldown === 0) {
-                        demo.bullets.push({ x: p.x + 6 * Math.sign(p.vx||1), y: p.y, vx: 2 * Math.sign(p.vx||1), life: 80 });
+                        demo.bullets.push({ x: p.x + 6 * Math.sign(p.vx || 1), y: p.y, vx: 2 * Math.sign(p.vx || 1), life: 80 });
                         p.cooldown = 30 + Math.floor(Math.random() * 30);
                     }
                     // update bullets
@@ -3137,7 +3377,7 @@
                     }
                     // player
                     const p = demo.player;
-                    ctx.fillStyle = '#66ff66'; ctx.fillRect(p.x - p.size/2, p.y - p.size/2, p.size, p.size);
+                    ctx.fillStyle = '#66ff66'; ctx.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
                     // bullets/particles
                     for (const b of demo.bullets) { ctx.fillStyle = '#ff9966'; ctx.fillRect(b.x - 2, b.y - 2, 4, 4); }
                     // HUD small
@@ -3153,7 +3393,7 @@
 
                 // expose stop function on container so caller can cancel
                 container.demoStop = function () {
-                    try { if (raf) cancelAnimationFrame(raf); } catch (e) {}
+                    try { if (raf) cancelAnimationFrame(raf); } catch (e) { }
                     container.demoStop = null;
                 };
             }
