@@ -1,0 +1,617 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BLOCK HUNTER</title>
+    <script src="https://cdn.jsdelivr.net/npm/phaser@3.70.0/dist/phaser.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            background: #0a0e27;
+            font-family: 'Press Start 2P', monospace;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            overflow: hidden;
+        }
+        
+        #game-container {
+            border: 4px solid #00ffff;
+            box-shadow: 
+                0 0 20px rgba(0, 255, 255, 0.5),
+                0 0 40px rgba(0, 255, 255, 0.3);
+            border-radius: 8px;
+        }
+    </style>
+</head>
+<body>
+    <div id="game-container"></div>
+
+    <script>
+        // Configurazione Phaser
+        const config = {
+            type: Phaser.AUTO,
+            width: 800,
+            height: 600,
+            parent: 'game-container',
+            physics: {
+                default: 'arcade',
+                arcade: {
+                    gravity: { y: 0 },
+                    debug: false
+                }
+            },
+            scene: {
+                preload: preload,
+                create: create,
+                update: update
+            },
+            backgroundColor: '#0a0e27'
+        };
+
+        const game = new Phaser.Game(config);
+        
+        // Variabili globali
+        let player;
+        let target;
+        let blocks;
+        let bullets;
+        let cursors;
+        let spaceKey;
+        let scoreText;
+        let levelText;
+        let livesText;
+        let score = 0;
+        let level = 1;
+        let lives = 3;
+        let gameStarted = false;
+        let targetLifetime = 0;
+        let blockSpawnTimer = 0;
+        let particles;
+
+        function preload() {
+            // In Phaser non serve precaricare nulla per forme geometriche
+        }
+
+        function create() {
+            this.cameras.main.setBackgroundColor('#0a0e27');
+            
+            // Griglia di sfondo
+            const graphics = this.add.graphics();
+            graphics.lineStyle(1, 0x00ffff, 0.1);
+            for (let i = 0; i < 800; i += 40) {
+                graphics.lineBetween(i, 0, i, 600);
+            }
+            for (let i = 0; i < 600; i += 40) {
+                graphics.lineBetween(0, i, 800, i);
+            }
+            
+            // Schermata Attract
+            if (!gameStarted) {
+                createAttractScreen(this);
+                return;
+            }
+            
+            // Player
+            player = this.add.rectangle(400, 550, 20, 20, 0x00ff00);
+            this.physics.add.existing(player);
+            player.body.setCollideWorldBounds(true);
+            
+            // Target
+            target = this.add.rectangle(0, 0, 15, 15, 0xffff00);
+            this.physics.add.existing(target);
+            spawnTarget(this);
+            
+            // Gruppi
+            blocks = this.physics.add.group();
+            bullets = this.physics.add.group();
+            particles = this.add.particles(0, 0);
+            
+            // Input
+            cursors = this.input.keyboard.createCursorKeys();
+            spaceKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
+            
+            // HUD
+            scoreText = this.add.text(16, 16, 'SCORE: 0', {
+                fontSize: '14px',
+                fontFamily: 'Press Start 2P',
+                fill: '#00ffff'
+            }).setDepth(100);
+            
+            levelText = this.add.text(16, 40, 'LEVEL: 1', {
+                fontSize: '14px',
+                fontFamily: 'Press Start 2P',
+                fill: '#00ffff'
+            }).setDepth(100);
+            
+            livesText = this.add.text(16, 64, 'LIVES: 3', {
+                fontSize: '14px',
+                fontFamily: 'Press Start 2P',
+                fill: '#00ffff'
+            }).setDepth(100);
+            
+            // Collisioni
+            this.physics.add.overlap(player, target, collectTarget, null, this);
+            this.physics.add.overlap(player, blocks, hitBlock, null, this);
+            this.physics.add.overlap(bullets, blocks, destroyBlock, null, this);
+        }
+
+        function createAttractScreen(scene) {
+            const centerX = 400;
+            const centerY = 300;
+            
+            // Titolo
+            const title = scene.add.text(centerX, 150, 'BLOCK HUNTER', {
+                fontSize: '48px',
+                fontFamily: 'Press Start 2P',
+                fill: '#ff00ff',
+                stroke: '#00ffff',
+                strokeThickness: 3
+            }).setOrigin(0.5);
+            
+            // Animazione glow del titolo
+            scene.tweens.add({
+                targets: title,
+                alpha: { from: 1, to: 0.5 },
+                duration: 1000,
+                yoyo: true,
+                repeat: -1
+            });
+            
+            // Istruzioni
+            const instructions = scene.add.text(centerX, 280, 
+                'FRECCE - MOVIMENTO\nSPAZIO - SPARA\nRECUPERA L\'OGGETTO\nSCHIVA I BLOCCHI',
+                {
+                    fontSize: '14px',
+                    fontFamily: 'Press Start 2P',
+                    fill: '#00ffff',
+                    align: 'center',
+                    lineSpacing: 10
+                }
+            ).setOrigin(0.5);
+            
+            // Pulsante Start
+            const startButton = scene.add.rectangle(centerX, 420, 300, 60, 0xff00ff);
+            const startText = scene.add.text(centerX, 420, 'INSERISCI MONETA', {
+                fontSize: '16px',
+                fontFamily: 'Press Start 2P',
+                fill: '#000000'
+            }).setOrigin(0.5);
+            
+            startButton.setInteractive({ useHandCursor: true });
+            
+            // Animazione pulsante
+            scene.tweens.add({
+                targets: startButton,
+                scaleX: { from: 1, to: 1.05 },
+                scaleY: { from: 1, to: 1.05 },
+                duration: 800,
+                yoyo: true,
+                repeat: -1
+            });
+            
+            startButton.on('pointerover', () => {
+                startButton.setFillStyle(0x00ffff);
+            });
+            
+            startButton.on('pointerout', () => {
+                startButton.setFillStyle(0xff00ff);
+            });
+            
+            startButton.on('pointerdown', () => {
+                gameStarted = true;
+                scene.scene.restart();
+            });
+            
+            // Enter key per iniziare
+            scene.input.keyboard.once('keydown-ENTER', () => {
+                gameStarted = true;
+                scene.scene.restart();
+            });
+            
+            // Animazione sfondo
+            const circles = [];
+            for (let i = 0; i < 5; i++) {
+                const circle = scene.add.circle(centerX, centerY, 50 + i * 40, 0x00ffff, 0);
+                circle.setStrokeStyle(2, 0x00ffff, 0.3);
+                circles.push(circle);
+                
+                scene.tweens.add({
+                    targets: circle,
+                    angle: 360,
+                    duration: 8000 + i * 1000,
+                    repeat: -1
+                });
+            }
+        }
+
+        function spawnTarget(scene) {
+            const x = Phaser.Math.Between(50, 750);
+            const y = Phaser.Math.Between(50, 450);
+            target.setPosition(x, y);
+            targetLifetime = 0;
+            
+            // Animazione pulsante target
+            scene.tweens.add({
+                targets: target,
+                scaleX: { from: 1, to: 1.3 },
+                scaleY: { from: 1, to: 1.3 },
+                duration: 500,
+                yoyo: true,
+                repeat: -1
+            });
+        }
+
+        function spawnBlock(scene) {
+            let block;
+            const spawnType = Math.random();
+            
+            // Level 1-2: blocchi spawn come funghi
+            if (level <= 2) {
+                const x = Phaser.Math.Between(40, 760);
+                const y = Phaser.Math.Between(50, 500);
+                block = scene.add.rectangle(x, y, 20, 20, 0xff00ff);
+                scene.physics.add.existing(block);
+                block.body.setVelocity(0, 0);
+                block.setData('landed', true);
+                block.setData('falling', false);
+                
+                // Animazione spawn
+                block.setScale(0);
+                scene.tweens.add({
+                    targets: block,
+                    scaleX: 1,
+                    scaleY: 1,
+                    duration: 300,
+                    ease: 'Back.easeOut'
+                });
+            }
+            // Level 3-4: funghi + caduta dall'alto
+            else if (level <= 4) {
+                if (spawnType < 0.5) {
+                    // Fungo
+                    const x = Phaser.Math.Between(40, 760);
+                    const y = Phaser.Math.Between(50, 500);
+                    block = scene.add.rectangle(x, y, 20, 20, 0xff00ff);
+                    scene.physics.add.existing(block);
+                    block.body.setVelocity(0, 0);
+                    block.setData('landed', true);
+                    block.setData('falling', false);
+                    block.setScale(0);
+                    scene.tweens.add({
+                        targets: block,
+                        scaleX: 1,
+                        scaleY: 1,
+                        duration: 300,
+                        ease: 'Back.easeOut'
+                    });
+                } else {
+                    // Caduta dall'alto
+                    const x = Phaser.Math.Between(20, 780);
+                    block = scene.add.rectangle(x, -20, 20, 20, 0xff00ff);
+                    scene.physics.add.existing(block);
+                    block.body.setVelocity(0, 100 + level * 20);
+                    block.setData('landed', false);
+                    block.setData('falling', true);
+                }
+            }
+            // Level 5-6: funghi + alto + lati
+            else if (level <= 6) {
+                if (spawnType < 0.3) {
+                    // Fungo
+                    const x = Phaser.Math.Between(40, 760);
+                    const y = Phaser.Math.Between(50, 500);
+                    block = scene.add.rectangle(x, y, 20, 20, 0xff00ff);
+                    scene.physics.add.existing(block);
+                    block.body.setVelocity(0, 0);
+                    block.setData('landed', true);
+                    block.setData('falling', false);
+                    block.setScale(0);
+                    scene.tweens.add({
+                        targets: block,
+                        scaleX: 1,
+                        scaleY: 1,
+                        duration: 300,
+                        ease: 'Back.easeOut'
+                    });
+                } else if (spawnType < 0.65) {
+                    // Alto
+                    const x = Phaser.Math.Between(20, 780);
+                    block = scene.add.rectangle(x, -20, 20, 20, 0xff00ff);
+                    scene.physics.add.existing(block);
+                    block.body.setVelocity(0, 120 + level * 15);
+                    block.setData('landed', false);
+                    block.setData('falling', true);
+                } else {
+                    // Lati
+                    const fromLeft = Math.random() < 0.5;
+                    const y = Phaser.Math.Between(50, 550);
+                    const x = fromLeft ? -20 : 820;
+                    block = scene.add.rectangle(x, y, 20, 20, 0xff00ff);
+                    scene.physics.add.existing(block);
+                    block.body.setVelocity(fromLeft ? 150 + level * 10 : -(150 + level * 10), 0);
+                    block.setData('landed', false);
+                    block.setData('falling', false);
+                }
+            }
+            // Level 7+: tutte le direzioni
+            else {
+                if (spawnType < 0.2) {
+                    // Fungo
+                    const x = Phaser.Math.Between(40, 760);
+                    const y = Phaser.Math.Between(50, 500);
+                    block = scene.add.rectangle(x, y, 20, 20, 0xff00ff);
+                    scene.physics.add.existing(block);
+                    block.body.setVelocity(0, 0);
+                    block.setData('landed', true);
+                    block.setData('falling', false);
+                    block.setScale(0);
+                    scene.tweens.add({
+                        targets: block,
+                        scaleX: 1,
+                        scaleY: 1,
+                        duration: 300,
+                        ease: 'Back.easeOut'
+                    });
+                } else {
+                    const direction = Phaser.Math.Between(0, 3);
+                    const speed = 180 + level * 10;
+                    
+                    switch(direction) {
+                        case 0: // Alto
+                            block = scene.add.rectangle(Phaser.Math.Between(20, 780), -20, 20, 20, 0xff00ff);
+                            scene.physics.add.existing(block);
+                            block.body.setVelocity(0, speed);
+                            block.setData('falling', true);
+                            break;
+                        case 1: // Destra
+                            block = scene.add.rectangle(820, Phaser.Math.Between(50, 550), 20, 20, 0xff00ff);
+                            scene.physics.add.existing(block);
+                            block.body.setVelocity(-speed, 0);
+                            break;
+                        case 2: // Basso
+                            block = scene.add.rectangle(Phaser.Math.Between(20, 780), 620, 20, 20, 0xff00ff);
+                            scene.physics.add.existing(block);
+                            block.body.setVelocity(0, -speed);
+                            break;
+                        case 3: // Sinistra
+                            block = scene.add.rectangle(-20, Phaser.Math.Between(50, 550), 20, 20, 0xff00ff);
+                            scene.physics.add.existing(block);
+                            block.body.setVelocity(speed, 0);
+                            break;
+                    }
+                    block.setData('landed', false);
+                    block.setData('falling', false);
+                }
+            }
+            
+            block.setStrokeStyle(2, 0x00ffff);
+            blocks.add(block);
+        }
+
+        function collectTarget(player, target) {
+            score += 100 * level;
+            scoreText.setText('SCORE: ' + score);
+            
+            // Effetto particelle
+            createParticleExplosion(this, target.x, target.y, 0xffff00);
+            
+            spawnTarget(this);
+            
+            // Level up ogni 500 punti
+            if (score > 0 && score % 500 === 0) {
+                level++;
+                levelText.setText('LEVEL: ' + level);
+            }
+        }
+
+        function hitBlock(player, block) {
+            if (block.getData('spawning')) return; // Non collidere durante spawn
+            
+            lives--;
+            livesText.setText('LIVES: ' + lives);
+            
+            // Effetto particelle
+            createParticleExplosion(this, player.x, player.y, 0xff0000);
+            
+            block.destroy();
+            
+            if (lives <= 0) {
+                gameOver(this);
+            }
+        }
+
+        function destroyBlock(bullet, block) {
+            score += 10;
+            scoreText.setText('SCORE: ' + score);
+            
+            // Effetto particelle
+            createParticleExplosion(this, block.x, block.y, 0xff00ff);
+            
+            bullet.destroy();
+            block.destroy();
+        }
+
+        function createParticleExplosion(scene, x, y, color) {
+            for (let i = 0; i < 8; i++) {
+                const particle = scene.add.rectangle(x, y, 4, 4, color);
+                scene.physics.add.existing(particle);
+                
+                const angle = (Math.PI * 2 * i) / 8;
+                const speed = 200;
+                particle.body.setVelocity(
+                    Math.cos(angle) * speed,
+                    Math.sin(angle) * speed
+                );
+                
+                scene.tweens.add({
+                    targets: particle,
+                    alpha: 0,
+                    duration: 500,
+                    onComplete: () => particle.destroy()
+                });
+            }
+        }
+
+        function shoot(scene) {
+            const bullet = scene.add.rectangle(player.x, player.y - 15, 4, 10, 0x00ff00);
+            scene.physics.add.existing(bullet);
+            bullet.body.setVelocity(0, -400);
+            bullets.add(bullet);
+        }
+
+        function gameOver(scene) {
+            scene.physics.pause();
+            
+            const overlay = scene.add.rectangle(400, 300, 800, 600, 0x000000, 0.8);
+            
+            const gameOverText = scene.add.text(400, 200, 'GAME OVER', {
+                fontSize: '48px',
+                fontFamily: 'Press Start 2P',
+                fill: '#ff0000',
+                stroke: '#ffff00',
+                strokeThickness: 3
+            }).setOrigin(0.5);
+            
+            const finalScore = scene.add.text(400, 280, 'SCORE FINALE: ' + score, {
+                fontSize: '16px',
+                fontFamily: 'Press Start 2P',
+                fill: '#00ffff'
+            }).setOrigin(0.5);
+            
+            const finalLevel = scene.add.text(400, 320, 'LIVELLO RAGGIUNTO: ' + level, {
+                fontSize: '16px',
+                fontFamily: 'Press Start 2P',
+                fill: '#00ffff'
+            }).setOrigin(0.5);
+            
+            const restartButton = scene.add.rectangle(400, 420, 250, 60, 0xff00ff);
+            const restartText = scene.add.text(400, 420, 'RIPROVA', {
+                fontSize: '20px',
+                fontFamily: 'Press Start 2P',
+                fill: '#000000'
+            }).setOrigin(0.5);
+            
+            restartButton.setInteractive({ useHandCursor: true });
+            restartButton.on('pointerdown', () => {
+                score = 0;
+                level = 1;
+                lives = 3;
+                gameStarted = true;
+                scene.scene.restart();
+            });
+        }
+
+        function update() {
+            if (!gameStarted) return;
+            
+            // Movimento player
+            if (cursors.left.isDown) {
+                player.x -= 5;
+            } else if (cursors.right.isDown) {
+                player.x += 5;
+            }
+            
+            if (cursors.up.isDown) {
+                player.y -= 5;
+            } else if (cursors.down.isDown) {
+                player.y += 5;
+            }
+            
+            // Limiti player
+            player.x = Phaser.Math.Clamp(player.x, 10, 790);
+            player.y = Phaser.Math.Clamp(player.y, 10, 590);
+            
+            // Sparo
+            if (Phaser.Input.Keyboard.JustDown(spaceKey)) {
+                shoot(this);
+            }
+            
+            // Target lifetime
+            targetLifetime++;
+            if (targetLifetime > 180) { // 3 secondi a 60fps
+                spawnTarget(this);
+            }
+            
+            // Spawn blocchi
+            const spawnRate = Math.max(30 - level * 2, 10);
+            blockSpawnTimer++;
+            if (blockSpawnTimer >= spawnRate) {
+                spawnBlock(this);
+                blockSpawnTimer = 0;
+            }
+            
+            // Update blocchi - gestione collisioni e stacking
+            blocks.children.entries.forEach((block, index) => {
+                if (block.getData('landed')) return;
+                
+                // Controlla collisione con altri blocchi
+                blocks.children.entries.forEach((otherBlock, otherIndex) => {
+                    if (index === otherIndex || !otherBlock.getData('landed')) return;
+                    
+                    const bounds1 = block.getBounds();
+                    const bounds2 = otherBlock.getBounds();
+                    
+                    // Predici la posizione nel prossimo frame
+                    const nextBounds = new Phaser.Geom.Rectangle(
+                        bounds1.x + block.body.velocity.x / 60,
+                        bounds1.y + block.body.velocity.y / 60,
+                        bounds1.width,
+                        bounds1.height
+                    );
+                    
+                    if (Phaser.Geom.Intersects.RectangleToRectangle(nextBounds, bounds2)) {
+                        // Ferma il blocco
+                        block.setData('landed', true);
+                        block.body.setVelocity(0, 0);
+                        
+                        // Posiziona correttamente
+                        if (block.body.velocity.y > 0) {
+                            block.y = otherBlock.y - 20;
+                        } else if (block.body.velocity.y < 0) {
+                            block.y = otherBlock.y + 20;
+                        } else if (block.body.velocity.x > 0) {
+                            block.x = otherBlock.x - 20;
+                        } else if (block.body.velocity.x < 0) {
+                            block.x = otherBlock.x + 20;
+                        }
+                    }
+                });
+                
+                // Controlla bordi
+                if (block.y >= 590 || block.y <= 10 || block.x <= 10 || block.x >= 790) {
+                    block.setData('landed', true);
+                    block.body.setVelocity(0, 0);
+                    block.y = Phaser.Math.Clamp(block.y, 10, 590);
+                    block.x = Phaser.Math.Clamp(block.x, 10, 790);
+                }
+            });
+            
+            // Rimuovi proiettili fuori schermo
+            bullets.children.entries.forEach(bullet => {
+                if (bullet.y < -20) {
+                    bullet.destroy();
+                }
+            });
+            
+            // Rimuovi blocchi molto fuori schermo
+            blocks.children.entries.forEach(block => {
+                if (block.x < -100 || block.x > 900 || block.y < -100 || block.y > 700) {
+                    if (!block.getData('landed')) {
+                        block.destroy();
+                    }
+                }
+            });
+        }
+    </script>
+</body>
+</html>

@@ -95,12 +95,12 @@
         // Prefer a persisted user choice in localStorage (key: 'bh_lang'), fall back to GAME_CONFIG/default
         const _persistedLang = (function () { try { return localStorage.getItem('bh_lang'); } catch (e) { return null; } })();
         const DEFAULT_LANG = _persistedLang || (window.GAME_CONFIG && window.GAME_CONFIG.DEFAULT_LANG) || 'en';
-    // Load flags sprite sheet (expects images/flags.png containing flags in sequence)
-    const FLAGS_LIST = ['it','fr','de','en','us','ja','es','zh'];
-    const FLAGS_LABEL = { it: 'IT', fr: 'FR', de: 'DE', en: 'EN', us: 'US', ja: 'JP', es: 'ES', zh: 'CN' };
-    const flagsImg = new Image();
-    flagsImg.src = 'images/flags.png';
-    flagsImg.onload = function () { console.log('flags sprite loaded', flagsImg.width, flagsImg.height); };
+        // Load flags sprite sheet (expects images/flags.png containing flags in sequence)
+        const FLAGS_LIST = ['it', 'fr', 'de', 'en', 'us', 'ja', 'es', 'zh'];
+        const FLAGS_LABEL = { it: 'IT', fr: 'FR', de: 'DE', en: 'EN', us: 'US', ja: 'JP', es: 'ES', zh: 'CN' };
+        const flagsImg = new Image();
+        flagsImg.src = 'images/flags.png';
+        flagsImg.onload = function () { console.log('flags sprite loaded', flagsImg.width, flagsImg.height); };
         // whether language selection is currently enabled (can be disabled while user is in player/level selection)
         window.langSelectionEnabled = true;
         function loadDictionary(lang, cb) {
@@ -3250,53 +3250,78 @@
 
         // Alternanza schermata iniziale/top ten
         let attractInterval = null;
-        function showAttractScreen() {
-            const attractDiv = document.createElement('div');
-            attractDiv.id = 'attractScreenCustom';
-            // ensure the attract overlay is full-viewport and remove in-game frame
-            document.body.classList.remove('in-game');
-            // classes provide full-viewport layout and background
-            attractDiv.classList.add('attract-bg', 'overlay', 'attract-custom');
-            const D = window.DICT || {};
-            attractDiv.innerHTML = `
+        // Initialize attract UI once and attach handlers. Subsequent shows only refresh/redraw.
+        function initAttractUI() {
+            let attractDiv = document.getElementById('attractScreen') || document.getElementById('attractScreenCustom');
+            if (!attractDiv) {
+                attractDiv = document.createElement('div');
+                attractDiv.id = 'attractScreen';
+                document.getElementById('gameContainer').appendChild(attractDiv);
+            }
+
+            // If already initialized, don't reattach handlers
+            if (attractDiv._init) return attractDiv;
+            attractDiv._init = true;
+
+            // If markup absent, create it once (keeps existing DOM when present)
+            if (!attractDiv.querySelector('.title')) {
+                const D = window.DICT || {};
+                attractDiv.classList.add('attract-bg', 'overlay', 'attract-custom');
+                attractDiv.innerHTML = `
         <div class="title">${D.title || 'BLOCK HUNTER'}</div>
         <div class="insert-message">${D.insert_coin || 'INSERT COIN'}</div>
-        <!-- small demo canvas showing an autoplayed snippet of gameplay (doesn't affect real game state) -->
-        <div class="demo-wrap">
-            <canvas id="demoCanvas" width="320" height="180"></canvas>
+        <div class="demo-wrap"><canvas id="demoCanvas" width="320" height="180"></canvas></div>
+        <div class="lang-selector" id="langSelector">
+            <div class="lang-flag" data-lang="it"><canvas id="flag_it" width="48" height="32"></canvas><div class="lang-label">IT</div></div>
+            <div class="lang-flag" data-lang="fr"><canvas id="flag_fr" width="48" height="32"></canvas><div class="lang-label">FR</div></div>
+            <div class="lang-flag" data-lang="de"><canvas id="flag_de" width="48" height="32"></canvas><div class="lang-label">DE</div></div>
+            <div class="lang-flag" data-lang="en"><canvas id="flag_en" width="48" height="32"></canvas><div class="lang-label">EN</div></div>
+            <div class="lang-flag" data-lang="us"><canvas id="flag_us" width="48" height="32"></canvas><div class="lang-label">US</div></div>
+            <div class="lang-flag" data-lang="ja"><canvas id="flag_ja" width="48" height="32"></canvas><div class="lang-label">JP</div></div>
+            <div class="lang-flag" data-lang="es"><canvas id="flag_es" width="48" height="32"></canvas><div class="lang-label">ES</div></div>
+            <div class="lang-flag" data-lang="zh"><canvas id="flag_zh" width="48" height="32"></canvas><div class="lang-label">CN</div></div>
         </div>
-    <!-- language selector (flags from sprite) -->
-    <div class="lang-selector" id="langSelector">
-        <div class="lang-flag" data-lang="it"><canvas id="flag_it" width="48" height="32"></canvas><div class="lang-label">IT</div></div>
-        <div class="lang-flag" data-lang="fr"><canvas id="flag_fr" width="48" height="32"></canvas><div class="lang-label">FR</div></div>
-        <div class="lang-flag" data-lang="de"><canvas id="flag_de" width="48" height="32"></canvas><div class="lang-label">DE</div></div>
-        <div class="lang-flag" data-lang="en"><canvas id="flag_en" width="48" height="32"></canvas><div class="lang-label">EN</div></div>
-        <div class="lang-flag" data-lang="us"><canvas id="flag_us" width="48" height="32"></canvas><div class="lang-label">US</div></div>
-        <div class="lang-flag" data-lang="ja"><canvas id="flag_ja" width="48" height="32"></canvas><div class="lang-label">JP</div></div>
-        <div class="lang-flag" data-lang="es"><canvas id="flag_es" width="48" height="32"></canvas><div class="lang-label">ES</div></div>
-        <div class="lang-flag" data-lang="zh"><canvas id="flag_zh" width="48" height="32"></canvas><div class="lang-label">CN</div></div>
-    </div>
-        <!-- Footer con contatore crediti e pulsante inserisci moneta -->
         <div class="attract-footer-row">
             <div class="credit-footer">${D.credits_word || 'CREDITS'}: <span id="attractCredits">0</span></div>
             <button class="startButton" id="insertCoinBtn">${D.insert_coin_btn || 'INSERT COIN'}</button>
         </div>
         <div class="byline">by SpikeCode</div>
     `;
-            document.getElementById('gameContainer').appendChild(attractDiv);
-            // start small demo that runs while attract overlay is visible
-            const demoCanvas = attractDiv.querySelector('#demoCanvas');
-            if (demoCanvas) startAttractDemo(demoCanvas, attractDiv);
-            // Assicuriamoci che il contatore mostri il valore corrente dei crediti
-            const _acInit = document.getElementById('attractCredits'); if (_acInit) _acInit.textContent = (credits || 0);
-            // wire flag selector: use flags sprite when available
+            }
+
+            // cache for quick access
+            attractDiv._title = attractDiv.querySelector('.title');
+            attractDiv._insertMsg = attractDiv.querySelector('.insert-message');
+            attractDiv._demoCanvas = attractDiv.querySelector('#demoCanvas');
+            attractDiv._flagCanvases = {};
+            ['it','fr','de','en','us','ja','es','zh'].forEach(code => {
+                const c = attractDiv.querySelector('#flag_' + code);
+                if (c) attractDiv._flagCanvases[code] = c;
+            });
+
+            // insert coin handler (attach once)
+            const insertBtn = attractDiv.querySelector('#insertCoinBtn');
+            if (insertBtn) {
+                insertBtn.addEventListener('click', function (ev) {
+                    ev.stopPropagation();
+                    credits = (credits || 0) + 1;
+                    updateHUD();
+                    const ac = document.getElementById('attractCredits'); if (ac) ac.textContent = credits;
+                    const asc = document.getElementById('attractStaticCredits'); if (asc) asc.textContent = (credits && credits > 0) ? `${(window.DICT && window.DICT.credits_word) || 'CREDITS'}: ${credits}` : (window.DICT && window.DICT.insert_coin || 'INSERT COIN');
+                    if (soundEnabled) playCoinInsertSound();
+                    animateCreditHint(1);
+                    try { refreshAttractPlayerHints(); } catch (e) { }
+                });
+            }
+
+            // lang handling: attach once, expose cleanupLang
             const LANGS = FLAGS_LIST.slice();
-            let selectedLangIndex = Math.max(0, LANGS.indexOf((window.DICT && window.DICT.lang) || DEFAULT_LANG));
+            attractDiv._selectedLangIndex = Math.max(0, LANGS.indexOf((window.DICT && window.DICT.lang) || DEFAULT_LANG));
+
             function drawFlag(canvas, lang) {
                 const ctx = canvas.getContext('2d');
                 ctx.imageSmoothingEnabled = false;
                 const W = canvas.width; const H = canvas.height;
-                // clear
                 ctx.clearRect(0, 0, W, H);
                 const idx = LANGS.indexOf(lang);
                 if (flagsImg && flagsImg.naturalWidth && idx >= 0) {
@@ -3307,88 +3332,125 @@
                         return;
                     } catch (e) { /* fallback to placeholder */ }
                 }
-                // fallback: draw simple label
                 ctx.fillStyle = '#333'; ctx.fillRect(0, 0, W, H);
                 ctx.fillStyle = '#fff'; ctx.font = Math.max(10, Math.floor(H * 0.4)) + 'px monospace';
                 ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
                 ctx.fillText((FLAGS_LABEL[lang] || lang).toUpperCase(), W / 2, H / 2);
             }
 
-            function updateLangUI() {
+            function updateLangUI(selectedIndex) {
                 const boxes = attractDiv.querySelectorAll('.lang-flag');
                 boxes.forEach((b, idx) => {
-                    if (idx === selectedLangIndex) b.classList.add('selected'); else b.classList.remove('selected');
+                    if (idx === selectedIndex) b.classList.add('selected'); else b.classList.remove('selected');
                 });
             }
 
             function applySelectedLanguage() {
-                const lang = LANGS[selectedLangIndex];
+                const lang = LANGS[attractDiv._selectedLangIndex];
                 try { localStorage.setItem('bh_lang', lang); } catch (e) { /* ignore */ }
                 loadDictionary(lang, () => { applyTranslations(); });
             }
 
-            // render flags and wire interactions
+            // render flags and wire click interactions once
             LANGS.forEach((l, i) => {
-                const c = document.getElementById('flag_' + l);
+                const c = attractDiv.querySelector('#flag_' + l);
                 if (c) drawFlag(c, l);
                 const box = attractDiv.querySelector(`.lang-flag[data-lang="${l}"]`);
                 if (box) {
                     box.addEventListener('click', function (ev) {
-                        selectedLangIndex = i; updateLangUI(); applySelectedLanguage();
+                        attractDiv._selectedLangIndex = i; updateLangUI(i); applySelectedLanguage();
                     });
                 }
             });
-            updateLangUI();
+            updateLangUI(attractDiv._selectedLangIndex);
 
-            // keyboard navigation while attract overlay is present
             function langKeyHandler(ev) {
                 if (!document.body.contains(attractDiv)) return;
                 if (ev.key === 'ArrowLeft' || ev.key === 'ArrowRight') {
                     ev.preventDefault();
-                    if (ev.key === 'ArrowLeft') selectedLangIndex = (selectedLangIndex - 1 + LANGS.length) % LANGS.length;
-                    else selectedLangIndex = (selectedLangIndex + 1) % LANGS.length;
-                    updateLangUI();
+                    if (ev.key === 'ArrowLeft') attractDiv._selectedLangIndex = (attractDiv._selectedLangIndex - 1 + LANGS.length) % LANGS.length;
+                    else attractDiv._selectedLangIndex = (attractDiv._selectedLangIndex + 1) % LANGS.length;
+                    updateLangUI(attractDiv._selectedLangIndex);
                     applySelectedLanguage();
                 }
             }
             document.addEventListener('keydown', langKeyHandler);
-            // ensure we remove the handler when attract overlay is removed
             attractDiv.cleanupLang = function () { document.removeEventListener('keydown', langKeyHandler); };
-            // Demo runner cleanup placeholder
+
+            // demo stop placeholder
             attractDiv.demoStop = null;
-            // Pulsante "inserisci moneta": incrementa crediti e aggiorna HUD/overlay
-            const insertBtn = document.getElementById('insertCoinBtn');
-            if (insertBtn) {
-                insertBtn.onclick = function (ev) {
-                    ev.stopPropagation(); // non far scattare l'overlay click
-                    credits = (credits || 0) + 1;
-                    updateHUD();
-                    const ac = document.getElementById('attractCredits'); if (ac) ac.textContent = credits;
-                    const asc = document.getElementById('attractStaticCredits'); if (asc) asc.textContent = (credits && credits > 0) ? `${(window.DICT && window.DICT.credits_word) || 'CREDITS'}: ${credits}` : (window.DICT && window.DICT.insert_coin || 'INSERT COIN');
-                    // Play coin inserted sound + small animation
-                    if (soundEnabled) playCoinInsertSound();
-                    animateCreditHint(1);
-                    try { refreshAttractPlayerHints(); } catch (e) { }
-                    // Do NOT auto-open level selection here; user can click the screen or press Enter/1/2 to proceed.
-                };
-            }
-            // Clic sull'overlay (fuori dal pulsante) apre la selezione livelli solo se ci sono crediti
+
+            // overlay click: start level select if credits present
             attractDiv.addEventListener('click', function (ev) {
-                // ignora click sul pulsante stesso
                 if (ev.target && ev.target.id === 'insertCoinBtn') return;
                 if ((credits || 0) > 0) {
                     clearInterval(attractInterval);
                     const topDiv = document.querySelector('.gameOver'); if (topDiv) topDiv.remove();
                     try { if (attractDiv && attractDiv.cleanupLang) attractDiv.cleanupLang(); } catch (e) { }
-                    try { if (attractDiv && attractDiv.demoStop) attractDiv.demoStop(); } catch (e) { }
-                    attractDiv.remove();
+                    try { if (attractDiv && typeof attractDiv.demoStop === 'function') attractDiv.demoStop(); } catch (e) { }
+                    try { attractDiv.classList.add('hidden'); } catch (e) { }
                     showLevelSelect();
                 } else {
-                    // Se non ci sono crediti, mostra feedback sonoro e visivo
                     playCoinRequiredSound(1);
                     animateCreditHint(1);
                 }
             });
+
+            return attractDiv;
+        }
+
+        function refreshAttractUI() {
+            const attractDiv = initAttractUI();
+            if (!attractDiv) return;
+            const D = window.DICT || {};
+            if (attractDiv._title) attractDiv._title.textContent = D.title || 'BLOCK HUNTER';
+            if (attractDiv._insertMsg) attractDiv._insertMsg.textContent = D.insert_coin || 'INSERT COIN';
+            const ac = attractDiv.querySelector('#attractCredits'); if (ac) ac.textContent = (credits || 0);
+
+            // redraw flag canvases
+            Object.keys(attractDiv._flagCanvases || {}).forEach(lang => {
+                const c = attractDiv._flagCanvases[lang]; if (c) {
+                    try { (function drawFlag(canvas, lang) {
+                        const ctx = canvas.getContext('2d');
+                        ctx.imageSmoothingEnabled = false;
+                        const W = canvas.width; const H = canvas.height;
+                        ctx.clearRect(0, 0, W, H);
+                        const LANGS = FLAGS_LIST.slice();
+                        const idx = LANGS.indexOf(lang);
+                        if (flagsImg && flagsImg.naturalWidth && idx >= 0) {
+                            try {
+                                const sliceW = Math.floor(flagsImg.width / FLAGS_LIST.length);
+                                const sx = idx * sliceW;
+                                ctx.drawImage(flagsImg, sx, 0, sliceW, flagsImg.height, 0, 0, W, H);
+                                return;
+                            } catch (e) { }
+                        }
+                        ctx.fillStyle = '#333'; ctx.fillRect(0, 0, W, H);
+                        ctx.fillStyle = '#fff'; ctx.font = Math.max(10, Math.floor(H * 0.4)) + 'px monospace';
+                        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                        ctx.fillText((FLAGS_LABEL[lang] || lang).toUpperCase(), W / 2, H / 2);
+                    })(c, lang); } catch (e) { /* ignore */ } }
+            });
+
+            // start demo if available
+            const demoCanvas = attractDiv._demoCanvas;
+            try {
+                if (demoCanvas && typeof startAttractDemo === 'function') {
+                    const stopper = startAttractDemo(demoCanvas, attractDiv);
+                    if (typeof stopper === 'function') attractDiv.demoStop = stopper;
+                }
+            } catch (e) { }
+
+            // show with fade-in
+            try { attractDiv.classList.remove('hidden'); attractDiv.classList.remove('fade-out'); attractDiv.classList.add('fade-in'); } catch (e) { }
+            setTimeout(() => { try { attractDiv.classList.remove('fade-in'); } catch (e) { } }, 420);
+        }
+
+        function showAttractScreen() {
+            // initialize UI once and refresh when showing
+            refreshAttractUI();
+            // ensure body isn't in-game
+            try { document.body.classList.remove('in-game'); } catch (e) { }
         }
         function showAttractOrTopTen() {
             // Alterna tra la schermata statica di attract (senza pulsante) e la Top Ten
@@ -3397,9 +3459,15 @@
             try { if (window.attractInterval) clearInterval(window.attractInterval); } catch (e) { }
             // alternate every 10 seconds as requested
             attractInterval = setInterval(() => {
-                // remove any transient custom attract overlay (but keep persistent containers like #topTen)
-                const attractDivCustom = document.getElementById('attractScreenCustom');
-                if (attractDivCustom) attractDivCustom.remove();
+                // remove/cleanup any transient custom attract overlay (but keep persistent containers like #topTen)
+                const attractDivCustom = document.getElementById('attractScreen') || document.getElementById('attractScreenCustom');
+                if (attractDivCustom) {
+                    try { if (typeof attractDivCustom.cleanupLang === 'function') attractDivCustom.cleanupLang(); } catch (e) { }
+                    try { if (typeof attractDivCustom.demoStop === 'function') attractDivCustom.demoStop(); } catch (e) { }
+                    // hide and clear instead of removing from DOM to preserve persistent references
+                    try { attractDivCustom.classList.add('hidden'); } catch (e) { }
+                    try { attractDivCustom.innerHTML = ''; } catch (e) { }
+                }
                 // remove transient gameOver overlays but preserve persistent #topTen
                 const transientGameOvers = Array.from(document.querySelectorAll('.gameOver')).filter(e => e.id !== 'topTen');
                 transientGameOvers.forEach(e => e.remove());
