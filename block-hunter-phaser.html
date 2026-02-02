@@ -77,9 +77,15 @@
         let targetLifetime = 0;
         let blockSpawnTimer = 0;
         let particles;
+    // Attract / TopTen UI state
+    let attractCycleEvent = null;
+    let attractVisible = false;
+    let attractContainer = null;
+    let topTenContainer = null;
 
         function preload() {
-            // In Phaser non serve precaricare nulla per forme geometriche
+            // Carica risorse usate dalla UI di attract
+            this.load.image('attractBg', "images/bg.png");
         }
 
         function create() {
@@ -95,9 +101,10 @@
                 graphics.lineBetween(0, i, 800, i);
             }
             
-            // Schermata Attract
+            // Schermata Attract (riutilizzabile)
             if (!gameStarted) {
-                createAttractScreen(this);
+                initAttractUI(this);
+                showAttractUI(this);
                 return;
             }
             
@@ -145,11 +152,41 @@
             this.physics.add.overlap(bullets, blocks, destroyBlock, null, this);
         }
 
-        function createAttractScreen(scene) {
+        // Initialize attract UI and top-ten container (created once per scene lifecycle)
+        function initAttractUI(scene) {
+            if (attractContainer) return; // already created for this scene
+
             const centerX = 400;
             const centerY = 300;
-            
-            // Titolo
+
+            // Container for attract screen
+            attractContainer = scene.add.container(0, 0);
+
+            // Background: usa l'immagine se caricata, altrimenti fallback grafico
+            let bg;
+            if (scene.textures.exists('attractBg')) {
+                bg = scene.add.image(centerX, centerY, 'attractBg');
+                bg.setOrigin(0.5, 0.5);
+                // Usa dimensione dinamica della scena per coprire il canvas
+                bg.setDisplaySize(scene.scale.width || 800, scene.scale.height || 600);
+                attractContainer.add(bg);
+            } else {
+                console.warn('attractBg texture not found — using fallback background');
+                bg = scene.add.rectangle(scene.scale.width/2 || centerX, scene.scale.height/2 || centerY, scene.scale.width || 800, scene.scale.height || 600, 0x07102a);
+                attractContainer.add(bg);
+
+                // leggero overlay scanline per effetto retrò
+                const lines = scene.add.graphics();
+                lines.lineStyle(1, 0x001020, 0.03);
+                for (let y = 0; y < (scene.scale.height || 600); y += 4) {
+                    lines.moveTo(0, y);
+                    lines.lineTo(scene.scale.width || 800, y);
+                }
+                lines.strokePath();
+                attractContainer.add(lines);
+            }
+
+            // Title
             const title = scene.add.text(centerX, 150, 'BLOCK HUNTER', {
                 fontSize: '48px',
                 fontFamily: 'Press Start 2P',
@@ -157,8 +194,9 @@
                 stroke: '#00ffff',
                 strokeThickness: 3
             }).setOrigin(0.5);
-            
-            // Animazione glow del titolo
+            attractContainer.add(title);
+
+            // Glow animation
             scene.tweens.add({
                 targets: title,
                 alpha: { from: 1, to: 0.5 },
@@ -166,9 +204,9 @@
                 yoyo: true,
                 repeat: -1
             });
-            
-            // Istruzioni
-            const instructions = scene.add.text(centerX, 280, 
+
+            // Instructions
+            const instructions = scene.add.text(centerX, 280,
                 'FRECCE - MOVIMENTO\nSPAZIO - SPARA\nRECUPERA L\'OGGETTO\nSCHIVA I BLOCCHI',
                 {
                     fontSize: '14px',
@@ -178,18 +216,19 @@
                     lineSpacing: 10
                 }
             ).setOrigin(0.5);
-            
-            // Pulsante Start
-            const startButton = scene.add.rectangle(centerX, 420, 300, 60, 0xff00ff);
+            attractContainer.add(instructions);
+
+            // Start button (acts as INSERT COIN / START)
+            const startButton = scene.add.rectangle(centerX, 420, 300, 60, 0xff00ff).setInteractive({ useHandCursor: true });
             const startText = scene.add.text(centerX, 420, 'INSERISCI MONETA', {
                 fontSize: '16px',
                 fontFamily: 'Press Start 2P',
                 fill: '#000000'
             }).setOrigin(0.5);
-            
-            startButton.setInteractive({ useHandCursor: true });
-            
-            // Animazione pulsante
+            attractContainer.add(startButton);
+            attractContainer.add(startText);
+
+            // Pulsing animation
             scene.tweens.add({
                 targets: startButton,
                 scaleX: { from: 1, to: 1.05 },
@@ -198,40 +237,105 @@
                 yoyo: true,
                 repeat: -1
             });
-            
-            startButton.on('pointerover', () => {
-                startButton.setFillStyle(0x00ffff);
-            });
-            
-            startButton.on('pointerout', () => {
-                startButton.setFillStyle(0xff00ff);
-            });
-            
-            startButton.on('pointerdown', () => {
+
+            startButton.on('pointerover', () => startButton.setFillStyle(0x00ffff));
+            startButton.on('pointerout', () => startButton.setFillStyle(0xff00ff));
+
+            const startGame = () => {
                 gameStarted = true;
+                hideAttractUI(scene, true);
+                if (attractCycleEvent) {
+                    attractCycleEvent.remove(false);
+                    attractCycleEvent = null;
+                }
                 scene.scene.restart();
-            });
-            
-            // Enter key per iniziare
-            scene.input.keyboard.once('keydown-ENTER', () => {
-                gameStarted = true;
-                scene.scene.restart();
-            });
-            
-            // Animazione sfondo
-            const circles = [];
-            for (let i = 0; i < 5; i++) {
-                const circle = scene.add.circle(centerX, centerY, 50 + i * 40, 0x00ffff, 0);
-                circle.setStrokeStyle(2, 0x00ffff, 0.3);
-                circles.push(circle);
-                
-                scene.tweens.add({
-                    targets: circle,
-                    angle: 360,
-                    duration: 8000 + i * 1000,
-                    repeat: -1
+            };
+
+            startButton.on('pointerdown', startGame);
+            scene.input.keyboard.on('keydown-ENTER', startGame);
+
+            // Top Ten container (initially hidden)
+            topTenContainer = scene.add.container(0, 0);
+            const topTitle = scene.add.text(centerX, 80, 'HIGH SCORES', {
+                fontSize: '28px',
+                fontFamily: 'Press Start 2P',
+                fill: '#ffff00'
+            }).setOrigin(0.5);
+            topTenContainer.add(topTitle);
+
+            // Empty list placeholder (show even if no scores)
+            const emptyText = scene.add.text(centerX, 140, '--- NESSUN PUNTEGGIO ---', {
+                fontSize: '14px',
+                fontFamily: 'Press Start 2P',
+                fill: '#00ffff'
+            }).setOrigin(0.5);
+            topTenContainer.add(emptyText);
+
+            // Credits/footer for Top Ten
+            const creditsFooter = scene.add.text(centerX, 520, 'CREDITI: 0', {
+                fontSize: '14px',
+                fontFamily: 'Press Start 2P',
+                fill: '#00ffff'
+            }).setOrigin(0.5);
+            topTenContainer.add(creditsFooter);
+
+            // Initially hide both
+            attractContainer.setAlpha(0);
+            topTenContainer.setAlpha(0);
+            attractContainer.setVisible(false);
+            topTenContainer.setVisible(false);
+
+            // Start alternation timer (but paused until attract shown)
+            attractCycleEvent = null;
+        }
+
+        function showAttractUI(scene) {
+            if (!attractContainer) initAttractUI(scene);
+            if (attractVisible && attractContainer.visible) return;
+            // Hide topTen first
+            if (topTenContainer && topTenContainer.visible) {
+                scene.tweens.add({ targets: topTenContainer, alpha: 0, duration: 500, onComplete: () => topTenContainer.setVisible(false) });
+            }
+
+            attractContainer.setVisible(true);
+            scene.tweens.add({ targets: attractContainer, alpha: 1, duration: 600 });
+            attractVisible = true;
+
+            // (re)start alternation timer
+            if (!attractCycleEvent) {
+                attractCycleEvent = scene.time.addEvent({
+                    delay: 10000,
+                    loop: true,
+                    callback: () => {
+                        // toggle
+                        if (attractVisible) showTopTenUI(scene);
+                        else showAttractUI(scene);
+                    }
                 });
             }
+        }
+
+        function hideAttractUI(scene, immediate = false) {
+            if (!attractContainer) return;
+            if (immediate) {
+                attractContainer.setVisible(false);
+                attractContainer.setAlpha(0);
+            } else {
+                scene.tweens.add({ targets: attractContainer, alpha: 0, duration: 400, onComplete: () => attractContainer.setVisible(false) });
+            }
+            attractVisible = false;
+        }
+
+        function showTopTenUI(scene) {
+            if (!topTenContainer) initAttractUI(scene);
+            // Hide attract
+            if (attractContainer && attractContainer.visible) {
+                scene.tweens.add({ targets: attractContainer, alpha: 0, duration: 500, onComplete: () => attractContainer.setVisible(false) });
+            }
+            // Show topTen
+            topTenContainer.setVisible(true);
+            scene.tweens.add({ targets: topTenContainer, alpha: 1, duration: 600 });
+            attractVisible = false;
         }
 
         function spawnTarget(scene) {
