@@ -82,24 +82,35 @@
     let attractVisible = false;
     let attractContainer = null;
     let topTenContainer = null;
+    // Language selector
+    const LANGS = ['it','fr','de','en','us','ja','es','zh'];
+    let currentLangIndex = 0;
+    let langFlagImage = null;
+    let langTitleText = null;
+    let langInstructionsText = null;
+    let langStartText = null;
+    let topTenCreditsFooter = null;
 
         function preload() {
             // Carica risorse usate dalla UI di attract
             this.load.image('attractBg', "images/bg.png");
+            this.load.image('flags', 'images/flags.png');
+            // tilesheet
+            this.load.image('tileSheet', 'images/tile.png');
         }
 
         function create() {
             this.cameras.main.setBackgroundColor('#0a0e27');
             
             // Griglia di sfondo
-            const graphics = this.add.graphics();
-            graphics.lineStyle(1, 0x00ffff, 0.1);
-            for (let i = 0; i < 800; i += 40) {
-                graphics.lineBetween(i, 0, i, 600);
-            }
-            for (let i = 0; i < 600; i += 40) {
-                graphics.lineBetween(0, i, 800, i);
-            }
+            // const graphics = this.add.graphics();
+            // graphics.lineStyle(1, 0x00ffff, 0.1);
+            // for (let i = 0; i < 800; i += 40) {
+            //     graphics.lineBetween(i, 0, i, 600);
+            // }
+            // for (let i = 0; i < 600; i += 40) {
+            //     graphics.lineBetween(0, i, 800, i);
+            // }
             
             // Schermata Attract (riutilizzabile)
             if (!gameStarted) {
@@ -195,6 +206,7 @@
                 strokeThickness: 3
             }).setOrigin(0.5);
             attractContainer.add(title);
+            langTitleText = title;
 
             // Glow animation
             scene.tweens.add({
@@ -217,6 +229,7 @@
                 }
             ).setOrigin(0.5);
             attractContainer.add(instructions);
+            langInstructionsText = instructions;
 
             // Start button (acts as INSERT COIN / START)
             const startButton = scene.add.rectangle(centerX, 420, 300, 60, 0xff00ff).setInteractive({ useHandCursor: true });
@@ -227,6 +240,7 @@
             }).setOrigin(0.5);
             attractContainer.add(startButton);
             attractContainer.add(startText);
+            langStartText = startText;
 
             // Pulsing animation
             scene.tweens.add({
@@ -278,6 +292,37 @@
                 fill: '#00ffff'
             }).setOrigin(0.5);
             topTenContainer.add(creditsFooter);
+            topTenCreditsFooter = creditsFooter;
+
+            // Language selector UI (flag + arrows)
+            // Read saved lang
+            const saved = localStorage.getItem('bh_lang');
+            if (saved) {
+                const idx = LANGS.indexOf(saved);
+                if (idx >= 0) currentLangIndex = idx;
+            }
+
+            // Flag image (we will crop to the selected flag)
+            langFlagImage = scene.add.image(centerX, 480, 'flags');
+            langFlagImage.setOrigin(0.5, 0.5);
+            // small display
+            langFlagImage.setDisplaySize(96, 24);
+            attractContainer.add(langFlagImage);
+
+            // Arrows
+            const leftArrow = scene.add.text(centerX - 80, 480, '<', { fontSize: '24px', fontFamily: 'Press Start 2P', fill: '#00ffff' }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+            const rightArrow = scene.add.text(centerX + 80, 480, '>', { fontSize: '24px', fontFamily: 'Press Start 2P', fill: '#00ffff' }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+            attractContainer.add(leftArrow);
+            attractContainer.add(rightArrow);
+
+            leftArrow.on('pointerdown', () => changeLang(-1, scene));
+            rightArrow.on('pointerdown', () => changeLang(1, scene));
+
+            // Initial update of flag crop and dictionary
+            scene.time.delayedCall(50, () => {
+                updateFlagCrop(scene);
+                loadDictionary(LANGS[currentLangIndex]);
+            });
 
             // Initially hide both
             attractContainer.setAlpha(0);
@@ -336,6 +381,161 @@
             topTenContainer.setVisible(true);
             scene.tweens.add({ targets: topTenContainer, alpha: 1, duration: 600 });
             attractVisible = false;
+        }
+
+        // Tile sheet mapping (copy from index.html TAIL_SHEET_MAP)
+        const tailCols = 4, tailRows = 4;
+        let tailCellW = 0, tailCellH = 0;
+        const TAIL_SHEET_MAP = {
+            // row 0: wall variants
+            wall1: { r: 0, c: 0 },
+            wall2: { r: 0, c: 1 },
+            wall3: { r: 0, c: 2 },
+            wall4: { r: 0, c: 3 },
+            // row 1: hole + sand variants
+            hole: { r: 1, c: 0 },
+            sand1: { r: 1, c: 1 },
+            sand2: { r: 1, c: 2 },
+            sand3: { r: 1, c: 3 },
+            // row 2
+            sand4: { r: 2, c: 0 },
+            sand5: { r: 2, c: 1 },
+            sandPile: { r: 2, c: 2 },
+            sand6: { r: 2, c: 3 },
+            // row 3
+            sand7: { r: 3, c: 0 },
+            sand8: { r: 3, c: 1 },
+            sand9: { r: 3, c: 2 },
+            sand10: { r: 3, c: 3 }
+        };
+
+        // Load a level JS (data/level/<name>.js) and draw it when ready
+        function loadLevelByName(scene, name) {
+            const id = 'level-script';
+            const old = document.getElementById(id);
+            if (old) old.remove();
+            const script = document.createElement('script');
+            script.id = id;
+            script.src = 'data/level/' + name + '.js';
+            script.onload = () => {
+                if (window.LEVEL_MAP) {
+                    // compute tail cell sizes from loaded texture
+                    const tex = scene.textures.get('tileSheet');
+                    if (tex && tex.source && tex.source[0]) {
+                        const img = tex.source[0].image || tex.source[0].data;
+                        tailCellW = img.width / tailCols;
+                        tailCellH = img.height / tailRows;
+                    }
+                    drawLevel(scene, window.LEVEL_MAP);
+                }
+            };
+            script.onerror = () => console.warn('Failed to load level', name);
+            document.head.appendChild(script);
+        }
+
+        // Draw level map using tileSheet and TAIL_SHEET_MAP
+        function drawLevel(scene, levelMap) {
+            if (!levelMap || !levelMap.map) return;
+            // remove existing floor container if any
+            if (scene.floorContainer) {
+                scene.floorContainer.destroy(true);
+            }
+            const cols = levelMap.cols || levelMap.map[0].length;
+            const rows = levelMap.rows || levelMap.map.length;
+            // choose tile size: optional tileSize in levelMap or based on tile sheet cell
+            const tileSize = levelMap.tileSize || Math.max(8, Math.round(Math.min(tailCellW || 32, tailCellH || 32)));
+            const originX = Math.round((scene.scale.width - cols * tileSize) / 2);
+            const originY = Math.round((scene.scale.height - rows * tileSize) / 2);
+
+            const container = scene.add.container(0, 0);
+            scene.floorContainer = container;
+
+            for (let r = 0; r < rows; r++) {
+                const row = levelMap.map[r];
+                for (let c = 0; c < cols; c++) {
+                    const key = (row && row[c]) ? row[c] : null;
+                    const mapEntry = TAIL_SHEET_MAP[key];
+                    const x = originX + c * tileSize + tileSize / 2;
+                    const y = originY + r * tileSize + tileSize / 2;
+                    if (!mapEntry) {
+                        // draw placeholder rect for empty/unknown tiles
+                        const rect = scene.add.rectangle(x, y, tileSize, tileSize, 0xbfa57a).setOrigin(0.5);
+                        container.add(rect);
+                        continue;
+                    }
+                    // compute source rect
+                    const sx = Math.round(mapEntry.c * tailCellW);
+                    const sy = Math.round(mapEntry.r * tailCellH);
+                    const sw = Math.max(4, Math.round(tailCellW));
+                    const sh = Math.max(4, Math.round(tailCellH));
+                    const img = scene.add.image(x, y, 'tileSheet').setOrigin(0.5);
+                    // crop the source to the tile area
+                    img.setCrop(sx, sy, sw, sh);
+                    img.setDisplaySize(tileSize, tileSize);
+                    container.add(img);
+                }
+            }
+            // send container to back
+            container.setDepth(-10);
+        }
+
+        // Language helper functions
+        function changeLang(delta, scene) {
+            currentLangIndex = (currentLangIndex + delta + LANGS.length) % LANGS.length;
+            localStorage.setItem('bh_lang', LANGS[currentLangIndex]);
+            updateFlagCrop(scene);
+            loadDictionary(LANGS[currentLangIndex]);
+        }
+
+        function updateFlagCrop(scene) {
+            if (!langFlagImage) return;
+            const tex = scene.textures.get('flags');
+            if (!tex || !tex.source || !tex.source[0]) return;
+            const img = tex.source[0].image || tex.source[0].data;
+            const totalW = img.width;
+            const totalH = img.height;
+            const sliceW = Math.floor(totalW / LANGS.length);
+            const sx = sliceW * currentLangIndex;
+            // Phaser Image#setCrop expects numbers
+            langFlagImage.setCrop(sx, 0, sliceW, totalH);
+            // adjust display size to keep flags visible
+            langFlagImage.setDisplaySize(96, Math.round(96 * (totalH / sliceW)) );
+        }
+
+        function loadDictionary(lang) {
+            // Avoid duplicates: remove existing script if any
+            const id = 'dict-script';
+            const old = document.getElementById(id);
+            if (old) old.remove();
+
+            const script = document.createElement('script');
+            script.id = id;
+            script.src = 'data/dic/' + lang + '.js';
+            script.onload = () => {
+                // apply translations if DICT available
+                if (window.DICT) applyTranslations();
+            };
+            script.onerror = () => console.warn('Failed to load dictionary for', lang);
+            document.head.appendChild(script);
+        }
+
+        function applyTranslations() {
+            // Update attract texts if keys exist in DICT
+            if (!window.DICT) return;
+            try {
+                if (window.DICT.title && langTitleText) langTitleText.setText(window.DICT.title);
+                if (window.DICT.instructions && langInstructionsText) {
+                    if (Array.isArray(window.DICT.instructions)) langInstructionsText.setText(window.DICT.instructions.join('\n'));
+                    else langInstructionsText.setText(window.DICT.instructions);
+                }
+                // insert coin: try multiple keys
+                const insertCoin = window.DICT.insert_coin || window.DICT.insert_coin_btn || (window.DICT.attractmode && window.DICT.attractmode.staticcredits);
+                if (insertCoin && langStartText) langStartText.setText(insertCoin);
+                const creditsLabel = window.DICT.credits_word || window.DICT.credits_label || 'CREDITI';
+                if (topTenCreditsFooter) topTenCreditsFooter.setText((creditsLabel || 'CREDITI') + ': 0');
+            } catch (e) {
+                console.warn('applyTranslations error', e);
+            }
         }
 
         function spawnTarget(scene) {
