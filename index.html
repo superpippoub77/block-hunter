@@ -23,16 +23,31 @@
             <div id="attractCoinInfo"></div>
             <!-- Sprite gallery: canvases showing each discovered sprite (sprite-sheet + tail) -->
             <div id="spriteGallery"></div>
-            <!-- language selector on the static attract screen (pixel flags) -->
+            <!-- language selector on the static attract screen (flags from sprite) -->
             <div class="lang-selector" id="staticLangSelector">
-                <div class="lang-flag" data-lang="en"><canvas id="flag_static_en" width="32" height="22"></canvas>
-                    <div class="lang-label">EN</div>
-                </div>
-                <div class="lang-flag" data-lang="it"><canvas id="flag_static_it" width="32" height="22"></canvas>
+                <div class="lang-flag" data-lang="it"><canvas id="flag_static_it" width="48" height="32"></canvas>
                     <div class="lang-label">IT</div>
                 </div>
-                <div class="lang-flag" data-lang="fr"><canvas id="flag_static_fr" width="32" height="22"></canvas>
+                <div class="lang-flag" data-lang="fr"><canvas id="flag_static_fr" width="48" height="32"></canvas>
                     <div class="lang-label">FR</div>
+                </div>
+                <div class="lang-flag" data-lang="de"><canvas id="flag_static_de" width="48" height="32"></canvas>
+                    <div class="lang-label">DE</div>
+                </div>
+                <div class="lang-flag" data-lang="en"><canvas id="flag_static_en" width="48" height="32"></canvas>
+                    <div class="lang-label">EN</div>
+                </div>
+                <div class="lang-flag" data-lang="us"><canvas id="flag_static_us" width="48" height="32"></canvas>
+                    <div class="lang-label">US</div>
+                </div>
+                <div class="lang-flag" data-lang="ja"><canvas id="flag_static_ja" width="48" height="32"></canvas>
+                    <div class="lang-label">JP</div>
+                </div>
+                <div class="lang-flag" data-lang="es"><canvas id="flag_static_es" width="48" height="32"></canvas>
+                    <div class="lang-label">ES</div>
+                </div>
+                <div class="lang-flag" data-lang="zh"><canvas id="flag_static_zh" width="48" height="32"></canvas>
+                    <div class="lang-label">CN</div>
                 </div>
             </div>
             <!-- Footer/hints/byline moved outside attractScreen so they remain visible during Top Ten -->
@@ -80,6 +95,12 @@
         // Prefer a persisted user choice in localStorage (key: 'bh_lang'), fall back to GAME_CONFIG/default
         const _persistedLang = (function () { try { return localStorage.getItem('bh_lang'); } catch (e) { return null; } })();
         const DEFAULT_LANG = _persistedLang || (window.GAME_CONFIG && window.GAME_CONFIG.DEFAULT_LANG) || 'en';
+    // Load flags sprite sheet (expects images/flags.png containing flags in sequence)
+    const FLAGS_LIST = ['it','fr','de','en','us','ja','es','zh'];
+    const FLAGS_LABEL = { it: 'IT', fr: 'FR', de: 'DE', en: 'EN', us: 'US', ja: 'JP', es: 'ES', zh: 'CN' };
+    const flagsImg = new Image();
+    flagsImg.src = 'images/flags.png';
+    flagsImg.onload = function () { console.log('flags sprite loaded', flagsImg.width, flagsImg.height); };
         // whether language selection is currently enabled (can be disabled while user is in player/level selection)
         window.langSelectionEnabled = true;
         function loadDictionary(lang, cb) {
@@ -108,11 +129,22 @@
         // Initialize static language flags (on the static attract screen)
         (function initStaticFlags() {
             try {
-                const LANGS = ['en', 'it', 'fr'];
+                const LANGS = FLAGS_LIST.slice();
                 function drawFlagStatic(canvas, lang) {
                     if (!canvas) return;
                     const ctx = canvas.getContext('2d'); ctx.imageSmoothingEnabled = false;
                     const W = canvas.width, H = canvas.height; ctx.clearRect(0, 0, W, H);
+                    // If flags image is loaded, draw the appropriate slice, otherwise fallback to programmatic draw for a few known flags
+                    const idx = LANGS.indexOf(lang);
+                    if (flagsImg && flagsImg.naturalWidth && idx >= 0) {
+                        try {
+                            const sliceW = Math.floor(flagsImg.width / FLAGS_LIST.length);
+                            const sx = idx * sliceW;
+                            ctx.drawImage(flagsImg, sx, 0, sliceW, flagsImg.height, 0, 0, W, H);
+                            return;
+                        } catch (e) { /* fallback below */ }
+                    }
+                    // fallback programmatic render for some well-known flags
                     if (lang === 'it') {
                         const w3 = Math.floor(W / 3);
                         ctx.fillStyle = '#088A29'; ctx.fillRect(0, 0, w3, H);
@@ -124,17 +156,11 @@
                         ctx.fillStyle = '#FFFFFF'; ctx.fillRect(w3, 0, w3, H);
                         ctx.fillStyle = '#EF4135'; ctx.fillRect(w3 * 2, 0, W - w3 * 2, H);
                     } else {
-                        ctx.fillStyle = '#012169'; ctx.fillRect(0, 0, W, H);
-                        ctx.lineCap = 'square'; ctx.strokeStyle = '#FFFFFF'; ctx.lineWidth = Math.max(1, Math.floor(Math.min(W, H) * 0.28));
-                        ctx.beginPath(); ctx.moveTo(-W, -W); ctx.lineTo(W * 2, W * 2); ctx.stroke();
-                        ctx.beginPath(); ctx.moveTo(W * 2, -W); ctx.lineTo(-W, W * 2); ctx.stroke();
-                        ctx.strokeStyle = '#C8102E'; ctx.lineWidth = Math.max(1, Math.floor(Math.min(W, H) * 0.12));
-                        ctx.beginPath(); ctx.moveTo(-W, -W); ctx.lineTo(W * 2, W * 2); ctx.stroke();
-                        ctx.beginPath(); ctx.moveTo(W * 2, -W); ctx.lineTo(-W, W * 2); ctx.stroke();
-                        const whiteCross = Math.max(1, Math.floor(Math.min(W, H) * 0.26)); ctx.fillStyle = '#FFFFFF';
-                        ctx.fillRect(Math.floor(W / 2 - whiteCross / 2), 0, whiteCross, H); ctx.fillRect(0, Math.floor(H / 2 - whiteCross / 2), W, whiteCross);
-                        const redCross = Math.max(1, Math.floor(Math.min(W, H) * 0.12)); ctx.fillStyle = '#C8102E';
-                        ctx.fillRect(Math.floor(W / 2 - redCross / 2), 0, redCross, H); ctx.fillRect(0, Math.floor(H / 2 - redCross / 2), W, redCross);
+                        // generic placeholder when flags image not available
+                        ctx.fillStyle = '#333'; ctx.fillRect(0, 0, W, H);
+                        ctx.fillStyle = '#fff'; ctx.font = Math.max(10, Math.floor(H * 0.4)) + 'px monospace';
+                        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                        ctx.fillText((FLAGS_LABEL[lang] || lang).toUpperCase(), W / 2, H / 2);
                     }
                 }
                 let selectedIndex = Math.max(0, LANGS.indexOf((window.DICT && window.DICT.lang) || DEFAULT_LANG));
@@ -460,6 +486,97 @@
             direction: 'up', // 'up', 'down', 'left', 'right', 'up-left', ...
             angle: 0 // radians for rendering rotation
         };
+
+        // Initialize or reset player properties in one place
+        function createPlayer(x = 400, y = 550) {
+            player.x = x;
+            player.y = y;
+            player.width = scale(20);
+            player.height = scale(20);
+            player.speed = PLAYER_INITIAL_SPEED;
+            player.color = '#00ff00';
+            player.direction = 'up';
+            player.angle = 0;
+            // ensure related runtime flags reset
+            playerIsMoving = false;
+            playerKeys = 0;
+            playerDynamite = DYNAMITE_MAX;
+        }
+
+        // Handle player movement and collision in a single function called every frame
+        function updatePlayerMovement() {
+            // Reset movement flag
+            playerIsMoving = false;
+
+            // Movement with 8 directions and angle rotation
+            let inputX = 0;
+            let inputY = 0;
+            if (keys['ArrowLeft']) inputX -= 1;
+            if (keys['ArrowRight']) inputX += 1;
+            if (keys['ArrowUp']) inputY -= 1;
+            if (keys['ArrowDown']) inputY += 1;
+
+            if (inputX !== 0 || inputY !== 0) {
+                // normalize diagonal speed
+                const invMag = 1 / Math.hypot(inputX, inputY);
+                const vx = inputX * invMag * player.speed;
+                const vy = inputY * invMag * player.speed;
+
+                // remember previous position to allow revert if movement collides with impassable tile
+                const prevX = player.x, prevY = player.y;
+                player.x += vx;
+                player.y += vy;
+                playerIsMoving = true;
+
+                // Clamp inside the inner walled area when inside (can't walk into outer band unless outside via doors)
+                if (!isOutside) {
+                    const ib = getInnerBounds();
+                    player.x = Math.max(ib.minX, Math.min(ib.maxX - player.width, player.x));
+                    player.y = Math.max(ib.minY, Math.min(ib.maxY - player.height, player.y));
+                }
+
+                // Prevent walking into impassable floor tiles defined by FLOOR_MAP
+                try {
+                    if (!window.DISABLE_FLOOR && window.FLOOR_MAP) {
+                        const fm = window.FLOOR_MAP;
+                        // compute player's cell region and check impassable tiles overlap
+                        const cellW = (window.LEVEL_MAP && window.LEVEL_MAP.tileSize) || Math.round(scale(32));
+                        const cellH = cellW;
+                        const left = Math.floor(player.x / cellW);
+                        const right = Math.floor((player.x + player.width - 1) / cellW);
+                        const top = Math.floor(player.y / cellH);
+                        const bottom = Math.floor((player.y + player.height - 1) / cellH);
+                        let collided = false;
+                        for (let yy = top; yy <= bottom && !collided; yy++) {
+                            for (let xx = left; xx <= right; xx++) {
+                                const key = (fm[yy] && fm[yy][xx]) || null;
+                                if (key && IMPASSABLE_TILES.has(key)) { collided = true; break; }
+                            }
+                        }
+                        if (collided) {
+                            // revert
+                            player.x = prevX;
+                            player.y = prevY;
+                            playerIsMoving = false;
+                        }
+                    }
+                } catch (e) { /* ignore floor collisions errors */ }
+                // Determine direction string and angle
+                if (playerIsMoving) {
+                    if (inputY < 0 && inputX === 0) player.direction = 'up';
+                    else if (inputY > 0 && inputX === 0) player.direction = 'down';
+                    else if (inputX < 0 && inputY === 0) player.direction = 'left';
+                    else if (inputX > 0 && inputY === 0) player.direction = 'right';
+                    else if (inputY < 0 && inputX < 0) player.direction = 'up-left';
+                    else if (inputY < 0 && inputX > 0) player.direction = 'up-right';
+                    else if (inputY > 0 && inputX < 0) player.direction = 'down-left';
+                    else if (inputY > 0 && inputX > 0) player.direction = 'down-right';
+
+                    // Angle: 0 radians = right, rotate clockwise
+                    player.angle = Math.atan2(vy, vx);
+                }
+            }
+        }
 
         // Movement helper (declared to avoid ReferenceError)
         let playerIsMoving = false;
@@ -1478,10 +1595,8 @@
             bulletsBlock = [];
             particles = [];
             frameCount = 0;
-            player.x = 400;
-            player.y = 550;
-            player.speed = PLAYER_INITIAL_SPEED;
-            playerKeys = 0;
+            // initialize player to default start position and stats
+            createPlayer();
             gemsCollected = 0;
             // give player full dynamite for the level
             playerDynamite = DYNAMITE_MAX;
@@ -1885,66 +2000,8 @@
                 }
             } catch (e) { }
 
-            // Update player movement
-            playerIsMoving = false;
-            // Movement with 8 directions and angle rotation
-            let inputX = 0;
-            let inputY = 0;
-            if (keys['ArrowLeft']) inputX -= 1;
-            if (keys['ArrowRight']) inputX += 1;
-            if (keys['ArrowUp']) inputY -= 1;
-            if (keys['ArrowDown']) inputY += 1;
-
-            if (inputX !== 0 || inputY !== 0) {
-                // normalize diagonal speed
-                const invMag = 1 / Math.hypot(inputX, inputY);
-                const vx = inputX * invMag * player.speed;
-                const vy = inputY * invMag * player.speed;
-
-                // remember previous position to allow revert if movement collides with impassable tile
-                const prevX = player.x, prevY = player.y;
-                player.x += vx;
-                player.y += vy;
-                playerIsMoving = true;
-
-                // Clamp inside the inner walled area when inside (can't walk into outer band unless outside via doors)
-                if (!isOutside) {
-                    const ib = getInnerBounds();
-                    player.x = Math.max(ib.minX, Math.min(ib.maxX - player.width, player.x));
-                    player.y = Math.max(ib.minY, Math.min(ib.maxY - player.height, player.y));
-                }
-
-                // Prevent walking into impassable floor tiles defined by FLOOR_MAP
-                try {
-                    if (!window.DISABLE_FLOOR && window.FLOOR_MAP) {
-                        const fm = window.FLOOR_MAP;
-                        const centerXNew = player.x + player.width / 2;
-                        const centerYNew = player.y + player.height / 2;
-                        const gx = Math.floor((centerXNew - fm.originX) / fm.tileSize);
-                        const gy = Math.floor((centerYNew - fm.originY) / fm.tileSize);
-                        if (gx >= 0 && gx < fm.cols && gy >= 0 && gy < fm.rows) {
-                            const tk = fm.map[gy][gx];
-                            if (tk && IMPASSABLE_TILES.has(tk)) {
-                                // revert movement
-                                player.x = prevX; player.y = prevY; playerIsMoving = false;
-                            }
-                        }
-                    }
-                } catch (e) { }
-
-                // Determine direction string and angle
-                if (inputY < 0 && inputX === 0) player.direction = 'up';
-                else if (inputY > 0 && inputX === 0) player.direction = 'down';
-                else if (inputX < 0 && inputY === 0) player.direction = 'left';
-                else if (inputX > 0 && inputY === 0) player.direction = 'right';
-                else if (inputY < 0 && inputX < 0) player.direction = 'up-left';
-                else if (inputY < 0 && inputX > 0) player.direction = 'up-right';
-                else if (inputY > 0 && inputX < 0) player.direction = 'down-left';
-                else if (inputY > 0 && inputX > 0) player.direction = 'down-right';
-
-                // Angle: 0 radians = right, rotate clockwise
-                player.angle = Math.atan2(vy, vx);
-            }
+            // Update player movement (centralized)
+            updatePlayerMovement();
 
             // If outside, keep player constrained to the outer band (snap to nearest edge band)
             if (isOutside) {
@@ -2882,6 +2939,11 @@
                     ac.classList.add('insert-prompt');
                 }
             }
+            // also update the credits shown inside the Top Ten overlay if present
+            const topTenCreditsEl = document.getElementById('topTenCredits');
+            if (topTenCreditsEl) {
+                topTenCreditsEl.textContent = `${D.credits_word || 'CREDITS'}: ${credits || 0}`;
+            }
             const dynCount = document.getElementById('dynamiteCount');
             const dynFill = document.getElementById('dynamiteFill');
             if (dynCount) dynCount.textContent = playerDynamite;
@@ -2975,8 +3037,11 @@
                 console.warn('showTopTenEntry: missing #topTen container');
                 return;
             }
-            // show with fade-in
+            // hide static attract and show topTen as a full-size overlay without outer borders
             try {
+                const staticAttract = document.getElementById('attractScreen'); if (staticAttract) staticAttract.classList.add('hidden');
+                // ensure overlay classes so it fills the same area as attract overlay
+                topContainer.classList.add('attract-bg', 'overlay', 'attract-custom');
                 topContainer.classList.remove('hidden');
                 topContainer.classList.remove('fade-out');
                 topContainer.classList.add('fade-in');
@@ -3012,14 +3077,17 @@
             topTen.forEach((entry, idx) => {
                 html += `<tr><td>${idx + 1}</td><td>${entry.name}</td><td>${entry.score}</td><td>${entry.diff}</td></tr>`;
             });
-            html += `</table><button class="startButton" onclick="location.reload()">RITORNA</button>`;
-            // add a persistent credit footer so the INSERT COIN message/credits remain visible
-            html += `<div class="credit-footer">
-                        <span id="attractCredits">${(D.credits_word || 'CREDITS')}: ${credits || 0}</span>
-                    </div>`;
+            html += `</table>`;
+            // // add a persistent credit footer so the INSERT COIN message/credits remain visible
+            // // use a distinct id for the credits inside the Top Ten to avoid clashing with the attract screen
+            // html += `<div class="credit-footer">
+            //             <span id="topTenCredits">${(D.credits_word || 'CREDITS')}: ${credits || 0}</span>
+            //         </div>`;
             topContainer.innerHTML = html;
-            // show with fade-in
+            // hide static attract and show topTen as a full-size overlay without outer borders
             try {
+                const staticAttract = document.getElementById('attractScreen'); if (staticAttract) staticAttract.classList.add('hidden');
+                topContainer.classList.add('attract-bg', 'overlay', 'attract-custom');
                 topContainer.classList.remove('hidden');
                 topContainer.classList.remove('fade-out');
                 topContainer.classList.add('fade-in');
@@ -3197,13 +3265,17 @@
         <div class="demo-wrap">
             <canvas id="demoCanvas" width="320" height="180"></canvas>
         </div>
-        <!-- language selector (pixel flags) -->
-        <div class="lang-selector" id="langSelector">
-                <!-- increased canvas resolution for crisper pixel flags (32x22) -->
-                <div class="lang-flag" data-lang="en"><canvas id="flag_en" width="32" height="22"></canvas><div class="lang-label">EN</div></div>
-                <div class="lang-flag" data-lang="it"><canvas id="flag_it" width="32" height="22"></canvas><div class="lang-label">IT</div></div>
-                <div class="lang-flag" data-lang="fr"><canvas id="flag_fr" width="32" height="22"></canvas><div class="lang-label">FR</div></div>
-        </div>
+    <!-- language selector (flags from sprite) -->
+    <div class="lang-selector" id="langSelector">
+        <div class="lang-flag" data-lang="it"><canvas id="flag_it" width="48" height="32"></canvas><div class="lang-label">IT</div></div>
+        <div class="lang-flag" data-lang="fr"><canvas id="flag_fr" width="48" height="32"></canvas><div class="lang-label">FR</div></div>
+        <div class="lang-flag" data-lang="de"><canvas id="flag_de" width="48" height="32"></canvas><div class="lang-label">DE</div></div>
+        <div class="lang-flag" data-lang="en"><canvas id="flag_en" width="48" height="32"></canvas><div class="lang-label">EN</div></div>
+        <div class="lang-flag" data-lang="us"><canvas id="flag_us" width="48" height="32"></canvas><div class="lang-label">US</div></div>
+        <div class="lang-flag" data-lang="ja"><canvas id="flag_ja" width="48" height="32"></canvas><div class="lang-label">JP</div></div>
+        <div class="lang-flag" data-lang="es"><canvas id="flag_es" width="48" height="32"></canvas><div class="lang-label">ES</div></div>
+        <div class="lang-flag" data-lang="zh"><canvas id="flag_zh" width="48" height="32"></canvas><div class="lang-label">CN</div></div>
+    </div>
         <!-- Footer con contatore crediti e pulsante inserisci moneta -->
         <div class="attract-footer-row">
             <div class="credit-footer">${D.credits_word || 'CREDITS'}: <span id="attractCredits">0</span></div>
@@ -3217,8 +3289,8 @@
             if (demoCanvas) startAttractDemo(demoCanvas, attractDiv);
             // Assicuriamoci che il contatore mostri il valore corrente dei crediti
             const _acInit = document.getElementById('attractCredits'); if (_acInit) _acInit.textContent = (credits || 0);
-            // wire pixel-flag selector: render flags, handle left/right and clicks
-            const LANGS = ['en', 'it', 'fr'];
+            // wire flag selector: use flags sprite when available
+            const LANGS = FLAGS_LIST.slice();
             let selectedLangIndex = Math.max(0, LANGS.indexOf((window.DICT && window.DICT.lang) || DEFAULT_LANG));
             function drawFlag(canvas, lang) {
                 const ctx = canvas.getContext('2d');
@@ -3226,42 +3298,20 @@
                 const W = canvas.width; const H = canvas.height;
                 // clear
                 ctx.clearRect(0, 0, W, H);
-                if (lang === 'it') {
-                    // vertical tricolor: green white red
-                    const w3 = Math.floor(W / 3);
-                    ctx.fillStyle = '#088A29'; ctx.fillRect(0, 0, w3, H);
-                    ctx.fillStyle = '#FFFFFF'; ctx.fillRect(w3, 0, w3, H);
-                    ctx.fillStyle = '#CE2B37'; ctx.fillRect(w3 * 2, 0, W - w3 * 2, H);
-                } else if (lang === 'fr') {
-                    const w3 = Math.floor(W / 3);
-                    ctx.fillStyle = '#0055A4'; ctx.fillRect(0, 0, w3, H);
-                    ctx.fillStyle = '#FFFFFF'; ctx.fillRect(w3, 0, w3, H);
-                    ctx.fillStyle = '#EF4135'; ctx.fillRect(w3 * 2, 0, W - w3 * 2, H);
-                } else {
-                    // improved Union Jack approximation using strokes for diagonals and rectangles for crosses
-                    ctx.fillStyle = '#012169'; ctx.fillRect(0, 0, W, H);
-                    // white diagonals
-                    ctx.lineCap = 'square';
-                    ctx.strokeStyle = '#FFFFFF';
-                    ctx.lineWidth = Math.max(1, Math.floor(Math.min(W, H) * 0.28));
-                    ctx.beginPath(); ctx.moveTo(-W, -W); ctx.lineTo(W * 2, W * 2); ctx.stroke();
-                    ctx.beginPath(); ctx.moveTo(W * 2, -W); ctx.lineTo(-W, W * 2); ctx.stroke();
-                    // red diagonal thinner
-                    ctx.strokeStyle = '#C8102E';
-                    ctx.lineWidth = Math.max(1, Math.floor(Math.min(W, H) * 0.12));
-                    ctx.beginPath(); ctx.moveTo(-W, -W); ctx.lineTo(W * 2, W * 2); ctx.stroke();
-                    ctx.beginPath(); ctx.moveTo(W * 2, -W); ctx.lineTo(-W, W * 2); ctx.stroke();
-                    // white cross (horizontal + vertical)
-                    const whiteCross = Math.max(1, Math.floor(Math.min(W, H) * 0.26));
-                    ctx.fillStyle = '#FFFFFF';
-                    ctx.fillRect(Math.floor(W / 2 - whiteCross / 2), 0, whiteCross, H);
-                    ctx.fillRect(0, Math.floor(H / 2 - whiteCross / 2), W, whiteCross);
-                    // red cross narrower on top
-                    const redCross = Math.max(1, Math.floor(Math.min(W, H) * 0.12));
-                    ctx.fillStyle = '#C8102E';
-                    ctx.fillRect(Math.floor(W / 2 - redCross / 2), 0, redCross, H);
-                    ctx.fillRect(0, Math.floor(H / 2 - redCross / 2), W, redCross);
+                const idx = LANGS.indexOf(lang);
+                if (flagsImg && flagsImg.naturalWidth && idx >= 0) {
+                    try {
+                        const sliceW = Math.floor(flagsImg.width / FLAGS_LIST.length);
+                        const sx = idx * sliceW;
+                        ctx.drawImage(flagsImg, sx, 0, sliceW, flagsImg.height, 0, 0, W, H);
+                        return;
+                    } catch (e) { /* fallback to placeholder */ }
                 }
+                // fallback: draw simple label
+                ctx.fillStyle = '#333'; ctx.fillRect(0, 0, W, H);
+                ctx.fillStyle = '#fff'; ctx.font = Math.max(10, Math.floor(H * 0.4)) + 'px monospace';
+                ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                ctx.fillText((FLAGS_LABEL[lang] || lang).toUpperCase(), W / 2, H / 2);
             }
 
             function updateLangUI() {
@@ -3354,19 +3404,17 @@
                 const transientGameOvers = Array.from(document.querySelectorAll('.gameOver')).filter(e => e.id !== 'topTen');
                 transientGameOvers.forEach(e => e.remove());
 
-                // Always keep the static attract visible (it contains the persistent credit footer).
-                // When showing Top Ten we overlay it on top of the static attract so the CREDITI display
-                // remains visible at the bottom as requested.
-                const staticAttract = document.getElementById('attractScreen'); if (staticAttract) staticAttract.classList.remove('hidden');
+                // When showing Top Ten we hide the static attract and display a full-size Top Ten overlay
+                const staticAttract = document.getElementById('attractScreen');
                 if (showTop) {
-                    // mostra la classifica (overlay) - static attract remains visible underneath
+                    if (staticAttract) staticAttract.classList.add('hidden');
+                    // display Top Ten as a full-size overlay without outer borders
                     showTopTen();
                 } else {
-                    // hide persistent topTen container if present
+                    // restore the static attract and hide persistent topTen container if present
+                    if (staticAttract) staticAttract.classList.remove('hidden');
                     const persistentTop = document.getElementById('topTen');
-                    if (persistentTop) {
-                        persistentTop.classList.add('hidden');
-                    }
+                    if (persistentTop) persistentTop.classList.add('hidden');
                 }
                 showTop = !showTop;
             }, 10000);
