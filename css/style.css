@@ -60,27 +60,27 @@
      image-rendering: crisp-edges;
  }
 
-#attractScreen {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100vw;
-    height: 100vh;
-   /* Usa l'immagine di sfondo fornita per la schermata di attrazione con overlay regolabile via variabile CSS */
-   /* Percorso corretto: la CSS si trova in css/, l'immagine in images/ nella root */
-   background: radial-gradient(circle, rgba(var(--attract-color1), var(--attract-overlay)) 0%, rgba(var(--attract-color2), var(--attract-overlay)) 100%), url('../images/bg.png') center/cover no-repeat;
-    /* keep the background image fixed (no scrolling/animation) */
-    background-attachment: fixed;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    align-items: center;
-    z-index: 10;
-}
+ #attractScreen {
+     position: fixed;
+     top: 0;
+     left: 0;
+     width: 100vw;
+     height: 100vh;
+     /* Usa l'immagine di sfondo fornita per la schermata di attrazione con overlay regolabile via variabile CSS */
+     /* Percorso corretto: la CSS si trova in css/, l'immagine in images/ nella root */
+     background: radial-gradient(circle, rgba(var(--attract-color1), var(--attract-overlay)) 0%, rgba(var(--attract-color2), var(--attract-overlay)) 100%), url('../images/bg.png') center/cover no-repeat;
+     /* keep the background image fixed (no scrolling/animation) */
+     background-attachment: fixed;
+     display: flex;
+     flex-direction: column;
+     justify-content: center;
+     align-items: center;
+     z-index: 10;
+ }
 
  /* helper class for dynamic attract divs to reuse same background + overlay */
  .attract-bg {
-    background: radial-gradient(circle, rgba(var(--attract-color1), var(--attract-overlay)) 0%, rgba(var(--attract-color2), var(--attract-overlay)) 100%), url('../images/bg.png') center/cover no-repeat !important;
+     background: radial-gradient(circle, rgba(var(--attract-color1), var(--attract-overlay)) 0%, rgba(var(--attract-color2), var(--attract-overlay)) 100%), url('../images/bg.png') center/cover no-repeat !important;
  }
 
  @keyframes scanline {
@@ -248,123 +248,363 @@
 
 /* Credit footer styling (prominent) */
 .credit-footer {
+    position: absolute;
+    bottom: 24px;
+    left: 0;
+    right: 0;
+    text-align: center;
+    z-index: 10001;
     font-family: 'Press Start 2P', monospace;
     font-size: 18px;
     color: #ffff66;
-    text-shadow: 0 0 10px rgba(255,255,120,0.9), 0 0 22px rgba(255,200,0,0.65);
-    background: rgba(0,0,0,0.15);
+    text-shadow: 0 0 10px rgba(255, 255, 120, 0.9), 0 0 22px rgba(255, 200, 0, 0.65);
+    background: rgba(0, 0, 0, 0.15);
     padding: 8px 16px;
     border-radius: 6px;
-    border: 2px solid rgba(255,220,120,0.12);
+    border: 2px solid rgba(255, 220, 120, 0.12);
 }
 
-/* When there are no credits, show INSERT COIN with a pulsing highlight */
-.insert-prompt {
-    color: #ffcc00 !important;
-    text-shadow: 0 0 18px rgba(255,204,0,0.95), 0 0 32px rgba(255,150,0,0.6);
-    animation: insertPulse 1.2s ease-in-out infinite;
-    font-weight: 700;
-}
+ /* When there are no credits, show INSERT COIN with a pulsing highlight */
+ .insert-prompt {
+     color: #ffcc00 !important;
+     text-shadow: 0 0 18px rgba(255, 204, 0, 0.95), 0 0 32px rgba(255, 150, 0, 0.6);
+     animation: insertPulse 1.2s ease-in-out infinite;
+     font-weight: 700;
+ }
 
-@keyframes insertPulse {
-    0% { transform: scale(1); opacity: 1; }
-    50% { transform: scale(1.06); opacity: 0.88; }
-    100% { transform: scale(1); opacity: 1; }
-}
+ @keyframes insertPulse {
+     0% {
+         transform: scale(1);
+         opacity: 1;
+     }
 
-/* Language selector (pixel flags) */
-.lang-selector {
+     50% {
+         transform: scale(1.06);
+         opacity: 0.88;
+     }
+
+     100% {
+         transform: scale(1);
+         opacity: 1;
+     }
+ }
+
+ /* Language selector (pixel flags) */
+ .lang-selector {
+     position: absolute;
+     top: 12px;
+     right: 12px;
+     display: flex;
+     gap: 10px;
+     align-items: center;
+     z-index: 40;
+ }
+
+ /* Static attract-screen variant: center the selector and override the default top-right placement */
+ #staticLangSelector {
+     left: 50% !important;
+     right: auto !important;
+     transform: translateX(-50%) !important;
+     top: 120px !important;
+ }
+
+ #staticLangSelector.disabled {
+     opacity: 0.45;
+     pointer-events: none;
+     filter: grayscale(70%);
+     transform: translateX(-50%) scale(0.98);
+ }
+
+ .lang-flag {
+     width: 64px;
+     height: 48px;
+     display: flex;
+     flex-direction: column;
+     align-items: center;
+     justify-content: center;
+     padding: 6px;
+     background: rgba(0, 0, 0, 0.25);
+     border-radius: 6px;
+     border: 2px solid rgba(255, 255, 255, 0.03);
+     cursor: pointer;
+ }
+
+ .lang-flag.selected {
+     border-color: #ffd700;
+     box-shadow: 0 0 14px rgba(255, 200, 0, 0.6);
+     transform: translateY(-2px);
+ }
+
+ .lang-flag canvas {
+     image-rendering: pixelated;
+     width: 48px;
+     height: 32px;
+     display: block;
+ }
+
+ .lang-flag .lang-label {
+     font-size: 10px;
+     color: #fff;
+     margin-top: 4px;
+ }
+
+ /* Small credit/byline shown at the bottom of attract screens */
+ .byline {
+     position: absolute;
+     bottom: 8px;
+     left: 0;
+     right: 0;
+     text-align: center;
+     font-size: 12px;
+     color: #cccccc;
+     opacity: 0.95;
+    text-shadow: 0 0 6px rgba(0, 0, 0, 0.6);
+    z-index: 10001;
+     pointer-events: none;
+ }
+
+ .player-hint {
+     font-family: 'Press Start 2P', monospace;
+     font-size: 14px;
+     color: #ffff99;
+     padding: 6px 12px;
+     background: rgba(0, 0, 0, 0.28);
+     border: 2px solid rgba(255, 255, 255, 0.06);
+     border-radius: 6px;
+     text-shadow: 0 0 8px rgba(0, 0, 0, 0.6);
+     pointer-events: none;
+ }
+
+ .player-hint.unavailable {
+     opacity: 0.35;
+     filter: grayscale(80%);
+ }
+
+ .player-hint.available {
+     box-shadow: 0 0 16px rgba(255, 220, 64, 0.6);
+     transform: translateY(-2px);
+ }
+
+/* Container positioning for the attract player hints (1/2 player) */
+#attractPlayerHints {
     position: absolute;
-    top: 12px;
-    right: 12px;
+    bottom: 72px;
+    left: 0;
+    right: 0;
+    text-align: center;
     display: flex;
-    gap: 10px;
+    gap: 24px;
+    justify-content: center;
+    pointer-events: none;
+    z-index: 10001;
+}
+
+ /* Sprite gallery styling */
+ #spriteGallery {
+     margin-top: 8px;
+     display: flex;
+     gap: 8px;
+     justify-content: center;
+     align-items: center;
+ }
+
+ .sprite-item {
+     display: flex;
+     flex-direction: column;
+     align-items: center;
+     gap: 6px;
+ }
+
+ .sprite-item canvas {
+     width: 48px;
+     height: 48px;
+     image-rendering: pixelated;
+     border: 1px solid rgba(255, 255, 255, 0.06);
+     background: rgba(0, 0, 0, 0.12);
+ }
+
+ .sprite-item .label {
+     font-size: 10px;
+     color: #fff;
+     opacity: 0.85;
+ }
+
+/* Attract / overlay helper classes (replaces inline JS styles) */
+.overlay.attract-custom {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    z-index: 30;
+}
+.overlay.level-select {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
     align-items: center;
     z-index: 40;
 }
 
-/* Static attract-screen variant: center the selector and override the default top-right placement */
-#staticLangSelector {
-    left: 50% !important;
-    right: auto !important;
-    transform: translateX(-50%) !important;
-    top: 120px !important;
+/* Attract small messages / demo canvas */
+.insert-message {
+    font-size: 28px;
+    color: #ffff00;
+    margin: 20px;
+}
+.demo-wrap {
+    margin: 12px;
+}
+#demoCanvas {
+    width: 480px;
+    height: 270px;
+    image-rendering: pixelated;
+    border: 2px solid rgba(255,255,255,0.05);
 }
 
-#staticLangSelector.disabled {
-    opacity: 0.45;
-    pointer-events: none;
-    filter: grayscale(70%);
-    transform: translateX(-50%) scale(0.98);
-}
-.lang-flag {
-    width: 64px;
-    height: 48px;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    padding: 6px;
-    background: rgba(0,0,0,0.25);
-    border-radius: 6px;
-    border: 2px solid rgba(255,255,255,0.03);
-    cursor: pointer;
-}
-.lang-flag.selected {
-    border-color: #ffd700;
-    box-shadow: 0 0 14px rgba(255,200,0,0.6);
-    transform: translateY(-2px);
-}
-.lang-flag canvas { image-rendering: pixelated; width:48px; height:32px; display:block; }
-.lang-flag .lang-label { font-size:10px; color:#fff; margin-top:4px; }
-
-/* Small credit/byline shown at the bottom of attract screens */
-.byline {
+/* footer row used in attract custom overlay */
+.attract-footer-row {
     position: absolute;
-    bottom: 8px;
+    bottom: 40px;
     left: 0;
     right: 0;
-    text-align: center;
+    display: flex;
+    justify-content: center;
+    gap: 12px;
+    align-items: center;
+}
+
+/* Attract coin info */
+#attractCoinInfo {
+    margin-top: 10px;
     font-size: 12px;
-    color: #cccccc;
+    color: #ffd;
     opacity: 0.95;
-    text-shadow: 0 0 6px rgba(0, 0, 0, 0.6);
-    z-index: 35;
-    pointer-events: none;
+    text-align: center;
 }
 
-.player-hint {
-    font-family: 'Press Start 2P', monospace;
-    font-size: 14px;
-    color: #ffff99;
-    padding: 6px 12px;
-    background: rgba(0,0,0,0.28);
-    border: 2px solid rgba(255,255,255,0.06);
-    border-radius: 6px;
-    text-shadow: 0 0 8px rgba(0,0,0,0.6);
-    pointer-events: none;
-}
-.player-hint.unavailable {
-    opacity: 0.35;
-    filter: grayscale(80%);
-}
-.player-hint.available {
-    box-shadow: 0 0 16px rgba(255,220,64,0.6);
-    transform: translateY(-2px);
+/* Sprite gallery adjustments (migrate inline) */
+#spriteGallery {
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+    margin-top: 12px;
+    flex-wrap: wrap;
 }
 
-/* Sprite gallery styling */
-#spriteGallery { margin-top: 8px; display:flex; gap:8px; justify-content:center; align-items:center; }
-.sprite-item { display:flex; flex-direction:column; align-items:center; gap:6px; }
-.sprite-item canvas { width:48px; height:48px; image-rendering:pixelated; border:1px solid rgba(255,255,255,0.06); background:rgba(0,0,0,0.12); }
-.sprite-item .label { font-size:10px; color:#fff; opacity:0.85; }
+/* HUD dynamite bar */
+#dynamiteBar {
+    display: inline-block;
+    vertical-align: middle;
+    width: 120px;
+    height: 12px;
+    background: #222;
+    border: 1px solid #444;
+    margin-left: 8px;
+}
+#dynamiteFill {
+    height: 100%;
+    width: 0%;
+    background: #ff3333;
+}
 
-/* brief unlock flash when a new option becomes available */
-.player-hint.unlock {
-    animation: unlockFlash 560ms ease-in-out 1;
+/* HUD sound toggle */
+#hudSoundToggle {
+    margin-top: 6px;
+    padding: 4px 8px;
+    font-size: 12px;
+    background: #111;
+    color: #0ff;
+    border: 1px solid #0ff;
+    cursor: pointer;
 }
-@keyframes unlockFlash {
-    0% { transform: translateY(-2px) scale(0.96); box-shadow: 0 0 6px rgba(255,200,64,0.2); }
-    40% { transform: translateY(-6px) scale(1.06); box-shadow: 0 0 30px rgba(255,220,64,0.95); }
-    100% { transform: translateY(-2px) scale(1); box-shadow: 0 0 16px rgba(255,220,64,0.6); }
+
+/* TopTen input/table styles (migrate inline styles in JS templates) */
+.initials-input {
+    text-transform: uppercase;
+    font-size: 32px;
+    text-align: center;
+    width: 80px;
 }
+.top-ten-table {
+    margin: auto;
+    color: #fff;
+    font-size: 18px;
+}
+
+/* Dialog/title tweaks for selection overlays */
+.dialog-title {
+    margin-bottom: 18px;
+}
+
+ /* brief unlock flash when a new option becomes available */
+ .player-hint.unlock {
+     animation: unlockFlash 560ms ease-in-out 1;
+ }
+
+ @keyframes unlockFlash {
+     0% {
+         transform: translateY(-2px) scale(0.96);
+         box-shadow: 0 0 6px rgba(255, 200, 64, 0.2);
+     }
+
+     40% {
+         transform: translateY(-6px) scale(1.06);
+         box-shadow: 0 0 30px rgba(255, 220, 64, 0.95);
+     }
+
+     100% {
+         transform: translateY(-2px) scale(1);
+         box-shadow: 0 0 16px rgba(255, 220, 64, 0.6);
+     }
+ }
+
+
+
+
+ /*** TOP TEN 10 **/
+ /* Top Ten persistent container styling + fade transitions */
+ #topTen.gameOver {
+     position: absolute;
+     top: 50%;
+     left: 50%;
+     transform: translate(-50%, -50%);
+     background: rgba(0, 0, 0, 0.85);
+     padding: 14px 18px;
+     border: 2px solid #fff;
+     color: #fff;
+     z-index: 999;
+     max-width: 90%;
+     box-sizing: border-box;
+     text-align: center;
+     transition: opacity 360ms ease, transform 360ms ease;
+     opacity: 0;
+ }
+
+ #topTen.gameOver:not(.hidden) {
+     opacity: 1;
+ }
+
+ #topTen.gameOver.fade-in {
+     opacity: 1;
+     transform: translate(-50%, -50%) scale(1);
+ }
+
+ #topTen.gameOver.fade-out {
+     opacity: 0;
+     transform: translate(-50%, -50%) scale(0.98);
+ }
+
+ /* keep the existing hidden utility but allow JS to control display for transitions */
+ .hidden {
+     display: none !important;
+ }

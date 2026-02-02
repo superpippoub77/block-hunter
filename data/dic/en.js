@@ -22,6 +22,16 @@ window.DICT = {
     credits_word: 'CREDITS',
     insert_coin_short: 'INSERT COIN'
     ,
+    // HUD labels
+    score_label: 'SCORE',
+    level_label: 'LEVEL',
+    lives_label: 'LIVES',
+    gems_label: 'GEMS',
+    keys_label: 'KEYS',
+    outside_label: 'OUTSIDE',
+    dynamite_label: 'DYNAMITE',
+    invul_label: 'INVUL',
+
     // attract-screen instructions (ordered lines)
     instructions: [
         'ARROWS - MOVE',
@@ -30,9 +40,15 @@ window.DICT = {
         'DODGE THE BLOCKS'
     ]
     ,
+    attractmode: {
+        staticcredits: 'INSERT COIN'
+    },
     // game over / continue labels
     game_over: 'GAME OVER',
     insert_coin_to_continue: 'INSERT COIN TO CONTINUE',
     continue_time_label: 'TIME',
-    press_5_insert: "Press '5' to insert coin"
+    press_5_insert: "Press '5' to insert coin",
+    byline: 'by SpikeCode',
+    // coin / credits info template
+    coin_info: '1 player: {per} coin{perPlural} — 2 players: {two} coins'
 };

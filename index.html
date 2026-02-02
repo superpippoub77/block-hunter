@@ -11,8 +11,8 @@
 <body>
     <div id="gameContainer">
         <div id="attractScreen">
-            <div class="title">BLOCK HUNTER</div>
-            <div class="instructions" id="attractInstructions">
+            <div class="title" i18n="title">BLOCK HUNTER</div>
+            <div class="instructions" id="attractInstructions" i18n="instructions">
                 <!-- populated by applyTranslations() -->
                 FRECCE - MOVIMENTO<br>
                 SPAZIO - SPARA<br>
@@ -20,14 +20,11 @@
                 SCHIVA I BLOCCHI
             </div>
             <!-- Coin description placed under the rules (will be populated dynamically) -->
-            <div id="attractCoinInfo"
-                style="margin-top:10px; font-size:12px; color:#ffd; opacity:0.95; text-align:center;"></div>
+            <div id="attractCoinInfo"></div>
             <!-- Sprite gallery: canvases showing each discovered sprite (sprite-sheet + tail) -->
-            <div id="spriteGallery"
-                style="display:flex; gap:8px; justify-content:center; margin-top:12px; flex-wrap:wrap;"></div>
+            <div id="spriteGallery"></div>
             <!-- language selector on the static attract screen (pixel flags) -->
-            <div class="lang-selector" id="staticLangSelector"
-                style="position:absolute; top:120px; left:50%; transform:translateX(-50%);">
+            <div class="lang-selector" id="staticLangSelector">
                 <div class="lang-flag" data-lang="en"><canvas id="flag_static_en" width="32" height="22"></canvas>
                     <div class="lang-label">EN</div>
                 </div>
@@ -38,38 +35,40 @@
                     <div class="lang-label">FR</div>
                 </div>
             </div>
-            <!-- Footer: mostra il testo INSERT COIN o il numero di crediti (aggiornato da applyTranslations) -->
-            <div class="credit-footer" style="position:absolute; bottom:24px; left:0; right:0; text-align:center;">
-                <span id="attractStaticCredits">INSERT COIN</span>
-            </div>
-            <!-- Player hints: show which player options are available depending on credits -->
-            <div id="attractPlayerHints"
-                style="position:absolute; bottom:72px; left:0; right:0; text-align:center; display:flex; gap:24px; justify-content:center; pointer-events:none;">
-                <div id="attractHint1" class="player-hint">1 PLAYER</div>
-                <div id="attractHint2" class="player-hint unavailable">2 PLAYERS</div>
-            </div>
-            <div class="byline">by SpikeCode</div>
+            <!-- Footer/hints/byline moved outside attractScreen so they remain visible during Top Ten -->
         </div>
 
         <div class="hud hidden" id="hud">
-            <div>SCORE: <span id="score">0</span></div>
-            <div>LEVEL: <span id="level">1</span></div>
-            <div>LIVES: <span id="lives">3</span></div>
-            <div>GEMS: <span id="gems">0</span>/<span id="gemsReq">20</span></div>
-            <div>KEYS: <span id="keys">0</span></div>
-            <div>OUTSIDE: <span id="outside">NO</span></div>
-            <div>DYNAMITE: <span id="dynamiteCount">0</span>
-                <div id="dynamiteBar"
-                    style="display:inline-block; vertical-align:middle; width:120px; height:12px; background:#222; border:1px solid #444; margin-left:8px;">
-                    <div id="dynamiteFill" style="height:100%; width:0%; background:#ff3333;"></div>
+            <div><span i18n="score_label">SCORE</span>: <span id="score">0</span></div>
+            <div><span i18n="level_label">LEVEL</span>: <span id="level">1</span></div>
+            <div><span i18n="lives_label">LIVES</span>: <span id="lives">3</span></div>
+            <div><span i18n="gems_label">GEMS</span>: <span id="gems">0</span>/<span id="gemsReq">20</span></div>
+            <div><span i18n="keys_label">KEYS</span>: <span id="keys">0</span></div>
+            <div><span i18n="outside_label">OUTSIDE</span>: <span id="outside">NO</span></div>
+            <div><span i18n="dynamite_label">DYNAMITE</span>: <span id="dynamiteCount">0</span>
+                <div id="dynamiteBar">
+                    <div id="dynamiteFill"></div>
                 </div>
             </div>
-            <div>INVUL: <span id="invul">NO</span></div>
-            <div>CREDITS: <span id="credits">0</span></div>
-            <div><button id="hudSoundToggle"
-                    style="margin-top:6px; padding:4px 8px; font-size:12px; background:#111; color:#0ff; border:1px solid #0ff; cursor:pointer;">SOUND:
-                    ON</button></div>
+            <div><span i18n="invul_label">INVUL</span>: <span id="invul">NO</span></div>
+            <div><span i18n="credits_word">CREDITS</span>: <span id="credits">0</span></div>
+            <div><button id="hudSoundToggle" i18n="sound_on">SOUND: ON</button></div>
         </div>
+
+        <!-- Persistent Top Ten container (moved inside gameContainer instead of creating popup) -->
+        <div id="topTen" class="gameOver hidden"></div>
+
+        <!-- Shared footer, player hints and byline: placed outside #attractScreen so they are visible
+         both on the attract screen and when #topTen is shown. z-index raised to ensure visibility. -->
+        <div class="credit-footer">
+            <span id="attractStaticCredits" i18n="attractmode.staticcredits">INSERT COIN</span>
+        </div>
+        <!-- Player hints: show which player options are available depending on credits -->
+        <div id="attractPlayerHints">
+            <div id="attractHint1" class="player-hint" i18n="players_1">1 PLAYER</div>
+            <div id="attractHint2" class="player-hint unavailable" i18n="players_2">2 PLAYERS</div>
+        </div>
+        <div class="byline" i18n="byline">by SpikeCode</div>
 
         <canvas id="gameCanvas" width="800" height="600"></canvas>
     </div>
@@ -288,6 +287,51 @@
 
         function applyTranslations() {
             const D = window.DICT || {};
+            // Helper: resolve nested keys like 'attractmode.staticcredits' from the DICT object
+            function resolveDictKey(obj, key) {
+                if (!obj || !key) return undefined;
+                const parts = key.split('.');
+                let cur = obj;
+                for (let i = 0; i < parts.length; i++) {
+                    if (cur && Object.prototype.hasOwnProperty.call(cur, parts[i])) cur = cur[parts[i]];
+                    else return undefined;
+                }
+                return cur;
+            }
+
+            // Apply inline i18n attributes first: any element with [i18n] will get
+            // the dictionary value for that key if present; otherwise its existing
+            // inner content is left untouched. Also collect missing keys for debugging.
+            const _missingI18nKeys = new Set();
+            try {
+                const nodes = document.querySelectorAll('[i18n]');
+                nodes.forEach(n => {
+                    try {
+                        const k = n.getAttribute('i18n');
+                        if (!k) return;
+                        const v = resolveDictKey(D, k);
+                        if (v !== undefined && v !== null) {
+                            // If the dictionary value is an array (multiline), join with <br>
+                            if (Array.isArray(v)) {
+                                n.innerHTML = v.join('<br>');
+                            } else if (typeof v === 'string') {
+                                // Preserve HTML when the dictionary value contains markup
+                                n.innerHTML = v;
+                            } else {
+                                n.textContent = String(v);
+                            }
+                        } else {
+                            _missingI18nKeys.add(k);
+                        }
+                    } catch (e) { /* ignore individual element errors */ }
+                });
+            } catch (e) { /* ignore scanning errors */ }
+            // If in developer console mode, log any missing translation keys once
+            try {
+                if (_missingI18nKeys.size > 0) {
+                    console.warn('Missing i18n keys (add to data/dic/*.js):', Array.from(_missingI18nKeys).sort());
+                }
+            } catch (e) { }
             // HUD
             const hud = document.getElementById('hud');
             if (hud) {
@@ -299,13 +343,13 @@
                     <div>KEYS: <span id="keys">0</span></div>
                     <div>OUTSIDE: <span id="outside">NO</span></div>
                     <div>DYNAMITE: <span id="dynamiteCount">0</span>
-                        <div id="dynamiteBar" style="display:inline-block; vertical-align:middle; width:120px; height:12px; background:#222; border:1px solid #444; margin-left:8px;">
-                            <div id="dynamiteFill" style="height:100%; width:0%; background:#ff3333;"></div>
-                        </div>
+                                <div id="dynamiteBar">
+                                    <div id="dynamiteFill"></div>
+                                </div>
                     </div>
                     <div>INVUL: <span id="invul">NO</span></div>
                     <div>${D.credits_word || 'CREDITS'}: <span id="credits">0</span></div>
-                    <div><button id="hudSoundToggle" style="margin-top:6px; padding:4px 8px; font-size:12px; background:#111; color:#0ff; border:1px solid #0ff; cursor:pointer;">${window.soundEnabled ? (D.sound_on || 'SOUND: ON') : (D.sound_off || 'SOUND: OFF')}</button></div>
+                    <div><button id="hudSoundToggle">${window.soundEnabled ? (D.sound_on || 'SOUND: ON') : (D.sound_off || 'SOUND: OFF')}</button></div>
                 `;
             }
             // Update any visible credit footers now
@@ -331,8 +375,12 @@
                 const infoEl = document.getElementById('attractCoinInfo');
                 if (infoEl) {
                     // prefer a dictionary override if present
-                    if (D.coin_info) infoEl.textContent = D.coin_info.replace('{per}', per).replace('{two}', per * 2);
-                    else infoEl.textContent = `1 player: ${per} coin${per > 1 ? 's' : ''} — 2 players: ${per * 2} coins`;
+                    if (D.coin_info) {
+                        // allow templates: {per}, {two}, {perPlural}
+                        const lang = (D && D.lang) || DEFAULT_LANG;
+                        const perPlural = (lang === 'it') ? (per > 1 ? 'e' : '') : (per > 1 ? 's' : '');
+                        infoEl.textContent = D.coin_info.replace('{per}', per).replace('{two}', per * 2).replace('{perPlural}', perPlural);
+                    } else infoEl.textContent = `1 player: ${per} coin${per > 1 ? 's' : ''} — 2 players: ${per * 2} coins`;
                 }
             } catch (e) { }
 
@@ -1279,23 +1327,13 @@
             const selectDiv = document.createElement('div');
             selectDiv.id = 'levelSelect';
             // Make Select Level a standalone full-screen attract-like overlay so it's independent
-            selectDiv.style.position = 'fixed';
-            selectDiv.style.top = '0';
-            selectDiv.style.left = '0';
-            selectDiv.style.width = '100vw';
-            selectDiv.style.height = '100vh';
-            selectDiv.classList.add('attract-bg');
-            selectDiv.style.display = 'flex';
-            selectDiv.style.flexDirection = 'column';
-            selectDiv.style.justifyContent = 'center';
-            selectDiv.style.alignItems = 'center';
-            selectDiv.style.zIndex = '40';
+            selectDiv.classList.add('attract-bg', 'overlay', 'level-select');
             // use dictionary for translated labels where available
             const D = window.DICT || {};
             // Use a centered semi-transparent panel so the attract screen remains visible behind
             selectDiv.innerHTML = `
                 <div class="levelPanel">
-                    <div class="title" style="margin-bottom:18px;">${D.level_select_title || 'SELECT LEVEL'}</div>
+                    <div class="title dialog-title">${D.level_select_title || 'SELECT LEVEL'}</div>
                     <div class="panelButtons">
                         <button class="levelButton" data-diff="Beginner">${D.beginner || 'BEGINNER'}</button>
                         <button class="levelButton" data-diff="Medium">${D.medium || 'MEDIUM'}</button>
@@ -1426,6 +1464,9 @@
         // Avvia il gioco
         function startGame() {
             console.log('Starting game...');
+            try { if (window.attractInterval) { clearInterval(window.attractInterval); window.attractInterval = null; } } catch (e) { }
+            // ensure persistent topTen is hidden when a new game starts
+            try { const persistentTop = document.getElementById('topTen'); if (persistentTop) { persistentTop.classList.add('hidden'); } } catch (e) { }
             // apply the in-game decorative frame
             document.body.classList.add('in-game');
             gameState = 'playing';
@@ -1491,11 +1532,14 @@
                 levelKeys = [];
                 doorCloseTimer = 0;
 
-                // Rimuovi il div gameOver se presente
-                const oldGameOver = document.querySelector('.gameOver');
-                if (oldGameOver) {
-                    oldGameOver.remove();
-                }
+                // Rimuovi eventuali overlay .gameOver transient ma non rimuovere il container persistente #topTen
+                try {
+                    const olds = Array.from(document.querySelectorAll('.gameOver')).filter(e => e.id !== 'topTen');
+                    olds.forEach(o => o.remove());
+                    // if #topTen exists, just hide it
+                    const persistentTop = document.getElementById('topTen');
+                    if (persistentTop) { persistentTop.classList.add('hidden'); }
+                } catch (e) { }
 
                 // hide any attract overlays with a short fade, then start
                 hideAttractOverlaysWithFade(() => {
@@ -1518,8 +1562,24 @@
             if (staticAttract && !staticAttract.classList.contains('hidden')) els.push(staticAttract);
             const customAttract = document.getElementById('attractScreenCustom');
             if (customAttract) els.push(customAttract);
-            const topDiv = document.querySelector('.gameOver');
-            if (topDiv) els.push(topDiv);
+            // collect transient gameOver overlays (do not include persistent #topTen to avoid removing it)
+            try {
+                const transientGameOvers = Array.from(document.querySelectorAll('.gameOver')).filter(e => e.id !== 'topTen');
+                transientGameOvers.forEach(o => els.push(o));
+            } catch (e) { }
+
+            // If the persistent topTen is visible, fade it out but don't remove it from DOM
+            try {
+                const persistentTop = document.getElementById('topTen');
+                if (persistentTop && !persistentTop.classList.contains('hidden')) {
+                    persistentTop.classList.add('fade-out');
+                    setTimeout(() => {
+                        persistentTop.classList.add('hidden');
+
+                        persistentTop.classList.remove('fade-out');
+                    }, 360);
+                }
+            } catch (e) { }
 
             if (els.length === 0) {
                 cb();
@@ -2844,11 +2904,13 @@
             document.getElementById('hud').classList.add('hidden');
             document.getElementById('attractScreen').classList.remove('hidden');
 
-            // Rimuovi eventuale gameOver precedente
-            const oldGameOver = document.querySelector('.gameOver');
-            if (oldGameOver) {
-                oldGameOver.remove();
-            }
+            // Rimuovi eventuali overlay .gameOver transient ma non rimuovere il container persistente #topTen
+            try {
+                const olds = Array.from(document.querySelectorAll('.gameOver')).filter(e => e.id !== 'topTen');
+                olds.forEach(o => o.remove());
+                const persistentTop = document.getElementById('topTen');
+                if (persistentTop) { persistentTop.classList.add('hidden'); }
+            } catch (e) { }
 
             // Verifica se entra in top ten
             continueEligibleTopTen = topTen.length < 10 || score > Math.min(...topTen.map(e => e.score));
@@ -2903,42 +2965,67 @@
 
         // Mostra schermata top ten a fine gara
         function showTopTenEntry(finalScore) {
-            const gameOverDiv = document.querySelector('.gameOver');
-            if (gameOverDiv) gameOverDiv.remove();
-            const entryDiv = document.createElement('div');
-            entryDiv.className = 'gameOver';
-            entryDiv.innerHTML = `
+            // Remove any transient overlays with class .gameOver except the persistent #topTen container
+            try {
+                const overlays = Array.from(document.querySelectorAll('.gameOver'));
+                overlays.forEach(el => { if (el.id !== 'topTen') el.remove(); });
+            } catch (e) { }
+            const topContainer = document.getElementById('topTen');
+            if (!topContainer) {
+                console.warn('showTopTenEntry: missing #topTen container');
+                return;
+            }
+            // show with fade-in
+            try {
+                topContainer.classList.remove('hidden');
+                topContainer.classList.remove('fade-out');
+                topContainer.classList.add('fade-in');
+                setTimeout(() => { try { topContainer.classList.remove('fade-in'); } catch (e) { } }, 420);
+            } catch (e) { }
+            topContainer.innerHTML = `
                 <h2>TOP TEN!</h2>
                 <p>Inserisci le tue iniziali (3 lettere):</p>
-                <input type="text" id="initialsInput" maxlength="3" style="text-transform:uppercase; font-size:32px; text-align:center; width:80px;">
+                <input type="text" id="initialsInput" class="initials-input" maxlength="3">
                 <button class="startButton" id="saveScoreBtn">SALVA</button>
             `;
-            document.getElementById('gameContainer').appendChild(entryDiv);
-            document.getElementById('saveScoreBtn').onclick = function () {
-                let initials = document.getElementById('initialsInput').value.toUpperCase().slice(0, 3);
-                if (!initials) initials = '???';
-                topTen.push({ name: initials, score: finalScore, diff: selectedDifficulty });
-                topTen.sort((a, b) => b.score - a.score);
-                if (topTen.length > 10) topTen.length = 10;
-                showTopTen();
-            };
+            const saveBtn = topContainer.querySelector('#saveScoreBtn');
+            if (saveBtn) {
+                saveBtn.onclick = function () {
+                    let initials = (topContainer.querySelector('#initialsInput') && topContainer.querySelector('#initialsInput').value.toUpperCase().slice(0, 3)) || '';
+                    if (!initials) initials = '???';
+                    topTen.push({ name: initials, score: finalScore, diff: selectedDifficulty });
+                    topTen.sort((a, b) => b.score - a.score);
+                    if (topTen.length > 10) topTen.length = 10;
+                    showTopTen();
+                };
+            }
         }
         function showTopTen() {
-            const topDiv = document.createElement('div');
-            topDiv.className = 'gameOver';
+            const topContainer = document.getElementById('topTen');
+            if (!topContainer) {
+                console.warn('showTopTen: missing #topTen container');
+                return;
+            }
             const D = window.DICT || {};
-            let html = `<h2>${D.top_ten || 'TOP TEN'}</h2><table style="margin:auto; color:#fff; font-size:18px;">`;
+            let html = `<h2>${D.top_ten || 'TOP TEN'}</h2><table class="top-ten-table">`;
             html += `<tr><th>#</th><th>INIZIALI</th><th>PUNTI</th><th>DIFFICOLTÀ</th></tr>`;
             topTen.forEach((entry, idx) => {
                 html += `<tr><td>${idx + 1}</td><td>${entry.name}</td><td>${entry.score}</td><td>${entry.diff}</td></tr>`;
             });
             html += `</table><button class="startButton" onclick="location.reload()">RITORNA</button>`;
             // add a persistent credit footer so the INSERT COIN message/credits remain visible
-            html += `<div class="credit-footer" style="position:absolute; bottom:24px; left:0; right:0; text-align:center;">
+            html += `<div class="credit-footer">
                         <span id="attractCredits">${(D.credits_word || 'CREDITS')}: ${credits || 0}</span>
                     </div>`;
-            topDiv.innerHTML = html;
-            document.getElementById('gameContainer').appendChild(topDiv);
+            topContainer.innerHTML = html;
+            // show with fade-in
+            try {
+                topContainer.classList.remove('hidden');
+                topContainer.classList.remove('fade-out');
+                topContainer.classList.add('fade-in');
+                // remove the transient fade-in class after transition
+                setTimeout(() => { try { topContainer.classList.remove('fade-in'); } catch (e) { } }, 420);
+            } catch (e) { }
         }
 
         // Input handlers
@@ -3100,25 +3187,15 @@
             attractDiv.id = 'attractScreenCustom';
             // ensure the attract overlay is full-viewport and remove in-game frame
             document.body.classList.remove('in-game');
-            attractDiv.style.position = 'fixed';
-            attractDiv.style.top = '0';
-            attractDiv.style.left = '0';
-            attractDiv.style.width = '100vw';
-            attractDiv.style.height = '100vh';
-            // use class to get same overlay background (CSS variable controls darkness)
-            attractDiv.classList.add('attract-bg');
-            attractDiv.style.display = 'flex';
-            attractDiv.style.flexDirection = 'column';
-            attractDiv.style.justifyContent = 'center';
-            attractDiv.style.alignItems = 'center';
-            attractDiv.style.zIndex = '30';
+            // classes provide full-viewport layout and background
+            attractDiv.classList.add('attract-bg', 'overlay', 'attract-custom');
             const D = window.DICT || {};
             attractDiv.innerHTML = `
         <div class="title">${D.title || 'BLOCK HUNTER'}</div>
-        <div style="font-size:28px; color:#ffff00; margin:20px;">${D.insert_coin || 'INSERT COIN'}</div>
+        <div class="insert-message">${D.insert_coin || 'INSERT COIN'}</div>
         <!-- small demo canvas showing an autoplayed snippet of gameplay (doesn't affect real game state) -->
-        <div style="margin:12px;">
-            <canvas id="demoCanvas" width="320" height="180" style="width:480px; height:270px; image-rendering:pixelated; border:2px solid rgba(255,255,255,0.05);"></canvas>
+        <div class="demo-wrap">
+            <canvas id="demoCanvas" width="320" height="180"></canvas>
         </div>
         <!-- language selector (pixel flags) -->
         <div class="lang-selector" id="langSelector">
@@ -3128,7 +3205,7 @@
                 <div class="lang-flag" data-lang="fr"><canvas id="flag_fr" width="32" height="22"></canvas><div class="lang-label">FR</div></div>
         </div>
         <!-- Footer con contatore crediti e pulsante inserisci moneta -->
-        <div style="position:absolute; bottom:40px; left:0; right:0; display:flex; justify-content:center; gap:12px; align-items:center;">
+        <div class="attract-footer-row">
             <div class="credit-footer">${D.credits_word || 'CREDITS'}: <span id="attractCredits">0</span></div>
             <button class="startButton" id="insertCoinBtn">${D.insert_coin_btn || 'INSERT COIN'}</button>
         </div>
@@ -3266,25 +3343,33 @@
         function showAttractOrTopTen() {
             // Alterna tra la schermata statica di attract (senza pulsante) e la Top Ten
             let showTop = false;
+            // clear any previous interval if present
+            try { if (window.attractInterval) clearInterval(window.attractInterval); } catch (e) { }
+            // alternate every 10 seconds as requested
             attractInterval = setInterval(() => {
-                // rimuovi eventuali overlay temporanei
+                // remove any transient custom attract overlay (but keep persistent containers like #topTen)
                 const attractDivCustom = document.getElementById('attractScreenCustom');
                 if (attractDivCustom) attractDivCustom.remove();
-                const topDiv = document.querySelector('.gameOver');
-                if (topDiv) topDiv.remove();
+                // remove transient gameOver overlays but preserve persistent #topTen
+                const transientGameOvers = Array.from(document.querySelectorAll('.gameOver')).filter(e => e.id !== 'topTen');
+                transientGameOvers.forEach(e => e.remove());
 
                 // Always keep the static attract visible (it contains the persistent credit footer).
                 // When showing Top Ten we overlay it on top of the static attract so the CREDITI display
                 // remains visible at the bottom as requested.
                 const staticAttract = document.getElementById('attractScreen'); if (staticAttract) staticAttract.classList.remove('hidden');
-                if (showTop && topTen.length > 0) {
+                if (showTop) {
                     // mostra la classifica (overlay) - static attract remains visible underneath
                     showTopTen();
                 } else {
-                    // ensure any previous top-ten overlay removed (we already removed above)
+                    // hide persistent topTen container if present
+                    const persistentTop = document.getElementById('topTen');
+                    if (persistentTop) {
+                        persistentTop.classList.add('hidden');
+                    }
                 }
                 showTop = !showTop;
-            }, 4000);
+            }, 10000);
             // all'avvio: load default dictionary then show attract
             loadDictionary(DEFAULT_LANG, () => {
                 applyTranslations();

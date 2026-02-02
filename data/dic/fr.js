@@ -35,4 +35,21 @@ window.DICT = {
     insert_coin_to_continue: 'INSÉRER PIÈCE POUR CONTINUER',
     continue_time_label: 'TEMPS',
     press_5_insert: "Appuyez sur '5' pour insérer une pièce"
+    ,
+    attractmode: {
+        staticcredits: 'INSÉRER PIÈCE'
+    },
+    // HUD labels
+    score_label: 'SCORE',
+    level_label: 'NIVEAU',
+    lives_label: 'VIES',
+    gems_label: 'GEMMES',
+    keys_label: 'CLÉS',
+    outside_label: 'DEHORS',
+    dynamite_label: 'DYNAMITE',
+    invul_label: 'INVUL',
+    byline: 'by SpikeCode'
+    ,
+    // coin / credits info template
+    coin_info: '1 joueur: {per} pièce{perPlural} — 2 joueurs: {two} pièces'
 };

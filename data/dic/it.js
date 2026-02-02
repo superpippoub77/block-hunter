@@ -11,7 +11,7 @@ window.DICT = {
     level_select_title: 'SELEZIONA LIVELLO',
     beginner: 'PRINCIPIANTE',
     medium: 'MEDIO',
-    expert: 'ESPERT0',
+    expert: 'ESPERTO',
     players_1: '1 GIOCATORE',
     players_2: '2 GIOCATORI',
     top_ten: 'CLASSIFICA',
@@ -30,6 +30,21 @@ window.DICT = {
         'SCHIVA I BLOCCHI'
     ]
     ,
+    attractmode:{
+        staticcredits: 'INSERISCI MONETA'
+    },
+    // HUD labels
+    score_label: 'PUNTEGGIO',
+    level_label: 'LIVELLO',
+    lives_label: 'VITE',
+    gems_label: 'GEMME',
+    keys_label: 'CHIAVI',
+    outside_label: 'ESTERNO',
+    dynamite_label: 'DINAMITE',
+    invul_label: 'INVUL',
+    byline: 'by SpikeCode',
+    // coin / credits info template
+    coin_info: '1 giocatore: {per} moneta{perPlural} — 2 giocatori: {two} monete',
     // etichette per game over / continue
     game_over: 'GAME OVER',
     insert_coin_to_continue: 'INSERISCI MONETA PER CONTINUARE',
