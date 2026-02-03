@@ -1,0 +1,2105 @@
+<!DOCTYPE html>
+<html lang="it">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BLOCK HUNTER</title>
+    <script src="https://cdn.jsdelivr.net/npm/phaser@3.70.0/dist/phaser.min.js"></script>
+    <!-- Load Google Font via stylesheet link (more reliable than @import for timing) -->
+    <!-- <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin> -->
+    <!-- <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet"> -->
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+
+
+        body {
+            background: #0a0e27;
+            font-family: 'Press Start 2P', monospace;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            overflow: hidden;
+        }
+
+        #game-container {
+            /* make the game container cover the whole viewport so Phaser will scale the internal 800x600 canvas to fullscreen */
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            border: 0;
+            /* remove the boxed riquadro; change to 4px if you want a border on fullscreen */
+            box-shadow: none;
+            border-radius: 0;
+        }
+
+        /* Local font: place your font files in assets/fonts/
+           Example filenames expected by the project:
+             - assets/fonts/PressStart2P.woff2
+             - assets/fonts/PressStart2P.woff
+           The @font-face below will prefer the local files and fall back to
+           Google Fonts if the local files are missing. This avoids network
+           dependency and adblock issues during development. */
+        @font-face {
+            font-family: 'Press Start 2P';
+            /* prefer modern compressed formats first for performance */
+            src: local('Press Start 2P'),
+                url('assets/fonts/PressStart2P.woff2') format('woff2'),
+                url('assets/fonts/PressStart2P.woff') format('woff'),
+                url('assets/fonts/PressStart2P.ttf') format('truetype');
+            font-weight: normal;
+            font-style: normal;
+            font-display: swap;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="game-container"></div>
+
+    <script>
+        // Show a level/player select overlay similar to index.html
+        function showLevelPlayerSelect(scene, preselect) {
+            if (!scene) return;
+            if (selectContainer) {
+                selectContainer.setVisible(true);
+                return;
+            }
+            const sw = scene.scale.width || 800;
+            const sh = scene.scale.height || 600;
+            selectContainer = scene.add.container(0, 0).setDepth(2000);
+            const bg = scene.add.rectangle(sw / 2, sh / 2, sw, sh, 0x000000, 0.6).setOrigin(0.5).setInteractive();
+            selectContainer.add(bg);
+
+            const title = scene.add.text(sw / 2, 120, (window.DICT && window.DICT.select_title) || 'SELEZIONA', { fontSize: '32px', fontFamily: GAME_FONT, fill: '#ffffff' }).setOrigin(0.5);
+            selectContainer.add(title);
+
+            selectCreditsText = scene.add.text(sw / 2, 180, (credits && credits > 0) ? `CREDITI: ${credits}` : ((window.DICT && window.DICT.insert_coin) || 'INSERISCI MONETA'), { fontSize: '18px', fontFamily: GAME_FONT, fill: '#00ffff' }).setOrigin(0.5);
+            selectContainer.add(selectCreditsText);
+
+            selectHintText = scene.add.text(sw / 2, 220, (window.DICT && window.DICT.select_hint) || 'Scegli numero giocatori:', { fontSize: '16px', fontFamily: GAME_FONT, fill: '#00ffff' }).setOrigin(0.5);
+            selectContainer.add(selectHintText);
+
+            // Buttons for 1 and 2 players
+            const btnW = 220, btnH = 64;
+            const btn1 = scene.add.rectangle(sw / 2 - 140, 320, btnW, btnH, 0xff00ff).setOrigin(0.5).setInteractive({ useHandCursor: true });
+            selectContainer.add(btn1);
+            selectBtn1Text = scene.add.text(sw / 2 - 140, 320, (window.DICT && window.DICT.one_player_label) || `1 PLAYER\n(${CREDITS_PER_PLAYER} crediti)`, { fontSize: '14px', fontFamily: GAME_FONT, fill: '#000' }).setOrigin(0.5);
+            selectContainer.add(selectBtn1Text);
+            const btn2 = scene.add.rectangle(sw / 2 + 140, 320, btnW, btnH, 0xff00ff).setOrigin(0.5).setInteractive({ useHandCursor: true });
+            selectContainer.add(btn2);
+            selectBtn2Text = scene.add.text(sw / 2 + 140, 320, (window.DICT && window.DICT.two_players_label) || `2 PLAYERS\n(${CREDITS_PER_PLAYER * 2} crediti)`, { fontSize: '14px', fontFamily: GAME_FONT, fill: '#000' }).setOrigin(0.5);
+            selectContainer.add(selectBtn2Text);
+
+            selectCancelText = scene.add.text(sw / 2, 420, (window.DICT && window.DICT.cancel) || 'INDIETRO', { fontSize: '14px', fontFamily: GAME_FONT, fill: '#00ffff' }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+            selectContainer.add(selectCancelText);
+
+            btn1.on('pointerdown', () => { tryStartWithPlayers(1, scene); });
+            btn2.on('pointerdown', () => { tryStartWithPlayers(2, scene); });
+            selectCancelText.on('pointerdown', () => { try { selectContainer.destroy(true); selectContainer = null; } catch (e) { } });
+
+            // keyboard shortcuts while overlay open
+            const keyHandler = (ev) => {
+                if (!selectContainer) { window.removeEventListener('keydown', keyHandler); return; }
+                if (ev.key === '1') { ev.preventDefault(); tryStartWithPlayers(1, scene); }
+                else if (ev.key === '2') { ev.preventDefault(); tryStartWithPlayers(2, scene); }
+                else if (ev.key === 'Escape') { ev.preventDefault(); try { selectContainer.destroy(true); selectContainer = null; } catch (e) { } }
+            };
+            window.addEventListener('keydown', keyHandler);
+        }
+        // Configurazione Phaser
+        const config = {
+            type: Phaser.AUTO,
+            parent: 'game-container',
+            // use Phaser Scale Manager so the internal resolution remains 800x600
+            // but the canvas is scaled to fill the container (which now is full viewport)
+            scale: {
+                mode: Phaser.Scale.FIT,
+                autoCenter: Phaser.Scale.CENTER_BOTH,
+                width: 800,
+                height: 600
+            },
+            physics: {
+                default: 'arcade',
+                arcade: {
+                    gravity: { y: 0 },
+                    debug: false
+                }
+            },
+            scene: {
+                preload: preload,
+                create: create,
+                update: update
+            },
+            backgroundColor: '#0a0e27',
+        };
+
+        // create the Phaser.Game only after the font is available so canvas texts render correctly
+        function launchGame() {
+            // use global var if other code expects `game`
+            window.game = new Phaser.Game(config);
+            // After a short delay, force updated fontFamily on any created Text objects.
+            // This helps when the font finishes loading slightly after the initial draw.
+            setTimeout(() => {
+                try {
+                    if (!window.game || !window.game.scene) return;
+                    const activeScenes = window.game.scene.getScenes(true);
+                    activeScenes.forEach(s => {
+                        if (!s || !s.children) return;
+                        s.children.list.forEach(child => {
+                            // Phaser Text objects have type 'Text'
+                            if (child && child.type === 'Text') {
+                                try {
+                                    child.setStyle({ fontFamily: GAME_FONT });
+                                    // trigger redraw
+                                    child.setText(child.text);
+                                } catch (e) { /* ignore per-child errors */ }
+                            }
+                        });
+                    });
+                } catch (e) {
+                    console.warn('Error applying GAME_FONT to text objects', e);
+                }
+            }, 300);
+        }
+
+        // Use a constant for the font family name (no extra quotes) and reuse it
+        // across all Phaser Text styles.
+        const GAME_FONT = 'Press Start 2P';
+
+        // Helper: try to detect which font source is usable and log it for debugging.
+        // This uses FontFace loading (for local files) and a width-measurement heuristic
+        // to decide if the 'Press Start 2P' family is active.
+        function detectAndLogFontSource() {
+            return new Promise(async (resolve) => {
+                const testString = 'mmmmmmmmmlllliiiWWW';
+                function measureWidth(fontFamily) {
+                    try {
+                        const span = document.createElement('span');
+                        span.style.position = 'absolute';
+                        span.style.left = '-9999px';
+                        span.style.top = '-9999px';
+                        span.style.fontSize = '32px';
+                        span.style.fontFamily = fontFamily;
+                        span.textContent = testString;
+                        document.body.appendChild(span);
+                        const w = span.getBoundingClientRect().width;
+                        document.body.removeChild(span);
+                        return w;
+                    } catch (e) { return null; }
+                }
+
+                const baseline = measureWidth('monospace');
+                const ps2pNow = (document.fonts && document.fonts.check) ? document.fonts.check('16px "Press Start 2P"') : false;
+
+                const localCandidates = [
+                    { url: 'assets/fonts/PressStart2P.woff2', label: 'local-woff2' },
+                    { url: 'assets/fonts/PressStart2P.woff', label: 'local-woff' },
+                    { url: 'assets/fonts/PressStart2P.ttf', label: 'local-ttf' }
+                ];
+
+                const avail = [];
+                if (window.FontFace) {
+                    for (const c of localCandidates) {
+                        try {
+                            const ff = new FontFace('PS2P-detect-' + c.label, `url("${c.url}")`);
+                            // eslint-disable-next-line no-await-in-loop
+                            const loaded = await ff.load().catch(() => null);
+                            if (loaded) {
+                                try { document.fonts.add(loaded); } catch (e) { /* ignore */ }
+                                avail.push({ ok: true, label: c.label, url: c.url });
+                                break;
+                            }
+                        } catch (e) { /* ignore per-candidate errors */ }
+                    }
+                }
+
+                const gfPresent = !!document.getElementById('bh-google-font-fallback');
+                const ps2pWidth = measureWidth('"Press Start 2P", monospace');
+
+                let decided = 'unknown';
+                if (ps2pNow || (ps2pWidth && baseline && Math.abs(ps2pWidth - baseline) > 2)) {
+                    if (avail.length) decided = avail[0].label;
+                    else if (gfPresent) decided = 'google-fallback';
+                    else decided = 'press-start-2p (unknown source, maybe local())';
+                } else {
+                    if (avail.length) decided = avail[0].label + ' (loaded but not applied yet)';
+                    else if (gfPresent) decided = 'google-fallback (not yet applied)';
+                    else decided = 'not-available';
+                }
+
+                console.info('[FONT-DETECT] baseline monospace width:', baseline, 'ps2p width:', ps2pWidth, 'font-family check:', ps2pNow);
+                console.info('[FONT-DETECT] local candidates result:', avail);
+                console.info('[FONT-DETECT] google fallback present:', gfPresent);
+                console.info('[FONT-DETECT] decided source:', decided);
+                resolve(decided);
+            });
+        }
+
+        // Helper: safely set text on a Phaser Text object with optional retry when font/texture not ready.
+        function safeSetTextWithRetry(obj, text, scene, maxRetries = 3, delay = 150) {
+            if (!obj || typeof obj.setText !== 'function') return false;
+            try {
+                obj.setText(text);
+                return true;
+            } catch (e) {
+                // schedule retry if possible
+                try {
+                    obj._setTextRetries = (obj._setTextRetries || 0) + 1;
+                    if (scene && scene.time && obj._setTextRetries <= maxRetries) {
+                        scene.time.delayedCall(delay, () => {
+                            try {
+                                obj.setText(text);
+                            } catch (e2) {
+                                // nothing — if retries fail we'll log once
+                                console.warn('safeSetTextWithRetry: retry failed for', text, e2);
+                            }
+                        });
+                    } else {
+                        console.warn('safeSetTextWithRetry: cannot retry setText for', text, e);
+                    }
+                } catch (e2) { /* ignore scheduling errors */ }
+                return false;
+            }
+        }
+
+        // Use Font Loading API when available to ensure 'Press Start 2P' is ready
+        // Diagnostic: fetch local font files and log HTTP status + headers to help debug network errors
+        function fetchFontDiagnostics() {
+            const candidates = [
+                'assets/fonts/PressStart2P.woff2',
+                'assets/fonts/PressStart2P.woff',
+                'assets/fonts/PressStart2P.ttf'
+            ];
+            const results = [];
+            return Promise.all(candidates.map(async (url) => {
+                const out = { url };
+                try {
+                    // Try HEAD first to avoid downloading the file
+                    const head = await fetch(url, { method: 'HEAD', cache: 'no-cache' });
+                    out.status = head.status;
+                    out.ok = head.ok;
+                    out.headers = {
+                        'content-type': head.headers.get('content-type'),
+                        'content-length': head.headers.get('content-length')
+                    };
+                    // Some static servers may not support HEAD; if status is 405, try GET with range
+                    if (head.status === 405) {
+                        const rng = await fetch(url, { method: 'GET', headers: { Range: 'bytes=0-1' }, cache: 'no-cache' });
+                        out.status = rng.status;
+                        out.ok = rng.ok;
+                        out.headers = {
+                            'content-type': rng.headers.get('content-type'),
+                            'content-length': rng.headers.get('content-length')
+                        };
+                    }
+                } catch (e) {
+                    // fallback: try a GET to capture network errors
+                    try {
+                        const get = await fetch(url, { method: 'GET', cache: 'no-cache' });
+                        out.status = get.status;
+                        out.ok = get.ok;
+                        out.headers = {
+                            'content-type': get.headers.get('content-type'),
+                            'content-length': get.headers.get('content-length')
+                        };
+                    } catch (e2) {
+                        out.error = (e2 && e2.message) ? e2.message : String(e2);
+                    }
+                }
+                results.push(out);
+                return out;
+            })).then(() => results);
+        }
+
+        // Run diagnostic once to help debugging in console (non-blocking)
+        try {
+            fetchFontDiagnostics().then(r => console.info('[FONT-DIAG] local font fetch results:', r)).catch(e => console.warn('[FONT-DIAG] error', e));
+        } catch (e) { /* ignore */ }
+
+        if (document.fonts && document.fonts.load) {
+            // try to load the font at a reasonable size
+            document.fonts.load('16px "Press Start 2P"').then(() => {
+                detectAndLogFontSource().finally(() => launchGame());
+            }).catch((err) => {
+                // If local font file failed to decode (corrupt file or wrong MIME),
+                // attempt a graceful fallback: inject Google Fonts stylesheet and retry.
+                console.warn('Font load failed, attempting Google Fonts fallback', err);
+                try {
+                    if (!document.getElementById('bh-google-font-fallback')) {
+                        const gf = document.createElement('link');
+                        gf.id = 'bh-google-font-fallback';
+                        gf.rel = 'stylesheet';
+                        gf.href = 'https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap';
+                        document.head.appendChild(gf);
+                    }
+                } catch (e) { console.warn('Failed to inject Google Fonts link', e); }
+
+                // Retry loading the font from the injected stylesheet, timeout if it still fails
+                setTimeout(() => {
+                    document.fonts.load('16px "Press Start 2P"').then(() => {
+                        detectAndLogFontSource().finally(() => launchGame());
+                    }).catch((err2) => {
+                        console.warn('Fallback font load failed, launching game anyway', err2);
+                        detectAndLogFontSource().finally(() => setTimeout(launchGame, 100));
+                    });
+                }, 300);
+            });
+        } else {
+            // older browsers: try detection if possible, then launch
+            if (window.FontFace || (document && document.body)) {
+                detectAndLogFontSource().finally(() => setTimeout(launchGame, 0));
+            } else {
+                setTimeout(launchGame, 0);
+            }
+        }
+
+        // Variabili globali
+        let player;
+        let player2 = null; // second player (if enabled)
+        let target;
+        let blocks;
+        let bullets;
+        let cursors;
+        let spaceKey;
+        let wasdKeys = null; // controls for player2 (WASD + F to shoot)
+        // HUD & per-player stats
+        let scoreText1, scoreText2;
+        let levelText;
+        let livesText1, livesText2;
+        // per-player scores and lives
+        let score1 = 0;
+        let score2 = 0;
+        let level = 1;
+        let lives1 = 3;
+        let lives2 = 3;
+        // level up threshold tracker (combined points / 500)
+        let _levelThreshold = 0;
+        let gameStarted = false;
+        let targetLifetime = 0;
+        let blockSpawnTimer = 0;
+        let particles;
+        // Credits / player selection
+        let credits = 0;
+        let playersCount = 1;
+        const CREDITS_PER_PLAYER = (window.GAME_CONFIG && window.GAME_CONFIG.CREDITS_PER_PLAYER) || 1;
+        // Level/Player select overlay (Phaser objects)
+        let selectContainer = null;
+        let selectCreditsText = null;
+        let selectHintText = null;
+        let selectBtn1Text = null;
+        let selectBtn2Text = null;
+        let selectCancelText = null;
+        // Attract / TopTen UI state
+        let attractCycleEvent = null;
+        let attractVisible = false;
+        let attractContainer = null;
+        let topTenContainer = null;
+        let topTenTitle = null;
+        let topTenListContainer = null;
+        // Language selector
+        const LANGS = ['it', 'fr', 'de', 'en', 'us', 'ja', 'es', 'zh'];
+        let currentLangIndex = 0;
+        let langFlagImage = null;
+        let langTitleText = null;
+        let langInstructionsText = null;
+        let langStartText = null;
+        let topTenCreditsFooter = null;
+        // persistent overlay (sprites thumbnails + player indicators) that stays visible
+        let uiOverlay = null;
+        let spriteThumbsContainer = null;
+        let playerIndicator1 = null;
+        let playerIndicator2 = null;
+
+        function preload() {
+            // Carica risorse usate dalla UI di attract
+            this.load.image('attractBg', "images/bg.png");
+            this.load.image('flags', 'images/flags.png');
+            this.load.image('tileSheet', 'images/tile.png');
+            // optional main sprite-sheet with game objects (4x4 grid)
+            //this.load.image('spriteSheet', 'images/sprite.png');
+            this.load.image('spriteSheet', 'images/objects.png');
+        }
+
+        function create() {
+            this.cameras.main.setBackgroundColor('#0a0e27');
+
+            // compute sprite cell sizes (if spriteSheet loaded)
+            try {
+                const st = this.textures.get('spriteSheet');
+                if (st && st.source && st.source[0]) {
+                    const img = st.source[0].image || st.source[0].data;
+                    if (img && img.width && img.height) {
+                        spriteCellW = img.width / SHEET_COLS;
+                        spriteCellH = img.height / SHEET_ROWS;
+                        spriteSheetPad = Math.max(0, Math.round(Math.min(spriteCellW, spriteCellH) * 0.03));
+                    }
+                }
+            } catch (e) { /* ignore */ }
+
+
+
+            // Griglia di sfondo
+            // const graphics = this.add.graphics();
+            // graphics.lineStyle(1, 0x00ffff, 0.1);
+            // for (let i = 0; i < 800; i += 40) {
+            //     graphics.lineBetween(i, 0, i, 600);
+            // }
+            // for (let i = 0; i < 600; i += 40) {
+            //     graphics.lineBetween(0, i, 800, i);
+            // }
+
+            // Schermata Attract (riutilizzabile)
+            if (!gameStarted) {
+                initAttractUI(this);
+                showAttractUI(this);
+                return;
+            }
+
+            // Player (primary)
+            // place players slightly apart to avoid instant overlap
+            // Player sprite (primary)
+            try {
+                // prefer sprite image from spriteSheet when available
+                player = this.physics.add.image(300, 550, 'spriteSheet');
+                const displaySize = 20;
+                if (applySpriteCrop(this, player, 'player')) {
+                    player.setDisplaySize(displaySize, displaySize);
+                } else {
+                    // fallback: colored rectangle replaced by an image tinted
+                    player.setDisplaySize(displaySize, displaySize);
+                    player.setTint(0x00ff00);
+                }
+                player.body.setCollideWorldBounds(true);
+            } catch (e) {
+                // fallback to rectangle if sprite APIs fail
+                player = this.add.rectangle(300, 550, 20, 20, 0x00ff00);
+                this.physics.add.existing(player);
+                player.body.setCollideWorldBounds(true);
+            }
+
+            // Optionally create a second player when playersCount >= 2
+            if ((playersCount || 1) >= 2) {
+                try {
+                    player2 = this.physics.add.image(500, 550, 'spriteSheet');
+                    const displaySize2 = 20;
+                    if (applySpriteCrop(this, player2, 'player')) {
+                        player2.setDisplaySize(displaySize2, displaySize2);
+                    } else {
+                        player2.setDisplaySize(displaySize2, displaySize2);
+                        player2.setTint(0x0000ff);
+                    }
+                    player2.body.setCollideWorldBounds(true);
+                } catch (e) {
+                    player2 = this.add.rectangle(500, 550, 20, 20, 0x0000ff);
+                    this.physics.add.existing(player2);
+                    player2.body.setCollideWorldBounds(true);
+                }
+
+                // WASD controls for second player, F to shoot
+                try {
+                    wasdKeys = this.input.keyboard.addKeys({
+                        up: Phaser.Input.Keyboard.KeyCodes.W,
+                        left: Phaser.Input.Keyboard.KeyCodes.A,
+                        down: Phaser.Input.Keyboard.KeyCodes.S,
+                        right: Phaser.Input.Keyboard.KeyCodes.D,
+                        shoot: Phaser.Input.Keyboard.KeyCodes.F
+                    });
+                } catch (e) {
+                    // fallback for older Phaser input.addKeys signatures
+                    const raw = this.input.keyboard.addKeys('W,A,S,D,F');
+                    // normalize fallback to the same shape { up,left,down,right,shoot }
+                    wasdKeys = {
+                        up: raw.W || raw.w,
+                        left: raw.A || raw.a,
+                        down: raw.S || raw.s,
+                        right: raw.D || raw.d,
+                        shoot: raw.F || raw.f
+                    };
+                }
+            }
+
+            // Target
+            // Target (collectable) — prefer sprite
+            try {
+                target = this.physics.add.image(0, 0, 'spriteSheet');
+                const tSize = 15;
+                if (applySpriteCrop(this, target, 'target')) {
+                    target.setDisplaySize(tSize, tSize);
+                } else {
+                    target.setDisplaySize(tSize, tSize);
+                    target.setTint(0xffff00);
+                }
+                spawnTarget(this);
+            } catch (e) {
+                target = this.add.rectangle(0, 0, 15, 15, 0xffff00);
+                this.physics.add.existing(target);
+                spawnTarget(this);
+            }
+
+            // Gruppi
+            blocks = this.physics.add.group();
+            bullets = this.physics.add.group();
+            // Particles will be represented by small sprite fragments when possible
+            particles = this.add.particles(0, 0);
+
+            // Input
+            cursors = this.input.keyboard.createCursorKeys();
+            spaceKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
+
+            // HUD - per-player
+            scoreText1 = this.add.text(16, 16, 'P1: 0', {
+                fontSize: '14px',
+                fontFamily: GAME_FONT,
+                fill: '#00ffff'
+            }).setDepth(100);
+
+            livesText1 = this.add.text(16, 36, 'LIVES: ' + lives1, {
+                fontSize: '12px',
+                fontFamily: GAME_FONT,
+                fill: '#00ffff'
+            }).setDepth(100);
+
+            // right-side HUD for player 2
+            scoreText2 = this.add.text(this.scale.width - 16, 16, 'P2: 0', {
+                fontSize: '14px',
+                fontFamily: GAME_FONT,
+                fill: '#00ffff'
+            }).setOrigin(1, 0).setDepth(100);
+
+            livesText2 = this.add.text(this.scale.width - 16, 36, 'LIVES: ' + lives2, {
+                fontSize: '12px',
+                fontFamily: GAME_FONT,
+                fill: '#00ffff'
+            }).setOrigin(1, 0).setDepth(100);
+
+            // Level indicator centered
+            levelText = this.add.text(this.scale.width / 2, 16, 'LEVEL: ' + level, {
+                fontSize: '14px',
+                fontFamily: GAME_FONT,
+                fill: '#00ffff'
+            }).setOrigin(0.5, 0).setDepth(100);
+
+            // Collisioni - both players should interact with targets/blocks
+            this.physics.add.overlap(player, target, collectTarget, null, this);
+            this.physics.add.overlap(player, blocks, hitBlock, null, this);
+            if (player2) {
+                this.physics.add.overlap(player2, target, collectTarget, null, this);
+                this.physics.add.overlap(player2, blocks, hitBlock, null, this);
+            }
+            this.physics.add.overlap(bullets, blocks, destroyBlock, null, this);
+
+            // Apply translations for HUD/select texts if dictionary loaded
+            try { applyTranslations(); } catch (e) { /* ignore */ }
+        }
+
+        // Initialize attract UI and top-ten container (created once per scene lifecycle)
+        function initAttractUI(scene) {
+            if (attractContainer) return; // already created for this scene
+
+            const centerX = 400;
+            const centerY = 300;
+
+            // Container for attract screen
+            attractContainer = scene.add.container(0, 0);
+
+            // Background: usa l'immagine se caricata, altrimenti fallback grafico
+            let bg;
+            if (scene.textures.exists('attractBg')) {
+                bg = scene.add.image(centerX, centerY, 'attractBg');
+                bg.setOrigin(0.5, 0.5);
+                // Usa dimensione dinamica della scena per coprire il canvas
+                bg.setDisplaySize(scene.scale.width || 800, scene.scale.height || 600);
+                attractContainer.add(bg);
+            } else {
+                console.warn('attractBg texture not found — using fallback background');
+                bg = scene.add.rectangle(scene.scale.width / 2 || centerX, scene.scale.height / 2 || centerY, scene.scale.width || 800, scene.scale.height || 600, 0x07102a);
+                attractContainer.add(bg);
+
+                // leggero overlay scanline per effetto retrò
+                const lines = scene.add.graphics();
+                lines.lineStyle(1, 0x001020, 0.03);
+                for (let y = 0; y < (scene.scale.height || 600); y += 4) {
+                    lines.moveTo(0, y);
+                    lines.lineTo(scene.scale.width || 800, y);
+                }
+                lines.strokePath();
+                attractContainer.add(lines);
+            }
+
+            // Title
+            const title = scene.add.text(centerX, 150, 'BLOCK HUNTER', {
+                fontSize: '48px',
+                fontFamily: GAME_FONT,
+                fill: '#ff00ff',
+                stroke: '#00ffff',
+                strokeThickness: 3
+            }).setOrigin(0.5);
+            attractContainer.add(title);
+            langTitleText = title;
+
+            // Glow animation
+            scene.tweens.add({
+                targets: title,
+                alpha: { from: 1, to: 0.5 },
+                duration: 1000,
+                yoyo: true,
+                repeat: -1
+            });
+
+            // Instructions
+            const instructions = scene.add.text(centerX, 280,
+                'FRECCE - MOVIMENTO\nSPAZIO - SPARA\nRECUPERA L\'OGGETTO\nSCHIVA I BLOCCHI',
+                {
+                    fontSize: '14px',
+                    fontFamily: GAME_FONT,
+                    fill: '#00ffff',
+                    align: 'center',
+                    lineSpacing: 10
+                }
+            ).setOrigin(0.5);
+            attractContainer.add(instructions);
+            langInstructionsText = instructions;
+
+            // Start button (acts as INSERT COIN / START)
+            const startButton = scene.add.rectangle(centerX, 420, 300, 60, 0xff00ff).setInteractive({ useHandCursor: true });
+            const startText = scene.add.text(centerX, 420, 'INSERISCI MONETA', {
+                fontSize: '16px',
+                fontFamily: GAME_FONT,
+                fill: '#000000'
+            }).setOrigin(0.5);
+            attractContainer.add(startButton);
+            attractContainer.add(startText);
+            langStartText = startText;
+
+            // Pulsing animation
+            scene.tweens.add({
+                targets: startButton,
+                scaleX: { from: 1, to: 1.05 },
+                scaleY: { from: 1, to: 1.05 },
+                duration: 800,
+                yoyo: true,
+                repeat: -1
+            });
+
+            startButton.on('pointerover', () => startButton.setFillStyle(0x00ffff));
+            startButton.on('pointerout', () => startButton.setFillStyle(0xff00ff));
+
+            const startGame = () => {
+                gameStarted = true;
+                hideAttractUI(scene, true);
+                if (attractCycleEvent) {
+                    attractCycleEvent.remove(false);
+                    attractCycleEvent = null;
+                }
+                scene.scene.restart();
+            };
+
+            startButton.on('pointerdown', startGame);
+            scene.input.keyboard.on('keydown-ENTER', startGame);
+
+            // Top Ten container (initially hidden)
+            topTenContainer = scene.add.container(0, 0);
+            topTenTitle = scene.add.text(centerX, 80, 'HIGH SCORES', {
+                fontSize: '28px',
+                fontFamily: GAME_FONT,
+                fill: '#ffff00'
+            }).setOrigin(0.5);
+            topTenContainer.add(topTenTitle);
+
+            // List container for highscore lines
+            topTenListContainer = scene.add.container(0, 0);
+            topTenContainer.add(topTenListContainer);
+
+            // Empty list placeholder (show even if no scores)
+            const emptyText = scene.add.text(centerX, 140, '--- NESSUN PUNTEGGIO ---', {
+                fontSize: '14px',
+                fontFamily: GAME_FONT,
+                fill: '#00ffff'
+            }).setOrigin(0.5);
+            topTenListContainer.add(emptyText);
+
+            // Credits/footer for Top Ten
+            const creditsFooter = scene.add.text(centerX, 520, 'CREDITI: 0', {
+                fontSize: '14px',
+                fontFamily: GAME_FONT,
+                fill: '#00ffff'
+            }).setOrigin(0.5);
+            topTenContainer.add(creditsFooter);
+            topTenCreditsFooter = creditsFooter;
+
+            // Language selector UI (flag + arrows)
+            // Read saved lang
+            const saved = localStorage.getItem('bh_lang');
+            if (saved) {
+                const idx = LANGS.indexOf(saved);
+                if (idx >= 0) currentLangIndex = idx;
+            }
+
+            // Flag image (we will crop to the selected flag)
+            langFlagImage = scene.add.image(centerX, 480, 'flags');
+            langFlagImage.setOrigin(0.5, 0.5);
+            // small display
+            langFlagImage.setDisplaySize(96, 24);
+            attractContainer.add(langFlagImage);
+
+            // Arrows
+            const leftArrow = scene.add.text(centerX - 80, 480, '<', { fontSize: '24px', fontFamily: GAME_FONT, fill: '#00ffff' }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+            const rightArrow = scene.add.text(centerX + 80, 480, '>', { fontSize: '24px', fontFamily: GAME_FONT, fill: '#00ffff' }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+            attractContainer.add(leftArrow);
+            attractContainer.add(rightArrow);
+
+            leftArrow.on('pointerdown', () => changeLang(-1, scene));
+            rightArrow.on('pointerdown', () => changeLang(1, scene));
+
+            // Initial update of flag crop and dictionary
+            scene.time.delayedCall(50, () => {
+                updateFlagCrop(scene);
+                loadDictionary(LANGS[currentLangIndex]);
+                // render highscores into the top-ten list area
+                try { renderTopTen(scene); } catch (e) { /* ignore */ }
+                // create a persistent overlay with sprite thumbnails and P1/P2 indicators
+                try {
+                    if (!uiOverlay) {
+                        uiOverlay = scene.add.container(0, 0).setDepth(700);
+                        // sprite thumbnails row (use spriteSheet if available)
+                        spriteThumbsContainer = scene.add.container(120, scene.scale.height - 40);
+                        const thumbs = ['player', 'block', 'target', 'heart', 'shards'];
+                        for (let i = 0; i < thumbs.length; i++) {
+                            const k = thumbs[i];
+                            let img;
+                            try {
+                                img = scene.add.image(i * 44, 0, 'spriteSheet').setOrigin(0.5);
+                                if (applySpriteCrop(scene, img, k)) img.setDisplaySize(32, 32);
+                                else { img.destroy(); img = scene.add.rectangle(i * 44, 0, 28, 28, 0x666666).setOrigin(0.5); }
+                            } catch (e) {
+                                img = scene.add.rectangle(i * 44, 0, 28, 28, 0x666666).setOrigin(0.5);
+                            }
+                            spriteThumbsContainer.add(img);
+                        }
+                        uiOverlay.add(spriteThumbsContainer);
+
+                        // player indicators (left = P1, right = P2)
+                        playerIndicator1 = scene.add.container(80, 80);
+                        // background with border
+                        const p1Box = scene.add.rectangle(0, 0, 72, 28, 0x003300).setOrigin(0.5);
+                        try { p1Box.setStrokeStyle(2, 0x00ff00); } catch (e) { /* ignore if not supported */ }
+                        // icon (sprite if available)
+                        let p1Icon;
+                        try {
+                            p1Icon = scene.add.image(-22, 0, 'spriteSheet').setOrigin(0.5);
+                            if (applySpriteCrop(scene, p1Icon, 'player')) p1Icon.setDisplaySize(18, 18);
+                            else { p1Icon.destroy(); p1Icon = scene.add.rectangle(-22, 0, 12, 12, 0x00ff00).setOrigin(0.5); }
+                        } catch (e) {
+                            p1Icon = scene.add.rectangle(-22, 0, 12, 12, 0x00ff00).setOrigin(0.5);
+                        }
+                        const p1Text = scene.add.text(6, 0, 'P1', { fontSize: '12px', fontFamily: GAME_FONT, fill: '#00ff00' }).setOrigin(0.5);
+                        playerIndicator1.add([p1Box, p1Icon, p1Text]);
+                        playerIndicator1.setVisible(false);
+                        uiOverlay.add(playerIndicator1);
+
+                        playerIndicator2 = scene.add.container(scene.scale.width - 80, 80);
+                        const p2Box = scene.add.rectangle(0, 0, 72, 28, 0x000022).setOrigin(0.5);
+                        try { p2Box.setStrokeStyle(2, 0x0000ff); } catch (e) { }
+                        let p2Icon;
+                        try {
+                            p2Icon = scene.add.image(-22, 0, 'spriteSheet').setOrigin(0.5);
+                            if (applySpriteCrop(scene, p2Icon, 'player')) p2Icon.setDisplaySize(18, 18);
+                            else { p2Icon.destroy(); p2Icon = scene.add.rectangle(-22, 0, 12, 12, 0x0000ff).setOrigin(0.5); }
+                        } catch (e) {
+                            p2Icon = scene.add.rectangle(-22, 0, 12, 12, 0x0000ff).setOrigin(0.5);
+                        }
+                        const p2Text = scene.add.text(6, 0, 'P2', { fontSize: '12px', fontFamily: GAME_FONT, fill: '#00bbff' }).setOrigin(0.5);
+                        playerIndicator2.add([p2Box, p2Icon, p2Text]);
+                        playerIndicator2.setVisible(false);
+                        uiOverlay.add(playerIndicator2);
+
+                        // subtle pulsing animation for visible indicators
+                        try {
+                            scene.tweens.add({ targets: [p1Box, p1Icon, p1Text], scaleX: 1.02, scaleY: 1.02, duration: 700, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+                            scene.tweens.add({ targets: [p2Box, p2Icon, p2Text], scaleX: 1.02, scaleY: 1.02, duration: 700, yoyo: true, repeat: -1, ease: 'Sine.easeInOut', delay: 120 });
+                        } catch (e) { /* ignore tween errors */ }
+                    }
+                } catch (e) { console.warn('Failed to create UI overlay', e); }
+            });
+
+            // Initially hide both
+            attractContainer.setAlpha(0);
+            topTenContainer.setAlpha(0);
+            attractContainer.setVisible(false);
+            topTenContainer.setVisible(false);
+
+            // Start alternation timer (but paused until attract shown)
+            attractCycleEvent = null;
+        }
+
+        function showAttractUI(scene) {
+            if (!attractContainer) initAttractUI(scene);
+            if (attractVisible && attractContainer.visible) return;
+            // Hide topTen first
+            if (topTenContainer && topTenContainer.visible) {
+                scene.tweens.add({ targets: topTenContainer, alpha: 0, duration: 500, onComplete: () => topTenContainer.setVisible(false) });
+            }
+
+            attractContainer.setVisible(true);
+            scene.tweens.add({ targets: attractContainer, alpha: 1, duration: 600 });
+            attractVisible = true;
+
+            // (re)start alternation timer
+            if (!attractCycleEvent) {
+                attractCycleEvent = scene.time.addEvent({
+                    delay: 10000,
+                    loop: true,
+                    callback: () => {
+                        // toggle
+                        if (attractVisible) showTopTenUI(scene);
+                        else showAttractUI(scene);
+                    }
+                });
+            }
+        }
+
+        function hideAttractUI(scene, immediate = false) {
+            if (!attractContainer) return;
+            if (immediate) {
+                attractContainer.setVisible(false);
+                attractContainer.setAlpha(0);
+            } else {
+                scene.tweens.add({ targets: attractContainer, alpha: 0, duration: 400, onComplete: () => attractContainer.setVisible(false) });
+            }
+            attractVisible = false;
+        }
+
+        function showTopTenUI(scene) {
+            if (!topTenContainer) initAttractUI(scene);
+            // Hide attract
+            if (attractContainer && attractContainer.visible) {
+                scene.tweens.add({ targets: attractContainer, alpha: 0, duration: 500, onComplete: () => attractContainer.setVisible(false) });
+            }
+            // Show topTen
+            topTenContainer.setVisible(true);
+            scene.tweens.add({ targets: topTenContainer, alpha: 1, duration: 600 });
+            attractVisible = false;
+        }
+
+        // Update credits display on attract/top-ten
+        function refreshAttractPlayerHintsPhaser(scene) {
+            try {
+                // update footer / credits text
+                if (topTenCreditsFooter) {
+                    const label = (window.DICT && (window.DICT.credits_word || window.DICT.credits_label)) || 'CREDITI';
+                    topTenCreditsFooter.setText((credits && credits > 0) ? `${label}: ${credits}` : (window.DICT && window.DICT.insert_coin) || 'INSERISCI MONETA');
+                }
+                // if attractContainer exists, try to update start button text
+                if (langStartText) {
+                    const insertCoin = (window.DICT && (window.DICT.insert_coin || window.DICT.insert_coin_btn)) || 'INSERISCI MONETA';
+                    langStartText.setText((credits && credits > 0) ? `${(window.DICT && window.DICT.credits_word) || 'CREDITI'}: ${credits}` : insertCoin);
+                }
+                // update select overlay credits if visible
+                if (selectCreditsText) {
+                    try { selectCreditsText.setText((credits && credits > 0) ? `CREDITI: ${credits}` : ((window.DICT && window.DICT.insert_coin) || 'INSERISCI MONETA')); } catch (e) { }
+                }
+                // optionally update any visible hints (we don't have static DOM hints here)
+            } catch (e) { /* ignore */ }
+            try {
+                // show player indicators depending on credits
+                const hasP1 = (credits || 0) >= (CREDITS_PER_PLAYER || 1);
+                const hasP2 = (credits || 0) >= ((CREDITS_PER_PLAYER || 1) * 2);
+                if (playerIndicator1) playerIndicator1.setVisible(!!hasP1);
+                if (playerIndicator2) playerIndicator2.setVisible(!!hasP2);
+            } catch (e) { /* ignore overlay errors */ }
+        }
+
+        function insertCoin(amount = 1, scene) {
+            credits = (credits || 0) + amount;
+            // feedback (tween or sound)
+            try { if (scene && scene.sound && scene.sound.play) scene.sound.play && scene.sound.play('coin'); } catch (e) { }
+            refreshAttractPlayerHintsPhaser(scene || {});
+            // small pulse on start button
+            try {
+                if (scene && langStartText && scene.tweens) {
+                    scene.tweens.add({ targets: langStartText, scaleX: 1.05, scaleY: 1.05, yoyo: true, duration: 200 });
+                }
+            } catch (e) { }
+        }
+
+        function tryStartWithPlayers(n, scene) {
+            const required = (CREDITS_PER_PLAYER || 1) * n;
+            if ((credits || 0) >= required) {
+                credits -= required;
+                playersCount = n;
+                refreshAttractPlayerHintsPhaser(scene);
+                // start the game
+                gameStarted = true;
+                if (attractCycleEvent) { attractCycleEvent.remove(false); attractCycleEvent = null; }
+                // restart the scene so create() goes into game state
+                if (scene && scene.scene && scene.scene.restart) scene.scene.restart();
+                // hide select overlay if open
+                try { if (selectContainer) { selectContainer.destroy(true); selectContainer = null; } } catch (e) { }
+                return true;
+            } else {
+                // feedback: not enough credits
+                try {
+                    if (scene && scene.tweens && langStartText) {
+                        scene.tweens.add({ targets: langStartText, x: langStartText.x - 6, duration: 80, yoyo: true, repeat: 1 });
+                    }
+                } catch (e) { }
+                return false;
+            }
+        }
+
+        // Tile sheet mapping (copy from index.html TAIL_SHEET_MAP)
+        const tailCols = 4, tailRows = 4;
+        let tailCellW = 0, tailCellH = 0;
+        // Sprite sheet constants (from index.html)
+        const SHEET_COLS = 4, SHEET_ROWS = 4;
+        let spriteCellW = 0, spriteCellH = 0;
+        let spriteSheetPad = 2;
+        const SPRITE_SHEET_MAP = {
+            // row 0
+            dynamite: { r: 0, c: 0 },
+            heart: { r: 0, c: 1 },
+            block: { r: 0, c: 2 },
+            player: { r: 0, c: 3 },
+            // row 1
+            dynamite2: { r: 1, c: 0 },
+            door: { r: 1, c: 1 },
+            dynamon: { r: 1, c: 2 },
+            shards: { r: 1, c: 3 },
+            // row 2
+            key: { r: 2, c: 0 },
+            sand: { r: 2, c: 1 },
+            ghost: { r: 2, c: 2 },
+            doblon: { r: 2, c: 3 },
+            // row 3
+            wall: { r: 3, c: 0 },
+            mine_tile: { r: 3, c: 1 },
+            hole: { r: 3, c: 2 },
+            explosion: { r: 3, c: 3 }
+        };
+        // Helper: apply crop from sprite sheet to an Image GameObject (global)
+        function applySpriteCrop(scene, imgObj, keyName) {
+            if (!imgObj || !SPRITE_SHEET_MAP[keyName]) return false;
+            if (!spriteCellW || !spriteCellH) return false;
+            const m = SPRITE_SHEET_MAP[keyName];
+            const sx = Math.round(m.c * spriteCellW + spriteSheetPad);
+            const sy = Math.round(m.r * spriteCellH + spriteSheetPad);
+            const sw = Math.max(4, Math.round(spriteCellW - spriteSheetPad * 2));
+            const sh = Math.max(4, Math.round(spriteCellH - spriteSheetPad * 2));
+            try { imgObj.setCrop(sx, sy, sw, sh); } catch (e) { return false; }
+            return true;
+        }
+        const TAIL_SHEET_MAP = {
+            // row 0: wall variants
+            wall1: { r: 0, c: 0 },
+            wall2: { r: 0, c: 1 },
+            wall3: { r: 0, c: 2 },
+            wall4: { r: 0, c: 3 },
+            // row 1: hole + sand variants
+            hole: { r: 1, c: 0 },
+            sand1: { r: 1, c: 1 },
+            sand2: { r: 1, c: 2 },
+            sand3: { r: 1, c: 3 },
+            // row 2
+            sand4: { r: 2, c: 0 },
+            sand5: { r: 2, c: 1 },
+            sandPile: { r: 2, c: 2 },
+            sand6: { r: 2, c: 3 },
+            // row 3
+            sand7: { r: 3, c: 0 },
+            sand8: { r: 3, c: 1 },
+            sand9: { r: 3, c: 2 },
+            sand10: { r: 3, c: 3 }
+        };
+
+        // Load a level JS (data/level/<name>.js) and draw it when ready
+        function loadLevelByName(scene, name) {
+            const id = 'level-script';
+            const old = document.getElementById(id);
+            if (old) old.remove();
+            const script = document.createElement('script');
+            script.id = id;
+            script.src = 'data/level/' + name + '.js';
+            script.onload = () => {
+                if (window.LEVEL_MAP) {
+                    // compute tail cell sizes from loaded texture
+                    const tex = scene.textures.get('tileSheet');
+                    if (tex && tex.source && tex.source[0]) {
+                        const img = tex.source[0].image || tex.source[0].data;
+                        tailCellW = img.width / tailCols;
+                        tailCellH = img.height / tailRows;
+                    }
+                    drawLevel(scene, window.LEVEL_MAP);
+                }
+            };
+            script.onerror = () => console.warn('Failed to load level', name);
+            document.head.appendChild(script);
+        }
+
+        // Draw level map using tileSheet and TAIL_SHEET_MAP
+        function drawLevel(scene, levelMap, _attempt = 0) {
+            if (!levelMap || !levelMap.map) return;
+            // If tile sheet cell sizes are not yet known and levelMap doesn't specify tileSize,
+            // try to compute them from the loaded texture. If texture not yet available,
+            // retry shortly (up to a few attempts) to avoid drawing with incorrect sizes.
+            if ((!tailCellW || !tailCellH) && !levelMap.tileSize) {
+                try {
+                    const tex = scene.textures.get('tileSheet');
+                    if (tex && tex.source && tex.source[0]) {
+                        const img = tex.source[0].image || tex.source[0].data;
+                        if (img && img.width && img.height) {
+                            tailCellW = img.width / tailCols;
+                            tailCellH = img.height / tailRows;
+                        }
+                    }
+                } catch (e) { /* ignore */ }
+                if ((!tailCellW || !tailCellH) && _attempt < 6) {
+                    // schedule a retry after a short delay
+                    try {
+                        scene.time.delayedCall(80, () => drawLevel(scene, levelMap, _attempt + 1));
+                        return;
+                    } catch (e) { /* if no timer available, fall through */ }
+                }
+            }
+
+            // remove existing floor container if any
+            if (scene.floorContainer) {
+                try { scene.floorContainer.destroy(true); } catch (e) { /* ignore */ }
+            }
+            const cols = levelMap.cols || (levelMap.map && levelMap.map[0] ? levelMap.map[0].length : 0);
+            const rows = levelMap.rows || (levelMap.map ? levelMap.map.length : 0);
+            if (!cols || !rows) return;
+
+            // choose tile size: optional tileSize in levelMap or based on tile sheet cell
+            let tileSize = levelMap.tileSize || Math.max(8, Math.round(Math.min(tailCellW || 32, tailCellH || 32)));
+            // Clamp tileSize so tiles fit inside the scene and do not overlap
+            const maxTileW = Math.max(4, Math.floor(scene.scale.width / cols));
+            const maxTileH = Math.max(4, Math.floor(scene.scale.height / rows));
+            tileSize = Math.min(tileSize, maxTileW, maxTileH);
+
+            const originX = Math.round((scene.scale.width - cols * tileSize) / 2);
+            const originY = Math.round((scene.scale.height - rows * tileSize) / 2);
+
+            const container = scene.add.container(0, 0);
+            scene.floorContainer = container;
+
+            for (let r = 0; r < rows; r++) {
+                const row = levelMap.map[r] || [];
+                for (let c = 0; c < cols; c++) {
+                    const key = (row && row[c]) ? row[c] : null;
+                    const mapEntry = TAIL_SHEET_MAP[key];
+                    const x = Math.round(originX + c * tileSize + tileSize / 2);
+                    const y = Math.round(originY + r * tileSize + tileSize / 2);
+                    if (!mapEntry) {
+                        // draw placeholder rect for empty/unknown tiles
+                        const rect = scene.add.rectangle(x, y, tileSize, tileSize, 0xbfa57a).setOrigin(0.5);
+                        container.add(rect);
+                        continue;
+                    }
+                    // compute source rect
+                    const sx = Math.round(mapEntry.c * (tailCellW || tileSize));
+                    const sy = Math.round(mapEntry.r * (tailCellH || tileSize));
+                    const sw = Math.max(4, Math.round(tailCellW || tileSize));
+                    const sh = Math.max(4, Math.round(tailCellH || tileSize));
+                    const img = scene.add.image(x, y, 'tileSheet').setOrigin(0.5);
+                    // crop the source to the tile area (if available)
+                    try { img.setCrop(sx, sy, sw, sh); } catch (e) { /* ignore crop errors */ }
+                    img.setDisplaySize(tileSize, tileSize);
+                    container.add(img);
+                }
+            }
+            // send container to back
+            try { container.setDepth(-10); } catch (e) { /* ignore */ }
+        }
+
+        // Language helper functions
+        function changeLang(delta, scene) {
+            currentLangIndex = (currentLangIndex + delta + LANGS.length) % LANGS.length;
+            localStorage.setItem('bh_lang', LANGS[currentLangIndex]);
+            updateFlagCrop(scene);
+            loadDictionary(LANGS[currentLangIndex]);
+        }
+
+        function updateFlagCrop(scene) {
+            if (!langFlagImage) return;
+            const tex = scene.textures.get('flags');
+            if (!tex || !tex.source || !tex.source[0]) return;
+            const img = tex.source[0].image || tex.source[0].data;
+            const totalW = img.width;
+            const totalH = img.height;
+            const sliceW = Math.floor(totalW / LANGS.length);
+            const sx = sliceW * currentLangIndex;
+            // Phaser Image#setCrop expects numbers
+            langFlagImage.setCrop(sx, 0, sliceW, totalH);
+            // adjust display size to keep flags visible
+            langFlagImage.setDisplaySize(96, Math.round(96 * (totalH / sliceW)));
+        }
+
+        function loadDictionary(lang) {
+            // 1) If the user provided an in-memory dictionary map (window.BH_DICS), use it.
+            if (window.BH_DICS && window.BH_DICS[lang]) {
+                try {
+                    const raw = window.BH_DICS[lang];
+                    const normalized = adaptDictionary(raw || {});
+                    window.DICT = normalized;
+                    const missing = findMissingKeys(normalized);
+                    if (missing.length && lang !== 'en') {
+                        loadReferenceDict('en').then(ref => { try { const refNorm = adaptDictionary(ref || {}); fillMissingFromReference(window.DICT, refNorm); } catch (e) { }; applyTranslations(); }).catch(() => { applyTranslations(); });
+                    } else {
+                        applyTranslations();
+                    }
+                } catch (e) { console.warn('Error processing in-memory dictionary for', lang, e); }
+                return;
+            }
+
+            // 2) Try fetching a JSON file (data/dic/<lang>.json) — useful if static .js is blocked
+            const jsonUrl = 'data/dic/' + lang + '.json';
+            fetch(jsonUrl, { cache: 'no-cache' }).then(r => {
+                if (!r.ok) throw new Error('json not found');
+                return r.json();
+            }).then(json => {
+                try {
+                    const normalized = adaptDictionary(json || {});
+                    window.DICT = normalized;
+                    const missing = findMissingKeys(normalized);
+                    if (missing.length && lang !== 'en') {
+                        loadReferenceDict('en').then(ref => { try { const refNorm = adaptDictionary(ref || {}); fillMissingFromReference(window.DICT, refNorm); } catch (e) { }; applyTranslations(); }).catch(() => { applyTranslations(); });
+                    } else {
+                        applyTranslations();
+                    }
+                } catch (e) { console.warn('Error processing json dictionary for', lang, e); applyTranslations(); }
+            }).catch(() => {
+                // 3) Fallback: try loading the legacy script file `data/dic/<lang>.js` (kept for compatibility)
+                const id = 'dict-script';
+                const old = document.getElementById(id);
+                if (old) old.remove();
+                const script = document.createElement('script');
+                script.id = id;
+                script.src = 'data/dic/' + lang + '.js';
+                script.onload = () => {
+                    try {
+                        const raw = window.DICT || {};
+                        const normalized = adaptDictionary(raw);
+                        window.DICT = normalized;
+                        const missing = findMissingKeys(normalized);
+                        if (missing.length && lang !== 'en') {
+                            loadReferenceDict('en').then(ref => { try { const refNorm = adaptDictionary(ref || {}); fillMissingFromReference(window.DICT, refNorm); } catch (e) { }; applyTranslations(); }).catch(() => { applyTranslations(); });
+                        } else {
+                            applyTranslations();
+                        }
+                    } catch (e) {
+                        console.warn('Error processing dictionary for', lang, e);
+                        if (window.DICT) applyTranslations();
+                    }
+                };
+                script.onerror = () => console.warn('Failed to load dictionary for', lang);
+                document.head.appendChild(script);
+            });
+        }
+
+        // Helper: load reference dictionary via script tag and return a Promise resolving to its window.DICT
+        function loadReferenceDict(refLang) {
+            return new Promise((resolve, reject) => {
+                // First check for in-memory registration
+                if (window.BH_DICS && window.BH_DICS[refLang]) {
+                    resolve(window.BH_DICS[refLang]);
+                    return;
+                }
+                // Try fetching JSON first
+                const jsonUrl = 'data/dic/' + refLang + '.json';
+                fetch(jsonUrl, { cache: 'no-cache' }).then(r => {
+                    if (!r.ok) throw new Error('json not found');
+                    return r.json();
+                }).then(json => resolve(json)).catch(() => {
+                    const id = 'dict-ref-script';
+                    const old = document.getElementById(id);
+                    if (old) old.remove();
+                    const script = document.createElement('script');
+                    script.id = id;
+                    script.src = 'data/dic/' + refLang + '.js';
+                    script.onload = () => { try { resolve(window.DICT || {}); } catch (e) { resolve({}); } };
+                    script.onerror = () => { reject(new Error('ref dict load failed')); };
+                    document.head.appendChild(script);
+                });
+            });
+        }
+
+        // Canonical keys and common aliases mapping. The adapter will search aliases in the raw dict
+        // and populate canonical keys used by the game.
+        const DICT_ALIASES = {
+            title: ['title', 'game_title', 'attract_title'],
+            instructions: ['instructions', 'howto', 'attract_instructions'],
+            insert_coin: ['insert_coin', 'insert_coin_btn', 'attractmode.staticcredits', 'coin_text'],
+            credits_word: ['credits_word', 'credits_label', 'credits'],
+            highscores: ['highscores', 'high_scores', 'top_ten', 'highscore_title'],
+            p1_label: ['p1_label', 'player1_label', 'player_one'],
+            p2_label: ['p2_label', 'player2_label', 'player_two'],
+            lives_label: ['lives_label', 'lives', 'life_label'],
+            level: ['level', 'level_label', 'lvl'],
+            select_title: ['select_title', 'selectscreen_title'],
+            select_hint: ['select_hint', 'selectscreen_hint'],
+            one_player_label: ['one_player_label', 'one_player', '1player_label'],
+            two_players_label: ['two_players_label', 'two_players', '2player_label'],
+            cancel: ['cancel', 'back', 'indietro'],
+            game_over: ['game_over', 'gameover', 'end_title'],
+            retry: ['retry', 'retry_label', 'ripeti']
+        };
+
+        // Utility: get nested value by path 'a.b.c'
+        function getNested(obj, path) {
+            if (!obj || !path) return undefined;
+            const parts = path.split('.');
+            let cur = obj;
+            for (let p of parts) {
+                if (cur == null) return undefined;
+                cur = cur[p];
+            }
+            return cur;
+        }
+
+        // Find missing canonical keys (returns array of keys where normalized[key] is undefined/null)
+        function findMissingKeys(norm) {
+            const miss = [];
+            for (const k of Object.keys(DICT_ALIASES)) {
+                if (norm[k] === undefined || norm[k] === null) miss.push(k);
+            }
+            return miss;
+        }
+
+        // Fill missing keys in target from reference normalized dict
+        function fillMissingFromReference(target, reference) {
+            for (const k of Object.keys(DICT_ALIASES)) {
+                if ((target[k] === undefined || target[k] === null) && reference[k] !== undefined) {
+                    target[k] = reference[k];
+                }
+            }
+        }
+
+        // Adapt a raw dictionary (possibly with variant key names) to canonical keys
+        function adaptDictionary(raw) {
+            const out = {};
+            // allow raw to be null
+            const src = raw || {};
+            for (const canon of Object.keys(DICT_ALIASES)) {
+                const aliases = DICT_ALIASES[canon] || [canon];
+                let found = undefined;
+                for (const a of aliases) {
+                    // support nested paths in alias
+                    const val = getNested(src, a);
+                    if (val !== undefined && val !== null) { found = val; break; }
+                }
+                // if not found, but raw had the canonical key directly, use it
+                if ((found === undefined || found === null) && (src[canon] !== undefined)) found = src[canon];
+                out[canon] = found;
+            }
+            // also copy any other keys from raw that are not aliases (keep extras)
+            for (const k of Object.keys(src)) {
+                if (!out.hasOwnProperty(k)) out[k] = src[k];
+            }
+            return out;
+        }
+
+        // Public API: register an in-memory dictionary map so the game can use it without file access.
+        // Example: registerDictionary('it', { title: '...', insert_coin: '...' })
+        function registerDictionary(lang, dict) {
+            if (!window.BH_DICS) window.BH_DICS = {};
+            window.BH_DICS[lang] = dict || {};
+            // if this is the currently selected language, apply immediately
+            const current = LANGS[currentLangIndex];
+            if (current === lang) {
+                try { loadDictionary(lang); } catch (e) { console.warn('registerDictionary load failed', e); }
+            }
+        }
+        // expose helper globally
+        try { window.registerDictionary = registerDictionary; } catch (e) { }
+
+        function applyTranslations() {
+            // Update attract texts if keys exist in DICT
+            if (!window.DICT) return;
+            try {
+                // Top-ten title
+                try { if (window.DICT.highscores && topTenTitle && typeof topTenTitle.setText === 'function') topTenTitle.setText(window.DICT.highscores); } catch (e) { console.warn('applyTranslations: failed to set topTenTitle', e); }
+                try { if (window.DICT.title && langTitleText && typeof langTitleText.setText === 'function') langTitleText.setText(window.DICT.title); } catch (e) { console.warn('applyTranslations: failed to set langTitleText', e); }
+                try {
+                    if (window.DICT.instructions && langInstructionsText && typeof langInstructionsText.setText === 'function') {
+                        if (Array.isArray(window.DICT.instructions)) langInstructionsText.setText(window.DICT.instructions.join('\n'));
+                        else langInstructionsText.setText(window.DICT.instructions);
+                    }
+                } catch (e) { console.warn('applyTranslations: failed to set langInstructionsText', e); }
+
+                // insert coin: try multiple keys
+                const insertCoin = window.DICT.insert_coin || window.DICT.insert_coin_btn || (window.DICT.attractmode && window.DICT.attractmode.staticcredits);
+                try { if (insertCoin && langStartText && typeof langStartText.setText === 'function') langStartText.setText(insertCoin); } catch (e) { console.warn('applyTranslations: failed to set langStartText', e); }
+                const creditsLabel = window.DICT.credits_word || window.DICT.credits_label || 'CREDITI';
+                try {
+                    if (topTenCreditsFooter) {
+                        if (!safeSetTextWithRetry(topTenCreditsFooter, (creditsLabel || 'CREDITI') + ': 0', (window.game && window.game.scene) ? window.game.scene.getScenes(true)[0] : null)) {
+                            console.warn('applyTranslations: scheduled retry for topTenCreditsFooter');
+                        }
+                    }
+                } catch (e) { console.warn('applyTranslations: failed to set topTenCreditsFooter', e); }
+
+                // HUD labels
+                const p1label = window.DICT.p1_label || 'P1';
+                const p2label = window.DICT.p2_label || 'P2';
+                const livesLabel = window.DICT.lives_label || window.DICT.lives || 'LIVES';
+                const levelLabel = window.DICT.level || 'LEVEL';
+                try { if (scoreText1 && typeof scoreText1.setText === 'function') scoreText1.setText(`${p1label}: ${score1}`); } catch (e) { console.warn('applyTranslations: failed to set scoreText1', e); }
+                try { if (scoreText2 && typeof scoreText2.setText === 'function') scoreText2.setText(`${p2label}: ${score2}`); } catch (e) { console.warn('applyTranslations: failed to set scoreText2', e); }
+                try { if (livesText1 && typeof livesText1.setText === 'function') livesText1.setText(`${livesLabel}: ${lives1}`); } catch (e) { console.warn('applyTranslations: failed to set livesText1', e); }
+                try { if (livesText2 && typeof livesText2.setText === 'function') livesText2.setText(`${livesLabel}: ${lives2}`); } catch (e) { console.warn('applyTranslations: failed to set livesText2', e); }
+                try { if (levelText && typeof levelText.setText === 'function') levelText.setText(`${levelLabel}: ${level}`); } catch (e) { console.warn('applyTranslations: failed to set levelText', e); }
+
+                // select overlay translations
+                try { if (selectCreditsText && typeof selectCreditsText.setText === 'function') selectCreditsText.setText((credits && credits > 0) ? `${creditsLabel}: ${credits}` : (insertCoin || 'INSERISCI MONETA')); } catch (e) { console.warn('applyTranslations: failed to set selectCreditsText', e); }
+                try { if (selectHintText && window.DICT.select_hint && typeof selectHintText.setText === 'function') selectHintText.setText(window.DICT.select_hint); } catch (e) { console.warn('applyTranslations: failed to set selectHintText', e); }
+                try { if (selectBtn1Text && window.DICT.one_player_label && typeof selectBtn1Text.setText === 'function') selectBtn1Text.setText(window.DICT.one_player_label.replace('{credits}', CREDITS_PER_PLAYER)); } catch (e) { console.warn('applyTranslations: failed to set selectBtn1Text', e); }
+                try { if (selectBtn2Text && window.DICT.two_players_label && typeof selectBtn2Text.setText === 'function') selectBtn2Text.setText(window.DICT.two_players_label.replace('{credits}', CREDITS_PER_PLAYER * 2)); } catch (e) { console.warn('applyTranslations: failed to set selectBtn2Text', e); }
+                try { if (selectCancelText && window.DICT.cancel && typeof selectCancelText.setText === 'function') selectCancelText.setText(window.DICT.cancel); } catch (e) { console.warn('applyTranslations: failed to set selectCancelText', e); }
+
+                // if topTen shown, re-render to apply texts
+                const scenes = (window.game && window.game.scene) ? window.game.scene.getScenes(true) : [];
+                const active = scenes && scenes.length ? scenes[0] : null;
+                try { if (active && topTenListContainer) renderTopTen(active); } catch (e) { console.warn('applyTranslations: renderTopTen failed', e); }
+            } catch (e) {
+                console.warn('applyTranslations error', e);
+            }
+        }
+
+        // Highscore storage helpers (persist to localStorage)
+        function getHighscores() {
+            try {
+                const raw = localStorage.getItem('bh_highscores');
+                if (!raw) return [];
+                const parsed = JSON.parse(raw);
+                if (!Array.isArray(parsed)) return [];
+                return parsed;
+            } catch (e) { return []; }
+        }
+
+        function saveHighscoreEntry(entry) {
+            try {
+                const list = getHighscores();
+                list.push(entry);
+                // sort desc by score
+                list.sort((a, b) => (b.score || 0) - (a.score || 0));
+                // keep top 10
+                const top = list.slice(0, 10);
+                localStorage.setItem('bh_highscores', JSON.stringify(top));
+                return top;
+            } catch (e) { console.warn('saveHighscore error', e); return getHighscores(); }
+        }
+
+        function renderTopTen(scene) {
+            if (!topTenListContainer) return;
+            // clear existing list children
+            try {
+                topTenListContainer.removeAll(true);
+            } catch (e) { }
+            const list = getHighscores();
+            const centerX = scene.scale.width / 2 || 400;
+            if (!list || !list.length) {
+                const emptyText = scene.add.text(centerX, 140, '--- NESSUN PUNTEGGIO ---', { fontSize: '14px', fontFamily: GAME_FONT, fill: '#00ffff' }).setOrigin(0.5);
+                topTenListContainer.add(emptyText);
+                return;
+            }
+            const startY = 120;
+            for (let i = 0; i < Math.min(10, list.length); i++) {
+                const e = list[i];
+                const txt = scene.add.text(centerX, startY + i * 28, `${i + 1}. ${e.name || '---'} (${e.player || 'P?'}) - ${e.score}`, { fontSize: '14px', fontFamily: GAME_FONT, fill: '#00ffff' }).setOrigin(0.5);
+                topTenListContainer.add(txt);
+            }
+        }
+
+        // Prompt player names and save highscores (called from gameOver)
+        function submitScoresAndSave(scene) {
+            try {
+                if (score1 && score1 > 0) {
+                    const defaultName = localStorage.getItem('bh_lastname_p1') || 'P1';
+                    const name = window.prompt('Inserisci nome per P1', defaultName) || defaultName;
+                    localStorage.setItem('bh_lastname_p1', name);
+                    saveHighscoreEntry({ name: name, player: 'P1', score: score1, ts: Date.now() });
+                }
+                if (score2 && score2 > 0) {
+                    const defaultName = localStorage.getItem('bh_lastname_p2') || 'P2';
+                    const name = window.prompt('Inserisci nome per P2', defaultName) || defaultName;
+                    localStorage.setItem('bh_lastname_p2', name);
+                    saveHighscoreEntry({ name: name, player: 'P2', score: score2, ts: Date.now() });
+                }
+                renderTopTen(scene);
+            } catch (e) { console.warn('submitScoresAndSave', e); }
+        }
+
+        function spawnTarget(scene) {
+            const x = Phaser.Math.Between(50, 750);
+            const y = Phaser.Math.Between(50, 450);
+            target.setPosition(x, y);
+            targetLifetime = 0;
+
+            // Animazione pulsante target
+            scene.tweens.add({
+                targets: target,
+                scaleX: { from: 1, to: 1.3 },
+                scaleY: { from: 1, to: 1.3 },
+                duration: 500,
+                yoyo: true,
+                repeat: -1
+            });
+        }
+
+        function spawnBlock(scene) {
+            let block;
+            const spawnType = Math.random();
+
+            // Level 1-2: blocchi spawn come funghi
+            if (level <= 2) {
+                const x = Phaser.Math.Between(40, 760);
+                const y = Phaser.Math.Between(50, 500);
+                // prefer using block sprite
+                try {
+                    block = scene.physics.add.image(x, y, 'spriteSheet');
+                    if (applySpriteCrop(scene, block, 'block')) block.setDisplaySize(20, 20);
+                    else block.setTint(0xff00ff);
+                } catch (e) {
+                    block = scene.add.rectangle(x, y, 20, 20, 0xff00ff);
+                    scene.physics.add.existing(block);
+                }
+                block.body.setVelocity(0, 0);
+                block.setData('landed', true);
+                block.setData('falling', false);
+
+                // Animazione spawn
+                block.setScale(0);
+                scene.tweens.add({
+                    targets: block,
+                    scaleX: 1,
+                    scaleY: 1,
+                    duration: 300,
+                    ease: 'Back.easeOut'
+                });
+            }
+            // Level 3-4: funghi + caduta dall'alto
+            else if (level <= 4) {
+                if (spawnType < 0.5) {
+                    // Fungo
+                    const x = Phaser.Math.Between(40, 760);
+                    const y = Phaser.Math.Between(50, 500);
+                    try {
+                        block = scene.physics.add.image(x, y, 'spriteSheet');
+                        if (applySpriteCrop(scene, block, 'block')) block.setDisplaySize(20, 20);
+                        else block.setTint(0xff00ff);
+                    } catch (e) {
+                        block = scene.add.rectangle(x, y, 20, 20, 0xff00ff);
+                        scene.physics.add.existing(block);
+                    }
+                    block.body.setVelocity(0, 0);
+                    block.setData('landed', true);
+                    block.setData('falling', false);
+                    block.setScale(0);
+                    scene.tweens.add({
+                        targets: block,
+                        scaleX: 1,
+                        scaleY: 1,
+                        duration: 300,
+                        ease: 'Back.easeOut'
+                    });
+                } else {
+                    // Caduta dall'alto
+                    const x = Phaser.Math.Between(20, 780);
+                    try {
+                        block = scene.physics.add.image(x, -20, 'spriteSheet');
+                        if (applySpriteCrop(scene, block, 'block')) block.setDisplaySize(20, 20);
+                        else block.setTint(0xff00ff);
+                    } catch (e) {
+                        block = scene.add.rectangle(x, -20, 20, 20, 0xff00ff);
+                        scene.physics.add.existing(block);
+                    }
+                    block.body.setVelocity(0, 100 + level * 20);
+                    block.setData('landed', false);
+                    block.setData('falling', true);
+                }
+            }
+            // Level 5-6: funghi + alto + lati
+            else if (level <= 6) {
+                if (spawnType < 0.3) {
+                    // Fungo
+                    const x = Phaser.Math.Between(40, 760);
+                    const y = Phaser.Math.Between(50, 500);
+                    try {
+                        block = scene.physics.add.image(x, y, 'spriteSheet');
+                        if (applySpriteCrop(scene, block, 'block')) block.setDisplaySize(20, 20);
+                        else block.setTint(0xff00ff);
+                    } catch (e) {
+                        block = scene.add.rectangle(x, y, 20, 20, 0xff00ff);
+                        scene.physics.add.existing(block);
+                    }
+                    block.body.setVelocity(0, 0);
+                    block.setData('landed', true);
+                    block.setData('falling', false);
+                    block.setScale(0);
+                    scene.tweens.add({
+                        targets: block,
+                        scaleX: 1,
+                        scaleY: 1,
+                        duration: 300,
+                        ease: 'Back.easeOut'
+                    });
+                } else if (spawnType < 0.65) {
+                    // Alto
+                    const x = Phaser.Math.Between(20, 780);
+                    try {
+                        block = scene.physics.add.image(x, -20, 'spriteSheet');
+                        if (applySpriteCrop(scene, block, 'block')) block.setDisplaySize(20, 20);
+                        else block.setTint(0xff00ff);
+                    } catch (e) {
+                        block = scene.add.rectangle(x, -20, 20, 20, 0xff00ff);
+                        scene.physics.add.existing(block);
+                    }
+                    block.body.setVelocity(0, 120 + level * 15);
+                    block.setData('landed', false);
+                    block.setData('falling', true);
+                } else {
+                    // Lati
+                    const fromLeft = Math.random() < 0.5;
+                    const y = Phaser.Math.Between(50, 550);
+                    const x = fromLeft ? -20 : 820;
+                    try {
+                        block = scene.physics.add.image(x, y, 'spriteSheet');
+                        if (applySpriteCrop(scene, block, 'block')) block.setDisplaySize(20, 20);
+                        else block.setTint(0xff00ff);
+                    } catch (e) {
+                        block = scene.add.rectangle(x, y, 20, 20, 0xff00ff);
+                        scene.physics.add.existing(block);
+                    }
+                    block.body.setVelocity(fromLeft ? 150 + level * 10 : -(150 + level * 10), 0);
+                    block.setData('landed', false);
+                    block.setData('falling', false);
+                }
+            }
+            // Level 7+: tutte le direzioni
+            else {
+                if (spawnType < 0.2) {
+                    // Fungo
+                    const x = Phaser.Math.Between(40, 760);
+                    const y = Phaser.Math.Between(50, 500);
+                    try {
+                        block = scene.physics.add.image(x, y, 'spriteSheet');
+                        if (applySpriteCrop(scene, block, 'block')) block.setDisplaySize(20, 20);
+                        else block.setTint(0xff00ff);
+                    } catch (e) {
+                        block = scene.add.rectangle(x, y, 20, 20, 0xff00ff);
+                        scene.physics.add.existing(block);
+                    }
+                    block.body.setVelocity(0, 0);
+                    block.setData('landed', true);
+                    block.setData('falling', false);
+                    block.setScale(0);
+                    scene.tweens.add({
+                        targets: block,
+                        scaleX: 1,
+                        scaleY: 1,
+                        duration: 300,
+                        ease: 'Back.easeOut'
+                    });
+                } else {
+                    const direction = Phaser.Math.Between(0, 3);
+                    const speed = 180 + level * 10;
+
+                    switch (direction) {
+                        case 0: // Alto
+                            try {
+                                block = scene.physics.add.image(Phaser.Math.Between(20, 780), -20, 'spriteSheet');
+                                if (applySpriteCrop(scene, block, 'block')) block.setDisplaySize(20, 20);
+                                else block.setTint(0xff00ff);
+                            } catch (e) {
+                                block = scene.add.rectangle(Phaser.Math.Between(20, 780), -20, 20, 20, 0xff00ff);
+                                scene.physics.add.existing(block);
+                            }
+                            block.body.setVelocity(0, speed);
+                            block.setData('falling', true);
+                            break;
+                        case 1: // Destra
+                            try {
+                                block = scene.physics.add.image(820, Phaser.Math.Between(50, 550), 'spriteSheet');
+                                if (applySpriteCrop(scene, block, 'block')) block.setDisplaySize(20, 20);
+                                else block.setTint(0xff00ff);
+                            } catch (e) {
+                                block = scene.add.rectangle(820, Phaser.Math.Between(50, 550), 20, 20, 0xff00ff);
+                                scene.physics.add.existing(block);
+                            }
+                            block.body.setVelocity(-speed, 0);
+                            break;
+                        case 2: // Basso
+                            try {
+                                block = scene.physics.add.image(Phaser.Math.Between(20, 780), 620, 'spriteSheet');
+                                if (applySpriteCrop(scene, block, 'block')) block.setDisplaySize(20, 20);
+                                else block.setTint(0xff00ff);
+                            } catch (e) {
+                                block = scene.add.rectangle(Phaser.Math.Between(20, 780), 620, 20, 20, 0xff00ff);
+                                scene.physics.add.existing(block);
+                            }
+                            block.body.setVelocity(0, -speed);
+                            break;
+                        case 3: // Sinistra
+                            try {
+                                block = scene.physics.add.image(-20, Phaser.Math.Between(50, 550), 'spriteSheet');
+                                if (applySpriteCrop(scene, block, 'block')) block.setDisplaySize(20, 20);
+                                else block.setTint(0xff00ff);
+                            } catch (e) {
+                                block = scene.add.rectangle(-20, Phaser.Math.Between(50, 550), 20, 20, 0xff00ff);
+                                scene.physics.add.existing(block);
+                            }
+                            block.body.setVelocity(speed, 0);
+                            break;
+                    }
+                    block.setData('landed', false);
+                    block.setData('falling', false);
+                }
+            }
+
+            try {
+                if (block && typeof block.setStrokeStyle === 'function') {
+                    block.setStrokeStyle(2, 0x00ffff);
+                } else if (block && typeof block.setTint === 'function') {
+                    // for Image objects (no stroke API) apply a subtle tint to keep visual cue
+                    // keep existing tint if any; apply an additive tint overlay by briefly flashing
+                    // but to avoid extra rendering we just ensure a minimal tint is present
+                    // (no-op if tint already set)
+                    // leave as-is; developer can customize further if needed
+                }
+            } catch (e) { /* ignore stroke errors for non-rectangle objects */ }
+            blocks.add(block);
+        }
+
+        function collectTarget(playerHit, target) {
+            // award points to the player who collected the target
+            if (playerHit === player) {
+                score1 += 100 * level;
+                if (scoreText1) scoreText1.setText('P1: ' + score1);
+            } else if (playerHit === player2) {
+                score2 += 100 * level;
+                if (scoreText2) scoreText2.setText('P2: ' + score2);
+            }
+
+            // Effetto particelle
+            createParticleExplosion(this, target.x, target.y, 0xffff00);
+
+            spawnTarget(this);
+
+            // Level up based on combined score every 500 points
+            const combined = (score1 || 0) + (score2 || 0);
+            const newThreshold = Math.floor(combined / 500);
+            if (newThreshold > _levelThreshold) {
+                level += (newThreshold - _levelThreshold);
+                _levelThreshold = newThreshold;
+                if (levelText) levelText.setText('LEVEL: ' + level);
+            }
+        }
+
+        function hitBlock(playerHit, block) {
+            if (block.getData('spawning')) return; // Non collidere durante spawn
+
+            // decrement correct player's lives
+            if (playerHit === player) {
+                lives1--;
+                if (livesText1) livesText1.setText('LIVES: ' + lives1);
+            } else if (playerHit === player2) {
+                lives2--;
+                if (livesText2) livesText2.setText('LIVES: ' + lives2);
+            }
+
+            // Effetto particelle
+            createParticleExplosion(this, playerHit.x, playerHit.y, 0xff0000);
+
+            block.destroy();
+            // if a player's lives reached zero, hide/disable them and schedule respawn
+            if (playerHit === player && lives1 <= 0) {
+                try { if (player.body) player.body.enable = false; if (player.setVisible) player.setVisible(false); } catch (e) { }
+                scheduleRespawn('p1', this);
+            }
+            if (playerHit === player2 && lives2 <= 0) {
+                try { if (player2.body) player2.body.enable = false; if (player2.setVisible) player2.setVisible(false); } catch (e) { }
+                scheduleRespawn('p2', this);
+            }
+
+            // if both players have no lives left, trigger game over
+            if ((lives1 <= 0) && (lives2 <= 0)) {
+                gameOver(this);
+            }
+        }
+
+        function destroyBlock(bullet, block) {
+            // award points to shooter
+            const owner = bullet && bullet.getData ? bullet.getData('owner') : null;
+            if (owner === 'p1') {
+                score1 += 10;
+                if (scoreText1) scoreText1.setText('P1: ' + score1);
+            } else if (owner === 'p2') {
+                score2 += 10;
+                if (scoreText2) scoreText2.setText('P2: ' + score2);
+            } else {
+                // fallback to player1
+                score1 += 10;
+                if (scoreText1) scoreText1.setText('P1: ' + score1);
+            }
+
+            // Effetto particelle
+            createParticleExplosion(this, block.x, block.y, 0xff00ff);
+
+            if (bullet && bullet.destroy) bullet.destroy();
+            if (block && block.destroy) block.destroy();
+
+            // check level up from combined score
+            const combined = (score1 || 0) + (score2 || 0);
+            const newThreshold = Math.floor(combined / 500);
+            if (newThreshold > _levelThreshold) {
+                level += (newThreshold - _levelThreshold);
+                _levelThreshold = newThreshold;
+                if (levelText) levelText.setText('LEVEL: ' + level);
+            }
+        }
+
+        function createParticleExplosion(scene, x, y, color) {
+            for (let i = 0; i < 8; i++) {
+                // prefer a small shard sprite when available
+                let particle = null;
+                try {
+                    particle = scene.physics.add.image(x, y, 'spriteSheet');
+                    if (applySpriteCrop(scene, particle, 'shards')) particle.setDisplaySize(6, 6);
+                    else {
+                        particle.destroy();
+                        particle = null;
+                    }
+                } catch (e) { particle = null; }
+
+                if (!particle) {
+                    particle = scene.add.rectangle(x, y, 4, 4, color);
+                    scene.physics.add.existing(particle);
+                }
+
+                const angle = (Math.PI * 2 * i) / 8;
+                const speed = 200;
+                try { particle.body.setVelocity(Math.cos(angle) * speed, Math.sin(angle) * speed); } catch (e) { }
+
+                scene.tweens.add({ targets: particle, alpha: 0, duration: 500, onComplete: () => particle.destroy() });
+            }
+        }
+
+        // Schedule a respawn for a specific player id ('p1' or 'p2') after a short delay.
+        // If the other player is still alive, respawn will grant 1 life and restore the sprite.
+        function scheduleRespawn(playerId, scene) {
+            const delayMs = 2000;
+            // visual feedback (flash)
+            try {
+                const centerX = scene.scale.width / 2 || 400;
+                const centerY = scene.scale.height / 2 || 300;
+                const info = scene.add.text(centerX, centerY + (playerId === 'p1' ? -40 : 40), (playerId === 'p1' ? 'P1 DEAD' : 'P2 DEAD') + '\nRESPAWN...', { fontSize: '12px', fontFamily: GAME_FONT, fill: '#ff8888', align: 'center' }).setOrigin(0.5);
+                scene.tweens.add({ targets: info, alpha: { from: 1, to: 0 }, duration: delayMs, onComplete: () => info.destroy() });
+            } catch (e) { }
+
+            scene.time.delayedCall(delayMs, () => {
+                // if both players dead, let gameOver handle it
+                if ((lives1 <= 0) && (lives2 <= 0)) return;
+
+                if (playerId === 'p1') {
+                    // respawn only if player object exists or was not present
+                    try {
+                        if (!player) {
+                            try {
+                                player = scene.physics.add.image(300, 550, 'spriteSheet');
+                                if (applySpriteCrop(scene, player, 'player')) player.setDisplaySize(20, 20);
+                                else player.setTint(0x00ff00);
+                            } catch (e) {
+                                player = scene.add.rectangle(300, 550, 20, 20, 0x00ff00);
+                                scene.physics.add.existing(player);
+                            }
+                        }
+                        // ensure body exists and enable it
+                        if (player.body) player.body.enable = true;
+                        player.setVisible(true);
+                        // give one life on respawn
+                        lives1 = Math.max(1, lives1);
+                        if (livesText1) livesText1.setText('LIVES: ' + lives1);
+                        // place near bottom center
+                        player.x = 300; player.y = 550;
+                        // re-add overlaps
+                        try { scene.physics.add.overlap(player, target, collectTarget, null, scene); scene.physics.add.overlap(player, blocks, hitBlock, null, scene); } catch (e) { }
+                    } catch (e) { console.warn('respawn p1 error', e); }
+                }
+                if (playerId === 'p2') {
+                    try {
+                        if (!player2) {
+                            try {
+                                player2 = scene.physics.add.image(500, 550, 'spriteSheet');
+                                if (applySpriteCrop(scene, player2, 'player')) player2.setDisplaySize(20, 20);
+                                else player2.setTint(0x0000ff);
+                            } catch (e) {
+                                player2 = scene.add.rectangle(500, 550, 20, 20, 0x0000ff);
+                                scene.physics.add.existing(player2);
+                            }
+                        }
+                        if (player2.body) player2.body.enable = true;
+                        player2.setVisible(true);
+                        lives2 = Math.max(1, lives2);
+                        if (livesText2) livesText2.setText('LIVES: ' + lives2);
+                        player2.x = 500; player2.y = 550;
+                        try { scene.physics.add.overlap(player2, target, collectTarget, null, scene); scene.physics.add.overlap(player2, blocks, hitBlock, null, scene); } catch (e) { }
+                    } catch (e) { console.warn('respawn p2 error', e); }
+                }
+            });
+        }
+
+        // shoot from a shooter (player or player2). If shooter omitted, default to player
+        function shoot(scene, shooter) {
+            const src = shooter || player;
+            if (!src) return;
+            // color bullets differently based on shooter
+            // prefer small sprite shard for bullets; fallback to rectangle
+            let bullet = null;
+            try {
+                bullet = scene.physics.add.image(src.x, src.y - 15, 'spriteSheet');
+                if (applySpriteCrop(scene, bullet, 'shards')) bullet.setDisplaySize(6, 10);
+                else { bullet.destroy(); bullet = null; }
+            } catch (e) { bullet = null; }
+            if (!bullet) {
+                const color = (src === player2) ? 0x0000ff : 0x00ff00;
+                bullet = scene.add.rectangle(src.x, src.y - 15, 4, 10, color);
+                scene.physics.add.existing(bullet);
+            }
+            try { if (bullet.body) bullet.body.setVelocity(0, -400); } catch (e) { }
+            // mark owner for scoring
+            try { bullet.setData('owner', (src === player2) ? 'p2' : 'p1'); } catch (e) { }
+            bullets.add(bullet);
+        }
+
+        function gameOver(scene) {
+            scene.physics.pause();
+
+            // ask for names and save highscores for both players (if applicable)
+            try { submitScoresAndSave(scene); } catch (e) { console.warn('submit scores failed', e); }
+
+            const overlay = scene.add.rectangle(400, 300, 800, 600, 0x000000, 0.8);
+
+            const goText = (window.DICT && window.DICT.game_over) || 'GAME OVER';
+            const gameOverText = scene.add.text(400, 200, goText, {
+                fontSize: '48px',
+                fontFamily: GAME_FONT,
+                fill: '#ff0000',
+                stroke: '#ffff00',
+                strokeThickness: 3
+            }).setOrigin(0.5);
+            const p1label = (window.DICT && window.DICT.p1_label) || 'P1';
+            const p2label = (window.DICT && window.DICT.p2_label) || 'P2';
+            const finalScore = scene.add.text(400, 260, `${p1label}: ${score1}   ${p2label}: ${score2}`, {
+                fontSize: '16px',
+                fontFamily: GAME_FONT,
+                fill: '#00ffff'
+            }).setOrigin(0.5);
+            const levelLabel = (window.DICT && (window.DICT.level || window.DICT.level_label)) || 'LIVELLO RAGGIUNTO';
+            const finalLevel = scene.add.text(400, 300, levelLabel + ': ' + level, {
+                fontSize: '16px',
+                fontFamily: GAME_FONT,
+                fill: '#00ffff'
+            }).setOrigin(0.5);
+
+            const restartButton = scene.add.rectangle(400, 420, 250, 60, 0xff00ff);
+            const retryLabel = (window.DICT && window.DICT.retry) || ((window.DICT && window.DICT.retry_label) || 'RIPROVA');
+            const restartText = scene.add.text(400, 420, retryLabel, {
+                fontSize: '20px',
+                fontFamily: GAME_FONT,
+                fill: '#000000'
+            }).setOrigin(0.5);
+
+            restartButton.setInteractive({ useHandCursor: true });
+            restartButton.on('pointerdown', () => {
+                // reset per-player stats
+                score1 = 0; score2 = 0;
+                lives1 = 3; lives2 = 3;
+                _levelThreshold = 0;
+                level = 1;
+                gameStarted = true;
+                // ensure players exist again for restart path
+                try { player = null; player2 = null; } catch (e) { }
+                scene.scene.restart();
+            });
+        }
+
+        function update() {
+            if (!gameStarted) return;
+
+            // Movimento player (player 1 - cursors)
+            if (player) {
+                if (cursors.left.isDown) {
+                    player.x -= 5;
+                } else if (cursors.right.isDown) {
+                    player.x += 5;
+                }
+
+                if (cursors.up.isDown) {
+                    player.y -= 5;
+                } else if (cursors.down.isDown) {
+                    player.y += 5;
+                }
+
+                // Limiti player 1
+                player.x = Phaser.Math.Clamp(player.x, 10, 790);
+                player.y = Phaser.Math.Clamp(player.y, 10, 590);
+
+                // Sparo player 1 (SPACE)
+                if (Phaser.Input.Keyboard.JustDown(spaceKey)) {
+                    shoot(this, player);
+                }
+            }
+
+            // Player 2 (WASD + F to shoot)
+            if (player2 && wasdKeys) {
+                try {
+                    if (wasdKeys.left && wasdKeys.left.isDown) player2.x -= 5;
+                    else if (wasdKeys.right && wasdKeys.right.isDown) player2.x += 5;
+
+                    if (wasdKeys.up && wasdKeys.up.isDown) player2.y -= 5;
+                    else if (wasdKeys.down && wasdKeys.down.isDown) player2.y += 5;
+
+                    // Limits for player 2
+                    player2.x = Phaser.Math.Clamp(player2.x, 10, 790);
+                    player2.y = Phaser.Math.Clamp(player2.y, 10, 590);
+
+                    const p2ShootKey = wasdKeys.shoot || wasdKeys.F || wasdKeys.f;
+                    if (p2ShootKey && Phaser.Input.Keyboard.JustDown(p2ShootKey)) {
+                        shoot(this, player2);
+                    }
+                } catch (e) {
+                    // swallow any input mapping errors
+                }
+            }
+
+            // Target lifetime
+            targetLifetime++;
+            if (targetLifetime > 180) { // 3 secondi a 60fps
+                spawnTarget(this);
+            }
+
+            // Spawn blocchi
+            const spawnRate = Math.max(30 - level * 2, 10);
+            blockSpawnTimer++;
+            if (blockSpawnTimer >= spawnRate) {
+                spawnBlock(this);
+                blockSpawnTimer = 0;
+            }
+
+            // Update blocchi - gestione collisioni e stacking
+            blocks.children.entries.forEach((block, index) => {
+                if (block.getData('landed')) return;
+
+                // Controlla collisione con altri blocchi
+                blocks.children.entries.forEach((otherBlock, otherIndex) => {
+                    if (index === otherIndex || !otherBlock.getData('landed')) return;
+
+                    const bounds1 = block.getBounds();
+                    const bounds2 = otherBlock.getBounds();
+
+                    // Predici la posizione nel prossimo frame
+                    const nextBounds = new Phaser.Geom.Rectangle(
+                        bounds1.x + block.body.velocity.x / 60,
+                        bounds1.y + block.body.velocity.y / 60,
+                        bounds1.width,
+                        bounds1.height
+                    );
+
+                    if (Phaser.Geom.Intersects.RectangleToRectangle(nextBounds, bounds2)) {
+                        // Ferma il blocco
+                        block.setData('landed', true);
+                        block.body.setVelocity(0, 0);
+
+                        // Posiziona correttamente
+                        if (block.body.velocity.y > 0) {
+                            block.y = otherBlock.y - 20;
+                        } else if (block.body.velocity.y < 0) {
+                            block.y = otherBlock.y + 20;
+                        } else if (block.body.velocity.x > 0) {
+                            block.x = otherBlock.x - 20;
+                        } else if (block.body.velocity.x < 0) {
+                            block.x = otherBlock.x + 20;
+                        }
+                    }
+                });
+
+                // Controlla bordi
+                if (block.y >= 590 || block.y <= 10 || block.x <= 10 || block.x >= 790) {
+                    block.setData('landed', true);
+                    block.body.setVelocity(0, 0);
+                    block.y = Phaser.Math.Clamp(block.y, 10, 590);
+                    block.x = Phaser.Math.Clamp(block.x, 10, 790);
+                }
+            });
+
+            // Rimuovi proiettili fuori schermo
+            bullets.children.entries.forEach(bullet => {
+                if (bullet.y < -20) {
+                    bullet.destroy();
+                }
+            });
+
+            // Rimuovi blocchi molto fuori schermo
+            blocks.children.entries.forEach(block => {
+                if (block.x < -100 || block.x > 900 || block.y < -100 || block.y > 700) {
+                    if (!block.getData('landed')) {
+                        block.destroy();
+                    }
+                }
+            });
+        }
+
+        // Global keyboard handling for coin insert and quick player select while in attract
+        // Attach once
+        if (!window._bh_phaser_keys_initialized) {
+            window._bh_phaser_keys_initialized = true;
+            window.addEventListener('keydown', (e) => {
+                // when attract visible (game not started)
+                if (gameStarted) return;
+                // Insert coin with '5'
+                if (e.key === '5') {
+                    e.preventDefault();
+                    insertCoin(1, null);
+                    return;
+                }
+                // Quick player start with '1' or '2'
+                if (e.key === '1' || e.key === '2') {
+                    e.preventDefault();
+                    const n = parseInt(e.key, 10);
+                    // try start using the active scene if possible
+                    const scenes = (window.game && window.game.scene) ? window.game.scene.getScenes(true) : [];
+                    const active = scenes && scenes.length ? scenes[0] : null;
+                    const ok = tryStartWithPlayers(n, active);
+                    if (!ok) {
+                        // show required credit hint (simple console for now)
+                        console.warn('Not enough credits for', n, 'players. Credits:', credits);
+                    }
+                    return;
+                }
+                // Enter behavior: open level/player select overlay (like index.html)
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    const scenes = (window.game && window.game.scene) ? window.game.scene.getScenes(true) : [];
+                    const active = scenes && scenes.length ? scenes[0] : null;
+                    // open selection overlay (it will show credit status and buttons)
+                    showLevelPlayerSelect(active, null);
+                    return;
+                }
+            });
+        }
+    </script>
+</body>
+
+</html>

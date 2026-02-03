@@ -1,0 +1,27 @@
+{
+  "lang": "zh",
+  "title": "BLOCK HUNTER",
+  "instructions": [
+    "方向键 - 移动",
+    "空格 - 射击",
+    "拾取物品",
+    "躲避方块"
+  ],
+  "attractmode": { "staticcredits": "INSERT COIN" },
+  "players_1": "1 玩家",
+  "players_2": "2 玩家",
+  "score_label": "得分",
+  "level_label": "关卡",
+  "lives_label": "生命",
+  "gems_label": "宝石",
+  "keys_label": "钥匙",
+  "outside_label": "外部",
+  "dynamite_label": "炸药",
+  "invul_label": "无敌",
+  "credits_word": "积分",
+  "sound_on": "音效: 开",
+  "sound_off": "音效: 关",
+  "insert_coin": "投入硬币",
+  "coin_info": "1 玩家: {per} 硬币 — 2 玩家: {two} 硬币",
+  "byline": "by SpikeCode"
+}

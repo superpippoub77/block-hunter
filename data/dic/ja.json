@@ -1,0 +1,27 @@
+{
+  "lang": "ja",
+  "title": "BLOCK HUNTER",
+  "instructions": [
+    "方向キー - 移動",
+    "スペース - シュート",
+    "アイテムを拾う",
+    "ブロックを避ける"
+  ],
+  "attractmode": { "staticcredits": "INSERT COIN" },
+  "players_1": "1 プレイヤー",
+  "players_2": "2 プレイヤー",
+  "score_label": "スコア",
+  "level_label": "レベル",
+  "lives_label": "ライフ",
+  "gems_label": "ジェム",
+  "keys_label": "鍵",
+  "outside_label": "外",
+  "dynamite_label": "ダイナマイト",
+  "invul_label": "無敵",
+  "credits_word": "クレジット",
+  "sound_on": "サウンド: ON",
+  "sound_off": "サウンド: OFF",
+  "insert_coin": "コインを入れてください",
+  "coin_info": "1 人プレイ: {per} コイン — 2 人プレイ: {two} コイン",
+  "byline": "by SpikeCode"
+}
