@@ -35,7 +35,8 @@ window.GAME_CONFIG = {
     ,
     // How many credits are required per player (set to 1 by default). The second
     // player requires exactly double this amount.
-    CREDITS_PER_PLAYER: 1
+    CREDITS_PER_PLAYER: 1,
+    PULSE: { title: false, coin: false }
 };
 
 // Make a convenience alias for console tweaking

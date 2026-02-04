@@ -1,0 +1,58 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Convert flags.svg → flags.png</title>
+  <style>body{font-family:Arial,Helvetica,sans-serif;padding:20px}</style>
+</head>
+<body>
+  <h2>Convert <code>images/flags.svg</code> → PNG</h2>
+  <p>This page loads <code>images/flags.svg</code>, renders it onto a canvas at the SVG's intrinsic size (512×32), and offers a download of <code>flags.png</code>.</p>
+  <p>Open this file in a browser while serving the project (static server) so relative paths work.</p>
+  <button id="do">Generate PNG</button>
+  <p id="status"></p>
+  <script>
+    document.getElementById('do').addEventListener('click', async () => {
+      const status = document.getElementById('status');
+      status.textContent = 'Loading SVG...';
+      try {
+        const resp = await fetch('../images/flags.svg');
+        if (!resp.ok) throw new Error('Fetch failed: ' + resp.status);
+        const svgText = await resp.text();
+        const svgBlob = new Blob([svgText], { type: 'image/svg+xml;charset=utf-8' });
+        const url = URL.createObjectURL(svgBlob);
+        const img = new Image();
+        img.onload = () => {
+          try {
+            const w = img.width || 512;
+            const h = img.height || 32;
+            const canvas = document.createElement('canvas');
+            canvas.width = w;
+            canvas.height = h;
+            const ctx = canvas.getContext('2d');
+            // fill transparent/white background if desired
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0,0,w,h);
+            ctx.drawImage(img, 0, 0, w, h);
+            canvas.toBlob((blob) => {
+              if (!blob) { status.textContent = 'Conversion failed (no blob)'; return; }
+              const a = document.createElement('a');
+              a.href = URL.createObjectURL(blob);
+              a.download = 'flags.png';
+              document.body.appendChild(a);
+              a.click();
+              a.remove();
+              status.textContent = 'Downloaded flags.png';
+            }, 'image/png');
+          } catch (e) { status.textContent = 'Render error: ' + e.message; }
+          URL.revokeObjectURL(url);
+        };
+        img.onerror = (e) => { status.textContent = 'Image load error'; URL.revokeObjectURL(url); };
+        img.src = url;
+      } catch (e) {
+        status.textContent = 'Error: ' + e.message;
+      }
+    });
+  </script>
+</body>
+</html>

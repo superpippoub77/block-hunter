@@ -5,6 +5,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>BLOCK HUNTER</title>
+    <!-- favicon: use the title image as favicon -->
+    <link rel="icon" href="images/title.png" type="image/png">
     <script src="https://cdn.jsdelivr.net/npm/phaser@3.70.0/dist/phaser.min.js"></script>
     <!-- Load Google Font via stylesheet link (more reliable than @import for timing) -->
     <!-- <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin> -->
@@ -55,9 +57,9 @@
             font-family: 'Press Start 2P';
             /* prefer modern compressed formats first for performance */
             src: local('Press Start 2P'),
-                url('assets/fonts/PressStart2P.woff2') format('woff2'),
-                url('assets/fonts/PressStart2P.woff') format('woff'),
-                url('assets/fonts/PressStart2P.ttf') format('truetype');
+                url('assets/fonts/PressStart2P-Regular.woff2') format('woff2'),
+                url('assets/fonts/PressStart2P-Regular.woff') format('woff'),
+                url('assets/fonts/PressStart2P-Regular.ttf') format('truetype');
             font-weight: normal;
             font-style: normal;
             font-display: swap;
@@ -69,55 +71,86 @@
     <div id="game-container"></div>
 
     <script>
-        // Show a level/player select overlay similar to index.html
-        function showLevelPlayerSelect(scene, preselect) {
-            if (!scene) return;
-            if (selectContainer) {
-                selectContainer.setVisible(true);
-                return;
-            }
-            const sw = scene.scale.width || 800;
-            const sh = scene.scale.height || 600;
-            selectContainer = scene.add.container(0, 0).setDepth(2000);
-            const bg = scene.add.rectangle(sw / 2, sh / 2, sw, sh, 0x000000, 0.6).setOrigin(0.5).setInteractive();
-            selectContainer.add(bg);
 
-            const title = scene.add.text(sw / 2, 120, (window.DICT && window.DICT.select_title) || 'SELEZIONA', { fontSize: '32px', fontFamily: GAME_FONT, fill: '#ffffff' }).setOrigin(0.5);
-            selectContainer.add(title);
+        // Use a constant for the font family name (no extra quotes) and reuse it
+        // across all Phaser Text styles.
+        const GAME_FONT = '"Press Start 2P"';
+        // Variabili globali
+        let player;
+        let player2 = null; // second player (if enabled)
+        let target;
+        let blocks;
+        let bullets;
+        let cursors;
+        let spaceKey;
+        let wasdKeys = null; // controls for player2 (WASD + F to shoot)
+        // HUD & per-player stats
+        let scoreText1, scoreText2;
+        let levelText;
+        let livesText1, livesText2;
+        // per-player scores and lives
+        let score1 = 0;
+        let score2 = 0;
+        let level = 1;
+        let lives1 = 3;
+        let lives2 = 3;
+        // level up threshold tracker (combined points / 500)
+        let _levelThreshold = 0;
+        let gameStarted = false;
+        let targetLifetime = 0;
+        let blockSpawnTimer = 0;
+        let particles;
+        // Credits / player selection
+        let credits = 0;
+        let playersCount = 1;
+        const CREDITS_PER_PLAYER = (window.GAME_CONFIG && window.GAME_CONFIG.CREDITS_PER_PLAYER) || 1;
 
-            selectCreditsText = scene.add.text(sw / 2, 180, (credits && credits > 0) ? `CREDITI: ${credits}` : ((window.DICT && window.DICT.insert_coin) || 'INSERISCI MONETA'), { fontSize: '18px', fontFamily: GAME_FONT, fill: '#00ffff' }).setOrigin(0.5);
-            selectContainer.add(selectCreditsText);
+        const PULSE = (window.GAME_CONFIG && window.GAME_CONFIG.PULSE) || { title: false, coin: false };
 
-            selectHintText = scene.add.text(sw / 2, 220, (window.DICT && window.DICT.select_hint) || 'Scegli numero giocatori:', { fontSize: '16px', fontFamily: GAME_FONT, fill: '#00ffff' }).setOrigin(0.5);
-            selectContainer.add(selectHintText);
+        // Level/Player select overlay (Phaser objects)
+        let selectContainer = null;
+        let selectCreditsText = null;
+        let selectHintText = null;
+        let selectBtn1Text = null;
+        let selectBtn2Text = null;
+        let selectCancelText = null;
+        // Attract / TopTen UI state
+        let attractCycleEvent = null;
+        let attractVisible = false;
+        let attractContainer = null;
+        let topTenContainer = null;
+        let topTenTitle = null;
+        let topTenListContainer = null;
+        // Language selector
+        const LANGS = ['it', 'fr', 'de', 'en', 'us', 'ja', 'es', 'zh'];
+    let currentLangIndex = 0;
+    // Carousel flags: left / center / right. Keep langFlagImage as alias for center for compatibility.
+    let langFlagLeft = null;
+    let langFlagCenter = null;
+    let langFlagRight = null;
+    let langFlagImage = null;
+    // interactive arrow/keyboard references and handlers (attached only during attract)
+    let langLeftArrow = null;
+    let langRightArrow = null;
+    let langKeyboardHandler = null;
+    let langFlagLeftHandler = null;
+    let langFlagRightHandler = null;
+    let langLeftArrowHandler = null;
+    let langRightArrowHandler = null;
+    // prevent concurrent carousel animations
+    let langCarouselAnimating = false;
+        let langTitleText = null;
+        let langInstructionsText = null;
+        let langStartText = null;
+        let langSelectorBox = null;
+        let langLabelText = null;
+        let topTenCreditsFooter = null;
+        // persistent overlay (sprites thumbnails + player indicators) that stays visible
+        let uiOverlay = null;
+        let spriteThumbsContainer = null;
+        let playerIndicator1 = null;
+        let playerIndicator2 = null;
 
-            // Buttons for 1 and 2 players
-            const btnW = 220, btnH = 64;
-            const btn1 = scene.add.rectangle(sw / 2 - 140, 320, btnW, btnH, 0xff00ff).setOrigin(0.5).setInteractive({ useHandCursor: true });
-            selectContainer.add(btn1);
-            selectBtn1Text = scene.add.text(sw / 2 - 140, 320, (window.DICT && window.DICT.one_player_label) || `1 PLAYER\n(${CREDITS_PER_PLAYER} crediti)`, { fontSize: '14px', fontFamily: GAME_FONT, fill: '#000' }).setOrigin(0.5);
-            selectContainer.add(selectBtn1Text);
-            const btn2 = scene.add.rectangle(sw / 2 + 140, 320, btnW, btnH, 0xff00ff).setOrigin(0.5).setInteractive({ useHandCursor: true });
-            selectContainer.add(btn2);
-            selectBtn2Text = scene.add.text(sw / 2 + 140, 320, (window.DICT && window.DICT.two_players_label) || `2 PLAYERS\n(${CREDITS_PER_PLAYER * 2} crediti)`, { fontSize: '14px', fontFamily: GAME_FONT, fill: '#000' }).setOrigin(0.5);
-            selectContainer.add(selectBtn2Text);
-
-            selectCancelText = scene.add.text(sw / 2, 420, (window.DICT && window.DICT.cancel) || 'INDIETRO', { fontSize: '14px', fontFamily: GAME_FONT, fill: '#00ffff' }).setOrigin(0.5).setInteractive({ useHandCursor: true });
-            selectContainer.add(selectCancelText);
-
-            btn1.on('pointerdown', () => { tryStartWithPlayers(1, scene); });
-            btn2.on('pointerdown', () => { tryStartWithPlayers(2, scene); });
-            selectCancelText.on('pointerdown', () => { try { selectContainer.destroy(true); selectContainer = null; } catch (e) { } });
-
-            // keyboard shortcuts while overlay open
-            const keyHandler = (ev) => {
-                if (!selectContainer) { window.removeEventListener('keydown', keyHandler); return; }
-                if (ev.key === '1') { ev.preventDefault(); tryStartWithPlayers(1, scene); }
-                else if (ev.key === '2') { ev.preventDefault(); tryStartWithPlayers(2, scene); }
-                else if (ev.key === 'Escape') { ev.preventDefault(); try { selectContainer.destroy(true); selectContainer = null; } catch (e) { } }
-            };
-            window.addEventListener('keydown', keyHandler);
-        }
         // Configurazione Phaser
         const config = {
             type: Phaser.AUTO,
@@ -144,6 +177,60 @@
             },
             backgroundColor: '#0a0e27',
         };
+
+        // Show a level/player select overlay similar to index.html
+        function showLevelPlayerSelect(scene, preselect) {
+            if (!scene) return;
+            if (selectContainer) {
+                selectContainer.setVisible(true);
+                return;
+            }
+            const sw = scene.scale.width || 800;
+            const sh = scene.scale.height || 600;
+            selectContainer = scene.add.container(0, 0).setDepth(2000);
+            const bg = scene.add.rectangle(sw / 2, sh / 2, sw, sh, 0x000000, 0.6).setOrigin(0.5).setInteractive();
+            selectContainer.add(bg);
+
+            const title = scene.add.text(sw / 2, 120, (window.DICT && window.DICT.select_title) || 'SELEZIONA', { fontSize: '32px', fontFamily: GAME_FONT, fill: '#ffffff' }).setOrigin(0.5);
+            selectContainer.add(title);
+
+            selectCreditsText = scene.add.text(sw / 2, 180, (credits && credits > 0) ? `CREDITI: ${credits}` : ((window.DICT && window.DICT.insert_coin) || 'INSERISCI MONETA'), { fontSize: '18px', fontFamily: GAME_FONT, fill: '#00ffff' }).setOrigin(0.5);
+            selectContainer.add(selectCreditsText);
+
+            selectHintText = scene.add.text(sw / 2, 220, (window.DICT && window.DICT.select_hint) || 'Scegli numero giocatori:', { fontSize: '16px', fontFamily: GAME_FONT, fill: '#00ffff' }).setOrigin(0.5);
+            selectContainer.add(selectHintText);
+
+            // Buttons for 1 and 2 players (text-only, larger)
+            selectBtn1Text = scene.add.text(sw / 2 - 140, 320, (window.DICT && window.DICT.one_player_label) || `1 PLAYER\n(${CREDITS_PER_PLAYER} crediti)`, { fontSize: '20px', fontFamily: GAME_FONT, fill: '#ffff00', stroke: '#000000', strokeThickness: 3, align: 'center', lineSpacing: 6 }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+            selectContainer.add(selectBtn1Text);
+            selectBtn2Text = scene.add.text(sw / 2 + 140, 320, (window.DICT && window.DICT.two_players_label) || `2 PLAYERS\n(${CREDITS_PER_PLAYER * 2} crediti)`, { fontSize: '20px', fontFamily: GAME_FONT, fill: '#ffff00', stroke: '#000000', strokeThickness: 3, align: 'center', lineSpacing: 6 }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+            selectContainer.add(selectBtn2Text);
+
+            selectCancelText = scene.add.text(sw / 2, 420, (window.DICT && window.DICT.cancel) || 'INDIETRO', { fontSize: '14px', fontFamily: GAME_FONT, fill: '#00ffff' }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+            selectContainer.add(selectCancelText);
+
+            selectBtn1Text.on('pointerdown', () => { tryStartWithPlayers(1, scene); });
+            selectBtn2Text.on('pointerdown', () => { tryStartWithPlayers(2, scene); });
+            // hover feedback for text-only buttons
+            try {
+                selectBtn1Text.on('pointerover', () => selectBtn1Text.setStyle({ fill: '#ffffff' }));
+                selectBtn1Text.on('pointerout', () => selectBtn1Text.setStyle({ fill: '#ffff00' }));
+                selectBtn2Text.on('pointerover', () => selectBtn2Text.setStyle({ fill: '#ffffff' }));
+                selectBtn2Text.on('pointerout', () => selectBtn2Text.setStyle({ fill: '#ffff00' }));
+                try { if (typeof selectBtn1Text.setShadow === 'function') selectBtn1Text.setShadow(2, 2, '#000000', 4); } catch (e) { }
+                try { if (typeof selectBtn2Text.setShadow === 'function') selectBtn2Text.setShadow(2, 2, '#000000', 4); } catch (e) { }
+            } catch (e) { }
+            selectCancelText.on('pointerdown', () => { try { selectContainer.destroy(true); selectContainer = null; } catch (e) { } });
+
+            // keyboard shortcuts while overlay open
+            const keyHandler = (ev) => {
+                if (!selectContainer) { window.removeEventListener('keydown', keyHandler); return; }
+                if (ev.key === '1') { ev.preventDefault(); tryStartWithPlayers(1, scene); }
+                else if (ev.key === '2') { ev.preventDefault(); tryStartWithPlayers(2, scene); }
+                else if (ev.key === 'Escape') { ev.preventDefault(); try { selectContainer.destroy(true); selectContainer = null; } catch (e) { } }
+            };
+            window.addEventListener('keydown', keyHandler);
+        }
 
         // create the Phaser.Game only after the font is available so canvas texts render correctly
         function launchGame() {
@@ -174,9 +261,6 @@
             }, 300);
         }
 
-        // Use a constant for the font family name (no extra quotes) and reuse it
-        // across all Phaser Text styles.
-        const GAME_FONT = 'Press Start 2P';
 
         // Helper: try to detect which font source is usable and log it for debugging.
         // This uses FontFace loading (for local files) and a width-measurement heuristic
@@ -365,72 +449,53 @@
             }
         }
 
-        // Variabili globali
-        let player;
-        let player2 = null; // second player (if enabled)
-        let target;
-        let blocks;
-        let bullets;
-        let cursors;
-        let spaceKey;
-        let wasdKeys = null; // controls for player2 (WASD + F to shoot)
-        // HUD & per-player stats
-        let scoreText1, scoreText2;
-        let levelText;
-        let livesText1, livesText2;
-        // per-player scores and lives
-        let score1 = 0;
-        let score2 = 0;
-        let level = 1;
-        let lives1 = 3;
-        let lives2 = 3;
-        // level up threshold tracker (combined points / 500)
-        let _levelThreshold = 0;
-        let gameStarted = false;
-        let targetLifetime = 0;
-        let blockSpawnTimer = 0;
-        let particles;
-        // Credits / player selection
-        let credits = 0;
-        let playersCount = 1;
-        const CREDITS_PER_PLAYER = (window.GAME_CONFIG && window.GAME_CONFIG.CREDITS_PER_PLAYER) || 1;
-        // Level/Player select overlay (Phaser objects)
-        let selectContainer = null;
-        let selectCreditsText = null;
-        let selectHintText = null;
-        let selectBtn1Text = null;
-        let selectBtn2Text = null;
-        let selectCancelText = null;
-        // Attract / TopTen UI state
-        let attractCycleEvent = null;
-        let attractVisible = false;
-        let attractContainer = null;
-        let topTenContainer = null;
-        let topTenTitle = null;
-        let topTenListContainer = null;
-        // Language selector
-        const LANGS = ['it', 'fr', 'de', 'en', 'us', 'ja', 'es', 'zh'];
-        let currentLangIndex = 0;
-        let langFlagImage = null;
-        let langTitleText = null;
-        let langInstructionsText = null;
-        let langStartText = null;
-        let topTenCreditsFooter = null;
-        // persistent overlay (sprites thumbnails + player indicators) that stays visible
-        let uiOverlay = null;
-        let spriteThumbsContainer = null;
-        let playerIndicator1 = null;
-        let playerIndicator2 = null;
-
+        //TODO: tutti gli oggetti, tile e flags devno essere caricati qui e con formato del singolo 64x64 pixels
+        //Lo sfondo invece e' una singola immagine 800x600
         function preload() {
-            // Carica risorse usate dalla UI di attract
-            this.load.image('attractBg', "images/bg.png");
-            this.load.image('flags', 'images/flags.png');
+            console.log('Preloading assets...');
+
+            // EVENTI DI CONTROLLO
+            this.load.on('complete', () => {
+                console.log('✅ Tutti gli asset caricati correttamente');
+            });
+
+            this.load.on('loaderror', (file) => {
+                console.error('❌ Errore nel caricamento:', file.key, file.src);
+                throw new Error('Errore nel preload, esecuzione interrotta');
+            });
+
+            this.load.on('filecomplete', (key, type, data) => {
+                console.log(`✔ Caricato: ${key} (${type})`);
+            });
+
+            // BACKGROUND
+            this.load.image('attractBg', 'images/bg.png');
+            // TITLE
+            this.load.image('title', 'images/title.png');
+            // FLAGS: load the SVG sprite-strip we generated (8 flags × 64×32 each).
+            // Load it as a spritesheet so Phaser exposes frames and we can call setFrame(frameIndex).
+            // Using SVG here is fine; Phaser will rasterize via Image. If you prefer a PNG
+            // you can swap the path to images/flags.png and keep the same frame sizes.
+            try {
+                this.load.spritesheet('flags', 'images/flags.png', { frameWidth: 64, frameHeight: 32 });
+            } catch (e) {
+                // fall back to loading as an image if spritesheet API not available in the environment
+                this.load.image('flags', 'images/flags.svg');
+            }
+
+            // TILE & OBJECTS
             this.load.image('tileSheet', 'images/tile.png');
-            // optional main sprite-sheet with game objects (4x4 grid)
-            //this.load.image('spriteSheet', 'images/sprite.png');
             this.load.image('spriteSheet', 'images/objects.png');
+
+            // PLAYER SPRITESHEET
+            this.load.spritesheet('player', 'images/player.png', {
+                frameWidth: 64,
+                frameHeight: 64
+            });
         }
+
+
+
 
         function create() {
             this.cameras.main.setBackgroundColor('#0a0e27');
@@ -448,17 +513,21 @@
                 }
             } catch (e) { /* ignore */ }
 
+            // Create Phaser animations for the player spritesheet (if not already created)
+            try {
+                const anims = this.anims;
+                // mapping: frame 0 = down (front), 1 = right (side), 2 = up (diag), 3 = helmet off (alt)
+                if (!anims.exists('p_idle_down')) anims.create({ key: 'p_idle_down', frames: [{ key: 'player', frame: 0 }], frameRate: 1, repeat: -1 });
+                if (!anims.exists('p_idle_right')) anims.create({ key: 'p_idle_right', frames: [{ key: 'player', frame: 1 }], frameRate: 1, repeat: -1 });
+                if (!anims.exists('p_idle_up')) anims.create({ key: 'p_idle_up', frames: [{ key: 'player', frame: 2 }], frameRate: 1, repeat: -1 });
 
-
-            // Griglia di sfondo
-            // const graphics = this.add.graphics();
-            // graphics.lineStyle(1, 0x00ffff, 0.1);
-            // for (let i = 0; i < 800; i += 40) {
-            //     graphics.lineBetween(i, 0, i, 600);
-            // }
-            // for (let i = 0; i < 600; i += 40) {
-            //     graphics.lineBetween(0, i, 800, i);
-            // }
+                if (!anims.exists('p_run_down')) anims.create({ key: 'p_run_down', frames: [{ key: 'player', frame: 0 }, { key: 'player', frame: 3 }], frameRate: 10, repeat: -1 });
+                if (!anims.exists('p_run_right')) anims.create({ key: 'p_run_right', frames: [{ key: 'player', frame: 1 }, { key: 'player', frame: 3 }], frameRate: 10, repeat: -1 });
+                if (!anims.exists('p_run_up')) anims.create({ key: 'p_run_up', frames: [{ key: 'player', frame: 2 }, { key: 'player', frame: 3 }], frameRate: 10, repeat: -1 });
+                // left reuses right frames but we'll flipX when playing
+                if (!anims.exists('p_run_left')) anims.create({ key: 'p_run_left', frames: [{ key: 'player', frame: 1 }, { key: 'player', frame: 3 }], frameRate: 10, repeat: -1 });
+                if (!anims.exists('p_idle_left')) anims.create({ key: 'p_idle_left', frames: [{ key: 'player', frame: 1 }], frameRate: 1, repeat: -1 });
+            } catch (e) { /* ignore animation creation errors */ }
 
             // Schermata Attract (riutilizzabile)
             if (!gameStarted) {
@@ -471,17 +540,13 @@
             // place players slightly apart to avoid instant overlap
             // Player sprite (primary)
             try {
-                // prefer sprite image from spriteSheet when available
-                player = this.physics.add.image(300, 550, 'spriteSheet');
+                // prefer the standalone 2x2 player sprite sheet when available
+                player = this.physics.add.sprite(300, 550, 'player');
                 const displaySize = 20;
-                if (applySpriteCrop(this, player, 'player')) {
-                    player.setDisplaySize(displaySize, displaySize);
-                } else {
-                    // fallback: colored rectangle replaced by an image tinted
-                    player.setDisplaySize(displaySize, displaySize);
-                    player.setTint(0x00ff00);
-                }
+                player.setDisplaySize(displaySize, displaySize);
                 player.body.setCollideWorldBounds(true);
+                // default to idle facing down
+                try { player.anims.play('p_idle_down'); player.setFlipX(false); } catch (e) { }
             } catch (e) {
                 // fallback to rectangle if sprite APIs fail
                 player = this.add.rectangle(300, 550, 20, 20, 0x00ff00);
@@ -492,15 +557,11 @@
             // Optionally create a second player when playersCount >= 2
             if ((playersCount || 1) >= 2) {
                 try {
-                    player2 = this.physics.add.image(500, 550, 'spriteSheet');
+                    player2 = this.physics.add.sprite(500, 550, 'player');
                     const displaySize2 = 20;
-                    if (applySpriteCrop(this, player2, 'player')) {
-                        player2.setDisplaySize(displaySize2, displaySize2);
-                    } else {
-                        player2.setDisplaySize(displaySize2, displaySize2);
-                        player2.setTint(0x0000ff);
-                    }
+                    player2.setDisplaySize(displaySize2, displaySize2);
                     player2.body.setCollideWorldBounds(true);
+                    try { player2.anims.play('p_idle_down'); player2.setFlipX(false); } catch (e) { }
                 } catch (e) {
                     player2 = this.add.rectangle(500, 550, 20, 20, 0x0000ff);
                     this.physics.add.existing(player2);
@@ -616,43 +677,65 @@
 
             // Background: usa l'immagine se caricata, altrimenti fallback grafico
             let bg;
-            if (scene.textures.exists('attractBg')) {
-                bg = scene.add.image(centerX, centerY, 'attractBg');
-                bg.setOrigin(0.5, 0.5);
-                // Usa dimensione dinamica della scena per coprire il canvas
-                bg.setDisplaySize(scene.scale.width || 800, scene.scale.height || 600);
-                attractContainer.add(bg);
-            } else {
-                console.warn('attractBg texture not found — using fallback background');
-                bg = scene.add.rectangle(scene.scale.width / 2 || centerX, scene.scale.height / 2 || centerY, scene.scale.width || 800, scene.scale.height || 600, 0x07102a);
-                attractContainer.add(bg);
-
-                // leggero overlay scanline per effetto retrò
-                const lines = scene.add.graphics();
-                lines.lineStyle(1, 0x001020, 0.03);
-                for (let y = 0; y < (scene.scale.height || 600); y += 4) {
-                    lines.moveTo(0, y);
-                    lines.lineTo(scene.scale.width || 800, y);
+            try {
+                const hasAttractBg = scene && scene.textures && typeof scene.textures.exists === 'function' && scene.textures.exists('attractBg');
+                if (hasAttractBg) {
+                    bg = scene.add.image(centerX, centerY, 'attractBg');
+                    bg.setOrigin(0.5, 0.5);
+                    // Usa dimensione dinamica della scena per coprire il canvas
+                    bg.setDisplaySize((scene && scene.scale && scene.scale.width) || 800, (scene && scene.scale && scene.scale.height) || 600);
+                    attractContainer.add(bg);
+                } else {
+                    // No attractBg texture found. Per request, do NOT create a fallback rectangle here.
+                    // Keep a console warning so it's visible in logs, but avoid adding any background GameObject.
+                    console.warn('[INIT-ATTRACT] attractBg texture not found — no fallback background will be created');
                 }
-                lines.strokePath();
-                attractContainer.add(lines);
+            } catch (e) {
+                console.warn('[INIT-ATTRACT] error while checking/creating attractBg, falling back', e);
+                try { if (scene && scene.add) { bg = scene.add.rectangle(centerX, centerY, (scene && scene.scale && scene.scale.width) || 800, (scene && scene.scale && scene.scale.height) || 600, 0x07102a); attractContainer.add(bg); } } catch (ee) { /* ignore */ }
             }
 
-            // Title
-            const title = scene.add.text(centerX, 150, 'BLOCK HUNTER', {
-                fontSize: '48px',
-                fontFamily: GAME_FONT,
-                fill: '#ff00ff',
-                stroke: '#00ffff',
-                strokeThickness: 3
-            }).setOrigin(0.5);
-            attractContainer.add(title);
-            langTitleText = title;
+            // Title: prefer a pre-rendered image if available. Do NOT create a text fallback when missing.
+            let title = null;
+            try {
+                const hasTitleImg = scene && scene.textures && typeof scene.textures.exists === 'function' && scene.textures.exists('title');
+                if (hasTitleImg) {
+                    // use image and scale to fit nicely within the scene
+                    const t = scene.textures.get('title');
+                    let img = null;
+                    if (t && t.source && t.source[0]) img = t.source[0].image || t.source[0].data;
+
+                    // Position at top center
+                    title = scene.add.image(centerX, 100, 'title').setOrigin(0.5);
+                    try {
+                        const maxW = Math.min(720, Math.floor((scene && scene.scale && scene.scale.width) ? scene.scale.width * 0.8 : 520));
+                        if (img && img.width && img.height) {
+                            const aspect = img.width / img.height;
+                            const h = Math.max(32, Math.round(maxW / aspect));
+                            title.setDisplaySize(maxW, h);
+                        } else {
+                            title.setDisplaySize(maxW, 80);
+                        }
+                    } catch (e) { /* ignore sizing errors */ }
+                    attractContainer.add(title);
+                    // store into langTitleText for compatibility with applyTranslations checks
+                    langTitleText = title;
+                } else {
+                    // Per request: do NOT create a fallback text title. Log and leave langTitleText null.
+                    console.warn('[INIT-ATTRACT] title texture not found — no fallback title will be created');
+                    langTitleText = null;
+                }
+            } catch (e) {
+                // If an unexpected error occurs, log and continue without creating a fallback title
+                console.warn('[INIT-ATTRACT] error while checking/creating title, skipping title creation', e);
+                langTitleText = null;
+                title = null;
+            }
 
             // Glow animation
-            scene.tweens.add({
+            PULSE.title && title && scene.tweens.add({
                 targets: title,
-                alpha: { from: 1, to: 0.5 },
+                alpha: { from: 1, to: 0.8 },
                 duration: 1000,
                 yoyo: true,
                 repeat: -1
@@ -672,29 +755,36 @@
             attractContainer.add(instructions);
             langInstructionsText = instructions;
 
-            // Start button (acts as INSERT COIN / START)
-            const startButton = scene.add.rectangle(centerX, 420, 300, 60, 0xff00ff).setInteractive({ useHandCursor: true });
-            const startText = scene.add.text(centerX, 420, 'INSERISCI MONETA', {
-                fontSize: '16px',
+            // Start text (acts as INSERT COIN / START) - text-only, larger
+            const startText = scene.add.text(centerX, 420, (window.DICT && window.DICT.insert_coin) || 'INSERISCI MONETA', {
+                fontSize: '40px',
                 fontFamily: GAME_FONT,
-                fill: '#000000'
-            }).setOrigin(0.5);
-            attractContainer.add(startButton);
+                fill: '#ffff00',
+                stroke: '#000000',
+                strokeThickness: 3
+            }).setOrigin(0.5).setInteractive({ useHandCursor: true });
             attractContainer.add(startText);
             langStartText = startText;
 
-            // Pulsing animation
-            scene.tweens.add({
-                targets: startButton,
-                scaleX: { from: 1, to: 1.05 },
-                scaleY: { from: 1, to: 1.05 },
-                duration: 800,
-                yoyo: true,
-                repeat: -1
-            });
+            // Pulsing animation applied to the text
+            try {
+                PULSE.coin && scene.tweens.add({
+                    targets: startText,
+                    scaleX: { from: 1, to: 1.06 },
+                    scaleY: { from: 1, to: 1.06 },
+                    duration: 800,
+                    yoyo: true,
+                    repeat: -1
+                });
+            } catch (e) { }
 
-            startButton.on('pointerover', () => startButton.setFillStyle(0x00ffff));
-            startButton.on('pointerout', () => startButton.setFillStyle(0xff00ff));
+            // soft drop shadow to create slight blur/offuscation
+            try {
+                if (typeof startText.setShadow === 'function') {
+                    // x, y, color, blur
+                    startText.setShadow(2, 2, '#000000', 4);
+                }
+            } catch (e) { }
 
             const startGame = () => {
                 gameStarted = true;
@@ -706,7 +796,7 @@
                 scene.scene.restart();
             };
 
-            startButton.on('pointerdown', startGame);
+            startText.on('pointerdown', startGame);
             scene.input.keyboard.on('keydown-ENTER', startGame);
 
             // Top Ten container (initially hidden)
@@ -747,21 +837,70 @@
                 if (idx >= 0) currentLangIndex = idx;
             }
 
-            // Flag image (we will crop to the selected flag)
-            langFlagImage = scene.add.image(centerX, 480, 'flags');
-            langFlagImage.setOrigin(0.5, 0.5);
-            // small display
-            langFlagImage.setDisplaySize(96, 24);
-            attractContainer.add(langFlagImage);
+            // Language label (title for selector)
+            try {
+                langLabelText = scene.add.text(centerX, 452, 'Language', { fontSize: '14px', fontFamily: GAME_FONT, fill: '#00ffff' }).setOrigin(0.5);
+                attractContainer.add(langLabelText);
+            } catch (e) { /* ignore */ }
 
-            // Arrows
-            const leftArrow = scene.add.text(centerX - 80, 480, '<', { fontSize: '24px', fontFamily: GAME_FONT, fill: '#00ffff' }).setOrigin(0.5).setInteractive({ useHandCursor: true });
-            const rightArrow = scene.add.text(centerX + 80, 480, '>', { fontSize: '24px', fontFamily: GAME_FONT, fill: '#00ffff' }).setOrigin(0.5).setInteractive({ useHandCursor: true });
-            attractContainer.add(leftArrow);
-            attractContainer.add(rightArrow);
+            // Selector box (outline) that frames the flag + arrows. We add it before the flag so it sits behind.
+            try {
+                langSelectorBox = scene.add.rectangle(centerX, 480, 240, 56, 0x000000, 0).setOrigin(0.5);
+                try { langSelectorBox.setStrokeStyle(2, 0x00ffff); } catch (e) { }
+                attractContainer.add(langSelectorBox);
+            } catch (e) { /* ignore */ }
 
-            leftArrow.on('pointerdown', () => changeLang(-1, scene));
-            rightArrow.on('pointerdown', () => changeLang(1, scene));
+            // Create a 3-item carousel via reusable factory and attach to the attract container
+            try {
+                const carousel = createFlagCarousel(scene, attractContainer, centerX, 480, currentLangIndex);
+                if (carousel) {
+                    langFlagLeft = carousel.left;
+                    langFlagCenter = carousel.center;
+                    langFlagRight = carousel.right;
+                    langFlagImage = langFlagCenter;
+                } else {
+                    console.warn('[INIT-ATTRACT] createFlagCarousel returned null');
+                }
+            } catch (e) {
+                console.warn('[INIT-ATTRACT] failed to create flag carousel', e);
+            }
+
+            // Immediately attempt to update flag crop and load dictionary now that the image was created.
+            // Also register keyboard arrows to change language for accessibility.
+            try {
+                updateFlagCrop(scene);
+            } catch (e) { /* ignore */ }
+            try { loadDictionary(LANGS[currentLangIndex]); } catch (e) { /* ignore */ }
+            try { updateLangSelectorHighlight(scene); } catch (e) { /* ignore */ }
+            try {
+                // Prepare handler functions but do NOT attach them yet. We'll attach when attract is shown.
+                langKeyboardHandler = (event) => {
+                    if (!attractVisible) return; // safety
+                    if (event.code === 'ArrowLeft' || event.key === 'Left') {
+                        changeLang(-1, scene);
+                    } else if (event.code === 'ArrowRight' || event.key === 'Right') {
+                        changeLang(1, scene);
+                    }
+                };
+
+                // pointer handlers for flags
+                langFlagLeftHandler = () => changeLang(-1, scene);
+                langFlagRightHandler = () => changeLang(1, scene);
+
+                // arrow text handlers (we'll attach later)
+                langLeftArrowHandler = () => changeLang(-1, scene);
+                langRightArrowHandler = () => changeLang(1, scene);
+            } catch (e) { /* ignore */ }
+
+            // Arrows per selezionare la lingua: usa testo semplice con interazione, posizionato ai lati della bandiera.
+            // Create arrow texts but do not attach pointer handlers yet.
+            langLeftArrow = scene.add.text(centerX - 80, 480, '<', { fontSize: '24px', fontFamily: GAME_FONT, fill: '#00ffff' }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+            langRightArrow = scene.add.text(centerX + 80, 480, '>', { fontSize: '24px', fontFamily: GAME_FONT, fill: '#00ffff' }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+            attractContainer.add(langLeftArrow);
+            attractContainer.add(langRightArrow);
+
+            // keep references to arrows so other code can interact if needed
+            try { langLabelText._leftArrow = langLeftArrow; langLabelText._rightArrow = langRightArrow; } catch (e) { }
 
             // Initial update of flag crop and dictionary
             scene.time.delayedCall(50, () => {
@@ -856,6 +995,9 @@
             scene.tweens.add({ targets: attractContainer, alpha: 1, duration: 600 });
             attractVisible = true;
 
+            // enable interactive language selectors while attract is visible
+            try { enableLangSelectors(scene); } catch (e) { }
+
             // (re)start alternation timer
             if (!attractCycleEvent) {
                 attractCycleEvent = scene.time.addEvent({
@@ -872,6 +1014,8 @@
 
         function hideAttractUI(scene, immediate = false) {
             if (!attractContainer) return;
+            // disable language selectors when leaving attract
+            try { disableLangSelectors(scene); } catch (e) { }
             if (immediate) {
                 attractContainer.setVisible(false);
                 attractContainer.setAlpha(0);
@@ -885,6 +1029,7 @@
             if (!topTenContainer) initAttractUI(scene);
             // Hide attract
             if (attractContainer && attractContainer.visible) {
+                try { disableLangSelectors(scene); } catch (e) { }
                 scene.tweens.add({ targets: attractContainer, alpha: 0, duration: 500, onComplete: () => attractContainer.setVisible(false) });
             }
             // Show topTen
@@ -999,6 +1144,82 @@
             const sh = Math.max(4, Math.round(spriteCellH - spriteSheetPad * 2));
             try { imgObj.setCrop(sx, sy, sw, sh); } catch (e) { return false; }
             return true;
+        }
+        // Player-sheet helper (2x2 matrix: 4 frames)
+        const PLAYER_SHEET_COLS = 2, PLAYER_SHEET_ROWS = 2;
+        let playerFrameW = 0, playerFrameH = 0;
+
+        // apply a crop from the standalone player sheet (images/player.png)
+        // frameIndex: 0..3 left-to-right, top-to-bottom
+        function applyPlayerCrop(scene, imgObj, frameIndex) {
+            if (!imgObj) return false;
+            try {
+                if (!playerFrameW || !playerFrameH) {
+                    const tex = scene.textures.get('player');
+                    if (!tex || !tex.source || !tex.source[0]) return false;
+                    const img = tex.source[0].image || tex.source[0].data;
+                    if (!img || !img.width || !img.height) return false;
+                    playerFrameW = Math.round(img.width / PLAYER_SHEET_COLS);
+                    playerFrameH = Math.round(img.height / PLAYER_SHEET_ROWS);
+                }
+                frameIndex = Math.max(0, Math.min(3, Math.floor(frameIndex || 0)));
+                const r = Math.floor(frameIndex / PLAYER_SHEET_COLS);
+                const c = frameIndex % PLAYER_SHEET_COLS;
+                const sx = Math.round(c * playerFrameW);
+                const sy = Math.round(r * playerFrameH);
+                const sw = Math.max(4, Math.round(playerFrameW));
+                const sh = Math.max(4, Math.round(playerFrameH));
+                imgObj.setCrop(sx, sy, sw, sh);
+                return true;
+            } catch (e) { return false; }
+        }
+
+        // Simple crop-based animation controller for player Images (idle/run per direction)
+        // directions: 'down' (front), 'right' (side), 'up' (diag)
+        // For left we mirror the right frame using flipX
+        function setPlayerAnimation(scene, playerObj, state, direction) {
+            if (!playerObj || !scene) return;
+            // avoid recreating same animation
+            playerObj._anim = playerObj._anim || {};
+            const prev = playerObj._anim.state + '|' + playerObj._anim.dir;
+            const next = (state || 'idle') + '|' + (direction || 'down');
+            if (prev === next) return;
+            playerObj._anim.state = state;
+            playerObj._anim.dir = direction;
+
+            // clear existing timer if any
+            try { if (playerObj._anim.timer) { playerObj._anim.timer.remove(false); playerObj._anim.timer = null; } } catch (e) { }
+
+            // mapping primary frame per direction
+            const prim = { down: 0, right: 1, up: 2 };
+            const primaryFrame = prim[direction] !== undefined ? prim[direction] : 0;
+            const altFrame = 3; // helmet off used as alternate for run
+
+            // set flipX for left direction (guarded for rectangle fallbacks)
+            try { if (typeof playerObj.setFlipX === 'function') { playerObj.setFlipX(direction === 'left'); } } catch (e) { }
+
+            if (state === 'idle') {
+                applyPlayerCrop(scene, playerObj, primaryFrame);
+            } else if (state === 'run') {
+                // create a simple toggling timer to alternate between primary and alt frames
+                let showPrimary = true;
+                applyPlayerCrop(scene, playerObj, primaryFrame);
+                try {
+                    playerObj._anim.timer = scene.time.addEvent({
+                        delay: 120,
+                        loop: true,
+                        callback: () => {
+                            try {
+                                applyPlayerCrop(scene, playerObj, showPrimary ? altFrame : primaryFrame);
+                                showPrimary = !showPrimary;
+                            } catch (e) { /* ignore */ }
+                        }
+                    });
+                } catch (e) { /* ignore if time not available */ }
+            } else {
+                // default to idle
+                applyPlayerCrop(scene, playerObj, primaryFrame);
+            }
         }
         const TAIL_SHEET_MAP = {
             // row 0: wall variants
@@ -1124,26 +1345,306 @@
         }
 
         // Language helper functions
+        function updateLangSelectorHighlight(scene) {
+            try {
+                if (!langSelectorBox) return;
+                // stronger outline to indicate selection
+                try { langSelectorBox.setStrokeStyle(3, 0xffff00); } catch (e) { }
+
+                // kill previous selector/flag tweens to avoid stacking
+                try {
+                    if (scene && scene.tweens) {
+                        scene.tweens.killTweensOf(langSelectorBox);
+                        // kill tweens for all carousel sprites
+                        try { scene.tweens.killTweensOf(langFlagLeft); } catch (ee) { }
+                        try { scene.tweens.killTweensOf(langFlagCenter); } catch (ee) { }
+                        try { scene.tweens.killTweensOf(langFlagRight); } catch (ee) { }
+                    }
+                } catch (e) { }
+
+                // small pulse on the selector box
+                if (scene && scene.tweens) {
+                    try { scene.tweens.add({ targets: langSelectorBox, alpha: { from: 1, to: 0.85 }, duration: 400, yoyo: true, repeat: 1 }); } catch (e) { }
+                }
+
+                // Wave (sventolio) effect on the selected flag: subtle rotation + bob + scaleY oscillation
+                if ((langFlagCenter || langFlagImage) && scene && scene.tweens) {
+                    try {
+                        // ensure correct frame shown (when flags loaded as spritesheet)
+                        // Apply frame updates for carousel (center + sides)
+                        try { updateFlagCrop(scene); } catch (e) { }
+
+                        // kill existing tweens for all flags then start a continuous wave only for center
+                        try { scene.tweens.killTweensOf(langFlagLeft); } catch (e) { }
+                        try { scene.tweens.killTweensOf(langFlagRight); } catch (e) { }
+                        try { scene.tweens.killTweensOf(langFlagCenter); } catch (e) { }
+
+                        if (langFlagCenter) {
+                            scene.tweens.add({
+                                targets: langFlagCenter,
+                                angle: { from: -6, to: 6 },
+                                y: '+=2',
+                                scaleY: { from: 0.98, to: 1.02 },
+                                ease: 'Sine.easeInOut',
+                                duration: 600,
+                                yoyo: true,
+                                repeat: -1
+                            });
+                        }
+                    } catch (e) { /* ignore tween errors */ }
+                }
+            } catch (e) { /* ignore */ }
+        }
+
         function changeLang(delta, scene) {
+            // Only allow language change while the attract UI is visible
+            if (!attractVisible) {
+                // ignore language changes when not in attract mode (e.g., Top Ten or in-game)
+                console.info('[LANG] change ignored: not in attract mode');
+                return;
+            }
+
+            // Prevent overlapping animations
+            if (langCarouselAnimating) return;
+
+            // If we have scene tweens and the carousel sprites, animate the scroll
+            const hasCarousel = !!(langFlagLeft || langFlagCenter || langFlagRight || langFlagImage);
+            if (scene && scene.tweens && hasCarousel && langFlagCenter && langFlagLeft) {
+                langCarouselAnimating = true;
+                // compute spacing between center and left as the step
+                const spacing = Math.abs((langFlagCenter.x || 0) - (langFlagLeft.x || 0)) || 96;
+                // shift direction: when delta=1 (move right), animate leftwards so right flag becomes center
+                const shift = -delta * spacing;
+                const op = (shift >= 0 ? '+=' : '-=') + Math.abs(shift);
+
+                // Compute target scale/alpha for each sprite depending on direction
+                // small scale for side flags, big for center
+                const smallScale = 0.82;
+                const bigScale = 1.0;
+                const smallAlpha = 0.45;
+                const bigAlpha = 1.0;
+
+                let leftTargetScale = smallScale, centerTargetScale = bigScale, rightTargetScale = smallScale;
+                let leftTargetAlpha = smallAlpha, centerTargetAlpha = bigAlpha, rightTargetAlpha = smallAlpha;
+
+                if (delta === 1) {
+                    // moving selection to the right: right -> center
+                    // langFlagRight should grow to center
+                    leftTargetScale = smallScale; leftTargetAlpha = smallAlpha;
+                    centerTargetScale = smallScale; centerTargetAlpha = smallAlpha;
+                    rightTargetScale = bigScale; rightTargetAlpha = bigAlpha;
+                } else if (delta === -1) {
+                    // moving selection to the left: left -> center
+                    leftTargetScale = bigScale; leftTargetAlpha = bigAlpha;
+                    centerTargetScale = smallScale; centerTargetAlpha = smallAlpha;
+                    rightTargetScale = smallScale; rightTargetAlpha = smallAlpha;
+                }
+
+                try {
+                    // create tweens per sprite so we can animate scale/alpha individually
+                    const duration = 220;
+
+                    if (langFlagLeft) {
+                        scene.tweens.add({ targets: langFlagLeft, x: op, scaleX: leftTargetScale, scaleY: leftTargetScale, alpha: leftTargetAlpha, ease: 'Cubic.easeOut', duration });
+                    }
+                    if (langFlagRight) {
+                        scene.tweens.add({ targets: langFlagRight, x: op, scaleX: rightTargetScale, scaleY: rightTargetScale, alpha: rightTargetAlpha, ease: 'Cubic.easeOut', duration });
+                    }
+                    // center tween will trigger onComplete to finalize
+                    if (langFlagCenter) {
+                        scene.tweens.add({
+                            targets: langFlagCenter,
+                            x: op,
+                            scaleX: centerTargetScale,
+                            scaleY: centerTargetScale,
+                            alpha: centerTargetAlpha,
+                            ease: 'Cubic.easeOut',
+                            duration,
+                            onComplete: () => {
+                                try {
+                                    // finalize index change
+                                    currentLangIndex = (currentLangIndex + delta + LANGS.length) % LANGS.length;
+                                    localStorage.setItem('bh_lang', LANGS[currentLangIndex]);
+
+                                    // reset positions to canonical locations (centered)
+                                    const centerX = (scene && scene.scale && scene.scale.width) ? scene.scale.width / 2 : 400;
+                                    const leftX = centerX - 96;
+                                    const centerXpos = centerX;
+                                    const rightX = centerX + 96;
+                                    try { if (langFlagLeft) langFlagLeft.x = leftX; } catch (e) { }
+                                    try { if (langFlagCenter) langFlagCenter.x = centerXpos; } catch (e) { }
+                                    try { if (langFlagRight) langFlagRight.x = rightX; } catch (e) { }
+
+                                    // also set canonical scales/alphas to ensure values are exact after animation
+                                    try { if (langFlagLeft) { langFlagLeft.setScale(smallScale); langFlagLeft.setAlpha(smallAlpha); } } catch (e) { }
+                                    try { if (langFlagCenter) { langFlagCenter.setScale(bigScale); langFlagCenter.setAlpha(bigAlpha); } } catch (e) { }
+                                    try { if (langFlagRight) { langFlagRight.setScale(smallScale); langFlagRight.setAlpha(smallAlpha); } } catch (e) { }
+
+                                    // refresh frames/crops and UI
+                                    try { updateFlagCrop(scene); } catch (e) { }
+                                    console.info('[LANG] changeLang (animated) ->', LANGS[currentLangIndex], 'index', currentLangIndex);
+                                    try { loadDictionary(LANGS[currentLangIndex]); } catch (e) { console.warn('[LANG] loadDictionary threw', e); }
+                                    try { updateLangSelectorHighlight(scene); } catch (e) { }
+                                } catch (ee) { console.warn('[LANG] changeLang completion error', ee); }
+                                langCarouselAnimating = false;
+                            }
+                        });
+                    }
+                    return;
+                } catch (e) {
+                    console.warn('[LANG] animation failed, falling back to immediate change', e);
+                    langCarouselAnimating = false;
+                }
+            }
+
+            // Immediate fallback (no animation available)
             currentLangIndex = (currentLangIndex + delta + LANGS.length) % LANGS.length;
             localStorage.setItem('bh_lang', LANGS[currentLangIndex]);
             updateFlagCrop(scene);
-            loadDictionary(LANGS[currentLangIndex]);
+            console.info('[LANG] changeLang ->', LANGS[currentLangIndex], 'index', currentLangIndex);
+            try { loadDictionary(LANGS[currentLangIndex]); } catch (e) { console.warn('[LANG] loadDictionary threw', e); }
+            try { updateLangSelectorHighlight(scene); } catch (e) { /* ignore */ }
+        }
+
+        // Attach interactive handlers for language selection when attract is visible
+        function enableLangSelectors(scene) {
+            try {
+                if (!scene) return;
+                if (langKeyboardHandler && scene.input && scene.input.keyboard) scene.input.keyboard.on('keydown', langKeyboardHandler);
+                if (langFlagLeft && langFlagLeftHandler) langFlagLeft.on('pointerdown', langFlagLeftHandler);
+                if (langFlagRight && langFlagRightHandler) langFlagRight.on('pointerdown', langFlagRightHandler);
+                if (langLeftArrow && langLeftArrowHandler) langLeftArrow.on('pointerdown', langLeftArrowHandler);
+                if (langRightArrow && langRightArrowHandler) langRightArrow.on('pointerdown', langRightArrowHandler);
+            } catch (e) { /* ignore */ }
+        }
+
+        // Detach interactive handlers when leaving attract
+        function disableLangSelectors(scene) {
+            try {
+                if (!scene) return;
+                if (langKeyboardHandler && scene.input && scene.input.keyboard) scene.input.keyboard.off('keydown', langKeyboardHandler);
+                try { if (langFlagLeft && langFlagLeftHandler) langFlagLeft.off('pointerdown', langFlagLeftHandler); } catch (e) { }
+                try { if (langFlagRight && langFlagRightHandler) langFlagRight.off('pointerdown', langFlagRightHandler); } catch (e) { }
+                try { if (langLeftArrow && langLeftArrowHandler) langLeftArrow.off('pointerdown', langLeftArrowHandler); } catch (e) { }
+                try { if (langRightArrow && langRightArrowHandler) langRightArrow.off('pointerdown', langRightArrowHandler); } catch (e) { }
+            } catch (e) { /* ignore */ }
         }
 
         function updateFlagCrop(scene) {
-            if (!langFlagImage) return;
-            const tex = scene.textures.get('flags');
-            if (!tex || !tex.source || !tex.source[0]) return;
-            const img = tex.source[0].image || tex.source[0].data;
-            const totalW = img.width;
-            const totalH = img.height;
-            const sliceW = Math.floor(totalW / LANGS.length);
-            const sx = sliceW * currentLangIndex;
-            // Phaser Image#setCrop expects numbers
-            langFlagImage.setCrop(sx, 0, sliceW, totalH);
-            // adjust display size to keep flags visible
-            langFlagImage.setDisplaySize(96, Math.round(96 * (totalH / sliceW)));
+            // Update all three carousel sprites (left/center/right). If only center exists
+            // we'll still update it. Prefer setFrame for spritesheets; otherwise use crop.
+            if (!langFlagCenter && !langFlagImage) return;
+            try {
+                const tex = scene.textures.get('flags');
+                const isSheet = !!(tex && tex.frameTotal && tex.frameTotal > 1);
+
+                const idxCenter = currentLangIndex % LANGS.length;
+                const idxLeft = (currentLangIndex - 1 + LANGS.length) % LANGS.length;
+                const idxRight = (currentLangIndex + 1) % LANGS.length;
+
+                if (isSheet) {
+                    // set frames for sprites if available
+                    try {
+                        if (langFlagLeft && typeof langFlagLeft.setFrame === 'function') langFlagLeft.setFrame(idxLeft);
+                        if (langFlagCenter && typeof langFlagCenter.setFrame === 'function') langFlagCenter.setFrame(idxCenter);
+                        if (langFlagRight && typeof langFlagRight.setFrame === 'function') langFlagRight.setFrame(idxRight);
+                    } catch (e) { /* ignore per-sprite */ }
+
+                    // sizing and alpha
+                    try { if (langFlagCenter) langFlagCenter.setDisplaySize(96, 48); } catch (e) { }
+                    try { if (langFlagLeft) { langFlagLeft.setDisplaySize(64, 32); langFlagLeft.setAlpha(0.45); } } catch (e) { }
+                    try { if (langFlagRight) { langFlagRight.setDisplaySize(64, 32); langFlagRight.setAlpha(0.45); } } catch (e) { }
+
+                    // ensure alias
+                    langFlagImage = langFlagCenter || langFlagImage;
+                    return;
+                }
+            } catch (e) { /* ignore and fallback to crop below */ }
+
+            // Fallback: single strip image, use setCrop on each image if available
+            try {
+                const tex2 = scene.textures.get('flags');
+                if (!tex2 || !tex2.source || !tex2.source[0]) return;
+                const img = tex2.source[0].image || tex2.source[0].data;
+                const totalW = img.width;
+                const totalH = img.height;
+                const sliceW = Math.floor(totalW / LANGS.length);
+
+                const sxCenter = sliceW * idxCenter;
+                const sxLeft = sliceW * idxLeft;
+                const sxRight = sliceW * idxRight;
+
+                try { if (langFlagLeft && typeof langFlagLeft.setCrop === 'function') langFlagLeft.setCrop(sxLeft, 0, sliceW, totalH); } catch (e) { }
+                try { if (langFlagCenter && typeof langFlagCenter.setCrop === 'function') langFlagCenter.setCrop(sxCenter, 0, sliceW, totalH); } catch (e) { }
+                try { if (langFlagRight && typeof langFlagRight.setCrop === 'function') langFlagRight.setCrop(sxRight, 0, sliceW, totalH); } catch (e) { }
+
+                try { if (langFlagCenter) langFlagCenter.setDisplaySize(96, Math.round(96 * (totalH / sliceW))); } catch (e) { }
+                try { if (langFlagLeft) langFlagLeft.setDisplaySize(64, Math.round(64 * (totalH / sliceW))); } catch (e) { }
+                try { if (langFlagRight) langFlagRight.setDisplaySize(64, Math.round(64 * (totalH / sliceW))); } catch (e) { }
+
+                langFlagImage = langFlagCenter || langFlagImage;
+            } catch (e) { /* ignore final fallback errors */ }
+        }
+
+        // Reusable factory: create a 3-item flag carousel and add it to a container.
+        // Returns { left, center, right, setIndex, destroy }
+        function createFlagCarousel(scene, container, centerX, y, initialIndex) {
+            if (!scene || !container) return null;
+            initialIndex = (initialIndex || 0) % LANGS.length;
+            const leftX = centerX - 96;
+            const centerXpos = centerX;
+            const rightX = centerX + 96;
+            let left = null, center = null, right = null;
+
+            try {
+                const tex = scene.textures.get('flags');
+                const isSheet = !!(tex && tex.frameTotal && tex.frameTotal > 1);
+
+                if (isSheet) {
+                    left = scene.add.sprite(leftX, y, 'flags', (initialIndex - 1 + LANGS.length) % LANGS.length).setOrigin(0.5, 0.5).setInteractive({ useHandCursor: true });
+                    center = scene.add.sprite(centerXpos, y, 'flags', initialIndex).setOrigin(0.5, 0.5).setInteractive({ useHandCursor: true });
+                    right = scene.add.sprite(rightX, y, 'flags', (initialIndex + 1) % LANGS.length).setOrigin(0.5, 0.5).setInteractive({ useHandCursor: true });
+
+                    try { center.setDisplaySize(96, 48); } catch (e) { }
+                    try { left.setDisplaySize(64, 32); right.setDisplaySize(64, 32); } catch (e) { }
+                    try { left.setAlpha(0.45); right.setAlpha(0.45); } catch (e) { }
+                } else {
+                    left = scene.add.image(leftX, y, 'flags').setOrigin(0.5, 0.5).setInteractive({ useHandCursor: true });
+                    center = scene.add.image(centerXpos, y, 'flags').setOrigin(0.5, 0.5).setInteractive({ useHandCursor: true });
+                    right = scene.add.image(rightX, y, 'flags').setOrigin(0.5, 0.5).setInteractive({ useHandCursor: true });
+
+                    try { center.setDisplaySize(96, 48); } catch (e) { }
+                    try { left.setDisplaySize(64, 32); right.setDisplaySize(64, 32); } catch (e) { }
+                    try { left.setAlpha(0.45); right.setAlpha(0.45); } catch (e) { }
+                }
+
+                container.add([left, center, right]);
+
+                const api = {
+                    left, center, right,
+                    setIndex: (idx) => {
+                        try {
+                            currentLangIndex = (idx + LANGS.length) % LANGS.length;
+                            // make sure global refs point to these so updateFlagCrop can reuse
+                            langFlagLeft = left; langFlagCenter = center; langFlagRight = right; langFlagImage = center;
+                            updateFlagCrop(scene);
+                        } catch (e) { /* ignore */ }
+                    },
+                    destroy: () => {
+                        try { if (left && left.destroy) left.destroy(); } catch (e) { }
+                        try { if (center && center.destroy) center.destroy(); } catch (e) { }
+                        try { if (right && right.destroy) right.destroy(); } catch (e) { }
+                    }
+                };
+
+                return api;
+            } catch (e) {
+                console.warn('[CAROUSEL] failed to create carousel', e);
+                try { if (left && left.destroy) left.destroy(); } catch (ee) { }
+                try { if (center && center.destroy) center.destroy(); } catch (ee) { }
+                try { if (right && right.destroy) right.destroy(); } catch (ee) { }
+                return null;
+            }
         }
 
         function loadDictionary(lang) {
@@ -1153,6 +1654,7 @@
                     const raw = window.BH_DICS[lang];
                     const normalized = adaptDictionary(raw || {});
                     window.DICT = normalized;
+                    console.info('[DICT] loaded from in-memory BH_DICS for', lang, normalized);
                     const missing = findMissingKeys(normalized);
                     if (missing.length && lang !== 'en') {
                         loadReferenceDict('en').then(ref => { try { const refNorm = adaptDictionary(ref || {}); fillMissingFromReference(window.DICT, refNorm); } catch (e) { }; applyTranslations(); }).catch(() => { applyTranslations(); });
@@ -1172,6 +1674,7 @@
                 try {
                     const normalized = adaptDictionary(json || {});
                     window.DICT = normalized;
+                    console.info('[DICT] loaded JSON for', lang, normalized);
                     const missing = findMissingKeys(normalized);
                     if (missing.length && lang !== 'en') {
                         loadReferenceDict('en').then(ref => { try { const refNorm = adaptDictionary(ref || {}); fillMissingFromReference(window.DICT, refNorm); } catch (e) { }; applyTranslations(); }).catch(() => { applyTranslations(); });
@@ -1192,6 +1695,7 @@
                         const raw = window.DICT || {};
                         const normalized = adaptDictionary(raw);
                         window.DICT = normalized;
+                        console.info('[DICT] loaded legacy script for', lang, normalized);
                         const missing = findMissingKeys(normalized);
                         if (missing.length && lang !== 'en') {
                             loadReferenceDict('en').then(ref => { try { const refNorm = adaptDictionary(ref || {}); fillMissingFromReference(window.DICT, refNorm); } catch (e) { }; applyTranslations(); }).catch(() => { applyTranslations(); });
@@ -1232,6 +1736,8 @@
                     script.onerror = () => { reject(new Error('ref dict load failed')); };
                     document.head.appendChild(script);
                 });
+                // log which reference language was requested
+                console.info('[DICT] loadReferenceDict requested for', refLang);
             });
         }
 
@@ -1817,9 +2323,9 @@
                     try {
                         if (!player) {
                             try {
-                                player = scene.physics.add.image(300, 550, 'spriteSheet');
-                                if (applySpriteCrop(scene, player, 'player')) player.setDisplaySize(20, 20);
-                                else player.setTint(0x00ff00);
+                                player = scene.physics.add.sprite(300, 550, 'player');
+                                player.setDisplaySize(20, 20);
+                                try { player.anims.play('p_idle_down'); player.setFlipX(false); } catch (e) { }
                             } catch (e) {
                                 player = scene.add.rectangle(300, 550, 20, 20, 0x00ff00);
                                 scene.physics.add.existing(player);
@@ -1841,9 +2347,9 @@
                     try {
                         if (!player2) {
                             try {
-                                player2 = scene.physics.add.image(500, 550, 'spriteSheet');
-                                if (applySpriteCrop(scene, player2, 'player')) player2.setDisplaySize(20, 20);
-                                else player2.setTint(0x0000ff);
+                                player2 = scene.physics.add.sprite(500, 550, 'player');
+                                player2.setDisplaySize(20, 20);
+                                try { player2.anims.play('p_idle_down'); player2.setFlipX(false); } catch (e) { }
                             } catch (e) {
                                 player2 = scene.add.rectangle(500, 550, 20, 20, 0x0000ff);
                                 scene.physics.add.existing(player2);
@@ -1962,6 +2468,32 @@
                 }
             }
 
+            // Player animation state (player 1) using Phaser anims
+            try {
+                if (player && player.anims) {
+                    const dx = (cursors.right.isDown ? 1 : 0) - (cursors.left.isDown ? 1 : 0);
+                    const dy = (cursors.down.isDown ? 1 : 0) - (cursors.up.isDown ? 1 : 0);
+                    const moving = Math.abs(dx) + Math.abs(dy) > 0;
+                    let dir = (player._lastDir || 'down');
+                    if (moving) {
+                        if (Math.abs(dx) > Math.abs(dy)) dir = dx > 0 ? 'right' : 'left';
+                        else if (Math.abs(dy) > 0) dir = dy > 0 ? 'down' : 'up';
+                        player._lastDir = dir;
+                        const key = 'p_run_' + (dir === 'left' ? 'left' : (dir === 'right' ? 'right' : (dir === 'up' ? 'up' : 'down')));
+                        if (!player.anims.isPlaying || player.anims.currentAnim.key !== key) {
+                            player.anims.play(key, true);
+                        }
+                        try { player.setFlipX(dir === 'left'); } catch (e) { }
+                    } else {
+                        const key = 'p_idle_' + (dir === 'left' ? 'left' : (dir === 'right' ? 'right' : (dir === 'up' ? 'up' : 'down')));
+                        if (!player.anims.isPlaying || player.anims.currentAnim.key !== key) {
+                            player.anims.play(key, true);
+                        }
+                        try { player.setFlipX(dir === 'left'); } catch (e) { }
+                    }
+                }
+            } catch (e) { /* non-critical */ }
+
             // Player 2 (WASD + F to shoot)
             if (player2 && wasdKeys) {
                 try {
@@ -1983,6 +2515,32 @@
                     // swallow any input mapping errors
                 }
             }
+
+            // Player animation state (player 2) using Phaser anims
+            try {
+                if (player2 && player2.anims && wasdKeys) {
+                    const dx2 = (wasdKeys.right && wasdKeys.right.isDown ? 1 : 0) - (wasdKeys.left && wasdKeys.left.isDown ? 1 : 0);
+                    const dy2 = (wasdKeys.down && wasdKeys.down.isDown ? 1 : 0) - (wasdKeys.up && wasdKeys.up.isDown ? 1 : 0);
+                    const moving2 = Math.abs(dx2) + Math.abs(dy2) > 0;
+                    let dir2 = (player2._lastDir || 'down');
+                    if (moving2) {
+                        if (Math.abs(dx2) > Math.abs(dy2)) dir2 = dx2 > 0 ? 'right' : 'left';
+                        else if (Math.abs(dy2) > 0) dir2 = dy2 > 0 ? 'down' : 'up';
+                        player2._lastDir = dir2;
+                        const key2 = 'p_run_' + (dir2 === 'left' ? 'left' : (dir2 === 'right' ? 'right' : (dir2 === 'up' ? 'up' : 'down')));
+                        if (!player2.anims.isPlaying || player2.anims.currentAnim.key !== key2) {
+                            player2.anims.play(key2, true);
+                        }
+                        try { player2.setFlipX(dir2 === 'left'); } catch (e) { }
+                    } else {
+                        const key2 = 'p_idle_' + (dir2 === 'left' ? 'left' : (dir2 === 'right' ? 'right' : (dir2 === 'up' ? 'up' : 'down')));
+                        if (!player2.anims.isPlaying || player2.anims.currentAnim.key !== key2) {
+                            player2.anims.play(key2, true);
+                        }
+                        try { player2.setFlipX(dir2 === 'left'); } catch (e) { }
+                    }
+                }
+            } catch (e) { /* ignore */ }
 
             // Target lifetime
             targetLifetime++;

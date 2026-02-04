@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="32" viewBox="0 0 512 32" shape-rendering="crispEdges">
+  <!-- 8 flags, each 64x32 -->
+  <!-- Flag 0: Italy (vertical green/white/red) -->
+  <g transform="translate(0,0)">
+    <rect x="0" y="0" width="64" height="32" fill="#0b6623" />
+    <rect x="21" y="0" width="22" height="32" fill="#ffffff" />
+    <rect x="43" y="0" width="21" height="32" fill="#ce2b37" />
+  </g>
+
+  <!-- Flag 1: France (vertical blue/white/red) -->
+  <g transform="translate(64,0)">
+    <rect x="0" y="0" width="64" height="32" fill="#002395" />
+    <rect x="21" y="0" width="22" height="32" fill="#ffffff" />
+    <rect x="43" y="0" width="21" height="32" fill="#ed2939" />
+  </g>
+
+  <!-- Flag 2: Germany (horizontal black/red/gold) -->
+  <g transform="translate(128,0)">
+    <rect x="0" y="0" width="64" height="10" fill="#000000" />
+    <rect x="0" y="10" width="64" height="12" fill="#dd0000" />
+    <rect x="0" y="22" width="64" height="10" fill="#ffce00" />
+  </g>
+
+  <!-- Flag 3: United Kingdom (simplified) -->
+  <g transform="translate(192,0)">
+    <rect x="0" y="0" width="64" height="32" fill="#012169" />
+    <!-- simplified crosses -->
+    <rect x="26" y="0" width="12" height="32" fill="#ffffff" />
+    <rect x="0" y="12" width="64" height="8" fill="#ffffff" />
+    <rect x="29" y="0" width="6" height="32" fill="#c8102e" />
+    <rect x="0" y="14" width="64" height="4" fill="#c8102e" />
+  </g>
+
+  <!-- Flag 4: United States (simplified: stripes + canton) -->
+  <g transform="translate(256,0)">
+    <rect x="0" y="0" width="64" height="32" fill="#b22234" />
+    <!-- stripes (scaled) -->
+    <rect x="0" y="0" width="64" height="4" fill="#b22234" />
+    <rect x="0" y="4" width="64" height="4" fill="#ffffff" />
+    <rect x="0" y="8" width="64" height="4" fill="#b22234" />
+    <rect x="0" y="12" width="64" height="4" fill="#ffffff" />
+    <rect x="0" y="16" width="64" height="16" fill="#b22234" />
+    <!-- canton -->
+    <rect x="0" y="0" width="22" height="16" fill="#3c3b6e" />
+    <!-- simple stars as tiny circles -->
+    <circle cx="4" cy="4" r="1" fill="#ffffff" />
+    <circle cx="10" cy="4" r="1" fill="#ffffff" />
+    <circle cx="16" cy="4" r="1" fill="#ffffff" />
+    <circle cx="7" cy="9" r="1" fill="#ffffff" />
+  </g>
+
+  <!-- Flag 5: Japan (white with red circle) -->
+  <g transform="translate(320,0)">
+    <rect x="0" y="0" width="64" height="32" fill="#ffffff" />
+    <circle cx="32" cy="16" r="8" fill="#bc002d" />
+  </g>
+
+  <!-- Flag 6: Spain (red/yellow/red) -->
+  <g transform="translate(384,0)">
+    <rect x="0" y="0" width="64" height="8" fill="#c60b1e" />
+    <rect x="0" y="8" width="64" height="16" fill="#ffc400" />
+    <rect x="0" y="24" width="64" height="8" fill="#c60b1e" />
+    <!-- small coat simplified as vertical stripe -->
+    <rect x="20" y="8" width="6" height="16" fill="#a20000" />
+  </g>
+
+  <!-- Flag 7: China (red with stars) -->
+  <g transform="translate(448,0)">
+    <rect x="0" y="0" width="64" height="32" fill="#de2910" />
+    <!-- large star (simplified) -->
+    <polygon points="6,6 8,10 12,10 9,13 10,17 6,15 2,17 3,13 0,10 4,10" fill="#ffde00" transform="translate(6,3) scale(0.5)" />
+    <!-- four small stars (rough placement) -->
+    <circle cx="46" cy="5" r="1.4" fill="#ffde00" />
+    <circle cx="50" cy="9" r="1.4" fill="#ffde00" />
+    <circle cx="48" cy="14" r="1.4" fill="#ffde00" />
+    <circle cx="43" cy="11" r="1.4" fill="#ffde00" />
+  </g>
+
+</svg>
