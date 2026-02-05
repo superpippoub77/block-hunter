@@ -8,6 +8,7 @@ window.GAME_CONFIG = {
     CONTINUE_FRAMES: 600, // 10s at ~60fps
     TRANSITION_FRAMES: 150, // ~2.5s at 60fps
 
+    DIMENSIONS: { width: 800, height: 600 },
     // Level / scoring
     GEMS_PER_STAGE: 20,
 
@@ -26,6 +27,9 @@ window.GAME_CONFIG = {
 
     // Inventory limits
     DYNAMITE_MAX: 50,
+
+    //FONTBASE
+    FONTBASE: '18px',
 
     // Block sizing config
     BLOCK_SIZE_CONFIG: {

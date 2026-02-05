@@ -8,17 +8,14 @@
     <!-- favicon: use the title image as favicon -->
     <link rel="icon" href="images/title.png" type="image/png">
     <script src="https://cdn.jsdelivr.net/npm/phaser@3.70.0/dist/phaser.min.js"></script>
-    <!-- Load Google Font via stylesheet link (more reliable than @import for timing) -->
-    <!-- <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin> -->
-    <!-- <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet"> -->
+    <!-- Load local game configuration (defines window.GAME_CONFIG) -->
+    <script src="js/game-config.js"></script>
     <style>
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
         }
-
-
 
         body {
             background: #0a0e27;
@@ -70,6 +67,7 @@
 <body>
     <div id="game-container"></div>
 
+    <script src="js/helper.js"></script>
     <script>
 
         // Use a constant for the font family name (no extra quotes) and reuse it
@@ -104,8 +102,225 @@
         let credits = 0;
         let playersCount = 1;
         const CREDITS_PER_PLAYER = (window.GAME_CONFIG && window.GAME_CONFIG.CREDITS_PER_PLAYER) || 1;
+        const UI = {
+            background: {
+                container: null,
+                elements: {
+                    bg: { pulse: 0, visible: true, content: null }
+                }
+            },
+            attract: {
+                container: null,
+                elements: {
+                    title: { pulse: 0.4, visible: true, content: null },
+                    instructions: { pulse: 0, visible: true, content: null },
+                    credits: { pulse: 0, visible: true, content: null },
+                    player1: { visible: false, content: null },
+                    player2: { visible: false, content: null },
+                    selectCredits: { visible: false, content: null },
+                    leftArrow: { visible: false, content: null },
+                    rightArrow: { visible: false, content: null },
+                    player1Box: { visible: false, content: null },
+                    player1Icon: { visible: false, content: null },
+                    player1Text: { visible: false, content: null },
+                    player2Box: { visible: false, content: null },
+                    player2Icon: { visible: false, content: null },
+                    player2Text: { visible: false, content: null }
+                }
+            },
+            topten: {
+                container: null,
+                elements: {
+                    title: { visible: false, content: null },
+                    list: { visible: false, content: null }
+                }
+            }
+        };
 
-        const PULSE = (window.GAME_CONFIG && window.GAME_CONFIG.PULSE) || { title: false, coin: false };
+        // Optional UI debug flag: set window.UI_DEBUG = true in console to enable
+        const UI_DEBUG = !!(window && window.UI_DEBUG);
+
+        // Helper to control UI parts centrally via the UI object
+        // uiSetPartVisible can be called either as uiSetPartVisible(part, visible)
+        // or as uiSetPartVisible(containerName, part, visible). We support both forms
+        // for backward compatibility.
+        function uiSetPartVisible(containerNameOrPart, partOrVisible, visibleMaybe) {
+            let containerName = null;
+            let part = null;
+            let visible = null;
+            try {
+                if (typeof visibleMaybe === 'undefined') {
+                    // called as uiSetPartVisible(part, visible)
+                    part = containerNameOrPart;
+                    visible = partOrVisible;
+                } else {
+                    // called as uiSetPartVisible(containerName, part, visible)
+                    containerName = containerNameOrPart;
+                    part = partOrVisible;
+                    visible = visibleMaybe;
+                }
+                // Support both flat UI.* parts and the structured UI.<container>.elements.* layout.
+                let target = null;
+
+                // 1) If there is a flat registration like UI.somePart, prefer that.
+                if (UI[part] && (typeof UI[part].visible !== 'undefined' || UI[part].content)) {
+                    target = UI[part];
+                } else {
+                    // 2) Build a list of containers to search. The project now uses
+                    //    UI.<container>.elements (for example UI.attract.elements).
+                    const containersToSearch = [];
+                    try {
+                        // If caller passed a containerName, try to find the matching UI key
+                        if (containerName) {
+                            const requested = String(containerName).toLowerCase();
+                            for (const k of Object.keys(UI)) {
+                                if (!UI[k] || typeof UI[k] !== 'object') continue;
+                                if (k.toLowerCase() === requested) {
+                                    containersToSearch.push({ key: k, container: UI[k] });
+                                    break;
+                                }
+                            }
+                        } else {
+                            // No container specified: search all top-level UI entries that have `.elements`.
+                            for (const k of Object.keys(UI)) {
+                                if (!UI[k] || typeof UI[k] !== 'object') continue;
+                                if (UI[k].elements && typeof UI[k].elements === 'object') containersToSearch.push({ key: k, container: UI[k] });
+                            }
+                        }
+                    } catch (e) { /* ignore */ }
+
+                    for (const entry of containersToSearch) {
+                        const container = entry && entry.container;
+                        if (!container) continue;
+                        const elems = container.elements || {};
+                        if (!elems || typeof elems !== 'object') continue;
+                        if (elems[part]) { target = elems[part]; }
+                        if (target) break;
+                    }
+                }
+
+                if (!target) {
+                    if (UI_DEBUG) console.info('[UI] uiSetPartVisible: part not found', part, visible, 'containerName=', containerName);
+                    return;
+                }
+
+                // set logical visibility flag on the metadata object (if present)
+                try { if (target && typeof target.visible !== 'undefined') target.visible = !!visible; } catch (e) { /* ignore */ }
+
+                // Determine the Phaser object to toggle: prefer `.content` when available.
+                let obj = null;
+                try {
+                    if (target && target.content) obj = target.content;
+                    else if (target && typeof target.setVisible === 'function') obj = target;
+                    else {
+                        // As fallback, some code registers container objects under UI.<container>.container
+                        // so try to toggle a container if caller asked to show/hide an entire container name
+                        if (containerName) {
+                            const requested = String(containerName).toLowerCase();
+                            for (const k of Object.keys(UI)) {
+                                if (k.toLowerCase() === requested && UI[k].container && typeof UI[k].container.setVisible === 'function') {
+                                    obj = UI[k].container;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                } catch (e) { /* ignore */ }
+
+                if (obj && typeof obj.setVisible === 'function') obj.setVisible(!!visible);
+                if (UI_DEBUG) console.info('[UI] uiSetPartVisible', part, !!visible, 'container=', containerName, '->', obj || target);
+            } catch (e) {
+                console.warn('uiSetPartVisible error for part', part, e);
+            }
+        }
+
+        function uiIsPartVisible(part) {
+            try {
+                if (UI[part] && typeof UI[part].visible !== 'undefined') {
+                    if (UI_DEBUG) console.info('[UI] uiIsPartVisible', part, !!UI[part].visible);
+                    return !!UI[part].visible;
+                }
+                // search all top-level UI entries for a matching .elements metadata
+                for (const k of Object.keys(UI)) {
+                    try {
+                        const entry = UI[k];
+                        if (!entry || typeof entry !== 'object') continue;
+                        const elems = entry.elements;
+                        if (!elems || typeof elems !== 'object') continue;
+                        if (elems[part]) return !!elems[part].visible;
+                    } catch (e) { /* ignore */ }
+                }
+                if (UI_DEBUG) console.info('[UI] uiIsPartVisible not found', part);
+                return false;
+            } catch (e) { return false; }
+        }
+
+        // Legacy aliases mapping: if new UI mapping missing, try to auto-register common legacy variables
+        const LEGACY_UI_ALIASES = {
+            credits: 'bottomCreditsText',
+            selectCredits: 'selectCreditsText',
+            topTenFooter: 'topTenCreditsFooter',
+            langFlagLeft: 'langFlagLeft',
+            langFlagCenter: 'langFlagCenter',
+            langFlagRight: 'langFlagRight',
+            player1: 'playerIndicator1',
+            player2: 'playerIndicator2',
+            title: 'title',
+            instructions: 'instructions'
+        };
+
+        // Register a UI part into the central UI mapping. Accepts either a Phaser GameObject or a small wrapper { content: GO }
+        function uiRegisterPart(part, contentObj) {
+            try {
+                if (!part) return false;
+                if (!UI[part]) UI[part] = { visible: true, content: null };
+                if (contentObj && contentObj.content) UI[part].content = contentObj.content;
+                else UI[part].content = contentObj;
+                if (UI_DEBUG) console.info('[UI] registered part', part, UI[part].content);
+                return true;
+            } catch (e) { return false; }
+        }
+
+        // Returns the Phaser GameObject registered for a UI part, or null.
+        function uiGetContent(part) {
+            try {
+                if (UI[part] && UI[part].content) {
+                    if (UI_DEBUG) console.info('[UI] uiGetContent found flat', part, UI[part].content);
+                    return UI[part].content;
+                }
+                // Search all top-level UI entries that expose `.elements` (new structure)
+                for (const k of Object.keys(UI)) {
+                    try {
+                        const entry = UI[k];
+                        if (!entry || typeof entry !== 'object') continue;
+                        const elems = entry.elements;
+                        if (!elems || typeof elems !== 'object') continue;
+                        if (elems[part] && elems[part].content) {
+                            if (UI_DEBUG) console.info('[UI] uiGetContent found in UI.' + k + '.elements', part, elems[part].content);
+                            return elems[part].content;
+                        }
+                    } catch (e) { /* ignore per-entry errors */ }
+                }
+
+                // Try to auto-register common legacy variables if present in current scope.
+                try {
+                    const alias = LEGACY_UI_ALIASES[part];
+                    if (alias) {
+                        // use eval to access local variables declared in this script's scope
+                        try {
+                            const legacyVal = eval(alias);
+                            if (legacyVal) {
+                                uiRegisterPart(part, legacyVal);
+                                if (UI_DEBUG) console.info('[UI] uiGetContent auto-registered legacy', part, 'from', alias, legacyVal);
+                                return legacyVal;
+                            }
+                        } catch (e) { /* ignore eval errors */ }
+                    }
+                } catch (e) { /* ignore */ }
+                if (UI_DEBUG) console.info('[UI] uiGetContent not found', part);
+            } catch (e) { /* ignore */ }
+            return null;
+        }
 
         // Level/Player select overlay (Phaser objects)
         let selectContainer = null;
@@ -117,34 +332,33 @@
         // Attract / TopTen UI state
         let attractCycleEvent = null;
         let attractVisible = false;
-        let attractContainer = null;
-        let topTenContainer = null;
+
+        // Legacy aliases removed: use UI.container.attract and UI.container.topTen directly
+
         let topTenTitle = null;
         let topTenListContainer = null;
         // Language selector
         const LANGS = ['it', 'fr', 'de', 'en', 'us', 'ja', 'es', 'zh'];
-    let currentLangIndex = 0;
-    // Carousel flags: left / center / right. Keep langFlagImage as alias for center for compatibility.
-    let langFlagLeft = null;
-    let langFlagCenter = null;
-    let langFlagRight = null;
-    let langFlagImage = null;
-    // interactive arrow/keyboard references and handlers (attached only during attract)
-    let langLeftArrow = null;
-    let langRightArrow = null;
-    let langKeyboardHandler = null;
-    let langFlagLeftHandler = null;
-    let langFlagRightHandler = null;
-    let langLeftArrowHandler = null;
-    let langRightArrowHandler = null;
-    // prevent concurrent carousel animations
-    let langCarouselAnimating = false;
-        let langTitleText = null;
-        let langInstructionsText = null;
-        let langStartText = null;
+        let currentLangIndex = 0;
+        // Carousel flags: left / center / right.
+        let langFlagLeft = null;
+        let langFlagCenter = null;
+        let langFlagRight = null;
+        // interactive arrow/keyboard references and handlers (attached only during attract)
+        let langLeftArrow = null;
+        let langRightArrow = null;
+        let langKeyboardHandler = null;
+        let langFlagLeftHandler = null;
+        let langFlagRightHandler = null;
+        let langLeftArrowHandler = null;
+        let langRightArrowHandler = null;
+        // prevent concurrent carousel animations
+        let langCarouselAnimating = false;
+        // legacy localized text refs removed; use UI.title.content and UI.instructions.content
         let langSelectorBox = null;
         let langLabelText = null;
         let topTenCreditsFooter = null;
+        let bottomCreditsText = null;
         // persistent overlay (sprites thumbnails + player indicators) that stays visible
         let uiOverlay = null;
         let spriteThumbsContainer = null;
@@ -160,8 +374,8 @@
             scale: {
                 mode: Phaser.Scale.FIT,
                 autoCenter: Phaser.Scale.CENTER_BOTH,
-                width: 800,
-                height: 600
+                width: window.GAME_CONFIG.DIMENSIONS.width || 800,
+                height: window.GAME_CONFIG.DIMENSIONS.height || 600
             },
             physics: {
                 default: 'arcade',
@@ -196,6 +410,8 @@
 
             selectCreditsText = scene.add.text(sw / 2, 180, (credits && credits > 0) ? `CREDITI: ${credits}` : ((window.DICT && window.DICT.insert_coin) || 'INSERISCI MONETA'), { fontSize: '18px', fontFamily: GAME_FONT, fill: '#00ffff' }).setOrigin(0.5);
             selectContainer.add(selectCreditsText);
+            // register select overlay credits under UI
+            UI.selectCredits.content = selectCreditsText;
 
             selectHintText = scene.add.text(sw / 2, 220, (window.DICT && window.DICT.select_hint) || 'Scegli numero giocatori:', { fontSize: '16px', fontFamily: GAME_FONT, fill: '#00ffff' }).setOrigin(0.5);
             selectContainer.add(selectHintText);
@@ -357,6 +573,8 @@
                 return false;
             }
         }
+
+        // typeWriter and fallLetters moved to js/helper.js
 
         // Use Font Loading API when available to ensure 'Press Start 2P' is ready
         // Diagnostic: fetch local font files and log HTTP status + headers to help debug network errors
@@ -667,125 +885,91 @@
 
         // Initialize attract UI and top-ten container (created once per scene lifecycle)
         function initAttractUI(scene) {
-            if (attractContainer) return; // already created for this scene
+            if (!scene) return;
 
-            const centerX = 400;
-            const centerY = 300;
-
-            // Container for attract screen
-            attractContainer = scene.add.container(0, 0);
-
-            // Background: usa l'immagine se caricata, altrimenti fallback grafico
-            let bg;
-            try {
-                const hasAttractBg = scene && scene.textures && typeof scene.textures.exists === 'function' && scene.textures.exists('attractBg');
-                if (hasAttractBg) {
-                    bg = scene.add.image(centerX, centerY, 'attractBg');
-                    bg.setOrigin(0.5, 0.5);
-                    // Usa dimensione dinamica della scena per coprire il canvas
-                    bg.setDisplaySize((scene && scene.scale && scene.scale.width) || 800, (scene && scene.scale && scene.scale.height) || 600);
-                    attractContainer.add(bg);
-                } else {
-                    // No attractBg texture found. Per request, do NOT create a fallback rectangle here.
-                    // Keep a console warning so it's visible in logs, but avoid adding any background GameObject.
-                    console.warn('[INIT-ATTRACT] attractBg texture not found — no fallback background will be created');
-                }
-            } catch (e) {
-                console.warn('[INIT-ATTRACT] error while checking/creating attractBg, falling back', e);
-                try { if (scene && scene.add) { bg = scene.add.rectangle(centerX, centerY, (scene && scene.scale && scene.scale.width) || 800, (scene && scene.scale && scene.scale.height) || 600, 0x07102a); attractContainer.add(bg); } } catch (ee) { /* ignore */ }
+            // Background and main container
+            if (UI.attract.container && UI.background.container && UI.topten.container) {
+                console.warn('Attract UI already initialized');
+                return;
             }
+            UI.background.container = scene.add.container(0, 0);
+            UI.attract.container = scene.add.container(0, 0);
+            UI.topten.container = scene.add.container(0, 0);
 
-            // Title: prefer a pre-rendered image if available. Do NOT create a text fallback when missing.
-            let title = null;
-            try {
-                const hasTitleImg = scene && scene.textures && typeof scene.textures.exists === 'function' && scene.textures.exists('title');
-                if (hasTitleImg) {
-                    // use image and scale to fit nicely within the scene
-                    const t = scene.textures.get('title');
-                    let img = null;
-                    if (t && t.source && t.source[0]) img = t.source[0].image || t.source[0].data;
+            const centerX = window.GAME_CONFIG.DIMENSIONS.width / 2;
+            const centerY = window.GAME_CONFIG.DIMENSIONS.height / 2;
 
-                    // Position at top center
-                    title = scene.add.image(centerX, 100, 'title').setOrigin(0.5);
-                    try {
-                        const maxW = Math.min(720, Math.floor((scene && scene.scale && scene.scale.width) ? scene.scale.width * 0.8 : 520));
-                        if (img && img.width && img.height) {
-                            const aspect = img.width / img.height;
-                            const h = Math.max(32, Math.round(maxW / aspect));
-                            title.setDisplaySize(maxW, h);
-                        } else {
-                            title.setDisplaySize(maxW, 80);
-                        }
-                    } catch (e) { /* ignore sizing errors */ }
-                    attractContainer.add(title);
-                    // store into langTitleText for compatibility with applyTranslations checks
-                    langTitleText = title;
-                } else {
-                    // Per request: do NOT create a fallback text title. Log and leave langTitleText null.
-                    console.warn('[INIT-ATTRACT] title texture not found — no fallback title will be created');
-                    langTitleText = null;
-                }
-            } catch (e) {
-                // If an unexpected error occurs, log and continue without creating a fallback title
-                console.warn('[INIT-ATTRACT] error while checking/creating title, skipping title creation', e);
-                langTitleText = null;
-                title = null;
-            }
+            // ELementi del background (sfondo)
+            // Ensure specific element slots exist before assigning .content
+            UI.background.elements.bg.content = scene.add.image(centerX, centerY, 'attractBg');
+            UI.background.elements.bg.content.setOrigin(0.5, 0.5);
+            UI.background.container.add(UI.background.elements.bg.content);
 
-            // Glow animation
-            PULSE.title && title && scene.tweens.add({
-                targets: title,
-                alpha: { from: 1, to: 0.8 },
+            //Elementi dell'attract (titolo e istruzioni)
+            // Ensure title slot exists
+            UI.attract.elements.title.content = scene.add.image(centerX, 100, 'title').setOrigin(0.5);
+            UI.attract.container.add(UI.attract.elements.title.content);
+            UI.attract.elements.title.pulse && UI.attract.elements.title.content && scene.tweens.add({
+                targets: UI.attract.elements.title.content,
+                alpha: { from: 1, to: UI.attract.elements.title.pulse },
                 duration: 1000,
                 yoyo: true,
                 repeat: -1
             });
 
             // Instructions
-            const instructions = scene.add.text(centerX, 280,
-                'FRECCE - MOVIMENTO\nSPAZIO - SPARA\nRECUPERA L\'OGGETTO\nSCHIVA I BLOCCHI',
+            // Ensure instructions slot exists (rendered with typewriter effect)
+            const instructionsFullText = 'FRECCE - MOVIMENTO\nSPAZIO - SPARA\nRECUPERA L\'OGGETTO\nSCHIVA I BLOCCHI';
+            UI.attract.elements.instructions.content = scene.add.text(
+                centerX,
+                280,
+                '',
                 {
-                    fontSize: '14px',
+                    fontSize: window.GAME_CONFIG.FONTBASE,
                     fontFamily: GAME_FONT,
-                    fill: '#00ffff',
+                    color: '#00ffff',
+
+                    stroke: '#000000',
+                    strokeThickness: 4,
+
+                    shadow: {
+                        offsetX: 3,
+                        offsetY: 3,
+                        color: '#000000',
+                        blur: 4,
+                        fill: true,
+                        stroke: false
+                    },
+
                     align: 'center',
                     lineSpacing: 10
                 }
             ).setOrigin(0.5);
-            attractContainer.add(instructions);
-            langInstructionsText = instructions;
 
-            // Start text (acts as INSERT COIN / START) - text-only, larger
-            const startText = scene.add.text(centerX, 420, (window.DICT && window.DICT.insert_coin) || 'INSERISCI MONETA', {
-                fontSize: '40px',
+            UI.attract.container.add(UI.attract.elements.instructions.content);
+            // start falling-letters animation for instructions (fall + puff)
+            try { fallLetters(scene, UI.attract.elements.instructions.content, instructionsFullText, { gravityDropMin: 180, gravityDropMax: 420, durationMin: 700, durationMax: 1100, puffColor: 0xffffff, lineSpacing: 10 }); } catch (e) { /* ignore */ }
+
+            // Elementi del top-ten (titolo e lista punteggi)
+            // Ensure topTen title slot exists
+            UI.topten.elements.title.content = scene.add.text(centerX, 80, 'HIGH SCORES', {
+                fontSize: '28px',
                 fontFamily: GAME_FONT,
-                fill: '#ffff00',
-                stroke: '#000000',
-                strokeThickness: 3
-            }).setOrigin(0.5).setInteractive({ useHandCursor: true });
-            attractContainer.add(startText);
-            langStartText = startText;
+                fill: '#ffff00'
+            }).setOrigin(0.5);
+            UI.topten.container.add(UI.topten.elements.title.content);
 
-            // Pulsing animation applied to the text
-            try {
-                PULSE.coin && scene.tweens.add({
-                    targets: startText,
-                    scaleX: { from: 1, to: 1.06 },
-                    scaleY: { from: 1, to: 1.06 },
-                    duration: 800,
-                    yoyo: true,
-                    repeat: -1
-                });
-            } catch (e) { }
+            // Lista punteggi: inizialmente vuota, sarà popolata dinamicamente dopo il caricamento dei punteggi salvati.
+            // Ensure topTen list slot exists
+            UI.topten.elements.list.content = scene.add.text(centerX, 140, '--- NESSUN PUNTEGGIO ---', {
+                fontSize: '14px',
+                fontFamily: GAME_FONT,
+                fill: '#00ffff'
+            }).setOrigin(0.5);
+            UI.topten.container.add(UI.topten.elements.list.content);
 
-            // soft drop shadow to create slight blur/offuscation
-            try {
-                if (typeof startText.setShadow === 'function') {
-                    // x, y, color, blur
-                    startText.setShadow(2, 2, '#000000', 4);
-                }
-            } catch (e) { }
-
+            // NOTE: removed the large centered "startText" so only the bottom
+            // credits text is used as the active INSERT COIN / START control.
             const startGame = () => {
                 gameStarted = true;
                 hideAttractUI(scene, true);
@@ -796,39 +980,6 @@
                 scene.scene.restart();
             };
 
-            startText.on('pointerdown', startGame);
-            scene.input.keyboard.on('keydown-ENTER', startGame);
-
-            // Top Ten container (initially hidden)
-            topTenContainer = scene.add.container(0, 0);
-            topTenTitle = scene.add.text(centerX, 80, 'HIGH SCORES', {
-                fontSize: '28px',
-                fontFamily: GAME_FONT,
-                fill: '#ffff00'
-            }).setOrigin(0.5);
-            topTenContainer.add(topTenTitle);
-
-            // List container for highscore lines
-            topTenListContainer = scene.add.container(0, 0);
-            topTenContainer.add(topTenListContainer);
-
-            // Empty list placeholder (show even if no scores)
-            const emptyText = scene.add.text(centerX, 140, '--- NESSUN PUNTEGGIO ---', {
-                fontSize: '14px',
-                fontFamily: GAME_FONT,
-                fill: '#00ffff'
-            }).setOrigin(0.5);
-            topTenListContainer.add(emptyText);
-
-            // Credits/footer for Top Ten
-            const creditsFooter = scene.add.text(centerX, 520, 'CREDITI: 0', {
-                fontSize: '14px',
-                fontFamily: GAME_FONT,
-                fill: '#00ffff'
-            }).setOrigin(0.5);
-            topTenContainer.add(creditsFooter);
-            topTenCreditsFooter = creditsFooter;
-
             // Language selector UI (flag + arrows)
             // Read saved lang
             const saved = localStorage.getItem('bh_lang');
@@ -837,27 +988,35 @@
                 if (idx >= 0) currentLangIndex = idx;
             }
 
-            // Language label (title for selector)
-            try {
-                langLabelText = scene.add.text(centerX, 452, 'Language', { fontSize: '14px', fontFamily: GAME_FONT, fill: '#00ffff' }).setOrigin(0.5);
-                attractContainer.add(langLabelText);
-            } catch (e) { /* ignore */ }
-
             // Selector box (outline) that frames the flag + arrows. We add it before the flag so it sits behind.
             try {
                 langSelectorBox = scene.add.rectangle(centerX, 480, 240, 56, 0x000000, 0).setOrigin(0.5);
                 try { langSelectorBox.setStrokeStyle(2, 0x00ffff); } catch (e) { }
-                attractContainer.add(langSelectorBox);
+                UI.attract.container.add(langSelectorBox);
+                try { UI.attract.elements.langSelectorBox = UI.attract.elements.langSelectorBox || {}; UI.attract.elements.langSelectorBox.content = langSelectorBox; } catch (e) { }
             } catch (e) { /* ignore */ }
 
             // Create a 3-item carousel via reusable factory and attach to the attract container
             try {
-                const carousel = createFlagCarousel(scene, attractContainer, centerX, 480, currentLangIndex);
+                const carousel = createFlagCarousel(scene, UI.attract.container, centerX, 480, currentLangIndex);
                 if (carousel) {
                     langFlagLeft = carousel.left;
                     langFlagCenter = carousel.center;
                     langFlagRight = carousel.right;
-                    langFlagImage = langFlagCenter;
+                    // register carousel parts under UI.attract.elements and flat fallbacks
+                    try {
+                        // structured registration
+                        UI.attract.elements.langFlagLeft = UI.attract.elements.langFlagLeft || {};
+                        UI.attract.elements.langFlagCenter = UI.attract.elements.langFlagCenter || {};
+                        UI.attract.elements.langFlagRight = UI.attract.elements.langFlagRight || {};
+                        UI.attract.elements.langFlagLeft.content = langFlagLeft;
+                        UI.attract.elements.langFlagCenter.content = langFlagCenter;
+                        UI.attract.elements.langFlagRight.content = langFlagRight;
+                        // flat fallbacks for legacy callers
+                        UI.langFlagLeft = UI.langFlagLeft || {}; UI.langFlagLeft.content = langFlagLeft;
+                        UI.langFlagCenter = UI.langFlagCenter || {}; UI.langFlagCenter.content = langFlagCenter;
+                        UI.langFlagRight = UI.langFlagRight || {}; UI.langFlagRight.content = langFlagRight;
+                    } catch (e) { /* ignore */ }
                 } else {
                     console.warn('[INIT-ATTRACT] createFlagCarousel returned null');
                 }
@@ -894,10 +1053,9 @@
 
             // Arrows per selezionare la lingua: usa testo semplice con interazione, posizionato ai lati della bandiera.
             // Create arrow texts but do not attach pointer handlers yet.
-            langLeftArrow = scene.add.text(centerX - 80, 480, '<', { fontSize: '24px', fontFamily: GAME_FONT, fill: '#00ffff' }).setOrigin(0.5).setInteractive({ useHandCursor: true });
-            langRightArrow = scene.add.text(centerX + 80, 480, '>', { fontSize: '24px', fontFamily: GAME_FONT, fill: '#00ffff' }).setOrigin(0.5).setInteractive({ useHandCursor: true });
-            attractContainer.add(langLeftArrow);
-            attractContainer.add(langRightArrow);
+            UI.attract.elements.leftArrow.content = scene.add.text(centerX - 80, 480, '<', { fontSize: '24px', fontFamily: GAME_FONT, fill: '#00ffff' }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+            UI.attract.elements.rightArrow.content = scene.add.text(centerX + 80, 480, '>', { fontSize: '24px', fontFamily: GAME_FONT, fill: '#00ffff' }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+            UI.attract.container.add([UI.attract.elements.leftArrow.content, UI.attract.elements.rightArrow.content]);
 
             // keep references to arrows so other code can interact if needed
             try { langLabelText._leftArrow = langLeftArrow; langLabelText._rightArrow = langRightArrow; } catch (e) { }
@@ -906,97 +1064,75 @@
             scene.time.delayedCall(50, () => {
                 updateFlagCrop(scene);
                 loadDictionary(LANGS[currentLangIndex]);
+
                 // render highscores into the top-ten list area
                 try { renderTopTen(scene); } catch (e) { /* ignore */ }
                 // create a persistent overlay with sprite thumbnails and P1/P2 indicators
                 try {
                     if (!uiOverlay) {
                         uiOverlay = scene.add.container(0, 0).setDepth(700);
-                        // sprite thumbnails row (use spriteSheet if available)
-                        spriteThumbsContainer = scene.add.container(120, scene.scale.height - 40);
-                        const thumbs = ['player', 'block', 'target', 'heart', 'shards'];
-                        for (let i = 0; i < thumbs.length; i++) {
-                            const k = thumbs[i];
-                            let img;
-                            try {
-                                img = scene.add.image(i * 44, 0, 'spriteSheet').setOrigin(0.5);
-                                if (applySpriteCrop(scene, img, k)) img.setDisplaySize(32, 32);
-                                else { img.destroy(); img = scene.add.rectangle(i * 44, 0, 28, 28, 0x666666).setOrigin(0.5); }
-                            } catch (e) {
-                                img = scene.add.rectangle(i * 44, 0, 28, 28, 0x666666).setOrigin(0.5);
-                            }
-                            spriteThumbsContainer.add(img);
-                        }
-                        uiOverlay.add(spriteThumbsContainer);
 
-                        // player indicators (left = P1, right = P2)
-                        playerIndicator1 = scene.add.container(80, 80);
-                        // background with border
-                        const p1Box = scene.add.rectangle(0, 0, 72, 28, 0x003300).setOrigin(0.5);
-                        try { p1Box.setStrokeStyle(2, 0x00ff00); } catch (e) { /* ignore if not supported */ }
-                        // icon (sprite if available)
-                        let p1Icon;
+                        // create player indicators via helper to avoid duplication
                         try {
-                            p1Icon = scene.add.image(-22, 0, 'spriteSheet').setOrigin(0.5);
-                            if (applySpriteCrop(scene, p1Icon, 'player')) p1Icon.setDisplaySize(18, 18);
-                            else { p1Icon.destroy(); p1Icon = scene.add.rectangle(-22, 0, 12, 12, 0x00ff00).setOrigin(0.5); }
-                        } catch (e) {
-                            p1Icon = scene.add.rectangle(-22, 0, 12, 12, 0x00ff00).setOrigin(0.5);
-                        }
-                        const p1Text = scene.add.text(6, 0, 'P1', { fontSize: '12px', fontFamily: GAME_FONT, fill: '#00ff00' }).setOrigin(0.5);
-                        playerIndicator1.add([p1Box, p1Icon, p1Text]);
-                        playerIndicator1.setVisible(false);
-                        uiOverlay.add(playerIndicator1);
+                            const pY = Math.max(48, scene.scale.height - 50);
+                            const p1x = 60;
+                            const p2x = Math.max((scene.scale.width || window.GAME_CONFIG.DIMENSIONS.width) - 60, 740);
+                            createPlayerUI(scene, 1, p1x, pY, { colorBox: 0x003300, strokeColor: 0x00ff00, iconOffset: -20, textOffsetX: 6, textFill: '#00ff00' });
+                            createPlayerUI(scene, 2, p2x, pY, { colorBox: 0x000033, strokeColor: 0x0000ff, iconOffset: 20, textOffsetX: -6, textFill: '#00ffff' });
+                        } catch (e) { console.warn('Failed to create player indicators', e); }
 
-                        playerIndicator2 = scene.add.container(scene.scale.width - 80, 80);
-                        const p2Box = scene.add.rectangle(0, 0, 72, 28, 0x000022).setOrigin(0.5);
-                        try { p2Box.setStrokeStyle(2, 0x0000ff); } catch (e) { }
-                        let p2Icon;
-                        try {
-                            p2Icon = scene.add.image(-22, 0, 'spriteSheet').setOrigin(0.5);
-                            if (applySpriteCrop(scene, p2Icon, 'player')) p2Icon.setDisplaySize(18, 18);
-                            else { p2Icon.destroy(); p2Icon = scene.add.rectangle(-22, 0, 12, 12, 0x0000ff).setOrigin(0.5); }
-                        } catch (e) {
-                            p2Icon = scene.add.rectangle(-22, 0, 12, 12, 0x0000ff).setOrigin(0.5);
-                        }
-                        const p2Text = scene.add.text(6, 0, 'P2', { fontSize: '12px', fontFamily: GAME_FONT, fill: '#00bbff' }).setOrigin(0.5);
-                        playerIndicator2.add([p2Box, p2Icon, p2Text]);
-                        playerIndicator2.setVisible(false);
-                        uiOverlay.add(playerIndicator2);
 
-                        // subtle pulsing animation for visible indicators
+
+                        // bottom-screen insert coin / credits message
                         try {
-                            scene.tweens.add({ targets: [p1Box, p1Icon, p1Text], scaleX: 1.02, scaleY: 1.02, duration: 700, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
-                            scene.tweens.add({ targets: [p2Box, p2Icon, p2Text], scaleX: 1.02, scaleY: 1.02, duration: 700, yoyo: true, repeat: -1, ease: 'Sine.easeInOut', delay: 120 });
-                        } catch (e) { /* ignore tween errors */ }
+                            bottomCreditsText = scene.add.text(scene.scale.width / 2, scene.scale.height - 10, (window.DICT && (window.DICT.insert_coin || window.DICT.insert_coin_btn)) || 'INSERISCI MONETA', {
+                                fontSize: window.GAME_CONFIG.FONTBASE, fontFamily: GAME_FONT, fill: '#ffff00', stroke: '#000000',
+                                strokeThickness: 4,
+                                shadow: {
+                                    offsetX: 3,
+                                    offsetY: 3,
+                                    color: '#000000',
+                                    blur: 4,
+                                    fill: true,
+                                    stroke: false
+                                }
+                            }).setOrigin(0.5, 1).setDepth(800).setInteractive({ useHandCursor: true });
+                            uiOverlay.add(bottomCreditsText);
+                            // Register bottom credits text under central UI mapping so
+                            // uiSetPartVisible / applyTranslations can control it.
+                            try { if (!UI.credits) UI.credits = {}; UI.credits.content = bottomCreditsText; } catch (e) { }
+                            try { UI.attract.elements.credits = UI.attract.elements.credits || {}; UI.attract.elements.credits.content = bottomCreditsText; } catch (e) { }
+                            try { if (typeof bottomCreditsText.on === 'function') bottomCreditsText.on('pointerdown', startGame); } catch (e) { }
+                            try { if (scene && scene.input && scene.input.keyboard) scene.input.keyboard.on('keydown-ENTER', startGame); } catch (e) { }
+                        } catch (e) { bottomCreditsText = null; }
                     }
                 } catch (e) { console.warn('Failed to create UI overlay', e); }
             });
 
             // Initially hide both
-            attractContainer.setAlpha(0);
-            topTenContainer.setAlpha(0);
-            attractContainer.setVisible(false);
-            topTenContainer.setVisible(false);
+            UI.attract.container.setAlpha(0);
+            UI.topten.container.setAlpha(0);
+            UI.attract.container.setVisible(false);
+            UI.topten.container.setVisible(false);
 
             // Start alternation timer (but paused until attract shown)
             attractCycleEvent = null;
         }
 
         function showAttractUI(scene) {
-            if (!attractContainer) initAttractUI(scene);
-            if (attractVisible && attractContainer.visible) return;
-            // Hide topTen first
-            if (topTenContainer && topTenContainer.visible) {
-                scene.tweens.add({ targets: topTenContainer, alpha: 0, duration: 500, onComplete: () => topTenContainer.setVisible(false) });
-            }
+            if (!UI.attract.container) initAttractUI(scene);
 
-            attractContainer.setVisible(true);
-            scene.tweens.add({ targets: attractContainer, alpha: 1, duration: 600 });
-            attractVisible = true;
+            // Ensure attract UI parts are visible via central UI controller
+            uiSetPartVisible('attract', 'title', true);
+            uiSetPartVisible('attract', 'instructions', true);
+            uiSetPartVisible('topten', 'title', false);
+            uiSetPartVisible('topten', 'list', false);
 
+            // Show attract container (remains visible under TopTen)
+            UI.attract.container.setVisible(true);
+            scene.tweens.add({ targets: UI.attract.container, alpha: 1, duration: 600 });
             // enable interactive language selectors while attract is visible
-            try { enableLangSelectors(scene); } catch (e) { }
+            try { enableLangSelectors(scene); } catch (e) { console.warn('showAttractUI: enableLangSelectors failed', e); }
 
             // (re)start alternation timer
             if (!attractCycleEvent) {
@@ -1005,7 +1141,7 @@
                     loop: true,
                     callback: () => {
                         // toggle
-                        if (attractVisible) showTopTenUI(scene);
+                        if (UI.attract.elements.title.visible) showTopTenUI(scene);
                         else showAttractUI(scene);
                     }
                 });
@@ -1013,29 +1149,26 @@
         }
 
         function hideAttractUI(scene, immediate = false) {
-            if (!attractContainer) return;
+            if (!UI.attract.container) return;
             // disable language selectors when leaving attract
             try { disableLangSelectors(scene); } catch (e) { }
             if (immediate) {
-                attractContainer.setVisible(false);
-                attractContainer.setAlpha(0);
+                UI.attract.container.setVisible(false);
+                UI.attract.container.setAlpha(0);
             } else {
-                scene.tweens.add({ targets: attractContainer, alpha: 0, duration: 400, onComplete: () => attractContainer.setVisible(false) });
+                scene.tweens.add({ targets: UI.attract.container, alpha: 0, duration: 400, onComplete: () => UI.attract.container.setVisible(false) });
             }
-            attractVisible = false;
         }
 
         function showTopTenUI(scene) {
-            if (!topTenContainer) initAttractUI(scene);
-            // Hide attract
-            if (attractContainer && attractContainer.visible) {
-                try { disableLangSelectors(scene); } catch (e) { }
-                scene.tweens.add({ targets: attractContainer, alpha: 0, duration: 500, onComplete: () => attractContainer.setVisible(false) });
-            }
-            // Show topTen
-            topTenContainer.setVisible(true);
-            scene.tweens.add({ targets: topTenContainer, alpha: 1, duration: 600 });
-            attractVisible = false;
+            if (!UI.topten.container) initAttractUI(scene);
+            // Show topTen over the attract background
+            UI.topten.container.setVisible(true);
+            uiSetPartVisible('attract', 'title', false);
+            uiSetPartVisible('attract', 'instructions', false);
+            uiSetPartVisible('topten', 'title', true);
+            uiSetPartVisible('topten', 'list', true);
+            scene.tweens.add({ targets: UI.topten.container, alpha: 1, duration: 600 });
         }
 
         // Update credits display on attract/top-ten
@@ -1046,24 +1179,41 @@
                     const label = (window.DICT && (window.DICT.credits_word || window.DICT.credits_label)) || 'CREDITI';
                     topTenCreditsFooter.setText((credits && credits > 0) ? `${label}: ${credits}` : (window.DICT && window.DICT.insert_coin) || 'INSERISCI MONETA');
                 }
-                // if attractContainer exists, try to update start button text
-                if (langStartText) {
+                // update bottom insert-coin / credits text (moved to bottom of screen)
+                try {
                     const insertCoin = (window.DICT && (window.DICT.insert_coin || window.DICT.insert_coin_btn)) || 'INSERISCI MONETA';
-                    langStartText.setText((credits && credits > 0) ? `${(window.DICT && window.DICT.credits_word) || 'CREDITI'}: ${credits}` : insertCoin);
-                }
+                    const bottomObj = uiGetContent('credits') || bottomCreditsText;
+                    if (bottomObj && typeof bottomObj.setText === 'function') {
+                        bottomObj.setText((credits && credits > 0) ? `${(window.DICT && window.DICT.credits_word) || 'CREDITI'}: ${credits}` : insertCoin);
+                    }
+                } catch (e) { /* ignore */ }
                 // update select overlay credits if visible
-                if (selectCreditsText) {
-                    try { selectCreditsText.setText((credits && credits > 0) ? `CREDITI: ${credits}` : ((window.DICT && window.DICT.insert_coin) || 'INSERISCI MONETA')); } catch (e) { }
-                }
+                // update select overlay credits if visible (use UI mapping if present)
+                try {
+                    const sc = (UI.selectCredits && UI.selectCredits.content) || selectCreditsText;
+                    if (sc && typeof sc.setText === 'function') sc.setText((credits && credits > 0) ? `CREDITI: ${credits}` : ((window.DICT && window.DICT.insert_coin) || 'INSERISCI MONETA'));
+                } catch (e) { }
                 // optionally update any visible hints (we don't have static DOM hints here)
             } catch (e) { /* ignore */ }
             try {
+                showPlayerToBegin();
                 // show player indicators depending on credits
-                const hasP1 = (credits || 0) >= (CREDITS_PER_PLAYER || 1);
-                const hasP2 = (credits || 0) >= ((CREDITS_PER_PLAYER || 1) * 2);
-                if (playerIndicator1) playerIndicator1.setVisible(!!hasP1);
-                if (playerIndicator2) playerIndicator2.setVisible(!!hasP2);
             } catch (e) { /* ignore overlay errors */ }
+        }
+
+        function showPlayerToBegin() {
+            const hasP1 = (credits || 0) >= (CREDITS_PER_PLAYER || 1);
+            const hasP2 = (credits || 0) >= ((CREDITS_PER_PLAYER || 1) * 2);
+            try {
+                uiSetPartVisible('attract', 'player1Box', !!hasP1);
+                uiSetPartVisible('attract', 'player1Icon', !!hasP1);
+                uiSetPartVisible('attract', 'player1Text', !!hasP1);
+            } catch (e) { /* ignore */ }
+            try {
+                uiSetPartVisible('attract', 'player2Box', !!hasP2);
+                uiSetPartVisible('attract', 'player2Icon', !!hasP2);
+                uiSetPartVisible('attract', 'player2Text', !!hasP2);
+            } catch (e) { /* ignore */ }
         }
 
         function insertCoin(amount = 1, scene) {
@@ -1073,9 +1223,12 @@
             refreshAttractPlayerHintsPhaser(scene || {});
             // small pulse on start button
             try {
-                if (scene && langStartText && scene.tweens) {
-                    scene.tweens.add({ targets: langStartText, scaleX: 1.05, scaleY: 1.05, yoyo: true, duration: 200 });
-                }
+                try {
+                    const _btn = uiGetContent('credits') || bottomCreditsText;
+                    if (scene && _btn && scene.tweens) {
+                        scene.tweens.add({ targets: _btn, scaleX: 1.05, scaleY: 1.05, yoyo: true, duration: 200 });
+                    }
+                } catch (e) { }
             } catch (e) { }
         }
 
@@ -1096,8 +1249,9 @@
             } else {
                 // feedback: not enough credits
                 try {
-                    if (scene && scene.tweens && langStartText) {
-                        scene.tweens.add({ targets: langStartText, x: langStartText.x - 6, duration: 80, yoyo: true, repeat: 1 });
+                    const bottomObj = uiGetContent('credits') || bottomCreditsText;
+                    if (scene && scene.tweens && bottomObj) {
+                        try { scene.tweens.add({ targets: bottomObj, x: (bottomObj.x || 0) - 6, duration: 80, yoyo: true, repeat: 1 }); } catch (e) { }
                     }
                 } catch (e) { }
                 return false;
@@ -1145,7 +1299,7 @@
             try { imgObj.setCrop(sx, sy, sw, sh); } catch (e) { return false; }
             return true;
         }
-        // Player-sheet helper (2x2 matrix: 4 frames)
+        // Player-sheet helper: accommodate a 4x4 matrix (16 frames) where each cell is 64x64
         const PLAYER_SHEET_COLS = 2, PLAYER_SHEET_ROWS = 2;
         let playerFrameW = 0, playerFrameH = 0;
 
@@ -1162,6 +1316,7 @@
                     playerFrameW = Math.round(img.width / PLAYER_SHEET_COLS);
                     playerFrameH = Math.round(img.height / PLAYER_SHEET_ROWS);
                 }
+
                 frameIndex = Math.max(0, Math.min(3, Math.floor(frameIndex || 0)));
                 const r = Math.floor(frameIndex / PLAYER_SHEET_COLS);
                 const c = frameIndex % PLAYER_SHEET_COLS;
@@ -1172,6 +1327,76 @@
                 imgObj.setCrop(sx, sy, sw, sh);
                 return true;
             } catch (e) { return false; }
+        }
+
+        // Helper: create a small player indicator UI (box, icon, text) and register it
+        function createPlayerUI(scene, index, posX, posY, opts = {}) {
+            opts = Object.assign({ colorBox: 0x003300, strokeColor: 0x00ff00, iconOffset: -20, textOffsetX: 6, textFill: '#00ff00' }, opts || {});
+            const ix = typeof posX === 'number' ? posX : 0;
+            const iy = typeof posY === 'number' ? posY : 0;
+            // box
+            const box = scene.add.rectangle(0, 0, 72, 28, opts.colorBox).setOrigin(0.5);
+            try { box.setStrokeStyle(2, opts.strokeColor); } catch (e) { }
+
+            // icon (try sprite, fallback to rectangle)
+            let icon = null;
+            try {
+                icon = scene.add.image(opts.iconOffset || -20, 0, 'player').setOrigin(0.5);
+                if (applyPlayerCrop(scene, icon, 0)) {
+                    try { icon.setDisplaySize(14, 14); } catch (e) { }
+                } else {
+                    icon.destroy();
+                    icon = scene.add.rectangle(opts.iconOffset || -20, 0, 20, 8, opts.strokeColor).setOrigin(0.5);
+                }
+            } catch (e) {
+                icon = scene.add.rectangle(opts.iconOffset || -20, 0, 20, 8, opts.strokeColor).setOrigin(0.5);
+            }
+
+            // text
+            const text = scene.add.text(opts.textOffsetX || 6, 0, `${index}P`, { fontSize: window.GAME_CONFIG.FONTBASE, fontFamily: GAME_FONT, fill: opts.textFill }).setOrigin(0.5);
+
+            // position all and add to attract container (if exists)
+            try {
+                box.setPosition(ix, iy);
+                icon.setPosition(ix + (opts.iconOffset || -20), iy);
+                text.setPosition(ix + (opts.textOffsetX || 6), iy);
+            } catch (e) { /* ignore */ }
+
+            try {
+                if (!UI.attract || !UI.attract.container) initAttractUI(scene);
+                UI.attract.container.add([box, icon, text]);
+            } catch (e) { /* ignore */ }
+
+            // register under structured UI mapping
+            try {
+                UI.attract.elements = UI.attract.elements || {};
+                UI.attract.elements[`player${index}Box`] = UI.attract.elements[`player${index}Box`] || {};
+                UI.attract.elements[`player${index}Icon`] = UI.attract.elements[`player${index}Icon`] || {};
+                UI.attract.elements[`player${index}Text`] = UI.attract.elements[`player${index}Text`] || {};
+                UI.attract.elements[`player${index}Box`].content = box;
+                UI.attract.elements[`player${index}Icon`].content = icon;
+                UI.attract.elements[`player${index}Text`].content = text;
+            } catch (e) { /* ignore */ }
+
+            // flat fallback for legacy callers
+            try { UI[`player${index}`] = UI[`player${index}`] || {}; UI[`player${index}`].content = box; } catch (e) { }
+
+            // initial hidden
+            try {
+                uiSetPartVisible('attract', `player${index}Box`, false);
+                uiSetPartVisible('attract', `player${index}Icon`, false);
+                uiSetPartVisible('attract', `player${index}Text`, false);
+            } catch (e) { }
+
+            // interactivity: start with N players when clicked
+            try {
+                if (typeof box.setInteractive === 'function') {
+                    box.setInteractive({ useHandCursor: true });
+                    box.on('pointerdown', () => { tryStartWithPlayers(index, scene); });
+                }
+            } catch (e) { /* ignore */ }
+
+            return { box, icon, text };
         }
 
         // Simple crop-based animation controller for player Images (idle/run per direction)
@@ -1348,6 +1573,10 @@
         function updateLangSelectorHighlight(scene) {
             try {
                 if (!langSelectorBox) return;
+                // resolved carousel flag objects (support structured UI mapping)
+                const _langLeft = uiGetContent('langFlagLeft') || langFlagLeft;
+                const _langCenter = uiGetContent('langFlagCenter') || langFlagCenter;
+                const _langRight = uiGetContent('langFlagRight') || langFlagRight;
                 // stronger outline to indicate selection
                 try { langSelectorBox.setStrokeStyle(3, 0xffff00); } catch (e) { }
 
@@ -1355,11 +1584,14 @@
                 try {
                     if (scene && scene.tweens) {
                         scene.tweens.killTweensOf(langSelectorBox);
-                        // kill tweens for all carousel sprites
-                        try { scene.tweens.killTweensOf(langFlagLeft); } catch (ee) { }
-                        try { scene.tweens.killTweensOf(langFlagCenter); } catch (ee) { }
-                        try { scene.tweens.killTweensOf(langFlagRight); } catch (ee) { }
+                        // kill tweens for all carousel sprites (resolved)
+                        try { scene.tweens.killTweensOf(_langLeft); } catch (ee) { }
+                        try { scene.tweens.killTweensOf(_langCenter); } catch (ee) { }
+                        try { scene.tweens.killTweensOf(_langRight); } catch (ee) { }
                     }
+                    // If we forcibly kill tweens (e.g. due to lang reload), ensure the
+                    // carousel animation flag is cleared so the carousel doesn't remain locked.
+                    try { langCarouselAnimating = false; } catch (e) { }
                 } catch (e) { }
 
                 // small pulse on the selector box
@@ -1368,20 +1600,20 @@
                 }
 
                 // Wave (sventolio) effect on the selected flag: subtle rotation + bob + scaleY oscillation
-                if ((langFlagCenter || langFlagImage) && scene && scene.tweens) {
+                if (_langCenter && scene && scene.tweens) {
                     try {
                         // ensure correct frame shown (when flags loaded as spritesheet)
                         // Apply frame updates for carousel (center + sides)
                         try { updateFlagCrop(scene); } catch (e) { }
 
                         // kill existing tweens for all flags then start a continuous wave only for center
-                        try { scene.tweens.killTweensOf(langFlagLeft); } catch (e) { }
-                        try { scene.tweens.killTweensOf(langFlagRight); } catch (e) { }
-                        try { scene.tweens.killTweensOf(langFlagCenter); } catch (e) { }
+                        try { scene.tweens.killTweensOf(_langLeft); } catch (e) { }
+                        try { scene.tweens.killTweensOf(_langRight); } catch (e) { }
+                        try { scene.tweens.killTweensOf(_langCenter); } catch (e) { }
 
-                        if (langFlagCenter) {
+                        if (_langCenter) {
                             scene.tweens.add({
-                                targets: langFlagCenter,
+                                targets: _langCenter,
                                 angle: { from: -6, to: 6 },
                                 y: '+=2',
                                 scaleY: { from: 0.98, to: 1.02 },
@@ -1407,12 +1639,26 @@
             // Prevent overlapping animations
             if (langCarouselAnimating) return;
 
+            // resolve carousel sprites (support structured UI mapping)
+            const _langLeft = uiGetContent('langFlagLeft') || langFlagLeft;
+            const _langCenter = uiGetContent('langFlagCenter') || langFlagCenter;
+            const _langRight = uiGetContent('langFlagRight') || langFlagRight;
+
             // If we have scene tweens and the carousel sprites, animate the scroll
-            const hasCarousel = !!(langFlagLeft || langFlagCenter || langFlagRight || langFlagImage);
-            if (scene && scene.tweens && hasCarousel && langFlagCenter && langFlagLeft) {
+            const hasCarousel = !!(_langLeft || _langCenter || _langRight);
+            if (scene && scene.tweens && hasCarousel && _langCenter && _langLeft) {
                 langCarouselAnimating = true;
+                // disable interactive while animating to avoid pointer spam that could
+                // confuse tween state. We'll re-enable in the onComplete handler.
+                try {
+                    if (_langLeft && typeof _langLeft.disableInteractive === 'function') _langLeft.disableInteractive();
+                    if (_langCenter && typeof _langCenter.disableInteractive === 'function') _langCenter.disableInteractive();
+                    if (_langRight && typeof _langRight.disableInteractive === 'function') _langRight.disableInteractive();
+                    if (langLeftArrow && typeof langLeftArrow.disableInteractive === 'function') langLeftArrow.disableInteractive();
+                    if (langRightArrow && typeof langRightArrow.disableInteractive === 'function') langRightArrow.disableInteractive();
+                } catch (e) { }
                 // compute spacing between center and left as the step
-                const spacing = Math.abs((langFlagCenter.x || 0) - (langFlagLeft.x || 0)) || 96;
+                const spacing = Math.abs((_langCenter.x || 0) - (_langLeft.x || 0)) || 96;
                 // shift direction: when delta=1 (move right), animate leftwards so right flag becomes center
                 const shift = -delta * spacing;
                 const op = (shift >= 0 ? '+=' : '-=') + Math.abs(shift);
@@ -1444,16 +1690,16 @@
                     // create tweens per sprite so we can animate scale/alpha individually
                     const duration = 220;
 
-                    if (langFlagLeft) {
-                        scene.tweens.add({ targets: langFlagLeft, x: op, scaleX: leftTargetScale, scaleY: leftTargetScale, alpha: leftTargetAlpha, ease: 'Cubic.easeOut', duration });
+                    if (_langLeft) {
+                        scene.tweens.add({ targets: _langLeft, x: op, scaleX: leftTargetScale, scaleY: leftTargetScale, alpha: leftTargetAlpha, ease: 'Cubic.easeOut', duration });
                     }
-                    if (langFlagRight) {
-                        scene.tweens.add({ targets: langFlagRight, x: op, scaleX: rightTargetScale, scaleY: rightTargetScale, alpha: rightTargetAlpha, ease: 'Cubic.easeOut', duration });
+                    if (_langRight) {
+                        scene.tweens.add({ targets: _langRight, x: op, scaleX: rightTargetScale, scaleY: rightTargetScale, alpha: rightTargetAlpha, ease: 'Cubic.easeOut', duration });
                     }
                     // center tween will trigger onComplete to finalize
-                    if (langFlagCenter) {
+                    if (_langCenter) {
                         scene.tweens.add({
-                            targets: langFlagCenter,
+                            targets: _langCenter,
                             x: op,
                             scaleX: centerTargetScale,
                             scaleY: centerTargetScale,
@@ -1471,14 +1717,14 @@
                                     const leftX = centerX - 96;
                                     const centerXpos = centerX;
                                     const rightX = centerX + 96;
-                                    try { if (langFlagLeft) langFlagLeft.x = leftX; } catch (e) { }
-                                    try { if (langFlagCenter) langFlagCenter.x = centerXpos; } catch (e) { }
-                                    try { if (langFlagRight) langFlagRight.x = rightX; } catch (e) { }
+                                    try { if (_langLeft) _langLeft.x = leftX; } catch (e) { }
+                                    try { if (_langCenter) _langCenter.x = centerXpos; } catch (e) { }
+                                    try { if (_langRight) _langRight.x = rightX; } catch (e) { }
 
                                     // also set canonical scales/alphas to ensure values are exact after animation
-                                    try { if (langFlagLeft) { langFlagLeft.setScale(smallScale); langFlagLeft.setAlpha(smallAlpha); } } catch (e) { }
-                                    try { if (langFlagCenter) { langFlagCenter.setScale(bigScale); langFlagCenter.setAlpha(bigAlpha); } } catch (e) { }
-                                    try { if (langFlagRight) { langFlagRight.setScale(smallScale); langFlagRight.setAlpha(smallAlpha); } } catch (e) { }
+                                    try { if (_langLeft) { _langLeft.setScale(smallScale); _langLeft.setAlpha(smallAlpha); } } catch (e) { }
+                                    try { if (_langCenter) { _langCenter.setScale(bigScale); _langCenter.setAlpha(bigAlpha); } } catch (e) { }
+                                    try { if (_langRight) { _langRight.setScale(smallScale); _langRight.setAlpha(smallAlpha); } } catch (e) { }
 
                                     // refresh frames/crops and UI
                                     try { updateFlagCrop(scene); } catch (e) { }
@@ -1486,6 +1732,14 @@
                                     try { loadDictionary(LANGS[currentLangIndex]); } catch (e) { console.warn('[LANG] loadDictionary threw', e); }
                                     try { updateLangSelectorHighlight(scene); } catch (e) { }
                                 } catch (ee) { console.warn('[LANG] changeLang completion error', ee); }
+                                // re-enable interactivity
+                                try {
+                                    if (_langLeft && typeof _langLeft.setInteractive === 'function') _langLeft.setInteractive({ useHandCursor: true });
+                                    if (_langCenter && typeof _langCenter.setInteractive === 'function') _langCenter.setInteractive({ useHandCursor: true });
+                                    if (_langRight && typeof _langRight.setInteractive === 'function') _langRight.setInteractive({ useHandCursor: true });
+                                    if (langLeftArrow && typeof langLeftArrow.setInteractive === 'function') langLeftArrow.setInteractive({ useHandCursor: true });
+                                    if (langRightArrow && typeof langRightArrow.setInteractive === 'function') langRightArrow.setInteractive({ useHandCursor: true });
+                                } catch (e) { }
                                 langCarouselAnimating = false;
                             }
                         });
@@ -1493,6 +1747,13 @@
                     return;
                 } catch (e) {
                     console.warn('[LANG] animation failed, falling back to immediate change', e);
+                    try {
+                        if (_langLeft && typeof _langLeft.setInteractive === 'function') _langLeft.setInteractive({ useHandCursor: true });
+                        if (_langCenter && typeof _langCenter.setInteractive === 'function') _langCenter.setInteractive({ useHandCursor: true });
+                        if (_langRight && typeof _langRight.setInteractive === 'function') _langRight.setInteractive({ useHandCursor: true });
+                        if (langLeftArrow && typeof langLeftArrow.setInteractive === 'function') langLeftArrow.setInteractive({ useHandCursor: true });
+                        if (langRightArrow && typeof langRightArrow.setInteractive === 'function') langRightArrow.setInteractive({ useHandCursor: true });
+                    } catch (ee) { }
                     langCarouselAnimating = false;
                 }
             }
@@ -1511,8 +1772,10 @@
             try {
                 if (!scene) return;
                 if (langKeyboardHandler && scene.input && scene.input.keyboard) scene.input.keyboard.on('keydown', langKeyboardHandler);
-                if (langFlagLeft && langFlagLeftHandler) langFlagLeft.on('pointerdown', langFlagLeftHandler);
-                if (langFlagRight && langFlagRightHandler) langFlagRight.on('pointerdown', langFlagRightHandler);
+                const _left = uiGetContent('langFlagLeft') || langFlagLeft;
+                const _right = uiGetContent('langFlagRight') || langFlagRight;
+                if (_left && langFlagLeftHandler) _left.on('pointerdown', langFlagLeftHandler);
+                if (_right && langFlagRightHandler) _right.on('pointerdown', langFlagRightHandler);
                 if (langLeftArrow && langLeftArrowHandler) langLeftArrow.on('pointerdown', langLeftArrowHandler);
                 if (langRightArrow && langRightArrowHandler) langRightArrow.on('pointerdown', langRightArrowHandler);
             } catch (e) { /* ignore */ }
@@ -1523,17 +1786,22 @@
             try {
                 if (!scene) return;
                 if (langKeyboardHandler && scene.input && scene.input.keyboard) scene.input.keyboard.off('keydown', langKeyboardHandler);
-                try { if (langFlagLeft && langFlagLeftHandler) langFlagLeft.off('pointerdown', langFlagLeftHandler); } catch (e) { }
-                try { if (langFlagRight && langFlagRightHandler) langFlagRight.off('pointerdown', langFlagRightHandler); } catch (e) { }
+                try { const _left = uiGetContent('langFlagLeft') || langFlagLeft; if (_left && langFlagLeftHandler) _left.off('pointerdown', langFlagLeftHandler); } catch (e) { }
+                try { const _right = uiGetContent('langFlagRight') || langFlagRight; if (_right && langFlagRightHandler) _right.off('pointerdown', langFlagRightHandler); } catch (e) { }
                 try { if (langLeftArrow && langLeftArrowHandler) langLeftArrow.off('pointerdown', langLeftArrowHandler); } catch (e) { }
                 try { if (langRightArrow && langRightArrowHandler) langRightArrow.off('pointerdown', langRightArrowHandler); } catch (e) { }
+                // ensure any ongoing carousel animation state is cleared when selectors are disabled
+                try { langCarouselAnimating = false; } catch (e) { }
             } catch (e) { /* ignore */ }
         }
 
         function updateFlagCrop(scene) {
             // Update all three carousel sprites (left/center/right). If only center exists
             // we'll still update it. Prefer setFrame for spritesheets; otherwise use crop.
-            if (!langFlagCenter && !langFlagImage) return;
+            const _left = uiGetContent('langFlagLeft') || langFlagLeft;
+            const _center = uiGetContent('langFlagCenter') || langFlagCenter;
+            const _right = uiGetContent('langFlagRight') || langFlagRight;
+            if (!_center) return;
             try {
                 const tex = scene.textures.get('flags');
                 const isSheet = !!(tex && tex.frameTotal && tex.frameTotal > 1);
@@ -1545,18 +1813,17 @@
                 if (isSheet) {
                     // set frames for sprites if available
                     try {
-                        if (langFlagLeft && typeof langFlagLeft.setFrame === 'function') langFlagLeft.setFrame(idxLeft);
-                        if (langFlagCenter && typeof langFlagCenter.setFrame === 'function') langFlagCenter.setFrame(idxCenter);
-                        if (langFlagRight && typeof langFlagRight.setFrame === 'function') langFlagRight.setFrame(idxRight);
+                        if (_left && typeof _left.setFrame === 'function') _left.setFrame(idxLeft);
+                        if (_center && typeof _center.setFrame === 'function') _center.setFrame(idxCenter);
+                        if (_right && typeof _right.setFrame === 'function') _right.setFrame(idxRight);
                     } catch (e) { /* ignore per-sprite */ }
 
                     // sizing and alpha
-                    try { if (langFlagCenter) langFlagCenter.setDisplaySize(96, 48); } catch (e) { }
-                    try { if (langFlagLeft) { langFlagLeft.setDisplaySize(64, 32); langFlagLeft.setAlpha(0.45); } } catch (e) { }
-                    try { if (langFlagRight) { langFlagRight.setDisplaySize(64, 32); langFlagRight.setAlpha(0.45); } } catch (e) { }
+                    try { if (_center) _center.setDisplaySize(96, 48); } catch (e) { }
+                    try { if (_left) { _left.setDisplaySize(64, 32); _left.setAlpha(0.45); } } catch (e) { }
+                    try { if (_right) { _right.setDisplaySize(64, 32); _right.setAlpha(0.45); } } catch (e) { }
 
-                    // ensure alias
-                    langFlagImage = langFlagCenter || langFlagImage;
+                    // ensure center reference exists (legacy alias removed)
                     return;
                 }
             } catch (e) { /* ignore and fallback to crop below */ }
@@ -1574,15 +1841,15 @@
                 const sxLeft = sliceW * idxLeft;
                 const sxRight = sliceW * idxRight;
 
-                try { if (langFlagLeft && typeof langFlagLeft.setCrop === 'function') langFlagLeft.setCrop(sxLeft, 0, sliceW, totalH); } catch (e) { }
-                try { if (langFlagCenter && typeof langFlagCenter.setCrop === 'function') langFlagCenter.setCrop(sxCenter, 0, sliceW, totalH); } catch (e) { }
-                try { if (langFlagRight && typeof langFlagRight.setCrop === 'function') langFlagRight.setCrop(sxRight, 0, sliceW, totalH); } catch (e) { }
+                try { if (_left && typeof _left.setCrop === 'function') _left.setCrop(sxLeft, 0, sliceW, totalH); } catch (e) { }
+                try { if (_center && typeof _center.setCrop === 'function') _center.setCrop(sxCenter, 0, sliceW, totalH); } catch (e) { }
+                try { if (_right && typeof _right.setCrop === 'function') _right.setCrop(sxRight, 0, sliceW, totalH); } catch (e) { }
 
-                try { if (langFlagCenter) langFlagCenter.setDisplaySize(96, Math.round(96 * (totalH / sliceW))); } catch (e) { }
-                try { if (langFlagLeft) langFlagLeft.setDisplaySize(64, Math.round(64 * (totalH / sliceW))); } catch (e) { }
-                try { if (langFlagRight) langFlagRight.setDisplaySize(64, Math.round(64 * (totalH / sliceW))); } catch (e) { }
+                try { if (_center) _center.setDisplaySize(96, Math.round(96 * (totalH / sliceW))); } catch (e) { }
+                try { if (_left) _left.setDisplaySize(64, Math.round(64 * (totalH / sliceW))); } catch (e) { }
+                try { if (_right) _right.setDisplaySize(64, Math.round(64 * (totalH / sliceW))); } catch (e) { }
 
-                langFlagImage = langFlagCenter || langFlagImage;
+                // legacy alias removed; use langFlagCenter directly
             } catch (e) { /* ignore final fallback errors */ }
         }
 
@@ -1626,7 +1893,15 @@
                         try {
                             currentLangIndex = (idx + LANGS.length) % LANGS.length;
                             // make sure global refs point to these so updateFlagCrop can reuse
-                            langFlagLeft = left; langFlagCenter = center; langFlagRight = right; langFlagImage = center;
+                            langFlagLeft = left; langFlagCenter = center; langFlagRight = right;
+                            try {
+                                UI.langFlagLeft = UI.langFlagLeft || {};
+                                UI.langFlagCenter = UI.langFlagCenter || {};
+                                UI.langFlagRight = UI.langFlagRight || {};
+                                UI.langFlagLeft.content = langFlagLeft;
+                                UI.langFlagCenter.content = langFlagCenter;
+                                UI.langFlagRight.content = langFlagRight;
+                            } catch (e) { /* ignore */ }
                             updateFlagCrop(scene);
                         } catch (e) { /* ignore */ }
                     },
@@ -1836,21 +2111,35 @@
             try {
                 // Top-ten title
                 try { if (window.DICT.highscores && topTenTitle && typeof topTenTitle.setText === 'function') topTenTitle.setText(window.DICT.highscores); } catch (e) { console.warn('applyTranslations: failed to set topTenTitle', e); }
-                try { if (window.DICT.title && langTitleText && typeof langTitleText.setText === 'function') langTitleText.setText(window.DICT.title); } catch (e) { console.warn('applyTranslations: failed to set langTitleText', e); }
+                try { if (window.DICT.title) { const t = (UI.title && UI.title.content); if (t && typeof t.setText === 'function') t.setText(window.DICT.title); } } catch (e) { console.warn('applyTranslations: failed to set title', e); }
                 try {
-                    if (window.DICT.instructions && langInstructionsText && typeof langInstructionsText.setText === 'function') {
-                        if (Array.isArray(window.DICT.instructions)) langInstructionsText.setText(window.DICT.instructions.join('\n'));
-                        else langInstructionsText.setText(window.DICT.instructions);
+                    if (window.DICT.instructions) {
+                        const ins = (UI.instructions && UI.instructions.content);
+                        if (ins && typeof ins.setText === 'function') {
+                            if (Array.isArray(window.DICT.instructions)) ins.setText(window.DICT.instructions.join('\n'));
+                            else ins.setText(window.DICT.instructions);
+                        }
                     }
-                } catch (e) { console.warn('applyTranslations: failed to set langInstructionsText', e); }
+                } catch (e) { console.warn('applyTranslations: failed to set instructions', e); }
 
-                // insert coin: try multiple keys
-                const insertCoin = window.DICT.insert_coin || window.DICT.insert_coin_btn || (window.DICT.attractmode && window.DICT.attractmode.staticcredits);
-                try { if (insertCoin && langStartText && typeof langStartText.setText === 'function') langStartText.setText(insertCoin); } catch (e) { console.warn('applyTranslations: failed to set langStartText', e); }
+                // insert coin: try multiple keys. Respect current credits: if credits > 0 show credits instead of insert-coin text.
+                const insertCoin = window.DICT.insert_coin || window.DICT.insert_coin_btn || (window.DICT.attractmode && window.DICT.attractmode.staticcredits) || 'INSERISCI MONETA';
+                try {
+                    const bottomObj = uiGetContent('credits') || bottomCreditsText;
+                    if (bottomObj && typeof bottomObj.setText === 'function') {
+                        if (credits && credits > 0) {
+                            const creditsLabel = (window.DICT && (window.DICT.credits_word || window.DICT.credits_label)) || 'CREDITI';
+                            bottomObj.setText(`${creditsLabel}: ${credits}`);
+                        } else {
+                            bottomObj.setText(insertCoin);
+                        }
+                    }
+                } catch (e) { console.warn('applyTranslations: failed to set bottomCreditsText', e); }
                 const creditsLabel = window.DICT.credits_word || window.DICT.credits_label || 'CREDITI';
                 try {
-                    if (topTenCreditsFooter) {
-                        if (!safeSetTextWithRetry(topTenCreditsFooter, (creditsLabel || 'CREDITI') + ': 0', (window.game && window.game.scene) ? window.game.scene.getScenes(true)[0] : null)) {
+                    const ttFooter = uiGetContent('topTenFooter') || topTenCreditsFooter;
+                    if (ttFooter) {
+                        if (!safeSetTextWithRetry(ttFooter, (creditsLabel || 'CREDITI') + ': 0', (window.game && window.game.scene) ? window.game.scene.getScenes(true)[0] : null)) {
                             console.warn('applyTranslations: scheduled retry for topTenCreditsFooter');
                         }
                     }
@@ -1868,7 +2157,10 @@
                 try { if (levelText && typeof levelText.setText === 'function') levelText.setText(`${levelLabel}: ${level}`); } catch (e) { console.warn('applyTranslations: failed to set levelText', e); }
 
                 // select overlay translations
-                try { if (selectCreditsText && typeof selectCreditsText.setText === 'function') selectCreditsText.setText((credits && credits > 0) ? `${creditsLabel}: ${credits}` : (insertCoin || 'INSERISCI MONETA')); } catch (e) { console.warn('applyTranslations: failed to set selectCreditsText', e); }
+                try {
+                    const sc = uiGetContent('selectCredits') || selectCreditsText;
+                    if (sc && typeof sc.setText === 'function') sc.setText((credits && credits > 0) ? `${creditsLabel}: ${credits}` : (insertCoin || 'INSERISCI MONETA'));
+                } catch (e) { console.warn('applyTranslations: failed to set selectCreditsText', e); }
                 try { if (selectHintText && window.DICT.select_hint && typeof selectHintText.setText === 'function') selectHintText.setText(window.DICT.select_hint); } catch (e) { console.warn('applyTranslations: failed to set selectHintText', e); }
                 try { if (selectBtn1Text && window.DICT.one_player_label && typeof selectBtn1Text.setText === 'function') selectBtn1Text.setText(window.DICT.one_player_label.replace('{credits}', CREDITS_PER_PLAYER)); } catch (e) { console.warn('applyTranslations: failed to set selectBtn1Text', e); }
                 try { if (selectBtn2Text && window.DICT.two_players_label && typeof selectBtn2Text.setText === 'function') selectBtn2Text.setText(window.DICT.two_players_label.replace('{credits}', CREDITS_PER_PLAYER * 2)); } catch (e) { console.warn('applyTranslations: failed to set selectBtn2Text', e); }
