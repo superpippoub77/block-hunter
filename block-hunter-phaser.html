@@ -228,7 +228,37 @@
                     }
                 } catch (e) { /* ignore */ }
 
-                if (obj && typeof obj.setVisible === 'function') obj.setVisible(!!visible);
+                // If this UI part produced per-character letter objects (fallLetters),
+                // when hiding we destroy them (cleanup); when showing we recreate the effect
+                // automatically using stored fullText/options on the text object.
+                let _recreatedLetters = false;
+                try {
+                    const targetObj = (target && target.content) ? target.content : target;
+                    // attempt to find a scene reference for recreating effect
+                    const sceneForObj = (targetObj && (targetObj.scene || (targetObj.parentContainer && targetObj.parentContainer.scene))) ? (targetObj.scene || targetObj.parentContainer.scene) : null;
+
+                    if (!visible) {
+                        // destroy letters to free memory
+                        if (targetObj && targetObj._letters && Array.isArray(targetObj._letters)) {
+                            targetObj._letters.forEach(l => { try { l.destroy && l.destroy(); } catch (e) { } });
+                            targetObj._letters = null;
+                            try { targetObj._lettersDestroyed = true; } catch (e) { }
+                        }
+                    } else {
+                        // show: if there are no live letters but we have a stored fullText, recreate effect
+                        if (targetObj && (!targetObj._letters || targetObj._letters.length === 0) && targetObj._fallFullText && typeof fallLetters === 'function' && sceneForObj) {
+                            try {
+                                // recreate letters animation; fallLetters will hide the base textObj and create letters
+                                fallLetters(sceneForObj, targetObj, targetObj._fallFullText, targetObj._fallOpts || {});
+                                _recreatedLetters = true;
+                            } catch (e) { /* ignore recreation errors */ }
+                        }
+                    }
+                } catch (e) { /* ignore */ }
+
+                if (!_recreatedLetters) {
+                    if (obj && typeof obj.setVisible === 'function') obj.setVisible(!!visible);
+                }
                 if (UI_DEBUG) console.info('[UI] uiSetPartVisible', part, !!visible, 'container=', containerName, '->', obj || target);
             } catch (e) {
                 console.warn('uiSetPartVisible error for part', part, e);
@@ -1089,6 +1119,8 @@
                             bottomCreditsText = scene.add.text(scene.scale.width / 2, scene.scale.height - 10, (window.DICT && (window.DICT.insert_coin || window.DICT.insert_coin_btn)) || 'INSERISCI MONETA', {
                                 fontSize: window.GAME_CONFIG.FONTBASE, fontFamily: GAME_FONT, fill: '#ffff00', stroke: '#000000',
                                 strokeThickness: 4,
+                                pulse: 0.6,
+                                zoom: 1.3,
                                 shadow: {
                                     offsetX: 3,
                                     offsetY: 3,

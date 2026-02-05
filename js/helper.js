@@ -58,6 +58,9 @@ export function fallLetters(scene, textObj, fullText, opts = {}) {
         if (!scene || !textObj || typeof fullText !== 'string') return;
         opts = Object.assign({ gravityDropMin: 180, gravityDropMax: 420, durationMin: 600, durationMax: 1100, puffColor: 0xffffff, lineSpacing: 10 }, opts || {});
 
+        // remember the full text and options so the effect can be recreated later
+        try { textObj._fallFullText = fullText; textObj._fallOpts = Object.assign({}, opts); } catch (e) { }
+
         // clean previous letters if any
         try {
             if (textObj._letters && Array.isArray(textObj._letters)) {
@@ -140,6 +143,8 @@ export function fallLetters(scene, textObj, fullText, opts = {}) {
 
         // store for cleanup
         textObj._letters = created;
+        // mark destroyed flag as false
+        try { textObj._lettersDestroyed = false; } catch (e) { }
     } catch (e) { console.warn('fallLetters error', e); }
 }
 // also expose on window for backward compatibility
