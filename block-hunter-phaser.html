@@ -67,12 +67,13 @@
 <body>
     <div id="game-container"></div>
 
-    <script src="js/helper.js"></script>
-    <script>
+    <script type="module">
+        import { typeWriter, fallLetters } from './js/helper.js';
 
         // Use a constant for the font family name (no extra quotes) and reuse it
         // across all Phaser Text styles.
         const GAME_FONT = '"Press Start 2P"';
+        try { window.GAME_FONT = GAME_FONT; } catch (e) { }
         // Variabili globali
         let player;
         let player2 = null; // second player (if enabled)

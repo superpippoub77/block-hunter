@@ -11,7 +11,7 @@
 // - charDelay: ms per character
 // - pauseAfter: ms to wait after full text before clearing and restarting (if loop)
 // - loop: boolean, whether to repeat typing
-window.typeWriter = function(scene, textObj, fullText, charDelay = 40, pauseAfter = 1200, loop = true) {
+export function typeWriter(scene, textObj, fullText, charDelay = 40, pauseAfter = 1200, loop = true) {
     try {
         if (!scene || !textObj || typeof fullText !== 'string') return;
         // cancel any previous typing event attached to this object
@@ -34,7 +34,7 @@ window.typeWriter = function(scene, textObj, fullText, charDelay = 40, pauseAfte
                                 scene.time.delayedCall(pauseAfter, () => {
                                     try {
                                         // restart typing
-                                        window.typeWriter(scene, textObj, fullText, charDelay, pauseAfter, loop);
+                                        typeWriter(scene, textObj, fullText, charDelay, pauseAfter, loop);
                                     } catch (e) { /* ignore */ }
                                 });
                             } catch (e) { /* ignore scheduling errors */ }
@@ -44,14 +44,16 @@ window.typeWriter = function(scene, textObj, fullText, charDelay = 40, pauseAfte
             }
         });
     } catch (e) { /* ignore */ }
-};
+}
+// also expose on window for backward compatibility
+try { window.typeWriter = typeWriter; } catch (e) { /* ignore */ }
 
 // Falling-letters effect: letters drop from above and create a puff on landing.
 // - scene: Phaser Scene
 // - textObj: original Phaser Text object (will be hidden)
 // - fullText: string with possible newlines
 // - opts: { gravityDropMin, gravityDropMax, durationMin, durationMax, puffColor, lineSpacing }
-window.fallLetters = function(scene, textObj, fullText, opts = {}) {
+export function fallLetters(scene, textObj, fullText, opts = {}) {
     try {
         if (!scene || !textObj || typeof fullText !== 'string') return;
         opts = Object.assign({ gravityDropMin: 180, gravityDropMax: 420, durationMin: 600, durationMax: 1100, puffColor: 0xffffff, lineSpacing: 10 }, opts || {});
@@ -139,4 +141,6 @@ window.fallLetters = function(scene, textObj, fullText, opts = {}) {
         // store for cleanup
         textObj._letters = created;
     } catch (e) { console.warn('fallLetters error', e); }
-};
+}
+// also expose on window for backward compatibility
+try { window.fallLetters = fallLetters; } catch (e) { /* ignore */ }
