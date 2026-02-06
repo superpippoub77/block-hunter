@@ -122,8 +122,6 @@
                     player1: { visible: false, content: null, options: {} },
                     player2: { visible: false, content: null, options: {} },
                     selectCredits: { visible: false, content: null, options: {} },
-                    leftArrow: { visible: false, content: null, options: {} },
-                    rightArrow: { visible: false, content: null, options: {} },
                     player1Box: { visible: false, content: null, options: {} },
                     player1Icon: { visible: false, content: null, options: {} },
                     player1Text: { visible: false, content: null, options: {} },
@@ -294,9 +292,7 @@
             credits: 'bottomCreditsText',
             selectCredits: 'selectCreditsText',
             topTenFooter: 'topTenCreditsFooter',
-            langFlagLeft: 'langFlagLeft',
-            langFlagCenter: 'langFlagCenter',
-            langFlagRight: 'langFlagRight',
+            // language flag legacy aliases removed; prefer structured UI mapping or langCarousel
             player1: 'playerIndicator1',
             player2: 'playerIndicator2',
             title: 'title',
@@ -375,18 +371,11 @@
     const LANGS = ['it', 'fr', 'de', 'en', 'us', 'ja', 'es', 'zh'];
     try { window.LANGS = LANGS; } catch (e) { }
         let currentLangIndex = 0;
-        // Carousel flags: left / center / right.
-        let langFlagLeft = null;
-        let langFlagCenter = null;
-        let langFlagRight = null;
-        // interactive arrow/keyboard references and handlers (attached only during attract)
-        let langLeftArrow = null;
-        let langRightArrow = null;
-        let langKeyboardHandler = null;
-        let langFlagLeftHandler = null;
-        let langFlagRightHandler = null;
-        let langLeftArrowHandler = null;
-        let langRightArrowHandler = null;
+        // Carousel flags: left / center / right are available via the carousel API
+    // Reference to the carousel API returned by createFlagCarousel
+    let langCarousel = null;
+    // keyboard handler only; pointer handlers for flags/arrows are managed by the carousel module
+    let langKeyboardHandler = null;
         // prevent concurrent carousel animations
         let langCarouselAnimating = false;
         // legacy localized text refs removed; use UI.title.content and UI.instructions.content
@@ -1033,12 +1022,11 @@
 
             // Create a 3-item carousel via reusable factory and attach to the attract container
             try {
-                const carousel = createFlagCarousel(scene, UI.attract.container, centerX, 480, currentLangIndex);
-                if (carousel) {
-                    langFlagLeft = carousel.left;
-                    langFlagCenter = carousel.center;
-                    langFlagRight = carousel.right;
-                } else {
+                langCarousel = createFlagCarousel(scene, UI.attract.container, centerX, 480, currentLangIndex, {
+                    onLeft: () => changeLang(-1, scene),
+                    onRight: () => changeLang(1, scene)
+                });
+                if (!langCarousel) {
                     console.warn('[INIT-ATTRACT] createFlagCarousel returned null');
                 }
             } catch (e) {
@@ -1053,7 +1041,9 @@
             try { loadDictionary(LANGS[currentLangIndex]); } catch (e) { /* ignore */ }
             try { updateLangSelectorHighlight(scene); } catch (e) { /* ignore */ }
             try {
-                // Prepare handler functions but do NOT attach them yet. We'll attach when attract is shown.
+                // Prepare keyboard handler only; pointer handlers for flags/arrows
+                // are now managed by the carousel module (passed as callbacks) so
+                // there are no handler functions defined inline here.
                 langKeyboardHandler = (event) => {
                     if (!attractVisible) return; // safety
                     if (event.code === 'ArrowLeft' || event.key === 'Left') {
@@ -1062,24 +1052,23 @@
                         changeLang(1, scene);
                     }
                 };
-
-                // pointer handlers for flags
-                langFlagLeftHandler = () => changeLang(-1, scene);
-                langFlagRightHandler = () => changeLang(1, scene);
-
-                // arrow text handlers (we'll attach later)
-                langLeftArrowHandler = () => changeLang(-1, scene);
-                langRightArrowHandler = () => changeLang(1, scene);
             } catch (e) { /* ignore */ }
 
-            // Arrows per selezionare la lingua: usa testo semplice con interazione, posizionato ai lati della bandiera.
-            // Create arrow texts but do not attach pointer handlers yet.
-            UI.attract.elements.leftArrow.content = scene.add.text(centerX - 80, 480, '<', { fontSize: '24px', fontFamily: GAME_FONT, fill: '#00ffff' }).setOrigin(0.5).setInteractive({ useHandCursor: true });
-            UI.attract.elements.rightArrow.content = scene.add.text(centerX + 80, 480, '>', { fontSize: '24px', fontFamily: GAME_FONT, fill: '#00ffff' }).setOrigin(0.5).setInteractive({ useHandCursor: true });
-            UI.attract.container.add([UI.attract.elements.leftArrow.content, UI.attract.elements.rightArrow.content]);
+            // The carousel may create arrow text buttons internally. Prefer those
+            // and register them in the structured UI mapping for compatibility.
+            try {
+                if (langCarousel) {
+                    UI.attract.elements.leftArrow.content = langCarousel.leftArrow || null;
+                    UI.attract.elements.rightArrow.content = langCarousel.rightArrow || null;
+                } else {
+                    // fallback: ensure mapping exists but no content
+                    UI.attract.elements.leftArrow.content = null;
+                    UI.attract.elements.rightArrow.content = null;
+                }
+            } catch (e) { /* ignore */ }
 
             // keep references to arrows so other code can interact if needed
-            try { langLabelText._leftArrow = langLeftArrow; langLabelText._rightArrow = langRightArrow; } catch (e) { }
+            try { langLabelText._leftArrow = (UI.attract.elements && UI.attract.elements.leftArrow && UI.attract.elements.leftArrow.content) || null; langLabelText._rightArrow = (UI.attract.elements && UI.attract.elements.rightArrow && UI.attract.elements.rightArrow.content) || null; } catch (e) { }
 
             // Initial update of flag crop and dictionary
             scene.time.delayedCall(50, () => {
@@ -1595,9 +1584,9 @@
             try {
                 if (!langSelectorBox) return;
                 // resolved carousel flag objects (support structured UI mapping)
-                const _langLeft = uiGetContent('langFlagLeft') || langFlagLeft;
-                const _langCenter = uiGetContent('langFlagCenter') || langFlagCenter;
-                const _langRight = uiGetContent('langFlagRight') || langFlagRight;
+                const _langLeft = uiGetContent('langFlagLeft') || (langCarousel && langCarousel.left);
+                const _langCenter = uiGetContent('langFlagCenter') || (langCarousel && langCarousel.center);
+                const _langRight = uiGetContent('langFlagRight') || (langCarousel && langCarousel.right);
                 // stronger outline to indicate selection
                 try { langSelectorBox.setStrokeStyle(3, 0xffff00); } catch (e) { }
 
@@ -1661,9 +1650,9 @@
             if (langCarouselAnimating) return;
 
             // resolve carousel sprites (support structured UI mapping)
-            const _langLeft = uiGetContent('langFlagLeft') || langFlagLeft;
-            const _langCenter = uiGetContent('langFlagCenter') || langFlagCenter;
-            const _langRight = uiGetContent('langFlagRight') || langFlagRight;
+            const _langLeft = uiGetContent('langFlagLeft') || (langCarousel && langCarousel.left);
+            const _langCenter = uiGetContent('langFlagCenter') || (langCarousel && langCarousel.center);
+            const _langRight = uiGetContent('langFlagRight') || (langCarousel && langCarousel.right);
 
             // If we have scene tweens and the carousel sprites, animate the scroll
             const hasCarousel = !!(_langLeft || _langCenter || _langRight);
@@ -1675,8 +1664,10 @@
                     if (_langLeft && typeof _langLeft.disableInteractive === 'function') _langLeft.disableInteractive();
                     if (_langCenter && typeof _langCenter.disableInteractive === 'function') _langCenter.disableInteractive();
                     if (_langRight && typeof _langRight.disableInteractive === 'function') _langRight.disableInteractive();
-                    if (langLeftArrow && typeof langLeftArrow.disableInteractive === 'function') langLeftArrow.disableInteractive();
-                    if (langRightArrow && typeof langRightArrow.disableInteractive === 'function') langRightArrow.disableInteractive();
+                    const _leftArrow = (UI.attract.elements && UI.attract.elements.leftArrow && UI.attract.elements.leftArrow.content) || null;
+                    const _rightArrow = (UI.attract.elements && UI.attract.elements.rightArrow && UI.attract.elements.rightArrow.content) || null;
+                    if (_leftArrow && typeof _leftArrow.disableInteractive === 'function') _leftArrow.disableInteractive();
+                    if (_rightArrow && typeof _rightArrow.disableInteractive === 'function') _rightArrow.disableInteractive();
                 } catch (e) { }
                 // compute spacing between center and left as the step
                 const spacing = Math.abs((_langCenter.x || 0) - (_langLeft.x || 0)) || 96;
@@ -1758,8 +1749,10 @@
                                     if (_langLeft && typeof _langLeft.setInteractive === 'function') _langLeft.setInteractive({ useHandCursor: true });
                                     if (_langCenter && typeof _langCenter.setInteractive === 'function') _langCenter.setInteractive({ useHandCursor: true });
                                     if (_langRight && typeof _langRight.setInteractive === 'function') _langRight.setInteractive({ useHandCursor: true });
-                                    if (langLeftArrow && typeof langLeftArrow.setInteractive === 'function') langLeftArrow.setInteractive({ useHandCursor: true });
-                                    if (langRightArrow && typeof langRightArrow.setInteractive === 'function') langRightArrow.setInteractive({ useHandCursor: true });
+                                    const _leftArrow = (UI.attract.elements && UI.attract.elements.leftArrow && UI.attract.elements.leftArrow.content) || null;
+                                    const _rightArrow = (UI.attract.elements && UI.attract.elements.rightArrow && UI.attract.elements.rightArrow.content) || null;
+                                    if (_leftArrow && typeof _leftArrow.setInteractive === 'function') _leftArrow.setInteractive({ useHandCursor: true });
+                                    if (_rightArrow && typeof _rightArrow.setInteractive === 'function') _rightArrow.setInteractive({ useHandCursor: true });
                                 } catch (e) { }
                                 langCarouselAnimating = false;
                             }
@@ -1772,8 +1765,10 @@
                         if (_langLeft && typeof _langLeft.setInteractive === 'function') _langLeft.setInteractive({ useHandCursor: true });
                         if (_langCenter && typeof _langCenter.setInteractive === 'function') _langCenter.setInteractive({ useHandCursor: true });
                         if (_langRight && typeof _langRight.setInteractive === 'function') _langRight.setInteractive({ useHandCursor: true });
-                        if (langLeftArrow && typeof langLeftArrow.setInteractive === 'function') langLeftArrow.setInteractive({ useHandCursor: true });
-                        if (langRightArrow && typeof langRightArrow.setInteractive === 'function') langRightArrow.setInteractive({ useHandCursor: true });
+                        const _leftArrow = (UI.attract.elements && UI.attract.elements.leftArrow && UI.attract.elements.leftArrow.content) || null;
+                        const _rightArrow = (UI.attract.elements && UI.attract.elements.rightArrow && UI.attract.elements.rightArrow.content) || null;
+                        if (_leftArrow && typeof _leftArrow.setInteractive === 'function') _leftArrow.setInteractive({ useHandCursor: true });
+                        if (_rightArrow && typeof _rightArrow.setInteractive === 'function') _rightArrow.setInteractive({ useHandCursor: true });
                     } catch (ee) { }
                     langCarouselAnimating = false;
                 }
@@ -1793,12 +1788,9 @@
             try {
                 if (!scene) return;
                 if (langKeyboardHandler && scene.input && scene.input.keyboard) scene.input.keyboard.on('keydown', langKeyboardHandler);
-                const _left = uiGetContent('langFlagLeft') || langFlagLeft;
-                const _right = uiGetContent('langFlagRight') || langFlagRight;
-                if (_left && langFlagLeftHandler) _left.on('pointerdown', langFlagLeftHandler);
-                if (_right && langFlagRightHandler) _right.on('pointerdown', langFlagRightHandler);
-                if (langLeftArrow && langLeftArrowHandler) langLeftArrow.on('pointerdown', langLeftArrowHandler);
-                if (langRightArrow && langRightArrowHandler) langRightArrow.on('pointerdown', langRightArrowHandler);
+                // Pointer handlers for flags and arrows are managed by the carousel module
+                // (callbacks were passed when creating the carousel). No inline pointer
+                // handler wiring is required here.
             } catch (e) { /* ignore */ }
         }
 
@@ -1807,10 +1799,7 @@
             try {
                 if (!scene) return;
                 if (langKeyboardHandler && scene.input && scene.input.keyboard) scene.input.keyboard.off('keydown', langKeyboardHandler);
-                try { const _left = uiGetContent('langFlagLeft') || langFlagLeft; if (_left && langFlagLeftHandler) _left.off('pointerdown', langFlagLeftHandler); } catch (e) { }
-                try { const _right = uiGetContent('langFlagRight') || langFlagRight; if (_right && langFlagRightHandler) _right.off('pointerdown', langFlagRightHandler); } catch (e) { }
-                try { if (langLeftArrow && langLeftArrowHandler) langLeftArrow.off('pointerdown', langLeftArrowHandler); } catch (e) { }
-                try { if (langRightArrow && langRightArrowHandler) langRightArrow.off('pointerdown', langRightArrowHandler); } catch (e) { }
+                // Carousel manages pointer handlers, so nothing to detach here.
                 // ensure any ongoing carousel animation state is cleared when selectors are disabled
                 try { langCarouselAnimating = false; } catch (e) { }
             } catch (e) { /* ignore */ }
@@ -1819,9 +1808,9 @@
         function updateFlagCrop(scene) {
             // Update all three carousel sprites (left/center/right). If only center exists
             // we'll still update it. Prefer setFrame for spritesheets; otherwise use crop.
-            const _left = uiGetContent('langFlagLeft') || langFlagLeft;
-            const _center = uiGetContent('langFlagCenter') || langFlagCenter;
-            const _right = uiGetContent('langFlagRight') || langFlagRight;
+            const _left = uiGetContent('langFlagLeft') || (langCarousel && langCarousel.left);
+            const _center = uiGetContent('langFlagCenter') || (langCarousel && langCarousel.center);
+            const _right = uiGetContent('langFlagRight') || (langCarousel && langCarousel.right);
             if (!_center) return;
             try {
                 const tex = scene.textures.get('flags');
