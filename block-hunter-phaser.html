@@ -68,7 +68,8 @@
     <div id="game-container"></div>
 
     <script type="module">
-        import { typeWriter, fallLetters } from './js/helper.js';
+    import { typeWriter, fallLetters } from './js/helper.js';
+    import { createFlagCarousel } from './js/carousel.js';
 
         // Use a constant for the font family name (no extra quotes) and reuse it
         // across all Phaser Text styles.
@@ -103,37 +104,39 @@
         let credits = 0;
         let playersCount = 1;
         const CREDITS_PER_PLAYER = (window.GAME_CONFIG && window.GAME_CONFIG.CREDITS_PER_PLAYER) || 1;
+
+        //Container and object references for UI parts, organized in a central UI object for easier management and future extensions.
         const UI = {
             background: {
                 container: null,
                 elements: {
-                    bg: { pulse: 0, visible: true, content: null }
+                    bg: { visible: true, content: null, options: {} }
                 }
             },
             attract: {
                 container: null,
                 elements: {
-                    title: { pulse: 0.4, visible: true, content: null },
-                    instructions: { pulse: 0, visible: true, content: null },
-                    credits: { pulse: 0, visible: true, content: null },
-                    player1: { visible: false, content: null },
-                    player2: { visible: false, content: null },
-                    selectCredits: { visible: false, content: null },
-                    leftArrow: { visible: false, content: null },
-                    rightArrow: { visible: false, content: null },
-                    player1Box: { visible: false, content: null },
-                    player1Icon: { visible: false, content: null },
-                    player1Text: { visible: false, content: null },
-                    player2Box: { visible: false, content: null },
-                    player2Icon: { visible: false, content: null },
-                    player2Text: { visible: false, content: null }
+                    title: { visible: true, content: null, options: {pulse:0.4, zoom:1.3} },
+                    instructions: { visible: true, content: null, options: {} },
+                    credits: { visible: true, content: null, options: {} },
+                    player1: { visible: false, content: null, options: {} },
+                    player2: { visible: false, content: null, options: {} },
+                    selectCredits: { visible: false, content: null, options: {} },
+                    leftArrow: { visible: false, content: null, options: {} },
+                    rightArrow: { visible: false, content: null, options: {} },
+                    player1Box: { visible: false, content: null, options: {} },
+                    player1Icon: { visible: false, content: null, options: {} },
+                    player1Text: { visible: false, content: null, options: {} },
+                    player2Box: { visible: false, content: null, options: {} },
+                    player2Icon: { visible: false, content: null, options: {} },
+                    player2Text: { visible: false, content: null, options: {} }
                 }
             },
             topten: {
                 container: null,
                 elements: {
-                    title: { visible: false, content: null },
-                    list: { visible: false, content: null }
+                    title: { visible: false, content: null, options: {} },
+                    list: { visible: false, content: null, options: {} }
                 }
             }
         };
@@ -368,8 +371,9 @@
 
         let topTenTitle = null;
         let topTenListContainer = null;
-        // Language selector
-        const LANGS = ['it', 'fr', 'de', 'en', 'us', 'ja', 'es', 'zh'];
+    // Language selector
+    const LANGS = ['it', 'fr', 'de', 'en', 'us', 'ja', 'es', 'zh'];
+    try { window.LANGS = LANGS; } catch (e) { }
         let currentLangIndex = 0;
         // Carousel flags: left / center / right.
         let langFlagLeft = null;
@@ -940,9 +944,9 @@
             // Ensure title slot exists
             UI.attract.elements.title.content = scene.add.image(centerX, 100, 'title').setOrigin(0.5);
             UI.attract.container.add(UI.attract.elements.title.content);
-            UI.attract.elements.title.pulse && UI.attract.elements.title.content && scene.tweens.add({
+            UI.attract.elements.title.options?.pulse && UI.attract.elements.title.content && scene.tweens.add({
                 targets: UI.attract.elements.title.content,
-                alpha: { from: 1, to: UI.attract.elements.title.pulse },
+                alpha: { from: 1, to: UI.attract.elements.title.options.pulse },
                 duration: 1000,
                 yoyo: true,
                 repeat: -1
@@ -1034,20 +1038,6 @@
                     langFlagLeft = carousel.left;
                     langFlagCenter = carousel.center;
                     langFlagRight = carousel.right;
-                    // register carousel parts under UI.attract.elements and flat fallbacks
-                    try {
-                        // structured registration
-                        UI.attract.elements.langFlagLeft = UI.attract.elements.langFlagLeft || {};
-                        UI.attract.elements.langFlagCenter = UI.attract.elements.langFlagCenter || {};
-                        UI.attract.elements.langFlagRight = UI.attract.elements.langFlagRight || {};
-                        UI.attract.elements.langFlagLeft.content = langFlagLeft;
-                        UI.attract.elements.langFlagCenter.content = langFlagCenter;
-                        UI.attract.elements.langFlagRight.content = langFlagRight;
-                        // flat fallbacks for legacy callers
-                        UI.langFlagLeft = UI.langFlagLeft || {}; UI.langFlagLeft.content = langFlagLeft;
-                        UI.langFlagCenter = UI.langFlagCenter || {}; UI.langFlagCenter.content = langFlagCenter;
-                        UI.langFlagRight = UI.langFlagRight || {}; UI.langFlagRight.content = langFlagRight;
-                    } catch (e) { /* ignore */ }
                 } else {
                     console.warn('[INIT-ATTRACT] createFlagCarousel returned null');
                 }
@@ -1884,74 +1874,10 @@
             } catch (e) { /* ignore final fallback errors */ }
         }
 
-        // Reusable factory: create a 3-item flag carousel and add it to a container.
-        // Returns { left, center, right, setIndex, destroy }
-        function createFlagCarousel(scene, container, centerX, y, initialIndex) {
-            if (!scene || !container) return null;
-            initialIndex = (initialIndex || 0) % LANGS.length;
-            const leftX = centerX - 96;
-            const centerXpos = centerX;
-            const rightX = centerX + 96;
-            let left = null, center = null, right = null;
-
-            try {
-                const tex = scene.textures.get('flags');
-                const isSheet = !!(tex && tex.frameTotal && tex.frameTotal > 1);
-
-                if (isSheet) {
-                    left = scene.add.sprite(leftX, y, 'flags', (initialIndex - 1 + LANGS.length) % LANGS.length).setOrigin(0.5, 0.5).setInteractive({ useHandCursor: true });
-                    center = scene.add.sprite(centerXpos, y, 'flags', initialIndex).setOrigin(0.5, 0.5).setInteractive({ useHandCursor: true });
-                    right = scene.add.sprite(rightX, y, 'flags', (initialIndex + 1) % LANGS.length).setOrigin(0.5, 0.5).setInteractive({ useHandCursor: true });
-
-                    try { center.setDisplaySize(96, 48); } catch (e) { }
-                    try { left.setDisplaySize(64, 32); right.setDisplaySize(64, 32); } catch (e) { }
-                    try { left.setAlpha(0.45); right.setAlpha(0.45); } catch (e) { }
-                } else {
-                    left = scene.add.image(leftX, y, 'flags').setOrigin(0.5, 0.5).setInteractive({ useHandCursor: true });
-                    center = scene.add.image(centerXpos, y, 'flags').setOrigin(0.5, 0.5).setInteractive({ useHandCursor: true });
-                    right = scene.add.image(rightX, y, 'flags').setOrigin(0.5, 0.5).setInteractive({ useHandCursor: true });
-
-                    try { center.setDisplaySize(96, 48); } catch (e) { }
-                    try { left.setDisplaySize(64, 32); right.setDisplaySize(64, 32); } catch (e) { }
-                    try { left.setAlpha(0.45); right.setAlpha(0.45); } catch (e) { }
-                }
-
-                container.add([left, center, right]);
-
-                const api = {
-                    left, center, right,
-                    setIndex: (idx) => {
-                        try {
-                            currentLangIndex = (idx + LANGS.length) % LANGS.length;
-                            // make sure global refs point to these so updateFlagCrop can reuse
-                            langFlagLeft = left; langFlagCenter = center; langFlagRight = right;
-                            try {
-                                UI.langFlagLeft = UI.langFlagLeft || {};
-                                UI.langFlagCenter = UI.langFlagCenter || {};
-                                UI.langFlagRight = UI.langFlagRight || {};
-                                UI.langFlagLeft.content = langFlagLeft;
-                                UI.langFlagCenter.content = langFlagCenter;
-                                UI.langFlagRight.content = langFlagRight;
-                            } catch (e) { /* ignore */ }
-                            updateFlagCrop(scene);
-                        } catch (e) { /* ignore */ }
-                    },
-                    destroy: () => {
-                        try { if (left && left.destroy) left.destroy(); } catch (e) { }
-                        try { if (center && center.destroy) center.destroy(); } catch (e) { }
-                        try { if (right && right.destroy) right.destroy(); } catch (e) { }
-                    }
-                };
-
-                return api;
-            } catch (e) {
-                console.warn('[CAROUSEL] failed to create carousel', e);
-                try { if (left && left.destroy) left.destroy(); } catch (ee) { }
-                try { if (center && center.destroy) center.destroy(); } catch (ee) { }
-                try { if (right && right.destroy) right.destroy(); } catch (ee) { }
-                return null;
-            }
-        }
+        // createFlagCarousel has been moved to `js/carousel.js` and is imported at the
+        // top of this file as an ES module. The external implementation is the
+        // single source of truth to avoid duplication. Calls in this file should
+        // use the imported `createFlagCarousel` function.
 
         function loadDictionary(lang) {
             // 1) If the user provided an in-memory dictionary map (window.BH_DICS), use it.
