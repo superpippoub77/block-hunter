@@ -1,0 +1,3614 @@
+<!DOCTYPE html>
+<html lang="it">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BLOCK HUNTER - by SpikeCode (AI)</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+
+<body>
+    <div id="gameContainer">
+        <div id="attractScreen">
+            <div class="title" i18n="title">BLOCK HUNTER</div>
+            <div class="instructions" id="attractInstructions" i18n="instructions">
+                <!-- populated by applyTranslations() -->
+                FRECCE - MOVIMENTO<br>
+                SPAZIO - SPARA<br>
+                RECUPERA L'OGGETTO<br>
+                SCHIVA I BLOCCHI
+            </div>
+            <!-- Coin description placed under the rules (will be populated dynamically) -->
+            <div id="attractCoinInfo"></div>
+            <!-- Sprite gallery: canvases showing each discovered sprite (sprite-sheet + tail) -->
+            <div id="spriteGallery"></div>
+            <!-- language selector on the static attract screen (flags from sprite) -->
+            <div class="lang-selector" id="staticLangSelector">
+                <div class="lang-flag" data-lang="it"><canvas id="flag_static_it" width="48" height="32"></canvas>
+                    <div class="lang-label">IT</div>
+                </div>
+                <div class="lang-flag" data-lang="fr"><canvas id="flag_static_fr" width="48" height="32"></canvas>
+                    <div class="lang-label">FR</div>
+                </div>
+                <div class="lang-flag" data-lang="de"><canvas id="flag_static_de" width="48" height="32"></canvas>
+                    <div class="lang-label">DE</div>
+                </div>
+                <div class="lang-flag" data-lang="en"><canvas id="flag_static_en" width="48" height="32"></canvas>
+                    <div class="lang-label">EN</div>
+                </div>
+                <div class="lang-flag" data-lang="us"><canvas id="flag_static_us" width="48" height="32"></canvas>
+                    <div class="lang-label">US</div>
+                </div>
+                <div class="lang-flag" data-lang="ja"><canvas id="flag_static_ja" width="48" height="32"></canvas>
+                    <div class="lang-label">JP</div>
+                </div>
+                <div class="lang-flag" data-lang="es"><canvas id="flag_static_es" width="48" height="32"></canvas>
+                    <div class="lang-label">ES</div>
+                </div>
+                <div class="lang-flag" data-lang="zh"><canvas id="flag_static_zh" width="48" height="32"></canvas>
+                    <div class="lang-label">CN</div>
+                </div>
+            </div>
+            <!-- Footer/hints/byline moved outside attractScreen so they remain visible during Top Ten -->
+        </div>
+
+        <div class="hud hidden" id="hud">
+            <div><span i18n="score_label">SCORE</span>: <span id="score">0</span></div>
+            <div><span i18n="level_label">LEVEL</span>: <span id="level">1</span></div>
+            <div><span i18n="lives_label">LIVES</span>: <span id="lives">3</span></div>
+            <div><span i18n="gems_label">GEMS</span>: <span id="gems">0</span>/<span id="gemsReq">20</span></div>
+            <div><span i18n="keys_label">KEYS</span>: <span id="keys">0</span></div>
+            <div><span i18n="outside_label">OUTSIDE</span>: <span id="outside">NO</span></div>
+            <div><span i18n="dynamite_label">DYNAMITE</span>: <span id="dynamiteCount">0</span>
+                <div id="dynamiteBar">
+                    <div id="dynamiteFill"></div>
+                </div>
+            </div>
+            <div><span i18n="invul_label">INVUL</span>: <span id="invul">NO</span></div>
+            <div><span i18n="credits_word">CREDITS</span>: <span id="credits">0</span></div>
+            <div><button id="hudSoundToggle" i18n="sound_on">SOUND: ON</button></div>
+        </div>
+
+        <!-- Persistent Top Ten container (moved inside gameContainer instead of creating popup) -->
+        <div id="topTen" class="gameOver hidden"></div>
+
+        <!-- Shared footer, player hints and byline: placed outside #attractScreen so they are visible
+         both on the attract screen and when #topTen is shown. z-index raised to ensure visibility. -->
+        <div class="credit-footer">
+            <span id="attractStaticCredits" i18n="attractmode.staticcredits">INSERT COIN</span>
+        </div>
+        <!-- Player hints: show which player options are available depending on credits -->
+        <div id="attractPlayerHints">
+            <div id="attractHint1" class="player-hint" i18n="players_1">1 PLAYER</div>
+            <div id="attractHint2" class="player-hint unavailable" i18n="players_2">2 PLAYERS</div>
+        </div>
+        <div class="byline" i18n="byline">by SpikeCode</div>
+
+        <canvas id="gameCanvas" width="800" height="600"></canvas>
+    </div>
+
+    <script src="js/game-config.js"></script>
+    <script src="js/game-state.js"></script>
+    <script>
+        // Language loader and helper
+        // Prefer a persisted user choice in localStorage (key: 'bh_lang'), fall back to GAME_CONFIG/default
+        const _persistedLang = (function () { try { return localStorage.getItem('bh_lang'); } catch (e) { return null; } })();
+        const DEFAULT_LANG = _persistedLang || (window.GAME_CONFIG && window.GAME_CONFIG.DEFAULT_LANG) || 'en';
+        // Load flags sprite sheet (expects images/flags.png containing flags in sequence)
+        const FLAGS_LIST = ['it', 'fr', 'de', 'en', 'us', 'ja', 'es', 'zh'];
+        const FLAGS_LABEL = { it: 'IT', fr: 'FR', de: 'DE', en: 'EN', us: 'US', ja: 'JP', es: 'ES', zh: 'CN' };
+        const flagsImg = new Image();
+        flagsImg.src = 'images/flags.png';
+        flagsImg.onload = function () { console.log('flags sprite loaded', flagsImg.width, flagsImg.height); };
+        // whether language selection is currently enabled (can be disabled while user is in player/level selection)
+        window.langSelectionEnabled = true;
+        function loadDictionary(lang, cb) {
+            // If already loaded and same lang, call cb
+            if (window.DICT && window.DICT.lang === lang) {
+                if (cb) cb();
+                return;
+            }
+            const existing = document.querySelector(`script[data-dic]`);
+            if (existing) existing.remove();
+            const script = document.createElement('script');
+            script.src = `data/dic/${lang}.js`;
+            script.setAttribute('data-dic', lang);
+            script.onload = function () {
+                try { if (window.DICT && window.DICT.lang) console.log('Loaded DICT', window.DICT.lang); } catch (e) { }
+                if (cb) cb();
+            };
+            script.onerror = function () {
+                console.warn('Failed to load dictionary', lang, 'falling back to en');
+                if (lang !== 'en') loadDictionary('en', cb);
+                else if (cb) cb();
+            };
+            document.head.appendChild(script);
+        }
+
+        // Initialize static language flags (on the static attract screen)
+        (function initStaticFlags() {
+            try {
+                const LANGS = FLAGS_LIST.slice();
+                function drawFlagStatic(canvas, lang) {
+                    if (!canvas) return;
+                    const ctx = canvas.getContext('2d'); ctx.imageSmoothingEnabled = false;
+                    const W = canvas.width, H = canvas.height; ctx.clearRect(0, 0, W, H);
+                    // If flags image is loaded, draw the appropriate slice, otherwise fallback to programmatic draw for a few known flags
+                    const idx = LANGS.indexOf(lang);
+                    if (flagsImg && flagsImg.naturalWidth && idx >= 0) {
+                        try {
+                            const sliceW = Math.floor(flagsImg.width / FLAGS_LIST.length);
+                            const sx = idx * sliceW;
+                            ctx.drawImage(flagsImg, sx, 0, sliceW, flagsImg.height, 0, 0, W, H);
+                            return;
+                        } catch (e) { /* fallback below */ }
+                    }
+                    // fallback programmatic render for some well-known flags
+                    if (lang === 'it') {
+                        const w3 = Math.floor(W / 3);
+                        ctx.fillStyle = '#088A29'; ctx.fillRect(0, 0, w3, H);
+                        ctx.fillStyle = '#FFFFFF'; ctx.fillRect(w3, 0, w3, H);
+                        ctx.fillStyle = '#CE2B37'; ctx.fillRect(w3 * 2, 0, W - w3 * 2, H);
+                    } else if (lang === 'fr') {
+                        const w3 = Math.floor(W / 3);
+                        ctx.fillStyle = '#0055A4'; ctx.fillRect(0, 0, w3, H);
+                        ctx.fillStyle = '#FFFFFF'; ctx.fillRect(w3, 0, w3, H);
+                        ctx.fillStyle = '#EF4135'; ctx.fillRect(w3 * 2, 0, W - w3 * 2, H);
+                    } else {
+                        // generic placeholder when flags image not available
+                        ctx.fillStyle = '#333'; ctx.fillRect(0, 0, W, H);
+                        ctx.fillStyle = '#fff'; ctx.font = Math.max(10, Math.floor(H * 0.4)) + 'px monospace';
+                        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                        ctx.fillText((FLAGS_LABEL[lang] || lang).toUpperCase(), W / 2, H / 2);
+                    }
+                }
+                let selectedIndex = Math.max(0, LANGS.indexOf((window.DICT && window.DICT.lang) || DEFAULT_LANG));
+                function refreshStaticSelection() {
+                    LANGS.forEach((l, idx) => {
+                        const c = document.getElementById('flag_static_' + l);
+                        if (c) drawFlagStatic(c, l);
+                        const box = c && c.parentElement;
+                        if (!box) return;
+                        box.style.cursor = 'pointer';
+                        if (idx === selectedIndex) box.classList.add('selected'); else box.classList.remove('selected');
+                    });
+                }
+
+                LANGS.forEach((l, idx) => {
+                    const box = document.querySelector(`#staticLangSelector .lang-flag[data-lang="${l}"]`);
+                    if (!box) return;
+                    box.addEventListener('click', function () {
+                        if (!window.langSelectionEnabled) return;
+                        selectedIndex = idx;
+                        try { localStorage.setItem('bh_lang', l); } catch (e) { }
+                        refreshStaticSelection();
+                        loadDictionary(l, function () { applyTranslations(); });
+                    });
+                });
+
+                // keyboard support: left/right to change selection, Enter to apply
+                document.addEventListener('keydown', function staticLangKeyHandler(ev) {
+                    const staticRoot = document.getElementById('staticLangSelector');
+                    // only if static selector is visible
+                    if (!window.langSelectionEnabled || !staticRoot || staticRoot.classList.contains('hidden')) return;
+                    if (ev.key === 'ArrowLeft' || ev.key === 'ArrowRight') {
+                        ev.preventDefault();
+                        if (ev.key === 'ArrowLeft') selectedIndex = (selectedIndex - 1 + LANGS.length) % LANGS.length;
+                        else selectedIndex = (selectedIndex + 1) % LANGS.length;
+                        refreshStaticSelection();
+                        // auto-apply language as soon as selection moves
+                        const lang = LANGS[selectedIndex];
+                        try { localStorage.setItem('bh_lang', lang); } catch (e) { }
+                        loadDictionary(lang, function () { applyTranslations(); });
+                    } else if (ev.key === 'Enter') {
+                        // keep Enter as a fallback (applies language too)
+                        const lang = LANGS[selectedIndex];
+                        try { localStorage.setItem('bh_lang', lang); } catch (e) { }
+                        loadDictionary(lang, function () { applyTranslations(); });
+                    }
+                });
+
+                refreshStaticSelection();
+            } catch (e) { /* ignore */ }
+        })();
+
+        // update the player hints area on the static attract screen according to credits
+        // keep track of previous player availability to detect unlock transitions
+        let lastTwoAvailable = false;
+        let lastOneAvailable = false;
+        function refreshAttractPlayerHints() {
+            const D = window.DICT || {};
+            const hint1 = document.getElementById('attractHint1');
+            const hint2 = document.getElementById('attractHint2');
+            if (!hint1 || !hint2) return;
+            // use translations if present
+            hint1.textContent = D.players_1 || '1 PLAYER';
+            hint2.textContent = D.players_2 || '2 PLAYERS';
+            // compute availability based on per-player cost
+            const per = (window.GAME_CONFIG && window.GAME_CONFIG.CREDITS_PER_PLAYER) || 1;
+            const c = (credits || 0);
+            const needForOne = per;
+            const needForTwo = per * 2;
+            if (c < needForOne) {
+                // none available
+                hint1.classList.remove('available'); hint1.classList.add('unavailable');
+                hint2.classList.remove('available'); hint2.classList.add('unavailable');
+                lastTwoAvailable = false;
+                lastOneAvailable = false;
+            } else if (c >= needForOne && c < needForTwo) {
+                // only one available
+                hint1.classList.add('available'); hint1.classList.remove('unavailable');
+                hint2.classList.remove('available'); hint2.classList.add('unavailable');
+                // trigger an unlock effect when 1-player becomes available (match 2-player behavior)
+                if (!lastOneAvailable) {
+                    try { hint1.classList.add('unlock'); setTimeout(() => { hint1.classList.remove('unlock'); }, 700); } catch (e) { }
+                }
+                lastTwoAvailable = false;
+                lastOneAvailable = true;
+            } else {
+                // both available
+                hint1.classList.add('available'); hint1.classList.remove('unavailable');
+                const nowTwo = true;
+                hint2.classList.add('available'); hint2.classList.remove('unavailable');
+                // animate unlock for both hints if either became newly available
+                if (!lastOneAvailable) {
+                    try { hint1.classList.add('unlock'); setTimeout(() => { hint1.classList.remove('unlock'); }, 700); } catch (e) { }
+                }
+                if (!lastTwoAvailable) {
+                    try { hint2.classList.add('unlock'); setTimeout(() => { hint2.classList.remove('unlock'); }, 700); } catch (e) { }
+                }
+                lastTwoAvailable = nowTwo;
+                lastOneAvailable = true;
+            }
+        }
+
+        // ensure hints are initialized on load
+        try { refreshAttractPlayerHints(); } catch (e) { }
+
+        // Build a simple sprite gallery under the attract instructions for testing/preview
+        function initSpriteGallery() {
+            try {
+                const gallery = document.getElementById('spriteGallery');
+                if (!gallery) return;
+                gallery.innerHTML = '';
+                // gather keys from sprite sheet map, tail map, and programmatic SPRITES
+                const keys = [];
+                Object.keys(SPRITE_SHEET_MAP).forEach(k => { if (!keys.includes(k)) keys.push(k); });
+                Object.keys(TAIL_SHEET_MAP).forEach(k => { if (!keys.includes(k)) keys.push(k); });
+                Object.keys(SPRITES).forEach(k => { if (!keys.includes(k)) keys.push(k); });
+
+                keys.forEach(k => {
+                    const item = document.createElement('div'); item.className = 'sprite-item';
+                    const c = document.createElement('canvas'); c.width = 64; c.height = 64; c.setAttribute('data-sprite', k);
+                    const lbl = document.createElement('div'); lbl.className = 'label'; lbl.textContent = k;
+                    item.appendChild(c); item.appendChild(lbl); gallery.appendChild(item);
+                    const ctx = c.getContext('2d'); ctx.imageSmoothingEnabled = false; ctx.clearRect(0, 0, c.width, c.height);
+                    // decide how to draw: prefer sprite sheet, then tail, then programmatic
+                    const size = Math.min(c.width, c.height) - 8;
+                    if (spriteReady && SPRITE_SHEET_MAP[k]) {
+                        drawFromSheet(ctx, k, c.width / 2, c.height / 2, size);
+                    } else if (tailReady && TAIL_SHEET_MAP[k]) {
+                        drawFromTail(ctx, k, c.width / 2, c.height / 2, size);
+                    } else {
+                        // programmatic patterns: map some common names
+                        if (k === 'player') drawPlayerSpriteAt(ctx, c.width / 2, c.height / 2, size, '#00ff00');
+                        else if (k === 'block') drawBlockSpriteAt(ctx, c.width / 2, c.height / 2, size, false, 0);
+                        else if (k === 'key') drawKeySpriteAt(ctx, c.width / 2, c.height / 2, size);
+                        else if (k === 'door') drawDoorSpriteAt(ctx, c.width / 2, c.height / 2, size, false);
+                        else if (k === 'target') drawTargetSpriteAt(ctx, c.width / 2, c.height / 2, size);
+                        else if (k === 'dynamite' || k === 'dynamite2') drawDynamiteSpriteAt(ctx, c.width / 2, c.height / 2, size);
+                        else if (k === 'doblon') drawCoinSpriteAt(ctx, c.width / 2, c.height / 2, size);
+                        else {
+                            // fallback: draw cell placeholder
+                            ctx.fillStyle = '#666'; ctx.fillRect(8, 8, size, size);
+                        }
+                    }
+                });
+            } catch (e) { /* ignore gallery errors */ }
+        }
+
+        // ensure gallery is built when sheets load
+        try { initSpriteGallery(); } catch (e) { }
+
+        function applyTranslations() {
+            const D = window.DICT || {};
+            // Helper: resolve nested keys like 'attractmode.staticcredits' from the DICT object
+            function resolveDictKey(obj, key) {
+                if (!obj || !key) return undefined;
+                const parts = key.split('.');
+                let cur = obj;
+                for (let i = 0; i < parts.length; i++) {
+                    if (cur && Object.prototype.hasOwnProperty.call(cur, parts[i])) cur = cur[parts[i]];
+                    else return undefined;
+                }
+                return cur;
+            }
+
+            // Apply inline i18n attributes first: any element with [i18n] will get
+            // the dictionary value for that key if present; otherwise its existing
+            // inner content is left untouched. Also collect missing keys for debugging.
+            const _missingI18nKeys = new Set();
+            try {
+                const nodes = document.querySelectorAll('[i18n]');
+                nodes.forEach(n => {
+                    try {
+                        const k = n.getAttribute('i18n');
+                        if (!k) return;
+                        const v = resolveDictKey(D, k);
+                        if (v !== undefined && v !== null) {
+                            // If the dictionary value is an array (multiline), join with <br>
+                            if (Array.isArray(v)) {
+                                n.innerHTML = v.join('<br>');
+                            } else if (typeof v === 'string') {
+                                // Preserve HTML when the dictionary value contains markup
+                                n.innerHTML = v;
+                            } else {
+                                n.textContent = String(v);
+                            }
+                        } else {
+                            _missingI18nKeys.add(k);
+                        }
+                    } catch (e) { /* ignore individual element errors */ }
+                });
+            } catch (e) { /* ignore scanning errors */ }
+            // If in developer console mode, log any missing translation keys once
+            try {
+                if (_missingI18nKeys.size > 0) {
+                    console.warn('Missing i18n keys (add to data/dic/*.js):', Array.from(_missingI18nKeys).sort());
+                }
+            } catch (e) { }
+            // HUD
+            const hud = document.getElementById('hud');
+            if (hud) {
+                hud.innerHTML = `
+                    <div>${D.score_label || 'SCORE'}: <span id="score">0</span></div>
+                    <div>${D.level_label || 'LEVEL'}: <span id="level">1</span></div>
+                    <div>${D.lives_label || 'LIVES'}: <span id="lives">3</span></div>
+                    <div>GEMS: <span id="gems">0</span>/<span id="gemsReq">20</span></div>
+                    <div>KEYS: <span id="keys">0</span></div>
+                    <div>OUTSIDE: <span id="outside">NO</span></div>
+                    <div>DYNAMITE: <span id="dynamiteCount">0</span>
+                                <div id="dynamiteBar">
+                                    <div id="dynamiteFill"></div>
+                                </div>
+                    </div>
+                    <div>INVUL: <span id="invul">NO</span></div>
+                    <div>${D.credits_word || 'CREDITS'}: <span id="credits">0</span></div>
+                    <div><button id="hudSoundToggle">${window.soundEnabled ? (D.sound_on || 'SOUND: ON') : (D.sound_off || 'SOUND: OFF')}</button></div>
+                `;
+            }
+            // Update any visible credit footers now
+            const asc = document.getElementById('attractStaticCredits'); if (asc) asc.textContent = (credits && credits > 0) ? `${D.credits_word || 'CREDITS'}: ${credits}` : (D.insert_coin || 'INSERT COIN');
+            const ac = document.getElementById('attractCredits'); if (ac) ac.textContent = (credits && credits > 0) ? `${D.credits_word || 'CREDITS'}: ${credits}` : (D.insert_coin || 'INSERT COIN');
+            // mark static language selector
+            try {
+                const lang = (D && D.lang) || DEFAULT_LANG;
+                const boxes = document.querySelectorAll('#staticLangSelector .lang-flag');
+                boxes.forEach(b => { if (b.getAttribute('data-lang') === lang) b.classList.add('selected'); else b.classList.remove('selected'); });
+            } catch (e) { }
+            // refresh player hints (1/2 player availability)
+            try { refreshAttractPlayerHints(); } catch (e) { }
+            // Update attract-screen instructions if present
+            const instrDiv = document.getElementById('attractInstructions');
+            if (instrDiv) {
+                const lines = (D.instructions && Array.isArray(D.instructions)) ? D.instructions : null;
+                if (lines && lines.length) instrDiv.innerHTML = lines.join('<br>');
+            }
+            // Update coin description under the rules (dynamic based on configured cost)
+            try {
+                const per = (window.GAME_CONFIG && window.GAME_CONFIG.CREDITS_PER_PLAYER) || 1;
+                const infoEl = document.getElementById('attractCoinInfo');
+                if (infoEl) {
+                    // prefer a dictionary override if present
+                    if (D.coin_info) {
+                        // allow templates: {per}, {two}, {perPlural}
+                        const lang = (D && D.lang) || DEFAULT_LANG;
+                        const perPlural = (lang === 'it') ? (per > 1 ? 'e' : '') : (per > 1 ? 's' : '');
+                        infoEl.textContent = D.coin_info.replace('{per}', per).replace('{two}', per * 2).replace('{perPlural}', perPlural);
+                    } else infoEl.textContent = `1 player: ${per} coin${per > 1 ? 's' : ''} — 2 players: ${per * 2} coins`;
+                }
+            } catch (e) { }
+
+            // Optional: draw dashed border around the inner bounds to visualize the playable room
+            try {
+                if (window._showInnerBoundsBorder) {
+                    const ibb = _ib_draw; // inner bounds used for drawing walls
+                    ctx.save();
+                    ctx.setLineDash([8, 4]);
+                    ctx.strokeStyle = 'rgba(255,200,0,0.95)';
+                    ctx.lineWidth = Math.max(2, Math.round(scale(4)));
+                    ctx.strokeRect(ibb.minX + 0.5, ibb.minY + 0.5, Math.max(0, ibb.maxX - ibb.minX - 1), Math.max(0, ibb.maxY - ibb.minY - 1));
+                    ctx.setLineDash([]);
+                    // label the border with width x height in tiles (approx)
+                    try {
+                        const approxW = Math.round((ibb.maxX - ibb.minX) / (spriteReady && spriteCellW ? Math.max(8, Math.round(Math.min(spriteCellW, spriteCellH) * (SIZE_SCALE || 1))) : Math.round(scale(32))));
+                        const approxH = Math.round((ibb.maxY - ibb.minY) / (spriteReady && spriteCellH ? Math.max(8, Math.round(Math.min(spriteCellW, spriteCellH) * (SIZE_SCALE || 1))) : Math.round(scale(32))));
+                        ctx.fillStyle = 'rgba(255,200,0,0.95)';
+                        ctx.font = '14px monospace';
+                        ctx.fillText(`${approxW}x${approxH}`, ibb.minX + 8, Math.max(ibb.minY + 18, ibb.maxY - 8));
+                    } catch (e) { }
+                    ctx.restore();
+                }
+            } catch (e) { }
+        }
+
+        // Load a level map defined as JS to avoid CORS (expects files under data/level/levelXY.js)
+        // The level file should set window.LEVEL_MAP = { cols, rows, map: [[tileKey,...],...], tileSize?: number }
+        function loadLevelMap(level, sublevel, cb) {
+            try { window.LEVEL_MAP = null; } catch (e) { }
+            const name = `level${level}${sublevel}`; // e.g. level10 for level=1 sublevel=0
+            const existing = document.querySelector(`script[data-level]`);
+            if (existing) existing.remove();
+            const script = document.createElement('script');
+            script.src = `data/level/${name}.js`;
+            script.setAttribute('data-level', name);
+            script.onload = function () {
+                // LEVEL_MAP should be set by the loaded file
+                setTimeout(() => { // small delay to ensure script executed
+                    if (window.LEVEL_MAP && window.LEVEL_MAP.map) {
+                        cb(window.LEVEL_MAP);
+                    } else {
+                        cb(null);
+                    }
+                }, 4);
+            };
+            script.onerror = function () { cb(null); };
+            document.head.appendChild(script);
+        }
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        // Global size scale for all in-game objects (increase to make everything larger)
+        const SIZE_SCALE = (window.GAME_CONFIG && window.GAME_CONFIG.SIZE_SCALE) || 1.5;
+        function scale(n) { return Math.max(1, Math.round(n * SIZE_SCALE)); }
+
+        // Runtime game state is initialized in `js/game-state.js` (loaded before this script)
+        // Here we only keep derived or config-backed constants.
+        const CONTINUE_FRAMES = (window.GAME_CONFIG && window.GAME_CONFIG.CONTINUE_FRAMES) || 600; // 10s at ~60fps
+        const GEMS_PER_STAGE = (window.GAME_CONFIG && window.GAME_CONFIG.GEMS_PER_STAGE) || 20;
+        const TRANSITION_FRAMES = (window.GAME_CONFIG && window.GAME_CONFIG.TRANSITION_FRAMES) || 150; // ~2.5s at 60fps
+
+        // Floating texts helper (runtime array `floatingTexts` is defined in js/game-state.js)
+        function addFloatingText(x, y, text, color = '#ffffff') {
+            floatingTexts.push({ x: x, y: y, text: text, color: color, life: 60, vy: -0.5 });
+        }
+
+        // Player
+        const PLAYER_INITIAL_SPEED = (window.GAME_CONFIG && window.GAME_CONFIG.PLAYER_INITIAL_SPEED) || 5;
+        const PLAYER_MIN_SPEED = (window.GAME_CONFIG && window.GAME_CONFIG.PLAYER_MIN_SPEED) || 1;
+        const player = {
+            x: 400,
+            y: 550,
+            width: scale(20),
+            height: scale(20),
+            speed: PLAYER_INITIAL_SPEED,
+            color: '#00ff00',
+            direction: 'up', // 'up', 'down', 'left', 'right', 'up-left', ...
+            angle: 0 // radians for rendering rotation
+        };
+
+        // Initialize or reset player properties in one place
+        function createPlayer(x = 400, y = 550) {
+            player.x = x;
+            player.y = y;
+            player.width = scale(20);
+            player.height = scale(20);
+            player.speed = PLAYER_INITIAL_SPEED;
+            player.color = '#00ff00';
+            player.direction = 'up';
+            player.angle = 0;
+            // ensure related runtime flags reset
+            playerIsMoving = false;
+            playerKeys = 0;
+            playerDynamite = DYNAMITE_MAX;
+        }
+
+        // Handle player movement and collision in a single function called every frame
+        function updatePlayerMovement() {
+            // Reset movement flag
+            playerIsMoving = false;
+
+            // Movement with 8 directions and angle rotation
+            let inputX = 0;
+            let inputY = 0;
+            if (keys['ArrowLeft']) inputX -= 1;
+            if (keys['ArrowRight']) inputX += 1;
+            if (keys['ArrowUp']) inputY -= 1;
+            if (keys['ArrowDown']) inputY += 1;
+
+            if (inputX !== 0 || inputY !== 0) {
+                // normalize diagonal speed
+                const invMag = 1 / Math.hypot(inputX, inputY);
+                const vx = inputX * invMag * player.speed;
+                const vy = inputY * invMag * player.speed;
+
+                // remember previous position to allow revert if movement collides with impassable tile
+                const prevX = player.x, prevY = player.y;
+                player.x += vx;
+                player.y += vy;
+                playerIsMoving = true;
+
+                // Clamp inside the inner walled area when inside (can't walk into outer band unless outside via doors)
+                if (!isOutside) {
+                    const ib = getInnerBounds();
+                    player.x = Math.max(ib.minX, Math.min(ib.maxX - player.width, player.x));
+                    player.y = Math.max(ib.minY, Math.min(ib.maxY - player.height, player.y));
+                }
+
+                // Prevent walking into impassable floor tiles defined by FLOOR_MAP
+                try {
+                    if (!window.DISABLE_FLOOR && window.FLOOR_MAP) {
+                        const fm = window.FLOOR_MAP;
+                        // compute player's cell region and check impassable tiles overlap
+                        const cellW = (window.LEVEL_MAP && window.LEVEL_MAP.tileSize) || Math.round(scale(32));
+                        const cellH = cellW;
+                        const left = Math.floor(player.x / cellW);
+                        const right = Math.floor((player.x + player.width - 1) / cellW);
+                        const top = Math.floor(player.y / cellH);
+                        const bottom = Math.floor((player.y + player.height - 1) / cellH);
+                        let collided = false;
+                        for (let yy = top; yy <= bottom && !collided; yy++) {
+                            for (let xx = left; xx <= right; xx++) {
+                                const key = (fm[yy] && fm[yy][xx]) || null;
+                                if (key && IMPASSABLE_TILES.has(key)) { collided = true; break; }
+                            }
+                        }
+                        if (collided) {
+                            // revert
+                            player.x = prevX;
+                            player.y = prevY;
+                            playerIsMoving = false;
+                        }
+                    }
+                } catch (e) { /* ignore floor collisions errors */ }
+                // Determine direction string and angle
+                if (playerIsMoving) {
+                    if (inputY < 0 && inputX === 0) player.direction = 'up';
+                    else if (inputY > 0 && inputX === 0) player.direction = 'down';
+                    else if (inputX < 0 && inputY === 0) player.direction = 'left';
+                    else if (inputX > 0 && inputY === 0) player.direction = 'right';
+                    else if (inputY < 0 && inputX < 0) player.direction = 'up-left';
+                    else if (inputY < 0 && inputX > 0) player.direction = 'up-right';
+                    else if (inputY > 0 && inputX < 0) player.direction = 'down-left';
+                    else if (inputY > 0 && inputX > 0) player.direction = 'down-right';
+
+                    // Angle: 0 radians = right, rotate clockwise
+                    player.angle = Math.atan2(vy, vx);
+                }
+            }
+        }
+
+        // Movement helper (declared to avoid ReferenceError)
+        let playerIsMoving = false;
+        // Whether the player is outside (walking the outer border)
+        let isOutside = false;
+        const OUTER_BAND = (window.GAME_CONFIG && window.GAME_CONFIG.OUTER_BAND) || 80; // how wide the outside path is along the edges (tuned)
+
+        // Inner playable area bounds (main walled area). The outer band around it is the escape path.
+        function getInnerBounds() {
+            return {
+                minX: OUTER_BAND,
+                minY: OUTER_BAND,
+                maxX: Math.max(OUTER_BAND, canvas.width - OUTER_BAND),
+                maxY: Math.max(OUTER_BAND, canvas.height - OUTER_BAND)
+            };
+        }
+
+        // Target object
+        const target = {
+            x: 0,
+            y: 0,
+            width: scale(28),
+            height: scale(28),
+            color: '#ffff00',
+            lifetime: 300, // frames before moving
+            currentLife: 0
+        };
+
+        // Game objects
+        let blocks = [];
+        let dynamiteBoxes = [];
+        let doblonBoxes = [];
+        // Explosion visuals
+        let explosions = [];
+        // Screen shake state for strong explosions
+        let screenShake = { time: 0, maxTime: 0, intensity: 0 };
+        const STRONG_EXPLOSION_THRESHOLD = (window.GAME_CONFIG && window.GAME_CONFIG.STRONG_EXPLOSION_THRESHOLD) || 4; // blocks destroyed to trigger shake
+        // Invulnerability (doblon) state
+        let playerInvulnerable = false;
+        let invulTimer = 0;
+        const DOBLON_DURATION_FRAMES = (window.GAME_CONFIG && window.GAME_CONFIG.DOUBLOON_DURATION_FRAMES) || (5 * 60); // ~5 seconds
+        // Sound and dynamite settings
+        let soundEnabled = true;
+        const DYNAMITE_MAX = (window.GAME_CONFIG && window.GAME_CONFIG.DYNAMITE_MAX) || 50; // fixed per level
+        let playerDynamite = DYNAMITE_MAX;
+        // Inizializza le porte ai bordi del canvas
+
+        let bullets = [];
+        let particles = [];
+        let bulletsBlock = [];
+        const DOOR_ICON = '\u{1F6AA}'; // 🚪 (legacy, replaced by pixel art)
+        const KEY_ICON = '\u{1F511}'; // 🔑 (legacy, replaced by pixel art)
+        let doors = [];
+        let levelKeys = [];
+        let playerKeys = 0;
+        let doorCloseTimer = 0;
+
+        // Config globale per le dimensioni dei blocchi (esposta su window per testing dinamico)
+        // distribution: probabilità per small/medium/large (devono sommare a ~1)
+        // multipliers: fattori di scala applicati alla dimensione base
+        const BLOCK_SIZE_CONFIG = {
+            distribution: { small: 0.35, medium: 0.5, large: 0.15 },
+            multipliers: { small: 0.7, medium: 1.0, large: 1.5 }
+        };
+        // Rendi modificabile a runtime dalla console: window.BLOCK_SIZE_CONFIG
+        window.BLOCK_SIZE_CONFIG = BLOCK_SIZE_CONFIG;
+
+        // Input
+        const keys = {};
+
+        // Top ten array
+        let topTen = [];
+        let scoreMultiplier = 1;
+        let selectedDifficulty = 'Beginner';
+
+        // Legacy emoji (kept as references) - we use programmatic pixel sprites now
+        const PLAYER_ICON = '\u{1F47B}'; // 👻 (legacy)
+        const BLOCK_PULSE_ICON = '\u{1F525}'; // 🔥 (legacy)
+        const TARGET_ICON = '\u{1F4A1}'; // 💡 (legacy)
+
+        // Semplice renderer di pixel-sprite (sprite programmati in modo da non richiedere asset esterni)
+        // array di pattern: i caratteri mappano sugli indici della palette (0 = trasparente)
+        const SPRITES = {
+            player: [
+                '00110000',
+                '01111000',
+                '11111100',
+                '11111100',
+                '11111100',
+                '10101100',
+                '10000100',
+                '10000100'
+            ],
+            block: [
+                '11111',
+                '10001',
+                '10101',
+                '10101',
+                '11111'
+            ],
+            key: [
+                '001100',
+                '011110',
+                '011110',
+                '001100',
+                '001110',
+                '011111'
+            ],
+            door: [
+                '01110',
+                '10001',
+                '10001',
+                '10001',
+                '10001',
+                '10001',
+                '10001'
+            ],
+            target: [
+                '00100',
+                '01110',
+                '11111',
+                '01110',
+                '00100'
+            ],
+            dynamite: [
+                '00100',
+                '01110',
+                '11111',
+                '11111',
+                '01110',
+                '00100'
+            ]
+            ,
+            doblon: [
+                '00100',
+                '01110',
+                '11110',
+                '11110',
+                '01110',
+                '00100'
+            ]
+        };
+
+        // Supporto per sprite sheet: images/sprite.png è una griglia 4x4 (da sinistra a destra, dall'alto in basso):
+        // Riga 0: dynamite, heart, block, player
+        // Riga 1: dynamite, door, dynamon, shards
+        // Riga 2: key, sand, ghost, doblon
+        // Riga 3: wall, mine_tile, hole, explosion
+        const sheetCols = 4, sheetRows = 4;
+        let spriteSheet = new Image();
+        let spriteReady = false;
+        let spriteCellW = 0, spriteCellH = 0;
+        let spriteSheetPad = 2; // padding inside each cell to avoid bleeding
+        const SPRITE_SHEET_MAP = {
+            // row 0
+            dynamite: { r: 0, c: 0 },
+            heart: { r: 0, c: 1 },
+            block: { r: 0, c: 2 },
+            player: { r: 0, c: 3 },
+            // row 1
+            dynamite2: { r: 1, c: 0 },
+            door: { r: 1, c: 1 },
+            dynamon: { r: 1, c: 2 },
+            shards: { r: 1, c: 3 },
+            // row 2
+            key: { r: 2, c: 0 },
+            sand: { r: 2, c: 1 },
+            ghost: { r: 2, c: 2 },
+            doblon: { r: 2, c: 3 },
+            // row 3
+            wall: { r: 3, c: 0 },
+            mine_tile: { r: 3, c: 1 },
+            hole: { r: 3, c: 2 },
+            explosion: { r: 3, c: 3 }
+        };
+        // carica la sprite sheet e calcola la dimensione delle celle
+        spriteSheet.onload = function () {
+            // compute exact (float) cell sizes to avoid cumulative rounding issues
+            const cellWf = spriteSheet.width / sheetCols;
+            const cellHf = spriteSheet.height / sheetRows;
+            // keep numeric cell sizes (we'll round source rects when drawing)
+            spriteCellW = cellWf;
+            spriteCellH = cellHf;
+            // compute padding as small fraction of cell size to avoid bleeding/cropping
+            // use a slightly larger padding (3%) to be safe for artist margins
+            spriteSheetPad = Math.max(0, Math.round(Math.min(cellWf, cellHf) * 0.03));
+            console.log('spriteSheet loaded', { w: spriteSheet.width, h: spriteSheet.height, cellW: spriteCellW, cellH: spriteCellH, pad: spriteSheetPad });
+            spriteReady = true;
+            // refresh gallery now that sprite sheet is ready (or re-render fallbacks on error)
+            try { initSpriteGallery(); } catch (e) { }
+            // console.log('Sprite sheet ready', spriteCellW, spriteCellH);
+        };
+        spriteSheet.onerror = function () {
+            // se il caricamento fallisce, manteniamo spriteReady=false e si useranno le sprite programmatiche
+            spriteReady = false;
+            try { initSpriteGallery(); } catch (e) { }
+        };
+        spriteSheet.src = 'images/sprite.png';
+
+        // Additional tilesheet for floor/wall tiles (pavimentazione) as provided by the user
+        // images/tail.png assumed to be a 4x4 grid where rows/cols map to the floor/wall/hole tiles
+        const tailCols = 4, tailRows = 4;
+        let tailSheet = new Image();
+        let tailReady = false;
+        let tailCellW = 0, tailCellH = 0;
+        // computed bounding boxes per-tail entry (filled after tailSheet loads)
+        const TAIL_SHEET_BBOX = {};
+        // Tiles that block movement (player can't pass through)
+        const IMPASSABLE_TILES = new Set(['wall1', 'wall2', 'wall3', 'wall4', 'wall', 'mine_tile']);
+
+        // Compute tight bounding boxes for each tail sheet entry (callable from console)
+        function computeTailBBoxes() {
+            if (!tailReady) return false;
+            try {
+                // draw the full tail sheet into a temporary canvas
+                const tmp = document.createElement('canvas');
+                tmp.width = tailSheet.width;
+                tmp.height = tailSheet.height;
+                const tctx = tmp.getContext('2d');
+                tctx.imageSmoothingEnabled = false;
+                tctx.clearRect(0, 0, tmp.width, tmp.height);
+                tctx.drawImage(tailSheet, 0, 0);
+                Object.keys(TAIL_SHEET_MAP).forEach(key => {
+                    const e = TAIL_SHEET_MAP[key];
+                    const cx = Math.round(e.c * tailCellW);
+                    const cy = Math.round(e.r * tailCellH);
+                    const cw = Math.max(1, Math.round(tailCellW));
+                    const ch = Math.max(1, Math.round(tailCellH));
+                    let imgData;
+                    try { imgData = tctx.getImageData(cx, cy, cw, ch); } catch (err) { imgData = null; }
+                    if (!imgData) {
+                        const pad = Math.max(1, Math.round(Math.min(tailCellW, tailCellH) * 0.02));
+                        TAIL_SHEET_BBOX[key] = { sx: Math.round(cx + pad), sy: Math.round(cy + pad), sw: Math.max(4, Math.round(cw - pad * 2)), sh: Math.max(4, Math.round(ch - pad * 2)) };
+                        return;
+                    }
+                    const data = imgData.data;
+                    let minX = cw, minY = ch, maxX = -1, maxY = -1;
+                    for (let y = 0; y < ch; y++) {
+                        for (let x = 0; x < cw; x++) {
+                            const idx = (y * cw + x) * 4 + 3;
+                            const a = data[idx];
+                            if (a > 8) {
+                                if (x < minX) minX = x;
+                                if (x > maxX) maxX = x;
+                                if (y < minY) minY = y;
+                                if (y > maxY) maxY = y;
+                            }
+                        }
+                    }
+                    if (maxX < 0) {
+                        const pad = Math.max(1, Math.round(Math.min(tailCellW, tailCellH) * 0.02));
+                        TAIL_SHEET_BBOX[key] = { sx: Math.round(cx + pad), sy: Math.round(cy + pad), sw: Math.max(4, Math.round(cw - pad * 2)), sh: Math.max(4, Math.round(ch - pad * 2)) };
+                    } else {
+                        const pad = 1;
+                        const sx = Math.max(0, cx + minX - pad);
+                        const sy = Math.max(0, cy + minY - pad);
+                        const sw = Math.min(tailSheet.width - sx, (maxX - minX + 1) + pad * 2);
+                        const sh = Math.min(tailSheet.height - sy, (maxY - minY + 1) + pad * 2);
+                        TAIL_SHEET_BBOX[key] = { sx: sx, sy: sy, sw: Math.max(4, Math.round(sw)), sh: Math.max(4, Math.round(sh)) };
+                    }
+                });
+                console.log('Computed TAIL_SHEET_BBOX for', Object.keys(TAIL_SHEET_BBOX).length, 'entries');
+                return true;
+            } catch (e) {
+                console.warn('Failed to compute tail bboxes', e);
+                return false;
+            }
+        }
+        const TAIL_SHEET_MAP = {
+            // row 0: wall variants
+            wall1: { r: 0, c: 0 },
+            wall2: { r: 0, c: 1 },
+            wall3: { r: 0, c: 2 },
+            wall4: { r: 0, c: 3 },
+            // row 1: hole + sand variants
+            hole: { r: 1, c: 0 },
+            sand1: { r: 1, c: 1 },
+            sand2: { r: 1, c: 2 },
+            sand3: { r: 1, c: 3 },
+            // row 2
+            sand4: { r: 2, c: 0 },
+            sand5: { r: 2, c: 1 },
+            sandPile: { r: 2, c: 2 },
+            sand6: { r: 2, c: 3 },
+            // row 3
+            sand7: { r: 3, c: 0 },
+            sand8: { r: 3, c: 1 },
+            sand9: { r: 3, c: 2 },
+            sand10: { r: 3, c: 3 }
+        };
+        tailSheet.onload = function () {
+            // use float cell sizes to avoid rounding truncation
+            const tcellWf = tailSheet.width / tailCols;
+            const tcellHf = tailSheet.height / tailRows;
+            tailCellW = tcellWf;
+            tailCellH = tcellHf;
+            tailReady = true;
+            // Compute tight bounding boxes for each entry to avoid cutting or extra padding
+            try { computeTailBBoxes(); } catch (e) { console.warn('Failed to compute tail bboxes', e); }
+            // redraw gallery when tail sheet becomes available
+            try { initSpriteGallery(); } catch (e) { }
+            console.log('tailSheet loaded', { w: tailSheet.width, h: tailSheet.height, cellW: tailCellW, cellH: tailCellH });
+        };
+        tailSheet.onerror = function () { tailReady = false; try { initSpriteGallery(); } catch (e) { } };
+        // The actual tilesheet filename in the repo is images/tile.png (not tail.png)
+        tailSheet.src = 'images/tile.png';
+        console.log('tailSheet src set to images/tile.png');
+        // expose a helper so you can re-run bbox detection from the console after replacing the image
+        try {
+            window.refreshTileBBoxes = function () { return computeTailBBoxes(); };
+            window.toggleTileDebug = function () { window._debugShowTailBBoxes = !window._debugShowTailBBoxes; console.log('tile debug now', !!window._debugShowTailBBoxes); return !!window._debugShowTailBBoxes; };
+        } catch (e) { }
+
+        // Global toggle to disable floor map creation/drawing and related collision checks (useful to debug map drawing)
+        // Set to `false` to re-enable floor rendering and FLOOR_MAP behavior.
+        try { window.DISABLE_FLOOR = true; } catch (e) { window.DISABLE_FLOOR = true; }
+        // Global toggle to disable the inner wall border drawing
+        // Set to `false` to re-enable walls
+        try { window.DISABLE_WALL = true; } catch (e) { window.DISABLE_WALL = true; }
+        // Toggle to show a visual border around the loaded floor map (schema)
+        try { window._showFloorBorder = true; window.toggleFloorBorder = function () { window._showFloorBorder = !window._showFloorBorder; console.log('floor border', !!window._showFloorBorder); return !!window._showFloorBorder; }; } catch (e) { window._showFloorBorder = true; }
+        try {
+            window._showInnerBoundsBorder = true;
+            window.toggleInnerBoundsBorder = function () { window._showInnerBoundsBorder = !window._showInnerBoundsBorder; console.log('inner bounds', !!window._showInnerBoundsBorder); return !!window._showInnerBoundsBorder; };
+        } catch (e) { window._showInnerBoundsBorder = true; }
+
+        function drawFromTail(ctx, keyName, cx, cy, size, rotate = 0) {
+            if (!tailReady) return false;
+            const entry = TAIL_SHEET_MAP[keyName];
+            if (!entry) return false;
+            // prefer tight bounding boxes if we computed them on load
+            let sx, sy, sw, sh;
+            const bbox = TAIL_SHEET_BBOX[keyName];
+            if (bbox) {
+                sx = bbox.sx; sy = bbox.sy; sw = bbox.sw; sh = bbox.sh;
+            } else {
+                // use rounded source rects calculated from float cell sizes as fallback
+                const pad = Math.max(1, Math.round(Math.min(tailCellW, tailCellH) * 0.02));
+                sx = Math.round(entry.c * tailCellW + pad);
+                sy = Math.round(entry.r * tailCellH + pad);
+                sw = Math.max(4, Math.round(tailCellW - pad * 2));
+                sh = Math.max(4, Math.round(tailCellH - pad * 2));
+            }
+            ctx.save();
+            ctx.translate(cx, cy);
+            if (rotate) ctx.rotate(rotate);
+            try {
+                // preserve source aspect ratio: scale so the longer source side maps to `size`
+                const aspect = sw / sh;
+                let dw, dh;
+                if (aspect >= 1) {
+                    dw = size;
+                    dh = Math.max(1, Math.round(size / aspect));
+                } else {
+                    dh = size;
+                    dw = Math.max(1, Math.round(size * aspect));
+                }
+                ctx.drawImage(tailSheet, sx, sy, sw, sh, -dw / 2, -dh / 2, dw, dh);
+            } catch (e) { }
+            ctx.restore();
+            return true;
+        }
+
+        // Draw a tail tile stretched to a rectangular target (no aspect-preservation)
+        function drawTailTile(ctx, keyName, cx, cy, targetW, targetH, rotate = 0) {
+            if (!tailReady) return false;
+            const entry = TAIL_SHEET_MAP[keyName];
+            if (!entry) return false;
+            let sx, sy, sw, sh;
+            const bbox = TAIL_SHEET_BBOX[keyName];
+            if (bbox) {
+                sx = bbox.sx; sy = bbox.sy; sw = bbox.sw; sh = bbox.sh;
+            } else {
+                const pad = Math.max(1, Math.round(Math.min(tailCellW, tailCellH) * 0.02));
+                sx = Math.round(entry.c * tailCellW + pad);
+                sy = Math.round(entry.r * tailCellH + pad);
+                sw = Math.max(4, Math.round(tailCellW - pad * 2));
+                sh = Math.max(4, Math.round(tailCellH - pad * 2));
+            }
+            ctx.save();
+            ctx.translate(cx, cy);
+            if (rotate) ctx.rotate(rotate);
+            try {
+                ctx.drawImage(tailSheet, sx, sy, sw, sh, -targetW / 2, -targetH / 2, targetW, targetH);
+            } catch (e) { }
+            ctx.restore();
+            return true;
+        }
+
+        function setupDoors() {
+            doors = [
+                { x: scale(32), y: canvas.height / 2, open: false }, // sinistra
+                { x: canvas.width - scale(32), y: canvas.height / 2, open: false }, // destra
+                { x: canvas.width / 2, y: scale(32), open: false }, // alto
+                { x: canvas.width / 2, y: canvas.height - scale(32), open: false } // basso
+            ];
+        }
+        function drawFromSheet(ctx, keyName, cx, cy, size, rotate = 0) {
+            if (!spriteReady) return false;
+            const entry = SPRITE_SHEET_MAP[keyName];
+            if (!entry) return false;
+            // compute source rect with optional inner padding to avoid bleeding/cropped edges
+            // use rounded coordinates derived from float cell sizes to avoid off-by-one truncation
+            const pad = Math.max(1, Math.round(Math.min(spriteCellW, spriteCellH) * 0.03));
+            const sx = Math.round(entry.c * spriteCellW + pad);
+            const sy = Math.round(entry.r * spriteCellH + pad);
+            const sw = Math.max(4, Math.round(spriteCellW - pad * 2));
+            const sh = Math.max(4, Math.round(spriteCellH - pad * 2));
+            ctx.save();
+            ctx.translate(cx, cy);
+            if (rotate) ctx.rotate(rotate);
+            try {
+                ctx.drawImage(spriteSheet, sx, sy, sw, sh, -size / 2, -size / 2, size, size);
+            } catch (e) {
+                // if drawing fails, don't break the game
+            }
+            ctx.restore();
+            return true;
+        }
+
+        function drawSpritePattern(ctx, pattern, centerX, centerY, size, palette) {
+            const rows = pattern.length;
+            const cols = pattern[0].length;
+            const px = size / Math.max(rows, cols);
+            const offsetX = -cols * px / 2;
+            const offsetY = -rows * px / 2;
+            for (let r = 0; r < rows; r++) {
+                const row = pattern[r];
+                for (let c = 0; c < cols; c++) {
+                    const ch = row[c];
+                    if (ch === '1') {
+                        ctx.fillStyle = palette[0];
+                        ctx.fillRect(Math.round(centerX + offsetX + c * px), Math.round(centerY + offsetY + r * px), Math.ceil(px), Math.ceil(px));
+                    }
+                }
+            }
+        }
+
+        function drawPlayerSpriteAt(ctx, cx, cy, size, color) {
+            // prefer sprite sheet if available (player sprite used for player)
+            if (drawFromSheet(ctx, 'player', cx, cy, size, player.angle)) return;
+            ctx.save();
+            drawSpritePattern(ctx, SPRITES.player, cx, cy, size, [color]);
+            // eyes/highlight
+            ctx.fillStyle = '#ffffff';
+            const eyeSize = Math.max(1, Math.round(size / 12));
+            ctx.fillRect(Math.round(cx - size * 0.18), Math.round(cy - size * 0.12), eyeSize, eyeSize);
+            ctx.fillRect(Math.round(cx + size * 0.06), Math.round(cy - size * 0.12), eyeSize, eyeSize);
+            ctx.restore();
+        }
+
+        function drawBlockSpriteAt(ctx, cx, cy, size, pulse, angle = 0) {
+            const color = pulse ? '#ff6a00' : '#ff00ff';
+            // block sprite at (0,2) - passiamo rotate se presente
+            if (drawFromSheet(ctx, 'block', cx, cy, size, angle)) return;
+
+            // Fallback programmatico: applichiamo la rotazione al contesto
+            ctx.save();
+            ctx.translate(cx, cy);
+            if (angle) ctx.rotate(angle);
+            // drawSpritePattern si aspetta coordinate centrali, con centro a 0,0 dopo translate
+            drawSpritePattern(ctx, SPRITES.block, 0, 0, size, [color]);
+            if (pulse) {
+                ctx.strokeStyle = 'rgba(255,255,0,0.6)';
+                ctx.lineWidth = 1.5;
+                ctx.beginPath();
+                ctx.arc(0, 0, size * 0.6, 0, Math.PI * 2);
+                ctx.stroke();
+            }
+            ctx.restore();
+        }
+
+        function drawKeySpriteAt(ctx, cx, cy, size) {
+            // Prefer key sprite from sprite sheet when available
+            if (drawFromSheet(ctx, 'key', cx, cy, size)) return;
+            drawSpritePattern(ctx, SPRITES.key, cx, cy, size, ['#ffff00']);
+            ctx.strokeStyle = '#ff00ff';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(Math.round(cx - size / 3), Math.round(cy - size / 3), Math.round(size / 1.5), Math.round(size / 1.5));
+        }
+
+        function drawDoorSpriteAt(ctx, cx, cy, size, open) {
+            if (drawFromSheet(ctx, 'door', cx, cy - (size * 0.1), size)) return;
+            drawSpritePattern(ctx, SPRITES.door, cx, cy - (size * 0.1), size, [open ? '#00ff00' : '#ff4444']);
+            // small frame
+            ctx.strokeStyle = '#ffff00';
+            ctx.lineWidth = 1.5;
+            ctx.strokeRect(Math.round(cx - size / 2), Math.round(cy - size / 2), Math.round(size), Math.round(size));
+        }
+
+        function drawTargetSpriteAt(ctx, cx, cy, size) {
+            if (drawFromSheet(ctx, 'dynamon', cx, cy, size)) return;
+            drawSpritePattern(ctx, SPRITES.target, cx, cy, size, ['#ffff00']);
+            ctx.strokeStyle = '#ff00ff';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.arc(cx, cy, size * 0.45, 0, Math.PI * 2);
+            ctx.stroke();
+        }
+
+        function drawDynamiteSpriteAt(ctx, cx, cy, size) {
+            if (drawFromSheet(ctx, 'dynamite', cx, cy, size)) return;
+            // fallback programmatic dynamite
+            drawSpritePattern(ctx, SPRITES.dynamite, cx, cy, size, ['#ff3333']);
+            // fuse line
+            const flick = (Math.sin(Date.now() * 0.02) + 1) * 0.5;
+            ctx.strokeStyle = `rgba(255,200,50,${0.6 + 0.4 * flick})`;
+            ctx.lineWidth = Math.max(1, size * 0.06);
+            ctx.beginPath();
+            ctx.moveTo(cx + size * 0.45, cy - size * 0.3);
+            ctx.lineTo(cx + size * 0.8, cy - size * 0.55);
+            ctx.stroke();
+        }
+
+        function drawCoinSpriteAt(ctx, cx, cy, size) {
+            if (drawFromSheet(ctx, 'doblon', cx, cy, size)) return;
+            drawSpritePattern(ctx, SPRITES.doblon, cx, cy, size, ['#ffd700']);
+            // inner shine
+            ctx.fillStyle = 'rgba(255,255,255,0.35)';
+            ctx.beginPath();
+            ctx.ellipse(cx - size * 0.12, cy - size * 0.12, size * 0.18, size * 0.12, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = '#ffb400';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(Math.round(cx - size / 2), Math.round(cy - size / 2), Math.round(size), Math.round(size));
+        }
+
+        // Initialize target position
+        function spawnTarget() {
+            target.x = Math.random() * (canvas.width - target.width);
+            target.y = Math.random() * (canvas.height - scale(100) - target.height) + scale(50);
+            target.currentLife = 0;
+        }
+
+        // Return combined numeric level used for scoring/legacy behavior
+        function getCombinedLevel() {
+            return (gameLevel - 1) * 5 + subLevel;
+        }
+
+        // Configure stage parameters based on gameLevel and subLevel
+        function configureStage() {
+            // default
+            stageConfig = {
+                doorsCount: 0,
+                spawnTypes: ['random'], // 'random', 'top', 'bottom', 'left', 'right'
+                blockSpeed: 1,
+                pulseChance: 0,
+                pulseSizes: [],
+                shards: false,
+                shardSpeed: 0,
+                shardFireChance: 0.01,
+                spawnRate: 20
+            };
+
+            const g = gameLevel;
+            const s = subLevel;
+
+            // Map according to spec
+            if (g === 1) {
+                // Level 1: only random; doors on sublevel 4-5
+                stageConfig.spawnTypes = ['random'];
+                stageConfig.blockSpeed = s; // 1..5
+                stageConfig.doorsCount = (s >= 4) ? 2 : 0;
+            } else if (g === 2) {
+                // Level 2: random + top/bottom; doors on sublevel 3-5
+                stageConfig.spawnTypes = ['random', 'top', 'bottom'];
+                stageConfig.blockSpeed = s; // 1..5
+                stageConfig.doorsCount = (s >= 3) ? 2 : 0;
+            } else if (g === 3) {
+                // Level 3: random + all four directions
+                stageConfig.spawnTypes = ['random', 'top', 'bottom', 'left', 'right'];
+                stageConfig.blockSpeed = s; // 1..5
+                stageConfig.doorsCount = (s <= 2) ? 4 : 6;
+            } else if (g === 4) {
+                // Level 4: like 3 but with pulse rocks; doors vary 6/8
+                stageConfig.spawnTypes = ['random', 'top', 'bottom', 'left', 'right'];
+                stageConfig.blockSpeed = s; // 1..5
+                stageConfig.doorsCount = (s <= 2) ? 6 : 8;
+                stageConfig.pulseChance = 0.25; // some rocks pulse
+                stageConfig.pulseSizes = ['small', 'big'];
+            } else if (g === 5) {
+                // Level 5: like 4 but pulse rocks shoot shards
+                stageConfig.spawnTypes = ['random', 'top', 'bottom', 'left', 'right'];
+                stageConfig.blockSpeed = s; // 1..5
+                stageConfig.doorsCount = 8;
+                stageConfig.pulseChance = 0.3;
+                stageConfig.pulseSizes = ['small', 'big'];
+                stageConfig.shards = true;
+                stageConfig.shardSpeed = s; // shards speed equals sublevel
+                stageConfig.shardFireChance = 0.02 + s * 0.005; // increase with sublevel
+            }
+
+            // spawnRate inversely proportional to difficulty (larger = slower spawns)
+            // Use integer spawn rates (round) and a sensible minimum so modulo checks work
+            stageConfig.spawnRate = Math.max(Math.round(48 - getCombinedLevel() * 1.2), 14);
+
+            // Update global legacy level var
+            level = getCombinedLevel();
+
+            // Setup doors according to new config
+            setupDoorsForStage(stageConfig.doorsCount || 0);
+            // Setup doblons for this gameLevel
+            let doblonCount = 1;
+            if (gameLevel <= 2) doblonCount = 1;
+            else if (gameLevel === 3) doblonCount = 2;
+            else if (gameLevel >= 4) doblonCount = 4;
+            setupDoblonsForStage(doblonCount);
+        }
+
+        // Clean fields and advance after transition
+        function finishAdvanceAfterTransition() {
+            // Clear playfield
+            blocks = [];
+            bullets = [];
+            bulletsBlock = [];
+            particles = [];
+            levelKeys = [];
+            floatingTexts = [];
+            doors = [];
+            gemsCollected = 0;
+            // Reset player position
+            player.x = canvas.width / 2 - player.width / 2;
+            player.y = canvas.height - 50;
+
+            inTransition = false;
+            // Advance to next sublevel (this will configure stage and set doors)
+            advanceSublevel();
+
+            // Start fresh
+            spawnTarget();
+            updateHUD();
+        }
+
+        // Setup doors array with a given number of doors distributed on edges
+        function setupDoorsForStage(count) {
+            doors = [];
+            if (!count || count <= 0) return;
+            const positions = [];
+            // We'll distribute doors around the edges: left, top, right, bottom, repeating
+            const edges = ['left', 'top', 'right', 'bottom'];
+            for (let i = 0; i < count; i++) {
+                const edge = edges[i % edges.length];
+                const idx = Math.floor(i / edges.length);
+                // spread along the edge
+                const t = 0.2 + (idx + (i % edges.length) / Math.max(1, Math.floor((count + edges.length - 1) / edges.length))) * 0.6;
+                let x = canvas.width / 2, y = canvas.height / 2;
+                switch (edge) {
+                    case 'left': x = scale(32); y = Math.round(canvas.height * t); break;
+                    case 'right': x = canvas.width - scale(32); y = Math.round(canvas.height * t); break;
+                    case 'top': y = scale(32); x = Math.round(canvas.width * t); break;
+                    case 'bottom': y = canvas.height - scale(32); x = Math.round(canvas.width * t); break;
+                }
+                doors.push({ x: x, y: y, open: false });
+            }
+        }
+
+        // Place doblons (gold coins) for this stage
+        function setupDoblonsForStage(count) {
+            doblonBoxes = [];
+            if (!count || count <= 0) return;
+            for (let i = 0; i < count; i++) {
+                const box = {
+                    x: Math.random() * (canvas.width - scale(120)) + scale(60),
+                    y: Math.random() * (canvas.height - scale(240)) + scale(120),
+                    width: scale(32),
+                    height: scale(32),
+                    collected: false
+                };
+                doblonBoxes.push(box);
+            }
+        }
+
+        // Advance sublevel/level when player progresses
+        function advanceSublevel() {
+            if (gameLevel === 5 && subLevel === 5) {
+                // End game - reached final
+                endGame();
+                return;
+            }
+            subLevel++;
+            if (subLevel > 5) {
+                subLevel = 1;
+                gameLevel = Math.min(5, gameLevel + 1);
+            }
+            configureStage();
+            updateHUD();
+        }
+
+        // Spawn a key occasionally for doors (only one active at a time)
+        function spawnKey() {
+            // If there is already an uncollected key, do nothing
+            const active = levelKeys.find(k => !k.collected);
+            if (active) return;
+
+            // Small random chance to spawn a key, scaled by level
+            const baseChance = 0.001; // per frame
+            const chance = baseChance + Math.min(level * 0.0005, 0.01);
+            if (Math.random() < chance) {
+                const key = {
+                    x: Math.random() * (canvas.width - scale(60)) + scale(30),
+                    y: Math.random() * (canvas.height - scale(120)) + scale(60),
+                    collected: false
+                };
+                levelKeys.push(key);
+            }
+        }
+
+        // Spawn dynamite box occasionally which replenishes player's dynamite
+        function spawnDynamiteBox() {
+            // limit number of boxes active
+            const active = dynamiteBoxes.find(b => !b.collected);
+            if (active) return;
+            // chance scaled by level
+            const baseChance = 0.0008;
+            const chance = baseChance + Math.min(level * 0.0008, 0.01);
+            if (Math.random() < chance) {
+                const box = {
+                    x: Math.random() * (canvas.width - scale(80)) + scale(40),
+                    y: Math.random() * (canvas.height - scale(160)) + scale(80),
+                    width: scale(34),
+                    height: scale(26),
+                    amount: 10,
+                    collected: false,
+                    life: 600 // frames before it disappears (~10s)
+                };
+                dynamiteBoxes.push(box);
+            }
+        }
+
+        // Block spawning based on level
+        function spawnBlock() {
+            // increase base size so blocks are visually larger (apply global scale)
+            const baseSize = scale(36);
+            const bs = stageConfig.blockSpeed || 1;
+            const baseWidth = baseSize;
+            const baseHeight = baseSize;
+            const pulse = Math.random() < (stageConfig.pulseChance || 0);
+            const pulsePhase = Math.random() * Math.PI * 2;
+            // varianza dimensionale: small/medium/large (usa BLOCK_SIZE_CONFIG per permettere tuning da runtime)
+            const defaultW = scale(34);
+            const defaultH = scale(26);
+            const roll = Math.random();
+            const dist = (window.BLOCK_SIZE_CONFIG && window.BLOCK_SIZE_CONFIG.distribution) || { small: 0.35, medium: 0.5, large: 0.15 };
+            const mults = (window.BLOCK_SIZE_CONFIG && window.BLOCK_SIZE_CONFIG.multipliers) || { small: 0.7, medium: 1.0, large: 1.5 };
+            let sizeCategory = 'medium';
+            let sizeMult = mults.medium;
+            if (roll < dist.small) { sizeCategory = 'small'; sizeMult = mults.small; }
+            else if (roll < dist.small + dist.medium) { sizeCategory = 'medium'; sizeMult = mults.medium; }
+            else { sizeCategory = 'large'; sizeMult = mults.large; }
+
+            const w = Math.max(8, Math.round(defaultW * sizeMult));
+            const h = Math.max(6, Math.round(defaultH * sizeMult));
+
+            const block = {
+                x: Math.random() * (canvas.width - scale(80)) + scale(40),
+                y: Math.random() * (canvas.height - scale(160)) + scale(80),
+                width: w,
+                height: h,
+                sizeCategory: sizeCategory,
+                vx: 0,
+                vy: 0,
+                falling: false,
+                landed: true,
+                spawnAnimation: 0,
+                maxSpawnAnimation: 20,
+                pulse: pulse,
+                pulsePhase: pulsePhase
+                ,
+                // angolo iniziale casuale (radianti)
+                angle: Math.random() * Math.PI * 2,
+                // velocità angolare iniziale (radians per frame)
+                angularVel: (Math.random() - 0.5) * 0.12,
+                // alcuni blocchi si 'allineano' a multipli di 90° all'atterraggio (stile pixel-art)
+                snapTo90: Math.random() < 0.45,
+                // bounce visivo al momento dell'atterraggio (px)
+                bounce: 0,
+                // valore ausiliario per animare il bounce
+                bounceVel: 0
+            };
+
+            // Choose spawn type based on stageConfig
+            const spawnTypes = stageConfig.spawnTypes || ['random'];
+            const spawnType = spawnTypes[Math.floor(Math.random() * spawnTypes.length)];
+
+            switch (spawnType) {
+                case 'random':
+                    // spawn inside the inner walled area
+                    const _ib = getInnerBounds();
+                    block.x = Math.random() * (Math.max(0, _ib.maxX - _ib.minX - block.width - scale(40))) + _ib.minX + scale(20);
+                    block.y = Math.random() * (Math.max(0, _ib.maxY - _ib.minY - block.height - scale(100))) + _ib.minY + scale(50);
+                    block.landed = true;
+                    break;
+                case 'top':
+                    const _ib_t = getInnerBounds();
+                    block.x = Math.random() * Math.max(0, (_ib_t.maxX - _ib_t.minX - block.width)) + _ib_t.minX;
+                    block.y = -block.height;
+                    block.vy = 1 + bs;
+                    block.falling = true;
+                    block.landed = false;
+                    break;
+                case 'bottom':
+                    const _ib_b = getInnerBounds();
+                    block.x = Math.random() * Math.max(0, (_ib_b.maxX - _ib_b.minX - block.width)) + _ib_b.minX;
+                    block.y = canvas.height + block.height;
+                    block.vy = -(1 + bs);
+                    block.landed = false;
+                    break;
+                case 'left':
+                    block.x = -block.width;
+                    // spawn Y within inner area band vertically
+                    const _ib_l = getInnerBounds();
+                    block.y = Math.random() * (Math.max(0, _ib_l.maxY - _ib_l.minY - block.height - scale(40))) + _ib_l.minY + scale(20);
+                    block.vx = 1 + bs;
+                    block.landed = false;
+                    break;
+                case 'right':
+                    block.x = canvas.width + block.width;
+                    const _ib_r = getInnerBounds();
+                    block.y = Math.random() * (Math.max(0, _ib_r.maxY - _ib_r.minY - block.height - scale(40))) + _ib_r.minY + scale(20);
+                    block.vx = -(1 + bs);
+                    block.landed = false;
+                    break;
+                default:
+                    const _ib_d = getInnerBounds();
+                    block.x = Math.random() * (Math.max(0, _ib_d.maxX - _ib_d.minX - block.width - scale(40))) + _ib_d.minX + scale(20);
+                    block.y = Math.random() * (Math.max(0, _ib_d.maxY - _ib_d.minY - block.height - scale(100))) + _ib_d.minY + scale(50);
+                    block.landed = true;
+            }
+
+            blocks.push(block);
+        }
+
+        // Create particle effect
+        function createParticles(x, y, color) {
+            for (let i = 0; i < 8; i++) {
+                particles.push({
+                    x: x,
+                    y: y,
+                    vx: (Math.random() - 0.5) * 6,
+                    vy: (Math.random() - 0.5) * 6,
+                    life: 30,
+                    color: color
+                });
+            }
+        }
+
+        // Collision detection
+        function checkCollision(obj1, obj2) {
+            return obj1.x < obj2.x + obj2.width &&
+                obj1.x + obj1.width > obj2.x &&
+                obj1.y < obj2.y + obj2.height &&
+                obj1.y + obj1.height > obj2.y;
+        }
+
+        // Schermata selezione livello
+        // showLevelSelect(preselectPlayers)
+        // Se viene passato preselectPlayers (1 o 2), dopo che il giocatore sceglie la difficoltà
+        // verrà pre-selezionato automaticamente il numero di giocatori corrispondente.
+        function showLevelSelect(preselectPlayers) {
+            // stop attract/top-ten alternation while selection UI is active
+            try { clearInterval(attractInterval); } catch (e) { }
+            // disable language selection while player/level selection is active
+            try { window.langSelectionEnabled = false; } catch (e) { }
+            try { const staticRoot = document.getElementById('staticLangSelector'); if (staticRoot) staticRoot.classList.add('disabled'); } catch (e) { }
+            const selectDiv = document.createElement('div');
+            selectDiv.id = 'levelSelect';
+            // Make Select Level a standalone full-screen attract-like overlay so it's independent
+            selectDiv.classList.add('attract-bg', 'overlay', 'level-select');
+            // use dictionary for translated labels where available
+            const D = window.DICT || {};
+            // Use a centered semi-transparent panel so the attract screen remains visible behind
+            selectDiv.innerHTML = `
+                <div class="levelPanel">
+                    <div class="title dialog-title">${D.level_select_title || 'SELECT LEVEL'}</div>
+                    <div class="panelButtons">
+                        <button class="levelButton" data-diff="Beginner">${D.beginner || 'BEGINNER'}</button>
+                        <button class="levelButton" data-diff="Medium">${D.medium || 'MEDIUM'}</button>
+                        <button class="levelButton" data-diff="Expert">${D.expert || 'EXPERT'}</button>
+                    </div>
+                </div>
+            `;
+            document.getElementById('gameContainer').appendChild(selectDiv);
+            // Stile pulsanti senza bordo (keep styling but do not hide static attract children)
+            const style = document.createElement('style');
+            style.innerHTML = `
+.levelPanel {
+                /* more transparent so the attract background remains the main visual */
+                background: rgba(10,14,39,0.5);
+                padding: 18px 24px;
+                border-radius: 10px;
+                box-shadow: 0 8px 20px rgba(0,0,0,0.45);
+                min-width: 280px;
+                text-align: center;
+                margin: 0 auto;
+            }
+            .panelButtons { display:flex; flex-direction:column; gap:12px; align-items:center; }
+            @media (min-width: 640px) {
+                .panelButtons { flex-direction:row; justify-content:center; gap:18px; }
+            }
+
+.levelButton {
+                padding: 15px 40px;
+                font-family: 'Press Start 2P', monospace;
+                font-size: 16px;
+                background: linear-gradient(45deg, #ff00ff, #00ffff);
+                color: #000;
+                cursor: pointer;
+                text-transform: uppercase;
+                animation: pulse 1.5s ease-in-out infinite;
+                box-shadow: 0 0 20px rgba(255, 0, 255, 0.6);
+                transition: all 0.3s;
+                margin: 10px;
+                border: none !important;
+                outline: none !important;
+            }
+            .levelButton:hover {
+                transform: scale(1.1);
+                box-shadow: 0 0 40px rgba(255, 0, 255, 0.9);
+            }
+            /* Focus/keyboard selection styling */
+            .levelButton.focused {
+                transform: scale(1.06);
+                box-shadow: 0 0 50px rgba(255, 230, 120, 0.95) !important;
+                outline: 2px solid rgba(255,255,200,0.9);
+            }
+            `;
+            document.head.appendChild(style);
+            // Keyboard navigation for difficulty selection (Up/Down to move, Enter to choose, Esc to cancel)
+            const levelButtonsInit = selectDiv.querySelectorAll('.levelButton');
+            let levelFocus = 0;
+            function updateLevelFocus() {
+                const btns = selectDiv.querySelectorAll('.levelButton');
+                btns.forEach((b, i) => {
+                    if (i === levelFocus) {
+                        b.classList.add('focused');
+                        try { b.scrollIntoView({ block: 'center', inline: 'center' }); } catch (e) { }
+                    } else {
+                        b.classList.remove('focused');
+                    }
+                });
+            }
+            updateLevelFocus();
+            const levelKeyHandler = function (ev) {
+                if (!selectDiv || !document.body.contains(selectDiv)) return;
+                if (ev.key === 'ArrowUp' || ev.key === 'ArrowDown' || ev.key === 'Enter' || ev.key === 'Escape') {
+                    ev.preventDefault();
+                    const btns = selectDiv.querySelectorAll('.levelButton');
+                    if (ev.key === 'ArrowUp') {
+                        levelFocus = (levelFocus - 1 + btns.length) % btns.length;
+                        updateLevelFocus();
+                    } else if (ev.key === 'ArrowDown') {
+                        levelFocus = (levelFocus + 1) % btns.length;
+                        updateLevelFocus();
+                    } else if (ev.key === 'Enter') {
+                        const b = btns[levelFocus]; if (b) b.click();
+                    } else if (ev.key === 'Escape') {
+                        try { selectDiv.remove(); } catch (e) { }
+                        try { style.remove(); } catch (e) { }
+                        document.removeEventListener('keydown', levelKeyHandler);
+                        // re-enable language selection when selection is cancelled
+                        try { window.langSelectionEnabled = true; } catch (e) { }
+                        try { const staticRoot2 = document.getElementById('staticLangSelector'); if (staticRoot2) staticRoot2.classList.remove('disabled'); } catch (e) { }
+                        // restore attract screen children (remove bg-only) and restart attract/top-ten alternation when selection is cancelled
+                        try { const staticAttract = document.getElementById('attractScreen'); if (staticAttract) staticAttract.classList.remove('bg-only'); } catch (e) { }
+                        showAttractOrTopTen();
+                    }
+                }
+            };
+            document.addEventListener('keydown', levelKeyHandler);
+            // After choosing difficulty, start the game immediately when a difficulty is chosen
+            selectDiv.querySelectorAll('button').forEach(btn => {
+                btn.onclick = function () {
+                    selectedDifficulty = btn.getAttribute('data-diff');
+                    switch (selectedDifficulty) {
+                        case 'Beginner': gameLevel = 1; subLevel = 1; scoreMultiplier = 1; break;
+                        case 'Medium': gameLevel = 2; subLevel = 1; scoreMultiplier = 2; break;
+                        case 'Expert': gameLevel = 3; subLevel = 1; scoreMultiplier = 3; break;
+                    }
+                    configureStage();
+                    // choose players: use preselectPlayers if supplied, otherwise default to 1
+                    numPlayers = (preselectPlayers === 2) ? 2 : 1;
+                    const per = (window.GAME_CONFIG && window.GAME_CONFIG.CREDITS_PER_PLAYER) || 1;
+                    const required = per * numPlayers;
+                    if (credits < required) {
+                        playCoinRequiredSound(required);
+                        animateCreditHint(required);
+                        return;
+                    }
+                    credits -= required;
+                    try { const sc = document.getElementById('selectCredits'); if (sc) sc.textContent = credits; } catch (e) { }
+                    try { document.removeEventListener('keydown', levelKeyHandler); } catch (e) { }
+                    try { const staticAttract3 = document.getElementById('attractScreen'); if (staticAttract3) staticAttract3.classList.remove('bg-only'); } catch (e) { }
+                    try { selectDiv.remove(); } catch (e) { }
+                    try { style.remove(); } catch (e) { }
+                    try { document.getElementById('attractScreen').classList.add('hidden'); } catch (e) { }
+                    startGame();
+                    updateHUD();
+                };
+            });
+        }
+
+        // Avvia il gioco
+        function startGame() {
+            console.log('Starting game...');
+            try { if (window.attractInterval) { clearInterval(window.attractInterval); window.attractInterval = null; } } catch (e) { }
+            // ensure persistent topTen is hidden when a new game starts
+            try { const persistentTop = document.getElementById('topTen'); if (persistentTop) { persistentTop.classList.add('hidden'); } } catch (e) { }
+            // apply the in-game decorative frame
+            document.body.classList.add('in-game');
+            gameState = 'playing';
+            score = 0;
+            // level viene impostato dalla selezione
+            lives = 3;
+            blocks = [];
+            bullets = [];
+            bulletsBlock = [];
+            particles = [];
+            frameCount = 0;
+            // initialize player to default start position and stats
+            createPlayer();
+            gemsCollected = 0;
+            // give player full dynamite for the level
+            playerDynamite = DYNAMITE_MAX;
+            inTransition = false;
+            // configure initial stage (sets doors according to difficulty)
+            configureStage();
+            // load a predefined level map (JS) or fallback to generated floor map
+            const ib = getInnerBounds();
+            loadLevelMap(gameLevel, subLevel, function (lm) {
+                if (lm && lm.map && Array.isArray(lm.map)) {
+                    // use provided map; allow optional tileSize and origin offsets
+                    const tileSizeProvided = lm.tileSize || (tailReady && tailCellW ? Math.max(8, Math.round(Math.min(tailCellW, tailCellH) * (SIZE_SCALE || 1))) : (spriteReady && spriteCellW ? Math.max(8, Math.round(Math.min(spriteCellW, spriteCellH) * (SIZE_SCALE || 1))) : Math.max(16, Math.round(scale(32)))));
+                    const originX = (typeof lm.originX === 'number') ? (ib.minX + lm.originX) : ib.minX;
+                    const originY = (typeof lm.originY === 'number') ? (ib.minY + lm.originY) : ib.minY;
+                    const cols = lm.cols || (lm.map[0] ? lm.map[0].length : 0);
+                    const rows = lm.rows || lm.map.length;
+                    window.FLOOR_MAP = { originX: originX, originY: originY, cols: cols, rows: rows, tileSize: tileSizeProvided, map: lm.map };
+                } else {
+                    // fallback: procedurally generate a floor map as before
+                    try {
+                        // compute tileSize consistent with gameLoop logic (use tailCell when available)
+                        let fs;
+                        if (tailReady && tailCellW && tailCellH) fs = Math.max(8, Math.round(Math.min(tailCellW, tailCellH) * (SIZE_SCALE || 1)));
+                        else if (spriteReady && spriteCellW && spriteCellH) fs = Math.max(8, Math.round(Math.min(spriteCellW, spriteCellH) * (SIZE_SCALE || 1)));
+                        else fs = Math.max(16, Math.round(scale(32)));
+                        const w = Math.max(0, ib.maxX - ib.minX);
+                        const h = Math.max(0, ib.maxY - ib.minY);
+                        const cols = Math.max(1, Math.floor(w / fs));
+                        const rows = Math.max(1, Math.floor(h / fs));
+                        const map = [];
+                        const sandKeys = ['sand1', 'sand2', 'sand3', 'sand4', 'sand5', 'sand6', 'sand7', 'sand8', 'sand9', 'sand10', 'sandPile'];
+                        for (let r = 0; r < rows; r++) {
+                            const row = [];
+                            for (let c = 0; c < cols; c++) {
+                                // small chance of hole tile (e.g. 3%)
+                                if (Math.random() < 0.03) row.push('hole');
+                                else {
+                                    const idx = (r * cols + c) % sandKeys.length;
+                                    row.push(sandKeys[idx]);
+                                }
+                            }
+                            map.push(row);
+                        }
+                        window.FLOOR_MAP = { originX: ib.minX, originY: ib.minY, cols: cols, rows: rows, tileSize: fs, map: map };
+                    } catch (e) { window.FLOOR_MAP = null; }
+                }
+                // continue init after floor map ready
+                levelKeys = [];
+                doorCloseTimer = 0;
+
+                // Rimuovi eventuali overlay .gameOver transient ma non rimuovere il container persistente #topTen
+                try {
+                    const olds = Array.from(document.querySelectorAll('.gameOver')).filter(e => e.id !== 'topTen');
+                    olds.forEach(o => o.remove());
+                    // if #topTen exists, just hide it
+                    const persistentTop = document.getElementById('topTen');
+                    if (persistentTop) { persistentTop.classList.add('hidden'); }
+                } catch (e) { }
+
+                // hide any attract overlays with a short fade, then start
+                hideAttractOverlaysWithFade(() => {
+                    document.getElementById('hud').classList.remove('hidden');
+                    spawnTarget();
+                    updateHUD();
+                    gameLoop();
+                });
+            });
+            // NOTE: the rest of startGame's continuation will be executed asynchronously
+            return; // we already started the continuation in the callback
+        }
+
+        // Dissolvi e rimuovi le overlay di attrazione (statiche e dinamiche), poi chiama cb
+        function hideAttractOverlaysWithFade(cb) {
+            // play a short transition cue if sound enabled
+            if (soundEnabled) playTransitionSound();
+            const els = [];
+            const staticAttract = document.getElementById('attractScreen');
+            if (staticAttract && !staticAttract.classList.contains('hidden')) els.push(staticAttract);
+            const customAttract = document.getElementById('attractScreenCustom');
+            if (customAttract) els.push(customAttract);
+            // collect transient gameOver overlays (do not include persistent #topTen to avoid removing it)
+            try {
+                const transientGameOvers = Array.from(document.querySelectorAll('.gameOver')).filter(e => e.id !== 'topTen');
+                transientGameOvers.forEach(o => els.push(o));
+            } catch (e) { }
+
+            // If the persistent topTen is visible, fade it out but don't remove it from DOM
+            try {
+                const persistentTop = document.getElementById('topTen');
+                if (persistentTop && !persistentTop.classList.contains('hidden')) {
+                    persistentTop.classList.add('fade-out');
+                    setTimeout(() => {
+                        persistentTop.classList.add('hidden');
+
+                        persistentTop.classList.remove('fade-out');
+                    }, 360);
+                }
+            } catch (e) { }
+
+            if (els.length === 0) {
+                cb();
+                return;
+            }
+
+            els.forEach(el => {
+                // if overlay registered a cleanup handler (e.g. lang selector), call it
+                try { if (el.cleanupLang) el.cleanupLang(); } catch (e) { }
+                el.classList.add('fade-out');
+            });
+
+            // remove after transition
+            setTimeout(() => {
+                els.forEach(el => {
+                    try { el.remove(); } catch (e) { /* ignore */ }
+                });
+                cb();
+            }, 360);
+        }
+
+        // Usa una dinamite: distrugge i blocchi vicini
+        function useDynamite() {
+            if (playerDynamite <= 0) {
+                addFloatingText(player.x + player.width / 2, player.y, 'NO DYNAMITE', '#ff4444');
+                return;
+            }
+            playerDynamite--;
+            updateHUD();
+            const cx = player.x + player.width / 2;
+            const cy = player.y + player.height / 2;
+            const radius = 90;
+            let destroyed = 0;
+            for (let i = blocks.length - 1; i >= 0; i--) {
+                const b = blocks[i];
+                const bx = b.x + b.width / 2;
+                const by = b.y + b.height / 2;
+                const dist = Math.hypot(bx - cx, by - cy);
+                if (dist <= radius) {
+                    createParticles(b.x + b.width / 2, b.y + b.height / 2, '#ff6622');
+                    blocks.splice(i, 1);
+                    destroyed++;
+                }
+            }
+            if (destroyed > 0) {
+                addFloatingText(cx, cy - 10, `BOOM x${destroyed}`, '#ffcc00');
+                // add visual explosion effect
+                explosions.push({ x: cx, y: cy, life: 30, maxLife: 30, maxRadius: radius });
+                // screen shake on strong explosions (intensity scales with destroyed count)
+                if (destroyed >= STRONG_EXPLOSION_THRESHOLD) {
+                    screenShake.intensity = Math.min(28, destroyed * 4);
+                    screenShake.time = 18 + destroyed * 3;
+                    screenShake.maxTime = screenShake.time;
+                }
+                // small explosion sound
+                if (soundEnabled) playExplosionSound();
+            } else {
+                addFloatingText(cx, cy - 10, 'BOOM', '#ffcc00');
+            }
+        }
+
+        function playExplosionSound() {
+            try {
+                const AudioCtx = window.AudioContext || window.webkitAudioContext;
+                if (!AudioCtx) return;
+                if (!_audioCtx) _audioCtx = new AudioCtx();
+                const ctx = _audioCtx;
+                const now = ctx.currentTime;
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.type = 'square';
+                osc.frequency.setValueAtTime(180, now);
+                osc.frequency.exponentialRampToValueAtTime(60, now + 0.18);
+                gain.gain.setValueAtTime(0.0001, now);
+                gain.gain.linearRampToValueAtTime(0.18, now + 0.005);
+                gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.35);
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                osc.start(now);
+                osc.stop(now + 0.36);
+            } catch (e) { }
+        }
+
+        // Breve suono di transizione generato con WebAudio (nessun file esterno)
+        let _audioCtx = null;
+        function playTransitionSound() {
+            try {
+                const AudioCtx = window.AudioContext || window.webkitAudioContext;
+                if (!AudioCtx) return;
+                if (!_audioCtx) _audioCtx = new AudioCtx();
+                const ctx = _audioCtx;
+                const now = ctx.currentTime;
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                // gentle metallic/chime effect: start high, sweep down
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(1000, now);
+                osc.frequency.exponentialRampToValueAtTime(420, now + 0.28);
+                gain.gain.setValueAtTime(0.0001, now);
+                gain.gain.linearRampToValueAtTime(0.12, now + 0.01);
+                gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.45);
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                osc.start(now);
+                osc.stop(now + 0.46);
+            } catch (e) {
+                // WebAudio may be blocked; ignore silently
+            }
+        }
+
+        // Suono breve per indicare che servono coins (feedback negativo)
+        function playCoinRequiredSound(required) {
+            try {
+                const AudioCtx = window.AudioContext || window.webkitAudioContext;
+                if (!AudioCtx) return;
+                if (!_audioCtx) _audioCtx = new AudioCtx();
+                const ctx = _audioCtx;
+                const now = ctx.currentTime;
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.type = 'triangle';
+                // frequency depends on required coins (higher for 1, lower for 2) so user can tell
+                const base = required === 1 ? 600 : 360;
+                osc.frequency.setValueAtTime(base, now);
+                osc.frequency.exponentialRampToValueAtTime(base * 0.6, now + 0.18);
+                gain.gain.setValueAtTime(0.0001, now);
+                gain.gain.linearRampToValueAtTime(0.14, now + 0.01);
+                gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.4);
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                osc.start(now);
+                osc.stop(now + 0.42);
+            } catch (e) { /* ignore */ }
+        }
+
+        // Suono breve positivo per inserimento moneta
+        function playCoinInsertSound() {
+            try {
+                const AudioCtx = window.AudioContext || window.webkitAudioContext;
+                if (!AudioCtx) return;
+                if (!_audioCtx) _audioCtx = new AudioCtx();
+                const ctx = _audioCtx;
+                const now = ctx.currentTime;
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.type = 'square';
+                osc.frequency.setValueAtTime(1200, now);
+                osc.frequency.exponentialRampToValueAtTime(1800, now + 0.06);
+                gain.gain.setValueAtTime(0.0001, now);
+                gain.gain.linearRampToValueAtTime(0.18, now + 0.01);
+                gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.12);
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                osc.start(now);
+                osc.stop(now + 0.14);
+            } catch (e) { /* ignore */ }
+        }
+
+        // Animazione visiva breve per evidenziare l'elemento dei crediti
+        function animateCreditHint(required) {
+            // Preferisci elementi dinamici se presenti
+            const els = [];
+            const ac = document.getElementById('attractCredits'); if (ac) els.push(ac);
+            const asc = document.getElementById('attractStaticCredits'); if (asc) els.push(asc);
+            const insetBtn = document.getElementById('insertCoinBtn'); if (insetBtn) els.push(insetBtn);
+            // create a temporary popup in the center as well
+            addFloatingText(canvas.width / 2, canvas.height / 2 + 80, `INSERISCI ${required} COIN${required > 1 ? 'S' : ''}`, '#ffcc00');
+
+            els.forEach(el => {
+                try {
+                    el.style.transition = 'transform 140ms ease, box-shadow 140ms ease';
+                    el.style.transform = 'scale(1.18)';
+                    el.style.boxShadow = '0 0 18px rgba(255,204,0,0.95)';
+                } catch (e) { }
+            });
+            setTimeout(() => {
+                els.forEach(el => {
+                    try {
+                        el.style.transform = '';
+                        el.style.boxShadow = '';
+                    } catch (e) { }
+                });
+            }, 420);
+        }
+
+        // Loop principale del gioco
+        function gameLoop() {
+            if (gameState !== 'playing') return;
+            frameCount++;
+
+            // valore base della larghezza blocco usata per normalizzare gli effetti di impatto
+            const DEFAULT_BLOCK_W = scale(34);
+
+            // If we're in a stage transition, draw an overlay message and count down
+            if (inTransition) {
+                // Draw background (cleared above)
+                ctx.fillStyle = 'rgba(0,0,0,0.5)';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                ctx.fillStyle = '#ffffff';
+                ctx.textAlign = 'center';
+                ctx.font = '40px Arial';
+                ctx.fillText(transitionText, canvas.width / 2, canvas.height / 2);
+                transitionTimer--;
+                if (transitionTimer <= 0) {
+                    finishAdvanceAfterTransition();
+                }
+                requestAnimationFrame(gameLoop);
+                return;
+            }
+
+            // Clear canvas
+            ctx.fillStyle = '#0a0e27';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Apply screen shake by translating the canvas element (keeps ctx state intact)
+            if (screenShake.time > 0) {
+                const prog = screenShake.time / Math.max(1, screenShake.maxTime);
+                const mag = screenShake.intensity * prog;
+                const sx = (Math.random() * 2 - 1) * mag;
+                const sy = (Math.random() * 2 - 1) * mag;
+                try { canvas.style.transform = `translate(${sx}px, ${sy}px)`; } catch (e) { }
+                screenShake.time--;
+            } else {
+                // clear any leftover transform
+                if (canvas.style.transform) canvas.style.transform = '';
+            }
+
+            // Grid background
+            ctx.strokeStyle = 'rgba(0, 255, 255, 0.1)';
+            ctx.lineWidth = 1;
+            for (let i = 0; i < canvas.width; i += 40) {
+                ctx.beginPath();
+                ctx.moveTo(i, 0);
+                ctx.lineTo(i, canvas.height);
+                ctx.stroke();
+            }
+            for (let i = 0; i < canvas.height; i += 40) {
+                ctx.beginPath();
+                ctx.moveTo(0, i);
+                ctx.lineTo(canvas.width, i);
+                ctx.stroke();
+            }
+
+            // Draw visible inner wall (the main walled area). The outer band around it is an open escape path.
+            const _ib_draw = getInnerBounds();
+            try {
+                // Decide tileSize: when sprite sheet is ready, use the actual sprite cell
+                // dimension for pixel-perfect alignment (scaled by SIZE_SCALE). Otherwise
+                // fall back to the previous scale(32) value.
+                let tileSize;
+                if (spriteReady && spriteCellW && spriteCellH) {
+                    // Use the smaller of cell W/H to avoid non-square distortion, then scale
+                    // by SIZE_SCALE so the art respects the global size multiplier.
+                    tileSize = Math.max(8, Math.round(Math.min(spriteCellW, spriteCellH) * (SIZE_SCALE || 1)));
+                } else {
+                    tileSize = Math.max(16, Math.round(scale(32)));
+                }
+
+                // If sprite sheet is loaded, draw repeated 'wall' tiles along the inner rectangle
+                if (!window.DISABLE_WALL && spriteReady && drawFromSheet) {
+                    const w = Math.max(0, _ib_draw.maxX - _ib_draw.minX);
+                    const h = Math.max(0, _ib_draw.maxY - _ib_draw.minY);
+                    const cols = Math.max(1, Math.ceil(w / tileSize));
+                    const rows = Math.max(1, Math.ceil(h / tileSize));
+                    // Top and bottom rows (use tail wall tiles if available, otherwise previous sprite 'wall')
+                    for (let i = 0; i < cols; i++) {
+                        const cx = _ib_draw.minX + i * tileSize + tileSize / 2;
+                        const topY = _ib_draw.minY + tileSize / 2;
+                        const bottomY = _ib_draw.maxY - tileSize / 2;
+                        if (tailReady && drawFromTail) {
+                            // pick a wall variant in a tiled pattern for variety
+                            const idx = i % 4;
+                            const wkeys = ['wall1', 'wall2', 'wall3', 'wall4'];
+                            drawTailTile(ctx, wkeys[idx], cx, topY, tileSize, tileSize, 0) || drawFromSheet(ctx, 'wall', cx, topY, tileSize, 0);
+                            drawTailTile(ctx, wkeys[idx], cx, bottomY, tileSize, tileSize, 0) || drawFromSheet(ctx, 'wall', cx, bottomY, tileSize, 0);
+                        } else {
+                            drawFromSheet(ctx, 'wall', cx, topY, tileSize, 0);
+                            drawFromSheet(ctx, 'wall', cx, bottomY, tileSize, 0);
+                        }
+                    }
+                    // Left and right columns
+                    for (let j = 0; j < rows; j++) {
+                        const cy = _ib_draw.minY + j * tileSize + tileSize / 2;
+                        const leftX = _ib_draw.minX + tileSize / 2;
+                        const rightX = _ib_draw.maxX - tileSize / 2;
+                        if (tailReady && drawFromTail) {
+                            const idx = j % 4;
+                            const wkeys = ['wall1', 'wall2', 'wall3', 'wall4'];
+                            drawTailTile(ctx, wkeys[idx], leftX, cy, tileSize, tileSize, 0) || drawFromSheet(ctx, 'wall', leftX, cy, tileSize, 0);
+                            drawTailTile(ctx, wkeys[idx], rightX, cy, tileSize, tileSize, 0) || drawFromSheet(ctx, 'wall', rightX, cy, tileSize, 0);
+                        } else {
+                            drawFromSheet(ctx, 'wall', leftX, cy, tileSize, 0);
+                            drawFromSheet(ctx, 'wall', rightX, cy, tileSize, 0);
+                        }
+                    }
+                } else {
+                    // subtle wall border fallback
+                    if (!window.DISABLE_WALL) {
+                        ctx.strokeStyle = '#444444';
+                        ctx.lineWidth = Math.max(3, Math.round(scale(6)));
+                        ctx.strokeRect(_ib_draw.minX + 1, _ib_draw.minY + 1, Math.max(0, _ib_draw.maxX - _ib_draw.minX - 2), Math.max(0, _ib_draw.maxY - _ib_draw.minY - 2));
+                    }
+                }
+            } catch (e) { }
+
+            // Update player movement (centralized)
+            updatePlayerMovement();
+
+            // If outside, keep player constrained to the outer band (snap to nearest edge band)
+            if (isOutside) {
+                const band = OUTER_BAND;
+                // keep within canvas but prefer the band distance from edges
+                player.x = Math.max(0, Math.min(canvas.width - player.width, player.x));
+                player.y = Math.max(0, Math.min(canvas.height - player.height, player.y));
+
+                // Snap to nearest edge band if close to it
+                const distLeft = player.x;
+                const distRight = canvas.width - (player.x + player.width);
+                const distTop = player.y;
+                const distBottom = canvas.height - (player.y + player.height);
+                const minDist = Math.min(distLeft, distRight, distTop, distBottom);
+                if (minDist === distLeft) {
+                    player.x = Math.min(band - player.width / 2, player.x);
+                } else if (minDist === distRight) {
+                    player.x = Math.max(canvas.width - band, player.x);
+                } else if (minDist === distTop) {
+                    player.y = Math.min(band - player.height / 2, player.y);
+                } else {
+                    player.y = Math.max(canvas.height - band, player.y);
+                }
+            }
+
+            // Draw player with rotation based on movement angle
+            ctx.font = '32px Arial';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillStyle = player.color;
+            ctx.strokeStyle = '#ffff00';
+            ctx.lineWidth = 2;
+            const centerX = player.x + player.width / 2;
+            const centerY = player.y + player.height / 2;
+            // Check fall into hole (tile 'hole' from FLOOR_MAP)
+            try {
+                if (!window.DISABLE_FLOOR && window.FLOOR_MAP && !playerInvulnerable) {
+                    const fm = window.FLOOR_MAP;
+                    const gx = Math.floor((centerX - fm.originX) / fm.tileSize);
+                    const gy = Math.floor((centerY - fm.originY) / fm.tileSize);
+                    if (gx >= 0 && gx < fm.cols && gy >= 0 && gy < fm.rows) {
+                        const tk = fm.map[gy][gx];
+                        if (tk === 'hole') {
+                            // player falls into hole
+                            lives--;
+                            createParticles(player.x + player.width / 2, player.y + player.height / 2, '#ff0000');
+                            playerInvulnerable = true;
+                            invulTimer = Math.max(90, Math.floor(DOBLON_DURATION_FRAMES / 2));
+                            // respawn player to a safe location (center-bottom of inner bounds)
+                            const ib = getInnerBounds();
+                            player.x = Math.max(ib.minX + 8, Math.min(ib.maxX - player.width - 8, (ib.minX + ib.maxX) / 2 - player.width / 2));
+                            player.y = ib.maxY - player.height - 8;
+                            updateHUD();
+                            if (lives <= 0) { endGame(); return; }
+                        }
+                    }
+                }
+            } catch (e) { }
+            ctx.save();
+            ctx.translate(centerX, centerY);
+            // If angle is NaN (no movement yet), default to 0
+            const angle = isFinite(player.angle) ? player.angle : 0;
+            ctx.rotate(angle);
+            // draw pixel-player centered at 0,0 (after translate/rotate)
+            drawPlayerSpriteAt(ctx, 0, 0, Math.max(player.width, player.height), player.color);
+            ctx.restore();
+
+            // Draw floor tiles (if FLOOR_MAP is present) — must happen after walls so floor is under objects
+            try {
+                if (!window.DISABLE_FLOOR && window.FLOOR_MAP) {
+                    const fm = window.FLOOR_MAP;
+                    for (let ry = 0; ry < fm.rows; ry++) {
+                        for (let cxIdx = 0; cxIdx < fm.cols; cxIdx++) {
+                            const tk = fm.map[ry][cxIdx] || 'sand1';
+                            const drawX = fm.originX + cxIdx * fm.tileSize + fm.tileSize / 2;
+                            const drawY = fm.originY + ry * fm.tileSize + fm.tileSize / 2;
+                            // prefer tail tiles for floor
+                            if (tailReady && drawTailTile) {
+                                // Use drawTailTile to stretch the tail-sheet source to the grid cell
+                                // This avoids tight-source aspect-preserved drawing that can overlap adjacent tiles
+                                drawTailTile(ctx, tk, drawX, drawY, fm.tileSize, fm.tileSize, 0) || drawFromSheet(ctx, 'block', drawX, drawY, fm.tileSize, 0);
+                            } else if (tailReady && drawFromTail) {
+                                // fallback to aspect-preserving draw if the strict tile-stretch helper isn't available
+                                drawFromTail(ctx, tk, drawX, drawY, fm.tileSize, 0) || drawFromSheet(ctx, 'block', drawX, drawY, fm.tileSize, 0);
+                            } else if (spriteReady && drawFromSheet) {
+                                // fallback: use a generic tile if available
+                                drawFromSheet(ctx, 'block', drawX, drawY, fm.tileSize, 0);
+                            } else {
+                                // programmatic fallback: sandy rectangle
+                                ctx.fillStyle = '#bfa57a'; ctx.fillRect(drawX - fm.tileSize / 2, drawY - fm.tileSize / 2, fm.tileSize, fm.tileSize);
+                            }
+                        }
+                    }
+                }
+            } catch (e) { }
+
+            // Debug overlay: show computed tail bboxes and impassable tiles when enabled
+            try {
+                if (window._debugShowTailBBoxes && tailReady) {
+                    // draw bboxes from TAIL_SHEET_BBOX (in source image space) onto a small preview
+                    const previewX = 8, previewY = canvas.height - 8 - Math.min(160, tailSheet.height);
+                    const previewW = Math.min(160, tailSheet.width);
+                    const previewH = Math.min(160, tailSheet.height);
+                    // draw a tiny background for visibility
+                    ctx.save();
+                    ctx.globalAlpha = 0.9;
+                    ctx.fillStyle = '#000';
+                    ctx.fillRect(previewX - 2, previewY - 2, previewW + 4, previewH + 4);
+                    // draw the full tail sheet preview (scaled)
+                    try { ctx.drawImage(tailSheet, 0, 0, tailSheet.width, tailSheet.height, previewX, previewY, previewW, previewH); } catch (e) { }
+                    // overlay bbox rectangles (scaled)
+                    Object.keys(TAIL_SHEET_BBOX).forEach(k => {
+                        const b = TAIL_SHEET_BBOX[k];
+                        if (!b) return;
+                        const sx = previewX + (b.sx / tailSheet.width) * previewW;
+                        const sy = previewY + (b.sy / tailSheet.height) * previewH;
+                        const sw = (b.sw / tailSheet.width) * previewW;
+                        const sh = (b.sh / tailSheet.height) * previewH;
+                        ctx.strokeStyle = '#00ffff'; ctx.lineWidth = 1; ctx.strokeRect(sx, sy, sw, sh);
+                        ctx.fillStyle = 'rgba(0,255,255,0.08)'; ctx.fillRect(sx, sy, sw, sh);
+                        ctx.fillStyle = '#fff'; ctx.font = '10px monospace'; ctx.fillText(k, sx + 2, sy + 10);
+                    });
+                    ctx.restore();
+
+                    // highlight impassable tiles on the floor map (only if floor enabled)
+                    if (!window.DISABLE_FLOOR && window.FLOOR_MAP) {
+                        const fm = window.FLOOR_MAP;
+                        ctx.save();
+                        ctx.strokeStyle = 'rgba(255,0,0,0.9)'; ctx.lineWidth = 2;
+                        for (let ry = 0; ry < fm.rows; ry++) {
+                            for (let cxIdx = 0; cxIdx < fm.cols; cxIdx++) {
+                                const tk = fm.map[ry][cxIdx];
+                                if (tk && IMPASSABLE_TILES.has(tk)) {
+                                    const rx = fm.originX + cxIdx * fm.tileSize;
+                                    const ry_px = fm.originY + ry * fm.tileSize;
+                                    ctx.strokeRect(rx + 1, ry_px + 1, fm.tileSize - 2, fm.tileSize - 2);
+                                }
+                            }
+                        }
+                        ctx.restore();
+                    }
+                    // optionally draw a border around the floor map (visual aid)
+                    try {
+                        if (window._showFloorBorder && window.FLOOR_MAP) {
+                            const fm = window.FLOOR_MAP;
+                            ctx.save();
+                            ctx.setLineDash([6, 4]);
+                            ctx.strokeStyle = 'rgba(0,200,255,0.95)';
+                            ctx.lineWidth = 2;
+                            ctx.strokeRect(fm.originX + 0.5, fm.originY + 0.5, fm.cols * fm.tileSize - 1, fm.rows * fm.tileSize - 1);
+                            ctx.setLineDash([]);
+                            ctx.fillStyle = 'rgba(0,200,255,0.9)';
+                            ctx.font = '14px monospace';
+                            const label = `${fm.cols}x${fm.rows}`;
+                            ctx.fillText(label, fm.originX + 6, Math.max(fm.originY + 16, fm.originY + fm.rows * fm.tileSize - 6));
+                            ctx.restore();
+                        }
+                    } catch (e) { }
+                }
+            } catch (e) { }
+
+            // Aggiorna e disegna il target (gemma)
+            target.currentLife++;
+            if (target.currentLife >= target.lifetime) {
+                spawnTarget();
+            }
+
+            // Pulsating target
+            // draw pixel target
+            drawTargetSpriteAt(ctx, target.x + target.width / 2, target.y + target.height / 2, Math.max(target.width, target.height));
+
+            // Check target (gem) collection
+            if (!inTransition && checkCollision(player, target)) {
+                const points = 100 * getCombinedLevel() * scoreMultiplier;
+                score += points;
+                gemsCollected++;
+                createParticles(target.x + target.width / 2, target.y + target.height / 2, '#ffff00');
+                addFloatingText(target.x + target.width / 2, target.y + target.height / 2, `+${points}`, '#ffff00');
+                spawnTarget();
+                updateHUD();
+
+                // If collected enough gems, trigger transition to next sublevel
+                if (gemsCollected >= GEMS_PER_STAGE) {
+                    inTransition = true;
+                    transitionTimer = TRANSITION_FRAMES;
+                    transitionText = `LEVEL ${gameLevel}.${subLevel} COMPLETE`;
+                }
+            }
+
+            // During transition we don't spawn new blocks
+            if (!inTransition) {
+                const spawnRate = stageConfig.spawnRate || Math.max(Math.round(48 - getCombinedLevel() * 1.2), 14);
+                if (frameCount % spawnRate === 0) {
+                    spawnBlock();
+                }
+            }
+
+            // Aggiorna e disegna i blocchi (massii)
+            for (let i = blocks.length - 1; i >= 0; i--) {
+                const block = blocks[i];
+
+                // Spawn animation for mushroom blocks
+                if (block.spawnAnimation < block.maxSpawnAnimation) {
+                    block.spawnAnimation++;
+                }
+
+                // Aggiorna angolo/rotazione del blocco ogni frame
+                if (typeof block.angle === 'number') {
+                    // Se il blocco sta cadendo, aumenta leggermente la velocità angolare in base alla velocità di caduta
+                    if (!block.landed) {
+                        const fallSpeed = Math.abs(block.vy || 0);
+                        if (fallSpeed > 0.2) {
+                            // scala molto piccola: solo per dare più rotazione quando cade veloce
+                            const add = fallSpeed * (0.006 + Math.random() * 0.004);
+                            // preserva il verso corrente, se zero scegli un verso casuale
+                            if (!block.angularVel) block.angularVel = (Math.random() < 0.5 ? -1 : 1) * add;
+                            else block.angularVel += (block.angularVel >= 0 ? 1 : -1) * add;
+                        }
+                    }
+
+                    block.angle += block.angularVel || 0;
+
+                    // attrito dell'aria / freno: riduce lentamente la velocità angolare
+                    if (block.angularVel) {
+                        if (block.landed) block.angularVel *= 0.75; else block.angularVel *= 0.995;
+                        if (Math.abs(block.angularVel) < 0.0005) block.angularVel = 0;
+                    }
+                }
+
+                // Aggiorna animazione bounce quando presente
+                if (block.bounce && Math.abs(block.bounce) > 0.01) {
+                    // semplice smorzamento del bounce
+                    block.bounce *= 0.72;
+                    if (Math.abs(block.bounce) < 0.5) block.bounce = 0;
+                }
+
+                if (!block.landed) {
+                    block.x += block.vx;
+                    block.y += block.vy;
+
+                    // Check if falling/moving block hits another block
+                    for (let j = 0; j < blocks.length; j++) {
+                        if (i !== j && blocks[j].landed) {
+                            // Check collision with landed blocks
+                            const nextX = block.x + block.vx;
+                            const nextY = block.y + block.vy;
+
+                            // Predict collision
+                            const willCollide =
+                                nextX < blocks[j].x + blocks[j].width &&
+                                nextX + block.width > blocks[j].x &&
+                                nextY < blocks[j].y + blocks[j].height &&
+                                nextY + block.height > blocks[j].y;
+
+                            if (willCollide) {
+                                const impactSpeed = Math.hypot(block.vx || 0, block.vy || 0);
+                                // Position block based on collision direction
+                                if (block.vy > 0) {
+                                    // Falling from top - land on top of other block
+                                    block.y = blocks[j].y - block.height;
+                                } else if (block.vy < 0) {
+                                    // Coming from bottom
+                                    block.y = blocks[j].y + blocks[j].height;
+                                } else if (block.vx > 0) {
+                                    // Coming from left
+                                    block.x = blocks[j].x - block.width;
+                                } else if (block.vx < 0) {
+                                    // Coming from right
+                                    block.x = blocks[j].x + blocks[j].width;
+                                }
+
+                                // set landed state and zero velocities
+                                const wasFalling = !block.landed;
+                                block.landed = true;
+                                block.falling = false;
+                                block.vx = 0;
+                                block.vy = 0;
+
+                                // Landing effects only when we were falling
+                                if (wasFalling) {
+                                    // Amplifica velocità angolare in base all'impatto
+                                    if (!block.angularVel) block.angularVel = (Math.random() < 0.5 ? -1 : 1) * (0.02 + impactSpeed * 0.01);
+                                    else block.angularVel += (block.angularVel >= 0 ? 1 : -1) * (0.02 + impactSpeed * 0.01);
+
+                                    // piccola vibrazione e particelle di polvere
+                                    const sizeFactor = Math.max(1, Math.round(block.width / DEFAULT_BLOCK_W));
+                                    const intensity = Math.min(18, 4 + Math.floor(impactSpeed * 1.8));
+                                    screenShake.intensity = Math.min(28, (screenShake.intensity || 0) + intensity * sizeFactor);
+                                    screenShake.time = Math.max(screenShake.time || 0, 8);
+                                    screenShake.maxTime = screenShake.time;
+
+                                    // bounce visivo (scalato per dimensione)
+                                    block.bounce = Math.min(12 * sizeFactor, 6 + impactSpeed * 1.5 * sizeFactor);
+
+                                    // particelle di polvere (scalate con la dimensione del blocco)
+                                    const baseDust = 6 + Math.min(8, Math.floor(impactSpeed * 1.5));
+                                    const dustCount = Math.floor(baseDust * sizeFactor);
+                                    for (let d = 0; d < dustCount; d++) {
+                                        particles.push({
+                                            x: block.x + block.width / 2 + (Math.random() - 0.5) * block.width * 0.6,
+                                            y: block.y + block.height,
+                                            vx: (Math.random() - 0.5) * (2.2 * sizeFactor),
+                                            vy: -Math.random() * 2.8 - 0.4,
+                                            life: 26 + Math.floor(Math.random() * 12) * sizeFactor,
+                                            color: '#c2b280'
+                                        });
+                                    }
+
+                                    // se il blocco è configurato per snap a 90°, allinealo ora
+                                    if (block.snapTo90) {
+                                        block.angle = Math.round(block.angle / (Math.PI / 2)) * (Math.PI / 2);
+                                        block.angularVel = 0;
+                                    }
+                                }
+
+                                break;
+                            }
+                        }
+                    }
+
+                    // Check if hit ground
+                    const ib = getInnerBounds();
+                    if (block.y + block.height >= ib.maxY) {
+                        // Se il blocco sta atterrando ora, attiva piccoli effetti di impatto (polvere, tremolio)
+                        if (!block.landed) {
+                            block.landed = true;
+                            block.falling = false;
+                            block.vy = 0;
+                            block.y = ib.maxY - block.height;
+
+                            // Riduci rapidamente la velocà angolare per simulare attrito a terra
+                            if (block.angularVel) block.angularVel *= 0.25;
+
+                            // piccolo tremolio dello schermo e particelle di polvere
+                            const sizeFactor = Math.max(1, Math.round(block.width / DEFAULT_BLOCK_W));
+                            screenShake.intensity = Math.min(12, (screenShake.intensity || 0) + 3 * sizeFactor);
+                            screenShake.time = Math.max(screenShake.time || 0, 8);
+                            screenShake.maxTime = screenShake.time;
+
+                            // Genera particelle 'polvere' verso l'alto scalate per dimensione
+                            const dustCount = Math.floor(4 * sizeFactor);
+                            for (let d = 0; d < dustCount; d++) {
+                                particles.push({
+                                    x: block.x + block.width / 2 + (Math.random() - 0.5) * block.width * 0.6,
+                                    y: block.y + block.height,
+                                    vx: (Math.random() - 0.5) * (1.6 * sizeFactor),
+                                    vy: -Math.random() * (2.8) - 0.6,
+                                    life: 20 + Math.floor(Math.random() * 12),
+                                    color: '#c2b280'
+                                });
+                            }
+
+                            // piccolo salto/bounce visivo proporzionale alla dimensione
+                            block.bounce = Math.min(12 * sizeFactor, 6 * sizeFactor);
+                        } else {
+                            // assicurati che rimanga posizionato correttamente
+                            block.landed = true;
+                            block.falling = false;
+                            block.vy = 0;
+                            block.y = ib.maxY - block.height;
+                        }
+                    }
+
+                    // Check if hit ceiling
+                    if (block.y <= ib.minY) {
+                        block.landed = true;
+                        block.vy = 0;
+                        block.y = ib.minY;
+                    }
+
+                    // Check if hit walls
+                    if (block.x <= ib.minX) {
+                        block.landed = true;
+                        block.vx = 0;
+                        block.x = ib.minX;
+                    }
+                    if (block.x + block.width >= ib.maxX) {
+                        block.landed = true;
+                        block.vx = 0;
+                        block.x = ib.maxX - block.width;
+                    }
+                }
+
+                // Draw block with spawn animation
+                const scale = block.spawnAnimation / block.maxSpawnAnimation;
+                let drawWidth = block.width * scale;
+                let drawHeight = block.height * scale;
+                let drawX = block.x + (block.width - drawWidth) / 2;
+                let drawY = block.y + (block.height - drawHeight) / 2;
+
+                // Effetto impulso solo se pulse=true
+                if (block.pulse) {
+                    // Oscilla tra 80% e 140% della dimensione base
+                    const pulseScale = 1 + 0.3 * Math.sin(frameCount * 0.15 + block.pulsePhase);
+                    drawWidth = block.width * scale * pulseScale;
+                    drawHeight = block.height * scale * pulseScale;
+                    drawX = block.x + (block.width - drawWidth) / 2;
+                    drawY = block.y + (block.height - drawHeight) / 2;
+                }
+                // draw pixel block (applichiamo bounce grafico sottraendo l'offset dal centro Y)
+                const blockCenterX = drawX + drawWidth / 2;
+                const blockCenterY = drawY + drawHeight / 2 - (block.bounce || 0);
+                // Passiamo l'angolo del blocco al renderer in modo che venga disegnato ruotato
+                drawBlockSpriteAt(ctx, blockCenterX, blockCenterY, Math.max(drawWidth, drawHeight), block.pulse, block.angle || 0);
+
+                // Check collision with player (only if fully spawned)
+                if (block.spawnAnimation >= block.maxSpawnAnimation && checkCollision(player, block)) {
+                    if (!playerInvulnerable) {
+                        lives--;
+                        createParticles(player.x + player.width / 2, player.y + player.height / 2, '#ff0000');
+                        blocks.splice(i, 1);
+
+                        if (lives <= 0) {
+                            endGame();
+                            return;
+                        }
+                        updateHUD();
+                    } else {
+                        // while invulnerable, obstacles have no effect
+                        addFloatingText(blockCenterX, blockCenterY, 'INVUL', '#ffd700');
+                    }
+                    continue;
+                }
+
+                // Remove off-screen blocks (only moving blocks)
+                if (!block.landed && (block.x < -block.width * 2 || block.x > canvas.width + block.width ||
+                    block.y < -block.height * 2 || block.y > canvas.height + block.height)) {
+                    blocks.splice(i, 1);
+                }
+            }
+
+            // Aggiorna e disegna i proiettili
+            for (let i = bullets.length - 1; i >= 0; i--) {
+                const bullet = bullets[i];
+                bullet.x += bullet.dx;
+                bullet.y += bullet.dy;
+
+                ctx.fillStyle = '#00ff00';
+                ctx.fillRect(bullet.x, bullet.y, bullet.width, bullet.height);
+
+                // Check collision with blocks
+                for (let j = blocks.length - 1; j >= 0; j--) {
+                    if (checkCollision(bullet, blocks[j])) {
+                        score += 10 * scoreMultiplier;
+                        const bx = blocks[j].x + blocks[j].width / 2;
+                        const by = blocks[j].y + blocks[j].height / 2;
+                        createParticles(bx, by, '#ff00ff');
+                        addFloatingText(bx, by, `+${10 * scoreMultiplier}`, '#ff88ff');
+                        blocks.splice(j, 1);
+                        bullets.splice(i, 1);
+                        updateHUD();
+                        break;
+                    }
+                }
+
+                // Check collision with player (auto-hit)
+                if (checkCollision(bullet, player)) {
+                    // always remove projectile, but only apply effects when not invulnerable
+                    bullets.splice(i, 1);
+                    if (!playerInvulnerable) {
+                        player.speed = Math.max(PLAYER_MIN_SPEED, player.speed - 1);
+                        createParticles(player.x + player.width / 2, player.y + player.height / 2, '#00ff00');
+                        if (player.speed <= PLAYER_MIN_SPEED) {
+                            lives--;
+                            player.speed = PLAYER_INITIAL_SPEED;
+                            updateHUD();
+                            if (lives <= 0) {
+                                endGame();
+                                return;
+                            }
+                        }
+                    } else {
+                        // invulnerable: indicate harmless hit
+                        addFloatingText(player.x + player.width / 2, player.y, 'INVUL HIT', '#ffd700');
+                    }
+                    continue;
+                }
+
+                // Rimbalzo sui bordi
+                let bounced = false;
+                if (bullet.x <= 0 || bullet.x + bullet.width >= canvas.width) {
+                    bullet.dx = -bullet.dx;
+                    bounced = true;
+                }
+                if (bullet.y <= 0 || bullet.y + bullet.height >= canvas.height) {
+                    bullet.dy = -bullet.dy;
+                    bounced = true;
+                }
+                // Se ha rimbalzato, cambia direzione randomica (ma non opposta a quella da cui arriva)
+                if (bounced) {
+                    const dirs = [];
+                    if (Math.abs(bullet.dx) > 0) {
+                        dirs.push({ dx: 0, dy: -8 }); // up
+                        dirs.push({ dx: 0, dy: 8 });  // down
+                    } else {
+                        dirs.push({ dx: -8, dy: 0 }); // left
+                        dirs.push({ dx: 8, dy: 0 });  // right
+                    }
+                    if (Math.random() < 0.5) {
+                        const newDir = dirs[Math.floor(Math.random() * dirs.length)];
+                        bullet.dx = newDir.dx;
+                        bullet.dy = newDir.dy;
+                    }
+                }
+
+                // Rimuovi proiettili "impazziti" che escono troppo
+                if (
+                    bullet.x < -50 || bullet.x > canvas.width + 50 ||
+                    bullet.y < -50 || bullet.y > canvas.height + 50
+                ) {
+                    bullets.splice(i, 1);
+                }
+            }
+
+            // Aggiorna e disegna le particelle (effetti)
+            for (let i = particles.length - 1; i >= 0; i--) {
+                const p = particles[i];
+                p.x += p.vx;
+                p.y += p.vy;
+                p.life--;
+
+                ctx.fillStyle = p.color;
+                ctx.globalAlpha = p.life / 30;
+                ctx.fillRect(p.x, p.y, 3, 3);
+                ctx.globalAlpha = 1;
+
+                if (p.life <= 0) {
+                    particles.splice(i, 1);
+                }
+            }
+
+            // Disegna esplosioni (anelli in espansione)
+            for (let i = explosions.length - 1; i >= 0; i--) {
+                const ex = explosions[i];
+                ex.life--;
+                const t = ex.life / ex.maxLife;
+                const r = ex.maxRadius * (1 - t);
+                const alpha = Math.max(0, t);
+                // radial ring
+                ctx.beginPath();
+                ctx.strokeStyle = `rgba(255,160,32,${alpha * 0.8})`;
+                ctx.lineWidth = Math.max(2, r * 0.08);
+                ctx.arc(ex.x, ex.y, r, 0, Math.PI * 2);
+                ctx.stroke();
+                if (ex.life <= 0) explosions.splice(i, 1);
+            }
+
+            // Floating texts (score, key, door messages)
+            for (let i = floatingTexts.length - 1; i >= 0; i--) {
+                const ft = floatingTexts[i];
+                ft.x += 0;
+                ft.y += ft.vy;
+                ft.life--;
+                ctx.globalAlpha = Math.max(0, ft.life / 60);
+                ctx.fillStyle = ft.color;
+                ctx.font = '18px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText(ft.text, ft.x, ft.y);
+                ctx.globalAlpha = 1;
+                if (ft.life <= 0) floatingTexts.splice(i, 1);
+            }
+
+            // Verifica vita extra ogni 1000 punti
+            if (score > 0 && score % 1000 === 0) {
+                lives++;
+                updateHUD();
+            }
+
+            // Pulsi/pulse blocks may shoot shards when stage enables it (level 5)
+            if (stageConfig.shards) {
+                for (let block of blocks) {
+                    if (block.pulse && block.landed && Math.random() < (stageConfig.shardFireChance || 0.01)) {
+                        const speed = 6 + (stageConfig.shardSpeed || 1) * 2; // base speed scaled
+                        const dirs = [
+                            { dx: speed, dy: 0 },
+                            { dx: -speed, dy: 0 },
+                            { dx: 0, dy: speed },
+                            { dx: 0, dy: -speed }
+                        ];
+                        const dir = dirs[Math.floor(Math.random() * dirs.length)];
+                        bulletsBlock.push({
+                            x: block.x + block.width / 2 - scale(4),
+                            y: block.y + block.height / 2 - scale(4),
+                            width: scale(8),
+                            height: scale(8),
+                            dx: dir.dx,
+                            dy: dir.dy
+                        });
+                    }
+                }
+            }
+
+            // Gestione proiettili dei blocchi pulsanti
+            for (let i = bulletsBlock.length - 1; i >= 0; i--) {
+                const bullet = bulletsBlock[i];
+                bullet.x += bullet.dx;
+                bullet.y += bullet.dy;
+                ctx.fillStyle = '#ffff00';
+                ctx.fillRect(bullet.x, bullet.y, bullet.width, bullet.height);
+                // Rimbalzo sui bordi
+                if (bullet.x <= 0 || bullet.x + bullet.width >= canvas.width) {
+                    bullet.dx = -bullet.dx;
+                }
+                if (bullet.y <= 0 || bullet.y + bullet.height >= canvas.height) {
+                    bullet.dy = -bullet.dy;
+                }
+                // Se colpisce un blocco, si ferma
+                let hitBlock = false;
+                for (let j = 0; j < blocks.length; j++) {
+                    if (checkCollision(bullet, blocks[j])) {
+                        hitBlock = true;
+                        break;
+                    }
+                }
+                if (hitBlock) {
+                    bulletsBlock.splice(i, 1);
+                    continue;
+                }
+                // Rimuovi proiettili fuori area
+                if (
+                    bullet.x < -50 || bullet.x > canvas.width + 50 ||
+                    bullet.y < -50 || bullet.y > canvas.height + 50
+                ) {
+                    bulletsBlock.splice(i, 1);
+                }
+            }
+
+            // Gestione porte
+            if (frameCount % 600 === 0) { // ogni tot tempo
+                doors.forEach(d => d.open = false);
+            }
+
+            // Disegna porte (con glow per porte aperte)
+            ctx.font = '32px Arial';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            doors.forEach(door => {
+                const cx = door.x;
+                const cy = door.y;
+                // If open, draw a pulsing glow behind the door
+                if (door.open) {
+                    // decrement door timer if present
+                    if (typeof door.timer === 'number') {
+                        door.timer--;
+                        if (door.timer <= 0) {
+                            // close the door and if player is near penalize
+                            door.open = false;
+                            // If player overlapping door when it closes, lose a life
+                            if (checkCollision(player, { x: door.x - scale(16), y: door.y - scale(16), width: scale(32), height: scale(32) })) {
+                                if (!playerInvulnerable) {
+                                    lives--;
+                                    createParticles(player.x + player.width / 2, player.y + player.height / 2, '#ff0000');
+                                    addFloatingText(door.x, door.y, '-1 LIFE', '#ff4444');
+                                    updateHUD();
+                                } else {
+                                    addFloatingText(door.x, door.y, 'INVUL', '#ffd700');
+                                }
+                            }
+                        }
+                    }
+                    const pulse = 12 + Math.sin(frameCount * 0.15) * 6; // blur radius
+                    ctx.save();
+                    // soft glowing circle
+                    ctx.beginPath();
+                    ctx.fillStyle = 'rgba(0,255,0,0.12)';
+                    ctx.arc(cx, cy, 22 + Math.abs(Math.sin(frameCount * 0.12)) * 6, 0, Math.PI * 2);
+                    ctx.fill();
+                    // shadowed glow for stronger effect
+                    ctx.shadowColor = 'rgba(0,255,0,0.9)';
+                    ctx.shadowBlur = pulse;
+                    ctx.fillStyle = 'rgba(0,255,0,0.02)';
+                    ctx.fillRect(cx - 1, cy - 1, 2, 2);
+                    ctx.restore();
+                }
+
+                // draw door sprite
+                // compute a door tile size: prefer pixel-perfect sprite cell scaled by SIZE_SCALE,
+                // fallback to the previous scale(40)
+                let doorSize = Math.max(20, Math.round(scale(40)));
+                if (spriteReady && spriteCellW && spriteCellH) {
+                    doorSize = Math.max(16, Math.round(Math.min(spriteCellW, spriteCellH) * (SIZE_SCALE || 1)));
+                }
+                drawDoorSpriteAt(ctx, cx, cy, doorSize, door.open);
+            });
+            // Disegna chiavi
+            levelKeys.forEach(key => {
+                if (!key.collected) {
+                    drawKeySpriteAt(ctx, key.x, key.y, scale(28));
+                }
+            });
+            // Raccogli chiave
+            levelKeys.forEach(key => {
+                if (!key.collected && checkCollision(player, { x: key.x - scale(14), y: key.y - scale(14), width: scale(28), height: scale(28) })) {
+                    key.collected = true;
+                    playerKeys++;
+                    addFloatingText(key.x, key.y, 'KEY!', '#ffff00');
+                    updateHUD();
+                }
+            });
+            // Spawn chiave se necessario
+            spawnKey();
+            // Spawn dynamite box occasionally
+            spawnDynamiteBox();
+
+            // Disegna scatolotti di dinamite
+            for (let i = dynamiteBoxes.length - 1; i >= 0; i--) {
+                const box = dynamiteBoxes[i];
+                if (box.collected) continue;
+                // life countdown
+                box.life--;
+                if (box.life <= 0) {
+                    dynamiteBoxes.splice(i, 1);
+                    continue;
+                }
+                // draw dynamite box sprite
+                drawDynamiteSpriteAt(ctx, box.x, box.y, Math.max(box.width, box.height));
+                // collision with player
+                if (checkCollision(player, { x: box.x - box.width / 2, y: box.y - box.height / 2, width: box.width, height: box.height })) {
+                    box.collected = true;
+                    playerDynamite = Math.min(DYNAMITE_MAX, playerDynamite + box.amount);
+                    addFloatingText(box.x, box.y, `+${box.amount} DYNAMITE`, '#ffcc00');
+                    dynamiteBoxes.splice(i, 1);
+                    updateHUD();
+                }
+            }
+            // Disegna dobloni d'oro (per invulnerabilità)
+            for (let i = doblonBoxes.length - 1; i >= 0; i--) {
+                const d = doblonBoxes[i];
+                if (d.collected) continue;
+                // draw coin sprite
+                drawCoinSpriteAt(ctx, d.x, d.y, Math.max(d.width, d.height));
+                // collision with player
+                if (checkCollision(player, { x: d.x - d.width / 2, y: d.y - d.height / 2, width: d.width, height: d.height })) {
+                    d.collected = true;
+                    playerInvulnerable = true;
+                    invulTimer = DOBLON_DURATION_FRAMES;
+                    addFloatingText(d.x, d.y, 'DOBLON! INVUL', '#ffd700');
+                    // play a pickup chime
+                    if (soundEnabled) playTransitionSound();
+                    doblonBoxes.splice(i, 1);
+                    updateHUD();
+                }
+            }
+
+            // Door interactions: open, exit to outside and re-enter
+            for (let door of doors) {
+                const doorBox = { x: door.x - scale(16), y: door.y - scale(16), width: scale(32), height: scale(32) };
+                if (!isOutside) {
+                    // Player is inside and touching a door
+                    if (checkCollision(player, doorBox)) {
+                        // If door is closed and player has a key, open it (consume key)
+                        if (!door.open && playerKeys > 0) {
+                            door.open = true;
+                            // set a timer for this opened door (frames)
+                            door.timer = Math.max(300, 600 - getCombinedLevel() * 20); // shorter timer at higher levels
+                            playerKeys--;
+                            addFloatingText(door.x, door.y - 20, 'DOOR OPEN', '#88ff88');
+                            updateHUD();
+                        }
+                        // If door is open and player is inside, step outside without consuming an extra key
+                        else if (door.open && !isOutside) {
+                            isOutside = true;
+                            // Place player along the outer band just next to the door (use OUTER_BAND for feel)
+                            const bandHalf = Math.max(10, Math.floor(OUTER_BAND / 2));
+                            // left
+                            if (door.x <= 64) {
+                                player.x = Math.max(5, bandHalf - player.width / 2);
+                                player.y = Math.max(5, Math.min(canvas.height - player.height - 5, door.y - player.height / 2));
+                            }
+                            // right
+                            else if (door.x >= canvas.width - 64) {
+                                player.x = Math.min(canvas.width - player.width - 5, canvas.width - bandHalf - player.width / 2);
+                                player.y = Math.max(5, Math.min(canvas.height - player.height - 5, door.y - player.height / 2));
+                            }
+                            // top
+                            else if (door.y <= 64) {
+                                player.y = Math.max(5, bandHalf - player.height / 2);
+                                player.x = Math.max(5, Math.min(canvas.width - player.width - 5, door.x - player.width / 2));
+                            }
+                            // bottom
+                            else {
+                                player.y = Math.min(canvas.height - player.height - 5, canvas.height - bandHalf - player.height / 2);
+                                player.x = Math.max(5, Math.min(canvas.width - player.width - 5, door.x - player.width / 2));
+                            }
+                            // leave the door open so player can re-enter
+                            updateHUD();
+                        }
+                    }
+                } else {
+                    // Player is outside: can re-enter through an open door without a key
+                    if (door.open && checkCollision(player, doorBox)) {
+                        isOutside = false;
+                        // Place player just inside the door
+                        player.x = door.x - player.width / 2;
+                        player.y = door.y - player.height / 2;
+                        updateHUD();
+                    }
+                }
+            }
+
+            // Update and draw particles
+            for (let i = particles.length - 1; i >= 0; i--) {
+                const p = particles[i];
+                p.x += p.vx;
+                p.y += p.vy;
+                p.life--;
+
+                ctx.fillStyle = p.color;
+                ctx.globalAlpha = p.life / 30;
+                ctx.fillRect(p.x, p.y, 3, 3);
+                ctx.globalAlpha = 1;
+
+                if (p.life <= 0) {
+                    particles.splice(i, 1);
+                }
+            }
+
+            // Verifica vita extra ogni 1000 punti
+            if (score > 0 && score % 1000 === 0) {
+                lives++;
+                updateHUD();
+            }
+
+            // Pulsi/pulse blocks may shoot shards when stage enables it (level 5)
+            if (stageConfig.shards) {
+                for (let block of blocks) {
+                    if (block.pulse && block.landed && Math.random() < (stageConfig.shardFireChance || 0.01)) {
+                        const speed = 6 + (stageConfig.shardSpeed || 1) * 2;
+                        const dirs = [
+                            { dx: speed, dy: 0 },
+                            { dx: -speed, dy: 0 },
+                            { dx: 0, dy: speed },
+                            { dx: 0, dy: -speed }
+                        ];
+                        const dir = dirs[Math.floor(Math.random() * dirs.length)];
+                        bulletsBlock.push({
+                            x: block.x + block.width / 2 - scale(4),
+                            y: block.y + block.height / 2 - scale(4),
+                            width: scale(8),
+                            height: scale(8),
+                            dx: dir.dx,
+                            dy: dir.dy
+                        });
+                    }
+                }
+            }
+
+            // Gestione proiettili dei blocchi pulsanti
+            for (let i = bulletsBlock.length - 1; i >= 0; i--) {
+                const bullet = bulletsBlock[i];
+                bullet.x += bullet.dx;
+                bullet.y += bullet.dy;
+                ctx.fillStyle = '#ffff00';
+                ctx.fillRect(bullet.x, bullet.y, bullet.width, bullet.height);
+                // Rimbalzo sui bordi
+                if (bullet.x <= 0 || bullet.x + bullet.width >= canvas.width) {
+                    bullet.dx = -bullet.dx;
+                }
+                if (bullet.y <= 0 || bullet.y + bullet.height >= canvas.height) {
+                    bullet.dy = -bullet.dy;
+                }
+                // Se colpisce un blocco, si ferma
+                let hitBlock = false;
+                for (let j = 0; j < blocks.length; j++) {
+                    if (checkCollision(bullet, blocks[j])) {
+                        hitBlock = true;
+                        break;
+                    }
+                }
+                if (hitBlock) {
+                    bulletsBlock.splice(i, 1);
+                    continue;
+                }
+                // Rimuovi proiettili fuori area
+                if (
+                    bullet.x < -50 || bullet.x > canvas.width + 50 ||
+                    bullet.y < -50 || bullet.y > canvas.height + 50
+                ) {
+                    bulletsBlock.splice(i, 1);
+                }
+            }
+
+            // Decrement invulnerability timer if active
+            if (playerInvulnerable && invulTimer > 0) {
+                invulTimer--;
+                if (invulTimer <= 0) {
+                    playerInvulnerable = false;
+                    invulTimer = 0;
+                    addFloatingText(player.x + player.width / 2, player.y, 'INVUL END', '#ffffff');
+                    updateHUD();
+                }
+            }
+
+            // Richiama sempre gameLoop se lo stato è ancora 'playing'
+            if (gameState === 'playing') {
+                requestAnimationFrame(gameLoop);
+            }
+        }
+
+        // Update HUD
+        function updateHUD() {
+            document.getElementById('score').textContent = score;
+            document.getElementById('level').textContent = `${gameLevel}.${subLevel}`;
+            document.getElementById('lives').textContent = lives;
+            // Update keys and outside indicators
+            const keysEl = document.getElementById('keys');
+            if (keysEl) keysEl.textContent = playerKeys;
+            const outsideEl = document.getElementById('outside');
+            if (outsideEl) outsideEl.textContent = isOutside ? 'YES' : 'NO';
+            const gemsEl = document.getElementById('gems');
+            if (gemsEl) gemsEl.textContent = gemsCollected;
+            const gemsReqEl = document.getElementById('gemsReq');
+            if (gemsReqEl) gemsReqEl.textContent = GEMS_PER_STAGE;
+            const creditsEl = document.getElementById('credits');
+            if (creditsEl) creditsEl.textContent = credits;
+            // update any attract overlays' credit displays as well
+            const asc = document.getElementById('attractStaticCredits');
+            const D = window.DICT || {};
+            if (asc) {
+                if ((credits || 0) > 0) {
+                    asc.textContent = `${D.credits_word || 'CREDITS'}: ${credits}`;
+                    asc.classList.remove('insert-prompt');
+                } else {
+                    asc.textContent = D.insert_coin_short || D.insert_coin || 'INSERT COIN';
+                    asc.classList.add('insert-prompt');
+                }
+            }
+            const ac = document.getElementById('attractCredits');
+            if (ac) {
+                if ((credits || 0) > 0) {
+                    ac.textContent = `${D.credits_word || 'CREDITS'}: ${credits}`;
+                    ac.classList.remove('insert-prompt');
+                } else {
+                    ac.textContent = D.insert_coin_short || D.insert_coin || 'INSERT COIN';
+                    ac.classList.add('insert-prompt');
+                }
+            }
+            // also update the credits shown inside the Top Ten overlay if present
+            const topTenCreditsEl = document.getElementById('topTenCredits');
+            if (topTenCreditsEl) {
+                topTenCreditsEl.textContent = `${D.credits_word || 'CREDITS'}: ${credits || 0}`;
+            }
+            const dynCount = document.getElementById('dynamiteCount');
+            const dynFill = document.getElementById('dynamiteFill');
+            if (dynCount) dynCount.textContent = playerDynamite;
+            if (dynFill) dynFill.style.width = `${Math.round((playerDynamite / DYNAMITE_MAX) * 100)}%`;
+            const invEl = document.getElementById('invul');
+            if (invEl) {
+                if (playerInvulnerable && invulTimer > 0) {
+                    invEl.textContent = Math.ceil(invulTimer / 60) + 's';
+                } else {
+                    invEl.textContent = 'NO';
+                }
+            }
+        }
+
+        // End game
+        function endGame() {
+            gameState = 'gameOver';
+
+            // Nascondi l'HUD e mostra la schermata di attrazione
+            document.getElementById('hud').classList.add('hidden');
+            document.getElementById('attractScreen').classList.remove('hidden');
+
+            // Rimuovi eventuali overlay .gameOver transient ma non rimuovere il container persistente #topTen
+            try {
+                const olds = Array.from(document.querySelectorAll('.gameOver')).filter(e => e.id !== 'topTen');
+                olds.forEach(o => o.remove());
+                const persistentTop = document.getElementById('topTen');
+                if (persistentTop) { persistentTop.classList.add('hidden'); }
+            } catch (e) { }
+
+            // Verifica se entra in top ten
+            continueEligibleTopTen = topTen.length < 10 || score > Math.min(...topTen.map(e => e.score));
+            storedFinalScore = score;
+            // Show continue overlay allowing coin insertion to continue from same level
+            const contDiv = document.createElement('div');
+            contDiv.className = 'gameOver';
+            contDiv.id = 'continueDiv';
+            const Dcont = window.DICT || {};
+            contDiv.innerHTML = `
+                <h2>${Dcont.game_over || 'GAME OVER'}</h2>
+                <p>${Dcont.score_label || 'SCORE'}: ${score}</p>
+                <p>${Dcont.insert_coin_to_continue || 'INSERT COIN TO CONTINUE'}</p>
+                <p id="continueTimer">${Dcont.continue_time_label || 'TIME'}: ${Math.ceil(CONTINUE_FRAMES / 60)}</p>
+                <p>${Dcont.press_5_insert || "Press '5' to insert coin"}</p>
+            `;
+            document.getElementById('gameContainer').appendChild(contDiv);
+            continueDiv = contDiv;
+            continueTimer = CONTINUE_FRAMES;
+            gameState = 'gameOver';
+            // start a simple countdown interval to update timer display
+            const contInterval = setInterval(() => {
+                if (!continueDiv) {
+                    clearInterval(contInterval);
+                    return;
+                }
+                continueTimer--;
+                const el = document.getElementById('continueTimer');
+                if (el) el.textContent = 'TIME: ' + Math.ceil(continueTimer / 60);
+                if (continueTimer <= 0) {
+                    // time up: remove overlay and proceed to top ten or game over screen
+                    if (continueDiv) continueDiv.remove();
+                    continueDiv = null;
+                    clearInterval(contInterval);
+                    // if eligible for top ten, show entry, else show simple game over
+                    if (continueEligibleTopTen && storedFinalScore > 0) {
+                        showTopTenEntry(storedFinalScore);
+                    } else {
+                        const gameOverDiv = document.createElement('div');
+                        gameOverDiv.className = 'gameOver';
+                        gameOverDiv.innerHTML = `
+                            <h2>GAME OVER</h2>
+                            <p>SCORE FINALE: ${storedFinalScore}</p>
+                            <p>LIVELLO RAGGIUNTO: ${level}</p>
+                            <button class="startButton" onclick="location.reload()">RIPROVA</button>
+                        `;
+                        document.getElementById('gameContainer').appendChild(gameOverDiv);
+                    }
+                }
+            }, 1000 / 60);
+        }
+
+        // Mostra schermata top ten a fine gara
+        function showTopTenEntry(finalScore) {
+            // Remove any transient overlays with class .gameOver except the persistent #topTen container
+            try {
+                const overlays = Array.from(document.querySelectorAll('.gameOver'));
+                overlays.forEach(el => { if (el.id !== 'topTen') el.remove(); });
+            } catch (e) { }
+            const topContainer = document.getElementById('topTen');
+            if (!topContainer) {
+                console.warn('showTopTenEntry: missing #topTen container');
+                return;
+            }
+            // hide static attract and show topTen as a full-size overlay without outer borders
+            try {
+                const staticAttract = document.getElementById('attractScreen'); if (staticAttract) staticAttract.classList.add('hidden');
+                // ensure overlay classes so it fills the same area as attract overlay
+                topContainer.classList.add('attract-bg', 'overlay', 'attract-custom');
+                topContainer.classList.remove('hidden');
+                topContainer.classList.remove('fade-out');
+                topContainer.classList.add('fade-in');
+                setTimeout(() => { try { topContainer.classList.remove('fade-in'); } catch (e) { } }, 420);
+            } catch (e) { }
+            topContainer.innerHTML = `
+                <h2>TOP TEN!</h2>
+                <p>Inserisci le tue iniziali (3 lettere):</p>
+                <input type="text" id="initialsInput" class="initials-input" maxlength="3">
+                <button class="startButton" id="saveScoreBtn">SALVA</button>
+            `;
+            const saveBtn = topContainer.querySelector('#saveScoreBtn');
+            if (saveBtn) {
+                saveBtn.onclick = function () {
+                    let initials = (topContainer.querySelector('#initialsInput') && topContainer.querySelector('#initialsInput').value.toUpperCase().slice(0, 3)) || '';
+                    if (!initials) initials = '???';
+                    topTen.push({ name: initials, score: finalScore, diff: selectedDifficulty });
+                    topTen.sort((a, b) => b.score - a.score);
+                    if (topTen.length > 10) topTen.length = 10;
+                    showTopTen();
+                };
+            }
+        }
+        function showTopTen() {
+            const topContainer = document.getElementById('topTen');
+            if (!topContainer) {
+                console.warn('showTopTen: missing #topTen container');
+                return;
+            }
+            const D = window.DICT || {};
+            let html = `<h2>${D.top_ten || 'TOP TEN'}</h2><table class="top-ten-table">`;
+            html += `<tr><th>#</th><th>INIZIALI</th><th>PUNTI</th><th>DIFFICOLTÀ</th></tr>`;
+            topTen.forEach((entry, idx) => {
+                html += `<tr><td>${idx + 1}</td><td>${entry.name}</td><td>${entry.score}</td><td>${entry.diff}</td></tr>`;
+            });
+            html += `</table>`;
+            // // add a persistent credit footer so the INSERT COIN message/credits remain visible
+            // // use a distinct id for the credits inside the Top Ten to avoid clashing with the attract screen
+            // html += `<div class="credit-footer">
+            //             <span id="topTenCredits">${(D.credits_word || 'CREDITS')}: ${credits || 0}</span>
+            //         </div>`;
+            topContainer.innerHTML = html;
+            // hide static attract and show topTen as a full-size overlay without outer borders
+            try {
+                const staticAttract = document.getElementById('attractScreen'); if (staticAttract) staticAttract.classList.add('hidden');
+                topContainer.classList.add('attract-bg', 'overlay', 'attract-custom');
+                topContainer.classList.remove('hidden');
+                topContainer.classList.remove('fade-out');
+                topContainer.classList.add('fade-in');
+                // remove the transient fade-in class after transition
+                setTimeout(() => { try { topContainer.classList.remove('fade-in'); } catch (e) { } }, 420);
+            } catch (e) { }
+        }
+
+        // Input handlers
+        document.addEventListener('keydown', (e) => {
+            // Start flow from attract: open level/select screen with Enter (so coin check is enforced)
+            if (e.key === 'Enter' && gameState === 'attract') {
+                e.preventDefault();
+                // apri la selezione solo se ci sono crediti
+                if ((credits || 0) > 0) {
+                    showLevelSelect();
+                } else {
+                    // immediate feedback: sound + animation + floating text
+                    playCoinRequiredSound(1);
+                    animateCreditHint(1);
+                }
+                return;
+            }
+            // Supporto input stile MAME: premi '1' o '2' per scegliere giocatori nella schermata di attract
+            if ((e.key === '1' || e.key === '2') && gameState === 'attract') {
+                const n = parseInt(e.key, 10);
+                e.preventDefault();
+                const per = (window.GAME_CONFIG && window.GAME_CONFIG.CREDITS_PER_PLAYER) || 1;
+                const req = per * n;
+                if ((credits || 0) >= req) {
+                    // Apri la schermata di selezione e passa il numero di giocatori da pre-selezionare
+                    showLevelSelect(n);
+                } else {
+                    // immediate feedback for required coins: sound + animation + floating text
+                    playCoinRequiredSound(req);
+                    animateCreditHint(req);
+                }
+                return;
+            }
+            // Insert coin with key '5' (MAME coin)
+            if (e.key === '5') {
+                // increment credits and refresh HUD/attract indicators but do NOT auto-enter player select
+                credits = (credits || 0) + 1;
+                updateHUD();
+                // update any visible counters
+                const sc = document.getElementById('selectCredits'); if (sc) sc.textContent = credits;
+                const asc = document.getElementById('attractStaticCredits'); if (asc) asc.textContent = (credits && credits > 0) ? `${(window.DICT && window.DICT.credits_word) || 'CREDITS'}: ${credits}` : (window.DICT && window.DICT.insert_coin || 'INSERT COIN');
+                const ac = document.getElementById('attractCredits'); if (ac) ac.textContent = credits;
+                // Positive feedback: sound + small animation
+                if (soundEnabled) playCoinInsertSound();
+                animateCreditHint(1);
+                try { refreshAttractPlayerHints(); } catch (e) { }
+                // If continue overlay present and gameOver, allow immediate continue (consume credit)
+                if (continueDiv && gameState === 'gameOver') {
+                    if (credits > 0) {
+                        credits--;
+                        updateHUD();
+                        continueResume();
+                    }
+                    return; // don't also set keys['5']
+                }
+            }
+            keys[e.key] = true;
+            // Shoot bullet
+            if (e.key === ' ' && gameState === 'playing') {
+                e.preventDefault();
+                // Determina la direzione
+                let dx = 0, dy = 0, width = scale(8), height = scale(8), offsetX = 0, offsetY = 0;
+                switch (player.direction) {
+                    case 'left': dx = -8; width = scale(10); height = scale(4); offsetX = -player.width / 2 - width / 2; break;
+                    case 'right': dx = 8; width = scale(10); height = scale(4); offsetX = player.width / 2 + width / 2; break;
+                    case 'up': dy = -8; width = scale(4); height = scale(10); offsetY = -player.height / 2 - height / 2; break;
+                    case 'down': dy = 8; width = scale(4); height = scale(10); offsetY = player.height / 2 + height / 2; break;
+                }
+                bullets.push({
+                    x: player.x + player.width / 2 - width / 2 + offsetX,
+                    y: player.y + player.height / 2 - height / 2 + offsetY,
+                    width: width,
+                    height: height,
+                    dx: dx,
+                    dy: dy
+                });
+            }
+            // Use dynamite with 'D'
+            if (e.key.toLowerCase && e.key.toLowerCase() === 'd' && gameState === 'playing') {
+                e.preventDefault();
+                useDynamite();
+            }
+        });
+
+        document.addEventListener('keyup', (e) => {
+            keys[e.key] = false;
+        });
+
+        // Helper to resume from continue state
+        function continueResume() {
+            if (!continueDiv) return;
+            // remove continue overlay
+            continueDiv.remove();
+            continueDiv = null;
+            // resume game from same stage
+            gameState = 'playing';
+            // restore some lives
+            lives = Math.max(1, Math.min(3, lives));
+            updateHUD();
+            document.getElementById('attractScreen').classList.add('hidden');
+            document.getElementById('hud').classList.remove('hidden');
+            gameLoop();
+        }
+
+        // Add click handler for start button -> open level/players/credits selector
+        (function attachStart() {
+            const btn = document.getElementById('startButton');
+            if (!btn) return;
+            btn.setAttribute('tabindex', '0');
+            btn.style.cursor = 'pointer';
+            btn.addEventListener('click', function () {
+                console.log('Start button clicked');
+                try {
+                    if (typeof showLevelSelect === 'function') {
+                        showLevelSelect();
+                    } else {
+                        // fallback: try opening the attract custom flow then select
+                        showAttractScreen();
+                        showLevelSelect();
+                    }
+                } catch (err) {
+                    console.error('Error opening level select', err);
+                    addFloatingText(canvas.width / 2, canvas.height / 2 + 80, 'ERROR: cannot open start', '#ff4444');
+                    // last-resort: try to directly start game (useful for quick testing)
+                    try { startGame(); } catch (e) { /* ignore */ }
+                }
+            });
+        })();
+
+        // Attract mode animation
+        function attractAnimation() {
+            if (gameState !== 'attract') return;
+
+            ctx.fillStyle = '#0a0e27';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Animated background
+            ctx.strokeStyle = `rgba(0, 255, 255, ${0.2 + Math.sin(Date.now() * 0.001) * 0.1})`;
+            ctx.lineWidth = 2;
+            for (let i = 0; i < 10; i++) {
+                ctx.beginPath();
+                ctx.arc(
+                    canvas.width / 2 + Math.sin(Date.now() * 0.001 + i) * 200,
+                    canvas.height / 2 + Math.cos(Date.now() * 0.001 + i) * 200,
+                    50 + i * 30,
+                    0,
+                    Math.PI * 2
+                );
+                ctx.stroke();
+            }
+
+            requestAnimationFrame(attractAnimation);
+        }
+
+        // Alternanza schermata iniziale/top ten
+        let attractInterval = null;
+        // Initialize attract UI once and attach handlers. Subsequent shows only refresh/redraw.
+        function initAttractUI() {
+            let attractDiv = document.getElementById('attractScreen') || document.getElementById('attractScreenCustom');
+            if (!attractDiv) {
+                attractDiv = document.createElement('div');
+                attractDiv.id = 'attractScreen';
+                document.getElementById('gameContainer').appendChild(attractDiv);
+            }
+
+            // If already initialized, don't reattach handlers
+            if (attractDiv._init) return attractDiv;
+            attractDiv._init = true;
+
+            // If markup absent, create it once (keeps existing DOM when present)
+            if (!attractDiv.querySelector('.title')) {
+                const D = window.DICT || {};
+                attractDiv.classList.add('attract-bg', 'overlay', 'attract-custom');
+                attractDiv.innerHTML = `
+        <div class="title">${D.title || 'BLOCK HUNTER'}</div>
+        <div class="insert-message">${D.insert_coin || 'INSERT COIN'}</div>
+        <div class="demo-wrap"><canvas id="demoCanvas" width="320" height="180"></canvas></div>
+        <div class="lang-selector" id="langSelector">
+            <div class="lang-flag" data-lang="it"><canvas id="flag_it" width="48" height="32"></canvas><div class="lang-label">IT</div></div>
+            <div class="lang-flag" data-lang="fr"><canvas id="flag_fr" width="48" height="32"></canvas><div class="lang-label">FR</div></div>
+            <div class="lang-flag" data-lang="de"><canvas id="flag_de" width="48" height="32"></canvas><div class="lang-label">DE</div></div>
+            <div class="lang-flag" data-lang="en"><canvas id="flag_en" width="48" height="32"></canvas><div class="lang-label">EN</div></div>
+            <div class="lang-flag" data-lang="us"><canvas id="flag_us" width="48" height="32"></canvas><div class="lang-label">US</div></div>
+            <div class="lang-flag" data-lang="ja"><canvas id="flag_ja" width="48" height="32"></canvas><div class="lang-label">JP</div></div>
+            <div class="lang-flag" data-lang="es"><canvas id="flag_es" width="48" height="32"></canvas><div class="lang-label">ES</div></div>
+            <div class="lang-flag" data-lang="zh"><canvas id="flag_zh" width="48" height="32"></canvas><div class="lang-label">CN</div></div>
+        </div>
+        <div class="attract-footer-row">
+            <div class="credit-footer">${D.credits_word || 'CREDITS'}: <span id="attractCredits">0</span></div>
+            <button class="startButton" id="insertCoinBtn">${D.insert_coin_btn || 'INSERT COIN'}</button>
+        </div>
+        <div class="byline">by SpikeCode</div>
+    `;
+            }
+
+            // cache for quick access
+            attractDiv._title = attractDiv.querySelector('.title');
+            attractDiv._insertMsg = attractDiv.querySelector('.insert-message');
+            attractDiv._demoCanvas = attractDiv.querySelector('#demoCanvas');
+            attractDiv._flagCanvases = {};
+            ['it','fr','de','en','us','ja','es','zh'].forEach(code => {
+                const c = attractDiv.querySelector('#flag_' + code);
+                if (c) attractDiv._flagCanvases[code] = c;
+            });
+
+            // insert coin handler (attach once)
+            const insertBtn = attractDiv.querySelector('#insertCoinBtn');
+            if (insertBtn) {
+                insertBtn.addEventListener('click', function (ev) {
+                    ev.stopPropagation();
+                    credits = (credits || 0) + 1;
+                    updateHUD();
+                    const ac = document.getElementById('attractCredits'); if (ac) ac.textContent = credits;
+                    const asc = document.getElementById('attractStaticCredits'); if (asc) asc.textContent = (credits && credits > 0) ? `${(window.DICT && window.DICT.credits_word) || 'CREDITS'}: ${credits}` : (window.DICT && window.DICT.insert_coin || 'INSERT COIN');
+                    if (soundEnabled) playCoinInsertSound();
+                    animateCreditHint(1);
+                    try { refreshAttractPlayerHints(); } catch (e) { }
+                });
+            }
+
+            // lang handling: attach once, expose cleanupLang
+            const LANGS = FLAGS_LIST.slice();
+            attractDiv._selectedLangIndex = Math.max(0, LANGS.indexOf((window.DICT && window.DICT.lang) || DEFAULT_LANG));
+
+            function drawFlag(canvas, lang) {
+                const ctx = canvas.getContext('2d');
+                ctx.imageSmoothingEnabled = false;
+                const W = canvas.width; const H = canvas.height;
+                ctx.clearRect(0, 0, W, H);
+                const idx = LANGS.indexOf(lang);
+                if (flagsImg && flagsImg.naturalWidth && idx >= 0) {
+                    try {
+                        const sliceW = Math.floor(flagsImg.width / FLAGS_LIST.length);
+                        const sx = idx * sliceW;
+                        ctx.drawImage(flagsImg, sx, 0, sliceW, flagsImg.height, 0, 0, W, H);
+                        return;
+                    } catch (e) { /* fallback to placeholder */ }
+                }
+                ctx.fillStyle = '#333'; ctx.fillRect(0, 0, W, H);
+                ctx.fillStyle = '#fff'; ctx.font = Math.max(10, Math.floor(H * 0.4)) + 'px monospace';
+                ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                ctx.fillText((FLAGS_LABEL[lang] || lang).toUpperCase(), W / 2, H / 2);
+            }
+
+            function updateLangUI(selectedIndex) {
+                const boxes = attractDiv.querySelectorAll('.lang-flag');
+                boxes.forEach((b, idx) => {
+                    if (idx === selectedIndex) b.classList.add('selected'); else b.classList.remove('selected');
+                });
+            }
+
+            function applySelectedLanguage() {
+                const lang = LANGS[attractDiv._selectedLangIndex];
+                try { localStorage.setItem('bh_lang', lang); } catch (e) { /* ignore */ }
+                loadDictionary(lang, () => { applyTranslations(); });
+            }
+
+            // render flags and wire click interactions once
+            LANGS.forEach((l, i) => {
+                const c = attractDiv.querySelector('#flag_' + l);
+                if (c) drawFlag(c, l);
+                const box = attractDiv.querySelector(`.lang-flag[data-lang="${l}"]`);
+                if (box) {
+                    box.addEventListener('click', function (ev) {
+                        attractDiv._selectedLangIndex = i; updateLangUI(i); applySelectedLanguage();
+                    });
+                }
+            });
+            updateLangUI(attractDiv._selectedLangIndex);
+
+            function langKeyHandler(ev) {
+                if (!document.body.contains(attractDiv)) return;
+                if (ev.key === 'ArrowLeft' || ev.key === 'ArrowRight') {
+                    ev.preventDefault();
+                    if (ev.key === 'ArrowLeft') attractDiv._selectedLangIndex = (attractDiv._selectedLangIndex - 1 + LANGS.length) % LANGS.length;
+                    else attractDiv._selectedLangIndex = (attractDiv._selectedLangIndex + 1) % LANGS.length;
+                    updateLangUI(attractDiv._selectedLangIndex);
+                    applySelectedLanguage();
+                }
+            }
+            document.addEventListener('keydown', langKeyHandler);
+            attractDiv.cleanupLang = function () { document.removeEventListener('keydown', langKeyHandler); };
+
+            // demo stop placeholder
+            attractDiv.demoStop = null;
+
+            // overlay click: start level select if credits present
+            attractDiv.addEventListener('click', function (ev) {
+                if (ev.target && ev.target.id === 'insertCoinBtn') return;
+                if ((credits || 0) > 0) {
+                    clearInterval(attractInterval);
+                    const topDiv = document.querySelector('.gameOver'); if (topDiv) topDiv.remove();
+                    try { if (attractDiv && attractDiv.cleanupLang) attractDiv.cleanupLang(); } catch (e) { }
+                    try { if (attractDiv && typeof attractDiv.demoStop === 'function') attractDiv.demoStop(); } catch (e) { }
+                    try { attractDiv.classList.add('hidden'); } catch (e) { }
+                    showLevelSelect();
+                } else {
+                    playCoinRequiredSound(1);
+                    animateCreditHint(1);
+                }
+            });
+
+            return attractDiv;
+        }
+
+        function refreshAttractUI() {
+            const attractDiv = initAttractUI();
+            if (!attractDiv) return;
+            const D = window.DICT || {};
+            if (attractDiv._title) attractDiv._title.textContent = D.title || 'BLOCK HUNTER';
+            if (attractDiv._insertMsg) attractDiv._insertMsg.textContent = D.insert_coin || 'INSERT COIN';
+            const ac = attractDiv.querySelector('#attractCredits'); if (ac) ac.textContent = (credits || 0);
+
+            // redraw flag canvases
+            Object.keys(attractDiv._flagCanvases || {}).forEach(lang => {
+                const c = attractDiv._flagCanvases[lang]; if (c) {
+                    try { (function drawFlag(canvas, lang) {
+                        const ctx = canvas.getContext('2d');
+                        ctx.imageSmoothingEnabled = false;
+                        const W = canvas.width; const H = canvas.height;
+                        ctx.clearRect(0, 0, W, H);
+                        const LANGS = FLAGS_LIST.slice();
+                        const idx = LANGS.indexOf(lang);
+                        if (flagsImg && flagsImg.naturalWidth && idx >= 0) {
+                            try {
+                                const sliceW = Math.floor(flagsImg.width / FLAGS_LIST.length);
+                                const sx = idx * sliceW;
+                                ctx.drawImage(flagsImg, sx, 0, sliceW, flagsImg.height, 0, 0, W, H);
+                                return;
+                            } catch (e) { }
+                        }
+                        ctx.fillStyle = '#333'; ctx.fillRect(0, 0, W, H);
+                        ctx.fillStyle = '#fff'; ctx.font = Math.max(10, Math.floor(H * 0.4)) + 'px monospace';
+                        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                        ctx.fillText((FLAGS_LABEL[lang] || lang).toUpperCase(), W / 2, H / 2);
+                    })(c, lang); } catch (e) { /* ignore */ } }
+            });
+
+            // start demo if available
+            const demoCanvas = attractDiv._demoCanvas;
+            try {
+                if (demoCanvas && typeof startAttractDemo === 'function') {
+                    const stopper = startAttractDemo(demoCanvas, attractDiv);
+                    if (typeof stopper === 'function') attractDiv.demoStop = stopper;
+                }
+            } catch (e) { }
+
+            // show with fade-in
+            try { attractDiv.classList.remove('hidden'); attractDiv.classList.remove('fade-out'); attractDiv.classList.add('fade-in'); } catch (e) { }
+            setTimeout(() => { try { attractDiv.classList.remove('fade-in'); } catch (e) { } }, 420);
+        }
+
+        function showAttractScreen() {
+            // initialize UI once and refresh when showing
+            refreshAttractUI();
+            // ensure body isn't in-game
+            try { document.body.classList.remove('in-game'); } catch (e) { }
+        }
+        function showAttractOrTopTen() {
+            // Alterna tra la schermata statica di attract (senza pulsante) e la Top Ten
+            let showTop = false;
+            // clear any previous interval if present
+            try { if (window.attractInterval) clearInterval(window.attractInterval); } catch (e) { }
+            // alternate every 10 seconds as requested
+            attractInterval = setInterval(() => {
+                // remove/cleanup any transient custom attract overlay (but keep persistent containers like #topTen)
+                const attractDivCustom = document.getElementById('attractScreen') || document.getElementById('attractScreenCustom');
+                if (attractDivCustom) {
+                    try { if (typeof attractDivCustom.cleanupLang === 'function') attractDivCustom.cleanupLang(); } catch (e) { }
+                    try { if (typeof attractDivCustom.demoStop === 'function') attractDivCustom.demoStop(); } catch (e) { }
+                    // hide and clear instead of removing from DOM to preserve persistent references
+                    try { attractDivCustom.classList.add('hidden'); } catch (e) { }
+                    try { attractDivCustom.innerHTML = ''; } catch (e) { }
+                }
+                // remove transient gameOver overlays but preserve persistent #topTen
+                const transientGameOvers = Array.from(document.querySelectorAll('.gameOver')).filter(e => e.id !== 'topTen');
+                transientGameOvers.forEach(e => e.remove());
+
+                // When showing Top Ten we hide the static attract and display a full-size Top Ten overlay
+                const staticAttract = document.getElementById('attractScreen');
+                if (showTop) {
+                    if (staticAttract) staticAttract.classList.add('hidden');
+                    // display Top Ten as a full-size overlay without outer borders
+                    showTopTen();
+                } else {
+                    // restore the static attract and hide persistent topTen container if present
+                    if (staticAttract) staticAttract.classList.remove('hidden');
+                    const persistentTop = document.getElementById('topTen');
+                    if (persistentTop) persistentTop.classList.add('hidden');
+                }
+                showTop = !showTop;
+            }, 10000);
+            // all'avvio: load default dictionary then show attract
+            loadDictionary(DEFAULT_LANG, () => {
+                applyTranslations();
+                const staticAttract = document.getElementById('attractScreen'); if (staticAttract) staticAttract.classList.remove('hidden');
+            });
+        }
+
+        window.onload = function () {
+            // after dictionary loaded (see showAttractOrTopTen), start the alternation
+            showAttractOrTopTen();
+            // Assicuriamoci che il contatore crediti sulla schermata statica sia inizializzato
+            const asc = document.getElementById('attractStaticCredits'); if (asc) asc.textContent = (credits || 0);
+            const ac = document.getElementById('attractCredits'); if (ac) ac.textContent = (credits || 0);
+            // rendi cliccabile la schermata statica: apre la selezione solo se ci sono crediti
+            const staticAttractClick = document.getElementById('attractScreen');
+            if (staticAttractClick) {
+                staticAttractClick.style.cursor = 'pointer';
+                staticAttractClick.addEventListener('click', function () {
+                    if ((credits || 0) > 0) {
+                        clearInterval(attractInterval);
+                        staticAttractClick.classList.add('hidden');
+                        showLevelSelect();
+                    } else {
+                        addFloatingText(canvas.width / 2, canvas.height / 2 + 80, (window.DICT && window.DICT.insert_coin_short) || 'INSERT COIN', '#ffcc00');
+                        if (soundEnabled) playTransitionSound();
+                    }
+                });
+            }
+
+            // --- demo implementation: simple autonomous visual demo on a small canvas ---
+            function startAttractDemo(canvas, container) {
+                const ctx = canvas.getContext('2d');
+                let raf = null;
+                // demo state (isolated from real game state)
+                const demo = {
+                    w: canvas.width,
+                    h: canvas.height,
+                    player: { x: 40, y: 140, vx: 1.3, vy: 0, size: 12, cooldown: 0 },
+                    bullets: [],
+                    pickups: [],
+                    tick: 0
+                };
+
+                function spawnPickup() {
+                    demo.pickups.push({ x: 20 + Math.random() * (demo.w - 40), y: 20 + Math.random() * (demo.h - 60), size: 8, life: 600 });
+                }
+
+                // simple AI: move horizontally, bounce, occasionally jump vertically and shoot
+                function step() {
+                    demo.tick++;
+                    // spawn occasionally
+                    if (demo.tick % 180 === 0 && demo.pickups.length < 4) spawnPickup();
+                    // move player
+                    const p = demo.player;
+                    p.x += p.vx;
+                    if (p.x < 12 || p.x > demo.w - 12) p.vx *= -1;
+                    // small vertical bob
+                    p.y = 120 + Math.sin(demo.tick / 16) * 8;
+                    // shooting
+                    if (p.cooldown > 0) p.cooldown--;
+                    if (Math.random() < 0.02 && p.cooldown === 0) {
+                        demo.bullets.push({ x: p.x + 6 * Math.sign(p.vx || 1), y: p.y, vx: 2 * Math.sign(p.vx || 1), life: 80 });
+                        p.cooldown = 30 + Math.floor(Math.random() * 30);
+                    }
+                    // update bullets
+                    for (let i = demo.bullets.length - 1; i >= 0; i--) {
+                        const b = demo.bullets[i]; b.x += b.vx; b.life--; if (b.life <= 0) demo.bullets.splice(i, 1);
+                    }
+                    // pickup collisions
+                    for (let i = demo.pickups.length - 1; i >= 0; i--) {
+                        const pk = demo.pickups[i]; pk.life--;
+                        const dx = pk.x - p.x, dy = pk.y - p.y; if (dx * dx + dy * dy < (pk.size + p.size) * (pk.size + p.size)) {
+                            // collect: remove and create small effect
+                            demo.pickups.splice(i, 1);
+                            // small burst of particles - represented as quick bullets in opposite direction
+                            for (let j = 0; j < 6; j++) demo.bullets.push({ x: pk.x, y: pk.y, vx: (Math.random() - 0.5) * 3, life: 30 + Math.random() * 30 });
+                        }
+                        if (pk.life <= 0) demo.pickups.splice(i, 1);
+                    }
+                }
+
+                function draw() {
+                    // background
+                    ctx.fillStyle = '#00102a'; ctx.fillRect(0, 0, demo.w, demo.h);
+                    // arena border
+                    ctx.strokeStyle = '#004466'; ctx.lineWidth = 2; ctx.strokeRect(6, 6, demo.w - 12, demo.h - 12);
+                    // pickups
+                    for (const pk of demo.pickups) {
+                        ctx.fillStyle = '#ffd166'; ctx.beginPath(); ctx.arc(pk.x, pk.y, pk.size / 2, 0, Math.PI * 2); ctx.fill();
+                    }
+                    // player
+                    const p = demo.player;
+                    ctx.fillStyle = '#66ff66'; ctx.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
+                    // bullets/particles
+                    for (const b of demo.bullets) { ctx.fillStyle = '#ff9966'; ctx.fillRect(b.x - 2, b.y - 2, 4, 4); }
+                    // HUD small
+                    ctx.fillStyle = '#ffffff'; ctx.font = '10px monospace'; ctx.fillText('DEMO', 8, 14);
+                }
+
+                function loop() {
+                    step(); draw(); raf = requestAnimationFrame(loop);
+                }
+
+                // start
+                raf = requestAnimationFrame(loop);
+
+                // expose stop function on container so caller can cancel
+                container.demoStop = function () {
+                    try { if (raf) cancelAnimationFrame(raf); } catch (e) { }
+                    container.demoStop = null;
+                };
+            }
+            // wire HUD sound toggle if present
+            const hudBtn = document.getElementById('hudSoundToggle');
+            if (hudBtn) {
+                hudBtn.addEventListener('click', function () {
+                    soundEnabled = !soundEnabled;
+                    hudBtn.textContent = `${soundEnabled ? (window.DICT && window.DICT.sound_on) || 'SOUND: ON' : (window.DICT && window.DICT.sound_off) || 'SOUND: OFF'}`;
+                });
+            }
+            attractAnimation();
+        };
+    </script>
+</body>
+
+</html>
