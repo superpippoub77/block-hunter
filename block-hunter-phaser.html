@@ -18,7 +18,6 @@
         }
 
         body {
-            background: #0a0e27;
             font-family: 'Press Start 2P', monospace;
             display: flex;
             justify-content: center;
@@ -70,6 +69,32 @@
     <script type="module">
     import { typeWriter, fallLetters } from './js/helper.js';
     import { createFlagCarousel } from './js/carousel.js';
+    import * as Coins from './js/coins.js';
+    import * as Lang from './js/lang.js';
+
+    // Helper wrappers to centralize credits access. Use Coins API when available,
+    // otherwise fall back to reading/writing localStorage directly under the same key used by Coins.
+    function getCreditsValue() {
+        try {
+            if (Coins && typeof Coins.getCredits === 'function') return Coins.getCredits();
+            const raw = localStorage.getItem('bh_credits');
+            return Math.max(0, parseInt(raw, 10) || 0);
+        } catch (e) { return 0; }
+    }
+
+    function tryConsumePlayersFallback(n) {
+        try {
+            if (Coins && typeof Coins.usePlayers === 'function') return !!Coins.usePlayers(n);
+            const per = (window.GAME_CONFIG && window.GAME_CONFIG.CREDITS_PER_PLAYER) || 1;
+            const required = Math.max(0, Math.floor(per * (n || 0)));
+            const raw = Math.max(0, parseInt(localStorage.getItem('bh_credits') || '0', 10) || 0);
+            if (raw < required) return false;
+            localStorage.setItem('bh_credits', String(raw - required));
+            // If Coins.onChange listeners exist on a global window.Coins fallback, try to call them
+            try { if (window.Coins && typeof window.Coins.onChange === 'function') { /* noop */ } } catch (e) { }
+            return true;
+        } catch (e) { return false; }
+    }
 
         // Use a constant for the font family name (no extra quotes) and reuse it
         // across all Phaser Text styles.
@@ -100,10 +125,21 @@
         let targetLifetime = 0;
         let blockSpawnTimer = 0;
         let particles;
-        // Credits / player selection
-        let credits = 0;
+    // Credits / player selection (managed by js/coins.js)
         let playersCount = 1;
         const CREDITS_PER_PLAYER = (window.GAME_CONFIG && window.GAME_CONFIG.CREDITS_PER_PLAYER) || 1;
+
+        // initialize credits from Coins module (and subscribe to updates)
+        try {
+            if (Coins && typeof Coins.getCredits === 'function') {
+                // refresh UI using current Coins value
+                try { refreshAttractPlayerHintsPhaser((window.game && window.game.scene) ? window.game.scene.getScenes(true)[0] : null); } catch (e) { }
+                // when coins change, refresh UI hints
+                Coins.onChange((c) => {
+                    try { refreshAttractPlayerHintsPhaser((window.game && window.game.scene) ? window.game.scene.getScenes(true)[0] : null); } catch (e) { }
+                });
+            }
+        } catch (e) { /* ignore if Coins not available */ }
 
         //Container and object references for UI parts, organized in a central UI object for easier management and future extensions.
         const UI = {
@@ -367,10 +403,8 @@
 
         let topTenTitle = null;
         let topTenListContainer = null;
-    // Language selector
-    const LANGS = ['it', 'fr', 'de', 'en', 'us', 'ja', 'es', 'zh'];
-    try { window.LANGS = LANGS; } catch (e) { }
-        let currentLangIndex = 0;
+    // Language selector (migrated to js/lang.js)
+    // Lang module exposes LANGS, current index and persistence.
         // Carousel flags: left / center / right are available via the carousel API
     // Reference to the carousel API returned by createFlagCarousel
     let langCarousel = null;
@@ -432,10 +466,13 @@
             const title = scene.add.text(sw / 2, 120, (window.DICT && window.DICT.select_title) || 'SELEZIONA', { fontSize: '32px', fontFamily: GAME_FONT, fill: '#ffffff' }).setOrigin(0.5);
             selectContainer.add(title);
 
-            selectCreditsText = scene.add.text(sw / 2, 180, (credits && credits > 0) ? `CREDITI: ${credits}` : ((window.DICT && window.DICT.insert_coin) || 'INSERISCI MONETA'), { fontSize: '18px', fontFamily: GAME_FONT, fill: '#00ffff' }).setOrigin(0.5);
+            {
+                 const credits = getCreditsValue();
+                 selectCreditsText = scene.add.text(sw / 2, 180, (credits > 0) ? `CREDITI: ${credits}` : ((window.DICT && window.DICT.insert_coin) || 'INSERISCI MONETA'), { fontSize: '18px', fontFamily: GAME_FONT, fill: '#00ffff' }).setOrigin(0.5);
+            }
             selectContainer.add(selectCreditsText);
-            // register select overlay credits under UI
-            UI.selectCredits.content = selectCreditsText;
+            // register select overlay credits under UI (safe: ensure namespace exists)
+            try { UI.selectCredits = UI.selectCredits || {}; UI.selectCredits.content = selectCreditsText; } catch (e) { /* ignore */ }
 
             selectHintText = scene.add.text(sw / 2, 220, (window.DICT && window.DICT.select_hint) || 'Scegli numero giocatori:', { fontSize: '16px', fontFamily: GAME_FONT, fill: '#00ffff' }).setOrigin(0.5);
             selectContainer.add(selectHintText);
@@ -993,12 +1030,14 @@
             UI.topten.container.add(UI.topten.elements.list.content);
 
             // Language selector UI (flag + arrows)
-            // Read saved lang
-            const saved = localStorage.getItem('bh_lang');
-            if (saved) {
-                const idx = LANGS.indexOf(saved);
-                if (idx >= 0) currentLangIndex = idx;
-            }
+            // Language state managed by Lang module; subscribe to changes to update UI
+            try {
+                Lang.onChange((code, idx) => {
+                    try { loadDictionary(code); } catch (e) { }
+                    try { updateLangSelectorHighlight(scene); } catch (e) { }
+                    try { updateFlagCrop(scene); } catch (e) { }
+                });
+            } catch (e) { /* ignore */ }
 
             // Selector box (outline) that frames the flag + arrows. We add it before the flag so it sits behind.
             try {
@@ -1010,7 +1049,7 @@
 
             // Create a 3-item carousel via reusable factory and attach to the attract container
             try {
-                langCarousel = createFlagCarousel(scene, UI.attract.container, centerX, 480, currentLangIndex, {
+                langCarousel = createFlagCarousel(scene, UI.attract.container, centerX, 480, Lang.getIndex(), {
                     onLeft: () => changeLang(-1, scene),
                     onRight: () => changeLang(1, scene)
                 });
@@ -1026,26 +1065,29 @@
             try {
                 updateFlagCrop(scene);
             } catch (e) { /* ignore */ }
-            try { loadDictionary(LANGS[currentLangIndex]); } catch (e) { /* ignore */ }
+            try { loadDictionary(Lang.getCurrent()); } catch (e) { /* ignore */ }
             try { updateLangSelectorHighlight(scene); } catch (e) { /* ignore */ }
             try {
-                // Prepare keyboard handler only; pointer handlers for flags/arrows
-                // are now managed by the carousel module (passed as callbacks) so
-                // there are no handler functions defined inline here.
                 langKeyboardHandler = (event) => {
-                    // allow keyboard language changes while attract UI visible or select overlay open
-                    if (!attractVisible && !selectContainer) return; // safety
-                    if (event.code === 'ArrowLeft' || event.key === 'Left') {
-                        changeLang(-1, scene);
-                    } else if (event.code === 'ArrowRight' || event.key === 'Right') {
-                        changeLang(1, scene);
-                    }
+                    try {
+                        if (!attractVisible && !selectContainer) return;
+                        if (event.code === 'ArrowLeft' || event.key === 'Left') {
+                            changeLang(-1, scene);
+                        } else if (event.code === 'ArrowRight' || event.key === 'Right') {
+                            changeLang(1, scene);
+                        }
+                    } catch (e) { /* ignore per-event errors */ }
                 };
+                window.addEventListener('keydown', langKeyboardHandler);
             } catch (e) { /* ignore */ }
 
             // The carousel may create arrow text buttons internally. Prefer those
             // and register them in the structured UI mapping for compatibility.
             try {
+                // ensure element slots exist before assigning content
+                UI.attract.elements = UI.attract.elements || {};
+                UI.attract.elements.leftArrow = UI.attract.elements.leftArrow || {};
+                UI.attract.elements.rightArrow = UI.attract.elements.rightArrow || {};
                 if (langCarousel) {
                     UI.attract.elements.leftArrow.content = langCarousel.leftArrow || null;
                     UI.attract.elements.rightArrow.content = langCarousel.rightArrow || null;
@@ -1062,7 +1104,7 @@
             // Initial update of flag crop and dictionary
             scene.time.delayedCall(50, () => {
                 updateFlagCrop(scene);
-                loadDictionary(LANGS[currentLangIndex]);
+                try { loadDictionary(Lang.getCurrent()); } catch (e) { }
 
                 // render highscores into the top-ten list area
                 try { renderTopTen(scene); } catch (e) { /* ignore */ }
@@ -1101,8 +1143,32 @@
                             // uiSetPartVisible / applyTranslations can control it.
                             try { if (!UI.credits) UI.credits = {}; UI.credits.content = bottomCreditsText; } catch (e) { }
                             try { UI.attract.elements.credits = UI.attract.elements.credits || {}; UI.attract.elements.credits.content = bottomCreditsText; } catch (e) { }
-                            try { if (typeof bottomCreditsText.on === 'function') bottomCreditsText.on('pointerdown', startGame); } catch (e) { }
-                            try { if (scene && scene.input && scene.input.keyboard) scene.input.keyboard.on('keydown-ENTER', startGame); } catch (e) { }
+                            try { if (typeof bottomCreditsText.on === 'function') bottomCreditsText.on('pointerdown', () => { tryStartWithPlayers(1, scene); }); } catch (e) { }
+                            try {
+                                if (scene && scene.input && scene.input.keyboard) {
+                                    scene.input.keyboard.on('keydown-ENTER', (ev) => {
+                                        try {
+                                            const credits = (getCreditsValue() || 0);
+                                            const wantTwo = !!(ev.shiftKey || ev.ctrlKey || ev.metaKey);
+                                            // prefer 2 players when user pressed a modifier and has enough credits
+                                            const desiredPlayers = (wantTwo && credits >= ((CREDITS_PER_PLAYER || 1) * 2)) ? 2 : 1;
+                                            const required = (CREDITS_PER_PLAYER || 1) * desiredPlayers;
+                                            if (credits >= required) {
+                                                tryStartWithPlayers(desiredPlayers, scene);
+                                            } else if (wantTwo && credits >= (CREDITS_PER_PLAYER || 1)) {
+                                                // user wanted 2P but only has enough for 1P: fall back to 1P
+                                                tryStartWithPlayers(1, scene);
+                                            } else {
+                                                // feedback: pulse/shake the bottom credits text
+                                                try {
+                                                    const _btn = uiGetContent('credits') || bottomCreditsText;
+                                                    if (_btn && scene && scene.tweens) scene.tweens.add({ targets: _btn, x: (_btn.x || 0) - 6, duration: 80, yoyo: true, repeat: 1 });
+                                                } catch (e) { }
+                                            }
+                                        } catch (e) { /* ignore */ }
+                                    });
+                                }
+                            } catch (e) { }
                         } catch (e) { bottomCreditsText = null; }
                     }
                 } catch (e) { console.warn('Failed to create UI overlay', e); }
@@ -1191,21 +1257,26 @@
                 // update footer / credits text
                 if (topTenCreditsFooter) {
                     const label = (window.DICT && (window.DICT.credits_word || window.DICT.credits_label)) || 'CREDITI';
-                    topTenCreditsFooter.setText((credits && credits > 0) ? `${label}: ${credits}` : (window.DICT && window.DICT.insert_coin) || 'INSERISCI MONETA');
+                    const c = getCreditsValue();
+                    topTenCreditsFooter.setText((c > 0) ? `${label}: ${c}` : (window.DICT && window.DICT.insert_coin) || 'INSERISCI MONETA');
                 }
                 // update bottom insert-coin / credits text (moved to bottom of screen)
                 try {
                     const insertCoin = (window.DICT && (window.DICT.insert_coin || window.DICT.insert_coin_btn)) || 'INSERISCI MONETA';
                     const bottomObj = uiGetContent('credits') || bottomCreditsText;
                     if (bottomObj && typeof bottomObj.setText === 'function') {
-                        bottomObj.setText((credits && credits > 0) ? `${(window.DICT && window.DICT.credits_word) || 'CREDITI'}: ${credits}` : insertCoin);
+                        const c = getCreditsValue();
+                        bottomObj.setText((c > 0) ? `${(window.DICT && window.DICT.credits_word) || 'CREDITI'}: ${c}` : insertCoin);
                     }
                 } catch (e) { /* ignore */ }
                 // update select overlay credits if visible
                 // update select overlay credits if visible (use UI mapping if present)
                 try {
                     const sc = (UI.selectCredits && UI.selectCredits.content) || selectCreditsText;
-                    if (sc && typeof sc.setText === 'function') sc.setText((credits && credits > 0) ? `CREDITI: ${credits}` : ((window.DICT && window.DICT.insert_coin) || 'INSERISCI MONETA'));
+                        if (sc && typeof sc.setText === 'function') {
+                            const c = getCreditsValue();
+                            sc.setText((c > 0) ? `CREDITI: ${c}` : ((window.DICT && window.DICT.insert_coin) || 'INSERISCI MONETA'));
+                        }
                 } catch (e) { }
                 // optionally update any visible hints (we don't have static DOM hints here)
             } catch (e) { /* ignore */ }
@@ -1216,8 +1287,9 @@
         }
 
         function showPlayerToBegin() {
-            const hasP1 = (credits || 0) >= (CREDITS_PER_PLAYER || 1);
-            const hasP2 = (credits || 0) >= ((CREDITS_PER_PLAYER || 1) * 2);
+            const c = getCreditsValue();
+            const hasP1 = (c || 0) >= (CREDITS_PER_PLAYER || 1);
+            const hasP2 = (c || 0) >= ((CREDITS_PER_PLAYER || 1) * 2);
             try {
                 uiSetPartVisible('attract', 'player1Box', !!hasP1);
                 uiSetPartVisible('attract', 'player1Icon', !!hasP1);
@@ -1231,7 +1303,14 @@
         }
 
         function insertCoin(amount = 1, scene) {
-            credits = (credits || 0) + amount;
+            try {
+                if (Coins && typeof Coins.addCredits === 'function') {
+                    Coins.addCredits(amount);
+                } else {
+                    // fallback to localStorage update when Coins module isn't available
+                    try { const raw = Math.max(0, parseInt(localStorage.getItem('bh_credits') || '0', 10) || 0); localStorage.setItem('bh_credits', String(raw + (amount || 0))); } catch (e) { }
+                }
+            } catch (e) { try { const raw = Math.max(0, parseInt(localStorage.getItem('bh_credits') || '0', 10) || 0); localStorage.setItem('bh_credits', String(raw + (amount || 0))); } catch (ee) { } }
             // feedback (tween or sound)
             try { if (scene && scene.sound && scene.sound.play) scene.sound.play && scene.sound.play('coin'); } catch (e) { }
             refreshAttractPlayerHintsPhaser(scene || {});
@@ -1248,9 +1327,12 @@
 
         function tryStartWithPlayers(n, scene) {
             const required = (CREDITS_PER_PLAYER || 1) * n;
-            if ((credits || 0) >= required) {
-                credits -= required;
-                playersCount = n;
+                const avail = getCreditsValue();
+                if (avail >= required) {
+                    // consume credits using Coins API if available
+                        const consumed = (Coins && typeof Coins.usePlayers === 'function') ? !!Coins.usePlayers(n) : tryConsumePlayersFallback(n);
+                    if (!consumed) return false;
+                    playersCount = n;
                 refreshAttractPlayerHintsPhaser(scene);
                 // start the game
                 gameStarted = true;
@@ -1727,9 +1809,9 @@
                             duration,
                             onComplete: () => {
                                 try {
-                                    // finalize index change
-                                    currentLangIndex = (currentLangIndex + delta + LANGS.length) % LANGS.length;
-                                    localStorage.setItem('bh_lang', LANGS[currentLangIndex]);
+                                    // finalize index change via Lang module
+                                    const newIndex = (Lang.getIndex() + delta + Lang.LANGS.length) % Lang.LANGS.length;
+                                    try { Lang.setLang(newIndex); } catch (e) { /* ignore */ }
 
                                     // reset positions to canonical locations (centered)
                                     const centerX = (scene && scene.scale && scene.scale.width) ? scene.scale.width / 2 : 400;
@@ -1747,9 +1829,7 @@
 
                                     // refresh frames/crops and UI
                                     try { updateFlagCrop(scene); } catch (e) { }
-                                    console.info('[LANG] changeLang (animated) ->', LANGS[currentLangIndex], 'index', currentLangIndex);
-                                    try { loadDictionary(LANGS[currentLangIndex]); } catch (e) { console.warn('[LANG] loadDictionary threw', e); }
-                                    try { updateLangSelectorHighlight(scene); } catch (e) { }
+                                    console.info('[LANG] changeLang (animated) ->', Lang.LANGS[newIndex], 'index', newIndex);
                                 } catch (ee) { console.warn('[LANG] changeLang completion error', ee); }
                                 // re-enable interactivity
                                 try {
@@ -1782,19 +1862,17 @@
             }
 
             // Immediate fallback (no animation available)
-            currentLangIndex = (currentLangIndex + delta + LANGS.length) % LANGS.length;
-            localStorage.setItem('bh_lang', LANGS[currentLangIndex]);
+            const newIndex = (Lang.getIndex() + delta + Lang.LANGS.length) % Lang.LANGS.length;
+            try { Lang.setLang(newIndex); } catch (e) { /* ignore */ }
             updateFlagCrop(scene);
-            console.info('[LANG] changeLang ->', LANGS[currentLangIndex], 'index', currentLangIndex);
-            try { loadDictionary(LANGS[currentLangIndex]); } catch (e) { console.warn('[LANG] loadDictionary threw', e); }
-            try { updateLangSelectorHighlight(scene); } catch (e) { /* ignore */ }
+            console.info('[LANG] changeLang ->', Lang.LANGS[newIndex], 'index', newIndex);
         }
 
         // Attach interactive handlers for language selection when attract is visible
         function enableLangSelectors(scene) {
             try {
                 if (!scene) return;
-                if (langKeyboardHandler && scene.input && scene.input.keyboard) scene.input.keyboard.on('keydown', langKeyboardHandler);
+                // Keyboard handling is managed by the Lang module via initKeyboard.
                 // Pointer handlers for flags and arrows are managed by the carousel module
                 // (callbacks were passed when creating the carousel). No inline pointer
                 // handler wiring is required here.
@@ -1805,9 +1883,8 @@
         function disableLangSelectors(scene) {
             try {
                 if (!scene) return;
-                if (langKeyboardHandler && scene.input && scene.input.keyboard) scene.input.keyboard.off('keydown', langKeyboardHandler);
-                // Carousel manages pointer handlers, so nothing to detach here.
-                // ensure any ongoing carousel animation state is cleared when selectors are disabled
+                // Keyboard removal handled by Lang module (initKeyboard returns a remover if needed).
+                // Carousel manages pointer handlers, so nothing else to detach here.
                 try { langCarouselAnimating = false; } catch (e) { }
             } catch (e) { /* ignore */ }
         }
@@ -1823,9 +1900,9 @@
                 const tex = scene.textures.get('flags');
                 const isSheet = !!(tex && tex.frameTotal && tex.frameTotal > 1);
 
-                const idxCenter = currentLangIndex % LANGS.length;
-                const idxLeft = (currentLangIndex - 1 + LANGS.length) % LANGS.length;
-                const idxRight = (currentLangIndex + 1) % LANGS.length;
+                const idxCenter = Lang.getIndex() % Lang.LANGS.length;
+                const idxLeft = (Lang.getIndex() - 1 + Lang.LANGS.length) % Lang.LANGS.length;
+                const idxRight = (Lang.getIndex() + 1) % Lang.LANGS.length;
 
                 if (isSheet) {
                     // set frames for sprites if available
@@ -1852,7 +1929,7 @@
                 const img = tex2.source[0].image || tex2.source[0].data;
                 const totalW = img.width;
                 const totalH = img.height;
-                const sliceW = Math.floor(totalW / LANGS.length);
+                const sliceW = Math.floor(totalW / Lang.LANGS.length);
 
                 const sxCenter = sliceW * idxCenter;
                 const sxLeft = sliceW * idxLeft;
@@ -2050,10 +2127,12 @@
             if (!window.BH_DICS) window.BH_DICS = {};
             window.BH_DICS[lang] = dict || {};
             // if this is the currently selected language, apply immediately
-            const current = LANGS[currentLangIndex];
-            if (current === lang) {
-                try { loadDictionary(lang); } catch (e) { console.warn('registerDictionary load failed', e); }
-            }
+            try {
+                const current = Lang.getCurrent();
+                if (current === lang) {
+                    try { loadDictionary(lang); } catch (e) { console.warn('registerDictionary load failed', e); }
+                }
+            } catch (e) { /* ignore */ }
         }
         // expose helper globally
         try { window.registerDictionary = registerDictionary; } catch (e) { }
@@ -2080,11 +2159,14 @@
                 try {
                     const bottomObj = uiGetContent('credits') || bottomCreditsText;
                     if (bottomObj && typeof bottomObj.setText === 'function') {
-                        if (credits && credits > 0) {
-                            const creditsLabel = (window.DICT && (window.DICT.credits_word || window.DICT.credits_label)) || 'CREDITI';
-                            bottomObj.setText(`${creditsLabel}: ${credits}`);
-                        } else {
-                            bottomObj.setText(insertCoin);
+                        {
+                            const c = getCreditsValue();
+                            if (c && c > 0) {
+                                const creditsLabel = (window.DICT && (window.DICT.credits_word || window.DICT.credits_label)) || 'CREDITI';
+                                bottomObj.setText(`${creditsLabel}: ${c}`);
+                            } else {
+                                bottomObj.setText(insertCoin);
+                            }
                         }
                     }
                 } catch (e) { console.warn('applyTranslations: failed to set bottomCreditsText', e); }
@@ -2112,7 +2194,10 @@
                 // select overlay translations
                 try {
                     const sc = uiGetContent('selectCredits') || selectCreditsText;
-                    if (sc && typeof sc.setText === 'function') sc.setText((credits && credits > 0) ? `${creditsLabel}: ${credits}` : (insertCoin || 'INSERISCI MONETA'));
+                    if (sc && typeof sc.setText === 'function') {
+                        const c = getCreditsValue();
+                        sc.setText((c > 0) ? `${creditsLabel}: ${c}` : (insertCoin || 'INSERISCI MONETA'));
+                    }
                 } catch (e) { console.warn('applyTranslations: failed to set selectCreditsText', e); }
                 try { if (selectHintText && window.DICT.select_hint && typeof selectHintText.setText === 'function') selectHintText.setText(window.DICT.select_hint); } catch (e) { console.warn('applyTranslations: failed to set selectHintText', e); }
                 try { if (selectBtn1Text && window.DICT.one_player_label && typeof selectBtn1Text.setText === 'function') selectBtn1Text.setText(window.DICT.one_player_label.replace('{credits}', CREDITS_PER_PLAYER)); } catch (e) { console.warn('applyTranslations: failed to set selectBtn1Text', e); }
@@ -2887,7 +2972,7 @@
                     const ok = tryStartWithPlayers(n, active);
                     if (!ok) {
                         // show required credit hint (simple console for now)
-                        console.warn('Not enough credits for', n, 'players. Credits:', credits);
+                        console.warn('Not enough credits for', n, 'players. Credits:', getCreditsValue());
                     }
                     return;
                 }

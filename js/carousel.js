@@ -1,4 +1,5 @@
 // Modular carousel factory for Phaser scenes
+import { LANGS } from './lang.js';
 // Exports createFlagCarousel(scene, container, centerX, y, initialIndex, opts)
 // opts can include:
 //  - items: array of items (if using spritesheet, length is number of frames)
@@ -12,11 +13,11 @@
 export function createFlagCarousel(scene, container, centerX, y, initialIndex = 0, opts = {}) {
     if (!scene || !container) return null;
     // opts:
-    //  - items: array of language ids (defaults to window.LANGS)
+    //  - items: array of language ids (defaults to module LANGS)
     //  - onLeft / onRight: callbacks invoked when left/right are activated
     //  - centerSize / sideSize / sideAlpha / interactive as before
-    opts = Object.assign({ items: (window && window.LANGS) ? window.LANGS.slice() : null, centerSize: { w: 96, h: 48 }, sideSize: { w: 64, h: 32 }, sideAlpha: 0.45, interactive: true, onLeft: null, onRight: null }, opts || {});
-    const items = Array.isArray(opts.items) ? opts.items : (window && window.LANGS ? window.LANGS : []);
+    opts = Object.assign({ items: Array.isArray(LANGS) ? LANGS.slice() : [], centerSize: { w: 96, h: 48 }, sideSize: { w: 64, h: 32 }, sideAlpha: 0.45, interactive: true, onLeft: null, onRight: null }, opts || {});
+    const items = Array.isArray(opts.items) ? opts.items : (Array.isArray(LANGS) ? LANGS : []);
     if (!items || !items.length) return null;
     initialIndex = ((initialIndex || 0) % items.length + items.length) % items.length;
 
