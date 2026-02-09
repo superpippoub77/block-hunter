@@ -992,18 +992,6 @@
             }).setOrigin(0.5);
             UI.topten.container.add(UI.topten.elements.list.content);
 
-            // NOTE: removed the large centered "startText" so only the bottom
-            // credits text is used as the active INSERT COIN / START control.
-            const startGame = () => {
-                gameStarted = true;
-                hideAttractUI(scene, true);
-                if (attractCycleEvent) {
-                    attractCycleEvent.remove(false);
-                    attractCycleEvent = null;
-                }
-                scene.scene.restart();
-            };
-
             // Language selector UI (flag + arrows)
             // Read saved lang
             const saved = localStorage.getItem('bh_lang');
@@ -1045,7 +1033,8 @@
                 // are now managed by the carousel module (passed as callbacks) so
                 // there are no handler functions defined inline here.
                 langKeyboardHandler = (event) => {
-                    if (!attractVisible) return; // safety
+                    // allow keyboard language changes while attract UI visible or select overlay open
+                    if (!attractVisible && !selectContainer) return; // safety
                     if (event.code === 'ArrowLeft' || event.key === 'Left') {
                         changeLang(-1, scene);
                     } else if (event.code === 'ArrowRight' || event.key === 'Right') {
@@ -1119,6 +1108,16 @@
                 } catch (e) { console.warn('Failed to create UI overlay', e); }
             });
 
+            const startGame = () => {
+                gameStarted = true;
+                hideAttractUI(scene, true);
+                if (attractCycleEvent) {
+                    attractCycleEvent.remove(false);
+                    attractCycleEvent = null;
+                }
+                scene.scene.restart();
+            };
+
             // Initially hide both
             UI.attract.container.setAlpha(0);
             UI.topten.container.setAlpha(0);
@@ -1140,6 +1139,8 @@
 
             // Show attract container (remains visible under TopTen)
             UI.attract.container.setVisible(true);
+            // mark attract as visible so language selectors are allowed
+            try { attractVisible = true; } catch (e) { }
             scene.tweens.add({ targets: UI.attract.container, alpha: 1, duration: 600 });
             // enable interactive language selectors while attract is visible
             try { enableLangSelectors(scene); } catch (e) { console.warn('showAttractUI: enableLangSelectors failed', e); }
@@ -1161,6 +1162,7 @@
         function hideAttractUI(scene, immediate = false) {
             if (!UI.attract.container) return;
             // disable language selectors when leaving attract
+            try { attractVisible = false; } catch (e) { }
             try { disableLangSelectors(scene); } catch (e) { }
             if (immediate) {
                 UI.attract.container.setVisible(false);
@@ -1174,6 +1176,8 @@
             if (!UI.topten.container) initAttractUI(scene);
             // Show topTen over the attract background
             UI.topten.container.setVisible(true);
+            // TopTen is part of the attract cycle: keep attractVisible true
+            try { attractVisible = true; } catch (e) { }
             uiSetPartVisible('attract', 'title', false);
             uiSetPartVisible('attract', 'instructions', false);
             uiSetPartVisible('topten', 'title', true);
@@ -1640,9 +1644,12 @@
 
         function changeLang(delta, scene) {
             // Only allow language change while the attract UI is visible
-            if (!attractVisible) {
-                // ignore language changes when not in attract mode (e.g., Top Ten or in-game)
-                console.info('[LANG] change ignored: not in attract mode');
+            // Allow language changes while attract is visible OR while the
+            // select overlay is open (user should be able to change language
+            // up until they start the game / choose level/players).
+            if (!attractVisible && !selectContainer) {
+                // ignore language changes when not in attract/select mode (e.g., Top Ten or in-game)
+                console.info('[LANG] change ignored: not in attract/select mode');
                 return;
             }
 

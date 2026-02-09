@@ -53,6 +53,13 @@ export function createFlagCarousel(scene, container, centerX, y, initialIndex = 
             try { if (right && right.setInteractive) right.setInteractive({ useHandCursor: true }); } catch (e) { }
         }
 
+        // attach built-in pointer handlers that call provided callbacks (if any)
+        // Define handlers first so internal arrow creation can wire them immediately
+        const _onLeftCb = typeof opts.onLeft === 'function' ? opts.onLeft : null;
+        const _onRightCb = typeof opts.onRight === 'function' ? opts.onRight : null;
+        const _leftHandler = () => { try { if (_onLeftCb) _onLeftCb(); } catch (e) { /* ignore */ } };
+        const _rightHandler = () => { try { if (_onRightCb) _onRightCb(); } catch (e) { /* ignore */ } };
+
         // Create optional arrow text buttons internally (unless caller manages them)
         // opts.createArrows === false disables internal creation
         let leftArrow = null, rightArrow = null;
@@ -71,11 +78,7 @@ export function createFlagCarousel(scene, container, centerX, y, initialIndex = 
             } catch (e) { /* ignore arrow creation errors */ }
         }
 
-        // attach built-in pointer handlers that call provided callbacks (if any)
-        const _onLeftCb = typeof opts.onLeft === 'function' ? opts.onLeft : null;
-        const _onRightCb = typeof opts.onRight === 'function' ? opts.onRight : null;
-        const _leftHandler = () => { try { if (_onLeftCb) _onLeftCb(); } catch (e) { /* ignore */ } };
-        const _rightHandler = () => { try { if (_onRightCb) _onRightCb(); } catch (e) { /* ignore */ } };
+        // attach handlers to flag sprites (if present)
         try { if (left && left.on && _onLeftCb) left.on('pointerdown', _leftHandler); } catch (e) { }
         try { if (right && right.on && _onRightCb) right.on('pointerdown', _rightHandler); } catch (e) { }
 
