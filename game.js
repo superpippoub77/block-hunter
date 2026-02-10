@@ -1090,13 +1090,19 @@ class GameScene extends Phaser.Scene {
 
         // Create tilemap
         this.hasDoorInMap = false;
+        this.mapGemPositions = [];
+        this.mapGemIndex = 0;
         this.createTilemap();
 
         // Create player
         this.createPlayer();
 
         // Gems per level
-        this.gemsRemaining = CONFIG.gemsPerLevel;
+        if (this.mapGemPositions && this.mapGemPositions.length > 0) {
+            this.gemsRemaining = this.mapGemPositions.length;
+        } else {
+            this.gemsRemaining = CONFIG.gemsPerLevel;
+        }
 
         // Spawn static rocks
         this.spawnStaticRocks();
@@ -1179,6 +1185,7 @@ class GameScene extends Phaser.Scene {
                     case 'w': return 'wall';
                     case 'h': return 'hole';
                     case 's': return 'hole2';
+                    case 'g': return 'gem';
                     case '-': return 'empty';
                     case 'd': return 'door';
                     case 'k': return 'key';
@@ -1214,8 +1221,8 @@ class GameScene extends Phaser.Scene {
                     }
                 }
 
-                // Normalize item/door tiles to floor for base tile rendering
-                const tileType = (type === 'door' || type === 'key' || type === 'pepita' || type === 'dynamite')
+                // Normalize item/door/gem tiles to floor for base tile rendering
+                const tileType = (type === 'door' || type === 'key' || type === 'pepita' || type === 'dynamite' || type === 'gem')
                     ? 'floor'
                     : type;
                 let tileSprite = null;
@@ -1268,6 +1275,16 @@ class GameScene extends Phaser.Scene {
                     );
                     itemSprite.setDisplaySize(CONFIG.tileSize, CONFIG.tileSize);
                     itemSprite.setData('type', type);
+                }
+
+                if (type === 'gem') {
+                    if (!this.mapGemPositions) {
+                        this.mapGemPositions = [];
+                    }
+                    this.mapGemPositions.push({
+                        x: offsetX + x * CONFIG.tileSize + CONFIG.tileSize / 2,
+                        y: offsetY + y * CONFIG.tileSize + CONFIG.tileSize / 2
+                    });
                 }
 
                 this.tiles[y][x] = { type: tileType, sprite: tileSprite };
@@ -1453,15 +1470,27 @@ class GameScene extends Phaser.Scene {
         if (this.gemsRemaining <= 0) {
             return;
         }
-        let x, y, attempts = 0;
-        do {
-            x = Phaser.Math.Between(2, this.mapCols - 3);
-            y = Phaser.Math.Between(2, this.mapRows - 3);
-            attempts++;
-        } while (this.tiles[y][x].type !== 'floor' && this.tiles[y][x].type !== 'empty' && attempts < 100);
+        let worldX;
+        let worldY;
 
-        const worldX = this.mapOffsetX + x * CONFIG.tileSize + CONFIG.tileSize / 2;
-        const worldY = this.mapOffsetY + y * CONFIG.tileSize + CONFIG.tileSize / 2;
+        if (this.mapGemPositions && this.mapGemPositions.length > 0) {
+            const next = this.mapGemPositions[this.mapGemIndex];
+            if (!next) {
+                return;
+            }
+            worldX = next.x;
+            worldY = next.y;
+        } else {
+            let x, y, attempts = 0;
+            do {
+                x = Phaser.Math.Between(2, this.mapCols - 3);
+                y = Phaser.Math.Between(2, this.mapRows - 3);
+                attempts++;
+            } while (this.tiles[y][x].type !== 'floor' && this.tiles[y][x].type !== 'empty' && attempts < 100);
+
+            worldX = this.mapOffsetX + x * CONFIG.tileSize + CONFIG.tileSize / 2;
+            worldY = this.mapOffsetY + y * CONFIG.tileSize + CONFIG.tileSize / 2;
+        }
 
         // Use gem sprite from objects.png (frame 6)
         const gem = this.gems.create(worldX, worldY, 'objects', window.OBJECT_FRAMES.gem);
@@ -1475,6 +1504,10 @@ class GameScene extends Phaser.Scene {
             yoyo: true,
             repeat: -1
         });
+
+        if (this.mapGemPositions && this.mapGemPositions.length > 0) {
+            this.mapGemIndex++;
+        }
     }
 
     spawnKey() {
