@@ -10,14 +10,14 @@ window.LEVELS["1.0"] = {
     cols: 12,
     rows: 8,
     tiles: [
+      ['floor','floor','floor','floor','floor','floor','floor','floor','floor','floor','floor','gem'],
+      ['floor','gem','floor','floor','floor','floor','gem','floor','floor','floor','floor','floor'],
+      ['floor','floor','floor','floor','hole','floor','floor','hole','floor','floor','floor','floor'],
+      ['floor','floor','floor','floor','floor','floor','gem','floor','gem','floor','gem','floor'],
       ['floor','floor','floor','floor','floor','floor','floor','floor','floor','floor','floor','floor'],
-      ['floor','floor','floor','floor','floor','floor','floor','floor','floor','floor','floor','floor'],
-      ['floor','floor','floor','floor','floor','floor','floor','floor','floor','floor','floor','floor'],
-      ['floor','floor','floor','floor','floor','floor','floor','floor','floor','floor','floor','floor'],
-      ['floor','floor','floor','floor','floor','floor','floor','floor','floor','floor','floor','floor'],
-      ['floor','floor','floor','floor','floor','floor','floor','floor','floor','floor','floor','floor'],
-      ['floor','floor','floor','floor','floor','floor','floor','floor','floor','floor','floor','floor'],
-      ['floor','floor','floor','floor','floor','floor','floor','floor','floor','floor','floor','floor']
+      ['floor','floor','gem','floor','floor','hole','floor','floor','floor','floor','floor','floor'],
+      ['floor','floor','floor','floor','gem','floor','floor','floor','floor','floor','floor','floor'],
+      ['gem','hole','floor','floor','floor','floor','floor','hole','floor','floor','gem','floor']
     ]
   },
 

@@ -314,8 +314,8 @@ class PreloadScene extends Phaser.Scene {
         // Row 3: key, sand_pile, ghost, pepita
         // Row 4: wall, hole1, hole2, explosion
         this.load.spritesheet('objects', 'images/objects.png', { 
-            frameWidth: 32, 
-            frameHeight: 32 
+            frameWidth: 64, 
+            frameHeight: 64 
         });
         
         // Load all level JSON files (50 levels)
@@ -439,16 +439,65 @@ class AttractScene extends Phaser.Scene {
         this.add.rectangle(400, 300, 800, 600, 0x001122);
         
         // Title image (loaded from images/title.png)
+        // Appears with a falling-rock effect and then vibrates
         // If you want to localize the title per language, replace the texture key accordingly.
-        this.titleImage = this.add.image(400, 150, 'title').setOrigin(0.5);
+        this.titleImage = this.add.image(400, -120, 'title').setOrigin(0.5);
+        // Start slightly bigger to emphasize the drop
+        this.titleImage.setScale(1.3);
 
-        // Blink animation applied to the image
+        // Landing tween: drop into place with bounce, then start vibration + blink
         this.tweens.add({
             targets: this.titleImage,
-            alpha: 0.5,
+            y: 150,
+            scale: 1,
             duration: 800,
-            yoyo: true,
-            repeat: -1
+            ease: 'Bounce.easeOut',
+            onComplete: () => {
+                // Start temporary vibration/rotation/blink tweens and stop them after a short time
+                const vibTween = this.tweens.add({
+                    targets: this.titleImage,
+                    x: '+=6',
+                    duration: 70,
+                    yoyo: true,
+                    repeat: -1,
+                    ease: 'Sine.easeInOut'
+                });
+
+                const rotTween = this.tweens.add({
+                    targets: this.titleImage,
+                    angle: 2,
+                    duration: 140,
+                    yoyo: true,
+                    repeat: -1,
+                    ease: 'Sine.easeInOut'
+                });
+
+                const blinkTween = this.tweens.add({
+                    targets: this.titleImage,
+                    alpha: 0.6,
+                    duration: 900,
+                    yoyo: true,
+                    repeat: -1
+                });
+
+                // Stop the temporary effects after a short duration (3 seconds)
+                this.time.delayedCall(3000, () => {
+                    try {
+                        if (vibTween && vibTween.stop) vibTween.stop();
+                        if (rotTween && rotTween.stop) rotTween.stop();
+                        if (blinkTween && blinkTween.stop) blinkTween.stop();
+                    } catch (e) {
+                        // ignore if tweens already removed
+                    }
+
+                    // Reset to stable final state
+                    this.titleImage.x = 400;
+                    this.titleImage.y = 150;
+                    this.titleImage.angle = 0;
+                    this.titleImage.alpha = 1;
+                    this.titleImage.setScale(1);
+                });
+            }
         });
         
         // Instructions
@@ -559,8 +608,15 @@ class AttractScene extends Phaser.Scene {
         this.input.keyboard.on('keydown-LEFT', () => this.changeLanguage(-1));
         this.input.keyboard.on('keydown-RIGHT', () => this.changeLanguage(1));
         
+        // Config page
+        this.input.keyboard.on('keydown-T', () => this.openConfig());
+        
         // Any key resets timeout
         this.input.keyboard.on('keydown', () => this.resetTimeout());
+    }
+    
+    openConfig() {
+        this.scene.start('ConfigScene');
     }
 
     insertCoin() {
@@ -712,6 +768,135 @@ class TopTenScene extends Phaser.Scene {
         });
         
         this.time.delayedCall(CONFIG.topTenTimeout, () => {
+            this.scene.start('AttractScene');
+        });
+    }
+}
+
+// ============================================================================
+// CONFIG SCENE
+// ============================================================================
+class ConfigScene extends Phaser.Scene {
+    constructor() {
+        super('ConfigScene');
+    }
+
+    create() {
+        // Background
+        this.add.rectangle(400, 300, 800, 600, 0x001100);
+        
+        // Title
+        this.add.text(400, 30, 'CONFIGURATION', {
+            fontSize: '32px',
+            fill: '#ffff00',
+            fontFamily: GAME_FONT
+        }).setOrigin(0.5);
+        
+        // General config section
+        let y = 80;
+        this.add.text(20, y, 'GENERAL CONFIG:', {
+            fontSize: '16px',
+            fill: '#00ff00',
+            fontFamily: GAME_FONT
+        });
+        y += 25;
+        
+        // Display config values
+        const configInfo = [
+            `SCREEN: ${CONFIG.width}x${CONFIG.height}`,
+            `TILE SIZE: ${CONFIG.tileSize}px`,
+            `GRID: ${CONFIG.gridWidth}x${CONFIG.gridHeight}`,
+            `PLAYER SPEED: ${CONFIG.playerSpeed}`,
+            `BOULDER SPEED: ${CONFIG.boulderBaseSpeed}`,
+            `DYNAMITE SPEED: ${CONFIG.dynamiteSpeed}`,
+            `ATTRACT TIMEOUT: ${CONFIG.attractTimeout}ms`
+        ];
+        
+        configInfo.forEach(info => {
+            this.add.text(30, y, info, {
+                fontSize: '12px',
+                fill: '#ffffff',
+                fontFamily: GAME_FONT
+            });
+            y += 18;
+        });
+        
+        // Objects section
+        y += 10;
+        this.add.text(20, y, 'OBJECTS SPRITE (4x4):', {
+            fontSize: '16px',
+            fill: '#00ff00',
+            fontFamily: GAME_FONT
+        });
+        y += 25;
+        
+        // Display objects grid
+        const objectNames = [
+            ['dynamite', 'heart', 'stone', 'player'],
+            ['dynamite_chest', 'door', 'gem', 'stones'],
+            ['key', 'sand_pile', 'ghost', 'pepita'],
+            ['wall', 'hole1', 'hole2', 'explosion']
+        ];
+        
+        const startX = 30;
+        const startY = y;
+        const spriteSize = 40;
+        const spacing = 50;
+        
+        for (let row = 0; row < 4; row++) {
+            for (let col = 0; col < 4; col++) {
+                const x = startX + col * spacing;
+                const y = startY + row * spacing;
+                const frameIndex = row * 4 + col;
+                
+                // Draw sprite
+                const sprite = this.add.sprite(x + spriteSize/2, y + spriteSize/2, 'objects', frameIndex);
+                sprite.setDisplaySize(spriteSize, spriteSize);
+                
+                // Label
+                this.add.text(x + spriteSize/2, y + spriteSize + 5, objectNames[row][col], {
+                    fontSize: '8px',
+                    fill: '#aaaaaa',
+                    fontFamily: GAME_FONT
+                }).setOrigin(0.5, 0);
+            }
+        }
+        
+        // Tiles section
+        const tilesY = startY + 4 * spacing + 30;
+        this.add.text(20, tilesY, 'TILES SPRITE (6 TILES):', {
+            fontSize: '16px',
+            fill: '#00ff00',
+            fontFamily: GAME_FONT
+        });
+        
+        const tileNames = ['wall', 'hole', 'sand', 'floor', 'stone', 'hole2'];
+        const tilesStartY = tilesY + 25;
+        
+        for (let i = 0; i < 6; i++) {
+            const x = startX + i * spacing;
+            
+            // Draw tile
+            const tile = this.add.sprite(x + spriteSize/2, tilesStartY + spriteSize/2, 'tiles', i);
+            tile.setDisplaySize(spriteSize, spriteSize);
+            
+            // Label
+            this.add.text(x + spriteSize/2, tilesStartY + spriteSize + 5, tileNames[i], {
+                fontSize: '8px',
+                fill: '#aaaaaa',
+                fontFamily: GAME_FONT
+            }).setOrigin(0.5, 0);
+        }
+        
+        // Instructions
+        this.add.text(400, 580, 'PRESS ESC TO RETURN', {
+            fontSize: '16px',
+            fill: '#ffff00',
+            fontFamily: GAME_FONT
+        }).setOrigin(0.5);
+        
+        // Setup input
+        this.input.keyboard.on('keydown-ESC', () => {
             this.scene.start('AttractScene');
         });
     }
@@ -913,9 +1098,29 @@ class GameScene extends Phaser.Scene {
         this.tiles = [];
         
         // Get map data from JSON
-        const mapData = this.levelData?.map;
-        const mapRows = this.levelData?.rows || CONFIG.gridHeight;
-        const mapCols = this.levelData?.cols || CONFIG.gridWidth;
+        // Support both old format (map as array) and new format (map.tiles as array)
+        let mapData = null;
+        let mapRows = CONFIG.gridHeight;
+        let mapCols = CONFIG.gridWidth;
+        
+        if (this.levelData?.map) {
+            // New format: map object with cols, rows, tiles
+            if (this.levelData.map.tiles) {
+                mapData = this.levelData.map.tiles;
+                mapRows = this.levelData.map.rows || mapData.length;
+                mapCols = this.levelData.map.cols || (mapData[0]?.length || CONFIG.gridWidth);
+            }
+            // Old format: map is directly the array
+            else if (Array.isArray(this.levelData.map)) {
+                mapData = this.levelData.map;
+                mapRows = this.levelData.rows || mapData.length;
+                mapCols = this.levelData.cols || (mapData[0]?.length || CONFIG.gridWidth);
+            }
+        } else {
+            // Fallback to old properties
+            mapRows = this.levelData?.rows || CONFIG.gridHeight;
+            mapCols = this.levelData?.cols || CONFIG.gridWidth;
+        }
         
         // Calculate offset to center the map
         const offsetX = (CONFIG.width - mapCols * CONFIG.tileSize) / 2;
@@ -990,6 +1195,8 @@ class GameScene extends Phaser.Scene {
         
         // Use player sprite from objects.png (frame 3)
         this.player = this.physics.add.sprite(centerX, centerY, 'objects', window.OBJECT_FRAMES.player);
+        // objects.png frames are 64x64 — scale to tile size so player fits the grid
+        this.player.setDisplaySize(CONFIG.tileSize, CONFIG.tileSize);
         this.player.setCollideWorldBounds(true);
         this.player.body.setSize(CONFIG.tileSize * 0.8, CONFIG.tileSize * 0.8);
     }
@@ -1034,6 +1241,12 @@ class GameScene extends Phaser.Scene {
         
         const worldX = this.mapOffsetX + x * CONFIG.tileSize + CONFIG.tileSize / 2;
         const worldY = this.mapOffsetY + y * CONFIG.tileSize + CONFIG.tileSize / 2;
+
+    // Add a small random pixel jitter so rocks don't always align to the exact same tile centers
+    const jitterX = Phaser.Math.Between(-6, 6);
+    const jitterY = Phaser.Math.Between(-6, 6);
+    const jitteredX = Phaser.Math.Clamp(worldX + jitterX, this.mapOffsetX + CONFIG.tileSize / 2, this.mapOffsetX + (this.mapCols - 1) * CONFIG.tileSize + CONFIG.tileSize / 2);
+    const jitteredY = Phaser.Math.Clamp(worldY + jitterY, this.mapOffsetY + CONFIG.tileSize / 2, this.mapOffsetY + (this.mapRows - 1) * CONFIG.tileSize + CONFIG.tileSize / 2);
         
         // Dimensione casuale basata sulla configurazione del livello
         const rockConfig = this.levelConfig.staticRocks;
@@ -1060,7 +1273,7 @@ class GameScene extends Phaser.Scene {
             scale = 1.3;
         }
         
-        const rock = this.rocks.create(worldX, worldY, 'rock');
+    const rock = this.rocks.create(jitteredX, jitteredY, 'rock');
         rock.setScale(scale);
         rock.setData('destructible', true);
         rock.setData('size', size);
@@ -1076,16 +1289,26 @@ class GameScene extends Phaser.Scene {
             rock.setAngle(randomAngle);
         }
         
-        // Effetto di apparizione con scala
-        rock.setScale(0);
+        // Effetto di apparizione con zoom da grosso a piccolo (caduta)
+        rock.setScale(scale * 3); // Inizia 3x più grande
+        rock.alpha = 0.7; // Leggermente trasparente all'inizio
         this.tweens.add({
             targets: rock,
             scale: scale,
-            duration: 300,
-            ease: 'Back.easeOut',
+            alpha: 1,
+            duration: 400,
+            ease: 'Cubic.easeOut', // Effetto di caduta naturale
             onComplete: () => {
                 // Aggiorna il corpo fisico dopo lo scaling
                 rock.body.setSize(CONFIG.tileSize * scale, CONFIG.tileSize * scale);
+                // Piccolo rimbalzo finale
+                this.tweens.add({
+                    targets: rock,
+                    scale: scale * 1.1,
+                    duration: 100,
+                    yoyo: true,
+                    ease: 'Sine.easeInOut'
+                });
             }
         });
         
@@ -1115,7 +1338,9 @@ class GameScene extends Phaser.Scene {
         
         // Use gem sprite from objects.png (frame 6)
         const gem = this.gems.create(worldX, worldY, 'objects', window.OBJECT_FRAMES.gem);
-        
+        // Scale gem to tile size (objects.png frames are 64x64)
+        gem.setDisplaySize(CONFIG.tileSize, CONFIG.tileSize);
+
         this.tweens.add({
             targets: gem,
             scale: 1.2,
@@ -1132,8 +1357,10 @@ class GameScene extends Phaser.Scene {
         const worldX = this.mapOffsetX + x * CONFIG.tileSize + CONFIG.tileSize / 2;
         const worldY = this.mapOffsetY + y * CONFIG.tileSize + CONFIG.tileSize / 2;
         
-        // Use key sprite from objects.png (frame 8)
-        this.items.create(worldX, worldY, 'objects', window.OBJECT_FRAMES.key).setData('type', 'key');
+    // Use key sprite from objects.png (frame 8)
+    const keySprite = this.items.create(worldX, worldY, 'objects', window.OBJECT_FRAMES.key);
+    keySprite.setDisplaySize(CONFIG.tileSize, CONFIG.tileSize);
+    keySprite.setData('type', 'key');
     }
 
     spawnDoor() {
@@ -1148,9 +1375,10 @@ class GameScene extends Phaser.Scene {
         const worldX = this.mapOffsetX + x * CONFIG.tileSize + CONFIG.tileSize / 2;
         const worldY = this.mapOffsetY + y * CONFIG.tileSize + CONFIG.tileSize / 2;
         
-        // Use door sprite from objects.png (frame 5)
-        const door = this.doors.create(worldX, worldY, 'objects', window.OBJECT_FRAMES.door);
-        door.setData('locked', true);
+    // Use door sprite from objects.png (frame 5)
+    const door = this.doors.create(worldX, worldY, 'objects', window.OBJECT_FRAMES.door);
+    door.setDisplaySize(CONFIG.tileSize, CONFIG.tileSize);
+    door.setData('locked', true);
     }
 
     setupCollisions() {
@@ -1276,8 +1504,10 @@ class GameScene extends Phaser.Scene {
         let dirX = velocityX !== 0 ? Math.sign(velocityX) : 1;
         let dirY = velocityY !== 0 ? Math.sign(velocityY) : 0;
         
-        // Use dynamite projectile sprite from objects.png (frame 0)
-        const dynamite = this.dynamites.create(this.player.x, this.player.y, 'objects', window.OBJECT_FRAMES.dynamite_projectile);
+    // Use dynamite projectile sprite from objects.png (frame 0)
+    const dynamite = this.dynamites.create(this.player.x, this.player.y, 'objects', window.OBJECT_FRAMES.dynamite_projectile);
+    // Scale dynamite to tile size
+    dynamite.setDisplaySize(CONFIG.tileSize, CONFIG.tileSize);
         dynamite.setVelocity(dirX * CONFIG.dynamiteSpeed, dirY * CONFIG.dynamiteSpeed);
         dynamite.setBounce(1, 1);
         dynamite.setCollideWorldBounds(true);
@@ -1292,6 +1522,7 @@ class GameScene extends Phaser.Scene {
     explodeDynamite(dynamite) {
         // Create explosion effect using explosion sprite from objects.png (frame 15)
         const explosion = this.add.sprite(dynamite.x, dynamite.y, 'objects', window.OBJECT_FRAMES.explosion);
+        explosion.setDisplaySize(CONFIG.tileSize, CONFIG.tileSize);
         this.tweens.add({
             targets: explosion,
             scale: 2,
@@ -1583,7 +1814,7 @@ const config = {
             debug: false
         }
     },
-    scene: [BootScene, PreloadScene, AttractScene, TopTenScene, LevelSelectScene, GameScene, GameOverScene]
+    scene: [BootScene, PreloadScene, AttractScene, TopTenScene, ConfigScene, LevelSelectScene, GameScene, GameOverScene]
 };
 
 const game = new Phaser.Game(config);
