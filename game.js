@@ -18,7 +18,8 @@ const CONFIG = {
     doorCloseTime: 30000,
     attractTimeout: 10000,
     topTenTimeout: 10000,
-    gemSpawnDelay: 1000
+    gemSpawnDelay: 1000,
+    gemsPerLevel: 10
 };
 
 const GAME_FONT = '"Press Start 2P"';
@@ -41,7 +42,8 @@ const TRANSLATIONS = {
         score: 'PUNTEGGIO',
         lives: 'VITE',
         dynamite: 'DINAMITE',
-        level: 'LIVELLO'
+        level: 'LIVELLO',
+        gems: 'GEMME'
     },
     fr: {
         title: 'BLOCKHUNTER',
@@ -60,7 +62,8 @@ const TRANSLATIONS = {
         score: 'SCORE',
         lives: 'VIES',
         dynamite: 'DYNAMITE',
-        level: 'NIVEAU'
+        level: 'NIVEAU',
+        gems: 'GEMMES'
     },
     de: {
         title: 'BLOCKHUNTER',
@@ -79,7 +82,8 @@ const TRANSLATIONS = {
         score: 'PUNKTE',
         lives: 'LEBEN',
         dynamite: 'DYNAMIT',
-        level: 'STUFE'
+        level: 'STUFE',
+        gems: 'EDELSTEINE'
     },
     en: {
         title: 'BLOCKHUNTER',
@@ -98,7 +102,8 @@ const TRANSLATIONS = {
         score: 'SCORE',
         lives: 'LIVES',
         dynamite: 'DYNAMITE',
-        level: 'LEVEL'
+        level: 'LEVEL',
+        gems: 'GEMS'
     },
     us: {
         title: 'BLOCKHUNTER',
@@ -117,7 +122,8 @@ const TRANSLATIONS = {
         score: 'SCORE',
         lives: 'LIVES',
         dynamite: 'DYNAMITE',
-        level: 'LEVEL'
+        level: 'LEVEL',
+        gems: 'GEMS'
     },
     ja: {
         title: 'BLOCKHUNTER',
@@ -136,7 +142,8 @@ const TRANSLATIONS = {
         score: 'スコア',
         lives: 'ライフ',
         dynamite: 'ダイナマイト',
-        level: 'レベル'
+        level: 'レベル',
+        gems: '宝石'
     },
     es: {
         title: 'BLOCKHUNTER',
@@ -155,7 +162,8 @@ const TRANSLATIONS = {
         score: 'PUNTUACION',
         lives: 'VIDAS',
         dynamite: 'DINAMITA',
-        level: 'NIVEL'
+        level: 'NIVEL',
+        gems: 'GEMAS'
     },
     zh: {
         title: 'BLOCKHUNTER',
@@ -174,7 +182,8 @@ const TRANSLATIONS = {
         score: '分数',
         lives: '生命',
         dynamite: '炸药',
-        level: '关卡'
+        level: '关卡',
+        gems: '宝石'
     }
 };
 
@@ -295,6 +304,9 @@ class PreloadScene extends Phaser.Scene {
     preload() {
         // Load title image
         this.load.image('title', 'images/title.png');
+
+        // Load game background
+        this.load.image('game_bg', 'images/game_bg.png');
 
         // Load flags sprite (8 flags: it, fr, de, en, us, ja, es, zh - 64x32 each)
         this.load.spritesheet('flags', 'images/flags.png', {
@@ -1043,6 +1055,12 @@ class GameScene extends Phaser.Scene {
     }
 
     create() {
+        // Background for all levels
+        this.add.image(CONFIG.width / 2, CONFIG.height / 2, 'game_bg')
+            .setDisplaySize(CONFIG.width, CONFIG.height)
+            .setScrollFactor(0)
+            .setDepth(-1000);
+
         // Get level data from JSON
         const levelFileName = getLevelFileName(GAME_STATE.currentLevel);
         this.levelData = this.cache.json.get(levelFileName);
@@ -1060,13 +1078,8 @@ class GameScene extends Phaser.Scene {
             };
         }
 
-        // Create tilemap
-        this.createTilemap();
-
-        // Create player
-        this.createPlayer();
-
         // Create groups
+        this.walls = this.physics.add.staticGroup();
         this.rocks = this.physics.add.staticGroup();
         this.boulders = this.physics.add.group();
         this.gems = this.physics.add.group();
@@ -1075,10 +1088,20 @@ class GameScene extends Phaser.Scene {
         this.shards = this.physics.add.group();
         this.doors = this.physics.add.staticGroup();
 
+        // Create tilemap
+        this.hasDoorInMap = false;
+        this.createTilemap();
+
+        // Create player
+        this.createPlayer();
+
+        // Gems per level
+        this.gemsRemaining = CONFIG.gemsPerLevel;
+
         // Spawn static rocks
         this.spawnStaticRocks();
 
-        // Spawn gem
+        // Spawn first gem
         this.time.delayedCall(CONFIG.gemSpawnDelay, () => this.spawnGem());
 
         // Setup collisions
@@ -1098,7 +1121,9 @@ class GameScene extends Phaser.Scene {
         // Setup escape route
         if (this.levelConfig.escapeRoute) {
             this.spawnKey();
-            this.spawnDoor();
+            if (!this.hasDoorInMap) {
+                this.spawnDoor();
+            }
         }
     }
 
@@ -1147,14 +1172,32 @@ class GameScene extends Phaser.Scene {
             sandPile: 4  // sandPile uses stone texture
         };
 
+        const mapSymbolToType = (value) => {
+            if (typeof value !== 'string') return value;
+            if (value.length === 1) {
+                switch (value) {
+                    case 'w': return 'wall';
+                    case 'h': return 'hole';
+                    case 's': return 'hole2';
+                    case '-': return 'empty';
+                    case 'd': return 'door';
+                    case 'k': return 'key';
+                    case 'p': return 'pepita';
+                    case 'b': return 'dynamite';
+                    default: return value;
+                }
+            }
+            return value;
+        };
+
         for (let y = 0; y < mapRows; y++) {
             this.tiles[y] = [];
             for (let x = 0; x < mapCols; x++) {
                 let type = 'floor';
 
                 // If we have map data from JSON, use it
-                if (mapData && mapData[y] && mapData[y][x]) {
-                    type = mapData[y][x];
+                if (mapData && mapData[y] && mapData[y][x] !== undefined) {
+                    type = mapSymbolToType(mapData[y][x]);
                 } else {
                     // Fallback to old random generation
                     // Border walls
@@ -1171,22 +1214,63 @@ class GameScene extends Phaser.Scene {
                     }
                 }
 
-                // Get frame index for this tile type
-                const frameIndex = TILE_FRAMES[type] !== undefined ? TILE_FRAMES[type] : TILE_FRAMES.floor;
+                // Normalize item/door tiles to floor for base tile rendering
+                const tileType = (type === 'door' || type === 'key' || type === 'pepita' || type === 'dynamite')
+                    ? 'floor'
+                    : type;
+                let tileSprite = null;
 
-                // Create sprite from tiles spritesheet
-                const tile = this.add.sprite(
-                    offsetX + x * CONFIG.tileSize + CONFIG.tileSize / 2,
-                    offsetY + y * CONFIG.tileSize + CONFIG.tileSize / 2,
-                    'tiles',
-                    frameIndex
-                );
+                if (tileType !== 'empty') {
+                    // Get frame index for this tile type
+                    const frameIndex = TILE_FRAMES[tileType] !== undefined ? TILE_FRAMES[tileType] : TILE_FRAMES.floor;
 
-                // Scale tile to fit CONFIG.tileSize (64x48 -> 32x32 or keep original)
-                // Since tiles are 64x48 and CONFIG.tileSize is 32, we need to scale down
-                tile.setDisplaySize(CONFIG.tileSize, CONFIG.tileSize);
+                    // Create sprite from tiles spritesheet
+                    tileSprite = this.add.sprite(
+                        offsetX + x * CONFIG.tileSize + CONFIG.tileSize / 2,
+                        offsetY + y * CONFIG.tileSize + CONFIG.tileSize / 2,
+                        'tiles',
+                        frameIndex
+                    );
 
-                this.tiles[y][x] = { type, sprite: tile };
+                    // Scale tile to fit CONFIG.tileSize (64x48 -> 32x32 or keep original)
+                    // Since tiles are 64x48 and CONFIG.tileSize is 32, we need to scale down
+                    tileSprite.setDisplaySize(CONFIG.tileSize, CONFIG.tileSize);
+
+                    if (type === 'wall' && this.walls) {
+                        this.walls.add(tileSprite);
+                        if (tileSprite.body) {
+                            tileSprite.body.setSize(CONFIG.tileSize, CONFIG.tileSize);
+                        }
+                    }
+                }
+
+                if (type === 'door' && this.doors) {
+                    const door = this.doors.create(
+                        offsetX + x * CONFIG.tileSize + CONFIG.tileSize / 2,
+                        offsetY + y * CONFIG.tileSize + CONFIG.tileSize / 2,
+                        'objects',
+                        window.OBJECT_FRAMES.door
+                    );
+                    door.setDisplaySize(CONFIG.tileSize, CONFIG.tileSize);
+                    door.setData('locked', true);
+                    this.hasDoorInMap = true;
+                }
+
+                if ((type === 'key' || type === 'pepita' || type === 'dynamite') && this.items) {
+                    const frame = type === 'key'
+                        ? window.OBJECT_FRAMES.key
+                        : (type === 'pepita' ? window.OBJECT_FRAMES.pepita : window.OBJECT_FRAMES.dynamite_chest);
+                    const itemSprite = this.items.create(
+                        offsetX + x * CONFIG.tileSize + CONFIG.tileSize / 2,
+                        offsetY + y * CONFIG.tileSize + CONFIG.tileSize / 2,
+                        'objects',
+                        frame
+                    );
+                    itemSprite.setDisplaySize(CONFIG.tileSize, CONFIG.tileSize);
+                    itemSprite.setData('type', type);
+                }
+
+                this.tiles[y][x] = { type: tileType, sprite: tileSprite };
             }
         }
 
@@ -1206,38 +1290,59 @@ class GameScene extends Phaser.Scene {
         // objects.png frames are 64x64 — scale to tile size so player fits the grid
         this.player.setDisplaySize(CONFIG.tileSize, CONFIG.tileSize);
         this.player.setCollideWorldBounds(true);
-        this.player.body.setSize(CONFIG.tileSize * 0.8, CONFIG.tileSize * 0.8);
+        this.player.body.setSize(CONFIG.tileSize * 0.7, CONFIG.tileSize * 0.7);
+        this.player.body.setOffset(CONFIG.tileSize * 0.15, CONFIG.tileSize * 0.15);
     }
 
     spawnStaticRocks() {
-        const numRocks = 10 + GAME_STATE.currentLevel * 2;
-        const spawnDelay = Math.max(100, 1000 - GAME_STATE.currentLevel * 30); // Più veloce nei livelli avanzati
+        const spawnDelay = Math.max(200, 1200 - GAME_STATE.currentLevel * 40); // Più veloce nei livelli avanzati
 
-        this.rocksToSpawn = numRocks;
-        this.rocksSpawned = 0;
-
-        // Spawn progressivo
+        // Spawn continuo
         this.rockSpawnTimer = this.time.addEvent({
             delay: spawnDelay,
             callback: () => {
-                if (this.rocksSpawned < this.rocksToSpawn) {
-                    this.spawnSingleRock();
-                    this.rocksSpawned++;
-                } else {
-                    this.rockSpawnTimer.remove();
-                }
+                this.spawnSingleRock();
             },
             callbackScope: this,
             loop: true
         });
     }
 
+    getRandomWalkableTile() {
+        if (!this.tiles || !this.tiles.length) return null;
+
+        const maxAttempts = 100;
+        let attempt = 0;
+        let x = 0;
+        let y = 0;
+
+        while (attempt < maxAttempts) {
+            x = Phaser.Math.Between(1, this.mapCols - 2);
+            y = Phaser.Math.Between(1, this.mapRows - 2);
+
+            const tile = this.tiles[y]?.[x];
+            if (tile && (tile.type === 'floor' || tile.type === 'sand' || tile.type === 'empty')) {
+                return { x, y };
+            }
+            attempt++;
+        }
+
+        return null;
+    }
+
     spawnSingleRock() {
         // Posizione casuale evitando i bordi e il centro (dove spawna il player)
-        let x, y, attempts = 0, tooClose;
+        let attempts = 0;
+        let pos = null;
+        let tooClose = false;
+        let x = 0;
+        let y = 0;
+
         do {
-            x = Phaser.Math.Between(3, this.mapCols - 4);
-            y = Phaser.Math.Between(3, this.mapRows - 4);
+            pos = this.getRandomWalkableTile();
+            if (!pos) return;
+            x = pos.x;
+            y = pos.y;
             attempts++;
 
             // Evita il centro dove spawna il player
@@ -1245,7 +1350,13 @@ class GameScene extends Phaser.Scene {
             const centerY = Math.floor(this.mapRows / 2);
             tooClose = Math.abs(x - centerX) < 3 && Math.abs(y - centerY) < 3;
 
+            // Evita lo stesso tile della spawn precedente
+            if (this.lastRockTile && this.lastRockTile.x === x && this.lastRockTile.y === y) {
+                tooClose = true;
+            }
         } while (tooClose && attempts < 50);
+
+        this.lastRockTile = { x, y };
 
         const worldX = this.mapOffsetX + x * CONFIG.tileSize + CONFIG.tileSize / 2;
         const worldY = this.mapOffsetY + y * CONFIG.tileSize + CONFIG.tileSize / 2;
@@ -1258,16 +1369,8 @@ class GameScene extends Phaser.Scene {
 
         // Dimensione casuale basata sulla configurazione del livello
         const rockConfig = this.levelConfig.staticRocks;
-        let size = 'medium'; // default
-
-        if (rockConfig === true || !rockConfig.dynamicSize) {
-            // Dimensione fissa media
-            size = 'medium';
-        } else if (rockConfig.dynamicSize) {
-            // Dimensione casuale
-            const sizes = ['small', 'medium', 'large'];
-            size = Phaser.Utils.Array.GetRandom(sizes);
-        }
+        const availableSizes = rockConfig?.sizes || LEVEL_CONFIG.globalRules.staticRocks.sizes || ['small', 'medium', 'large'];
+        const size = Phaser.Utils.Array.GetRandom(availableSizes);
 
         // Crea la roccia con la sprite stone
         let scale = 1;
@@ -1282,17 +1385,12 @@ class GameScene extends Phaser.Scene {
         rock.setDisplaySize(CONFIG.tileSize * scale, CONFIG.tileSize * scale);
         rock.setData('destructible', true);
         rock.setData('size', size);
+        rock.setData('isFalling', true);
 
-        // Rotazione casuale
-        let shouldRotate = false;
-        if (rockConfig.rotation || rockConfig.chaotic) {
-            shouldRotate = true;
-        }
-
-        if (shouldRotate) {
-            const randomAngle = Phaser.Math.Between(0, 360);
-            rock.setAngle(randomAngle);
-        }
+        // Rotazione casuale in partenza
+        const startAngle = Phaser.Math.Between(0, 360);
+        const endAngle = Phaser.Math.Between(0, 360);
+        rock.setAngle(startAngle);
 
         // Effetto di apparizione con zoom da grosso a piccolo (caduta)
         rock.setScale(scale * 3); // Inizia 3x più grande
@@ -1301,11 +1399,16 @@ class GameScene extends Phaser.Scene {
             targets: rock,
             scale: scale,
             alpha: 1,
+            angle: endAngle,
             duration: 400,
             ease: 'Cubic.easeOut', // Effetto di caduta naturale
             onComplete: () => {
+                if (!rock || !rock.active || !rock.body) {
+                    return;
+                }
                 // Aggiorna il corpo fisico dopo lo scaling
                 rock.body.setSize(CONFIG.tileSize * scale, CONFIG.tileSize * scale);
+                rock.setData('isFalling', false);
                 // Piccolo rimbalzo finale
                 this.tweens.add({
                     targets: rock,
@@ -1314,6 +1417,22 @@ class GameScene extends Phaser.Scene {
                     yoyo: true,
                     ease: 'Sine.easeInOut'
                 });
+
+                // Effetto di tonfo: leggero shake camera + squash rapido
+                if (this.cameras && this.cameras.main) {
+                    this.cameras.main.shake(80, 0.002);
+                }
+                this.tweens.add({
+                    targets: rock,
+                    scaleX: scale * 1.05,
+                    scaleY: scale * 0.95,
+                    duration: 80,
+                    yoyo: true,
+                    ease: 'Sine.easeOut'
+                });
+
+                // Polvere che si alza
+                this.createDustPuff(rock.x, rock.y, scale);
             }
         });
 
@@ -1331,12 +1450,15 @@ class GameScene extends Phaser.Scene {
     }
 
     spawnGem() {
+        if (this.gemsRemaining <= 0) {
+            return;
+        }
         let x, y, attempts = 0;
         do {
             x = Phaser.Math.Between(2, this.mapCols - 3);
             y = Phaser.Math.Between(2, this.mapRows - 3);
             attempts++;
-        } while (this.tiles[y][x].type !== 'floor' && attempts < 100);
+        } while (this.tiles[y][x].type !== 'floor' && this.tiles[y][x].type !== 'empty' && attempts < 100);
 
         const worldX = this.mapOffsetX + x * CONFIG.tileSize + CONFIG.tileSize / 2;
         const worldY = this.mapOffsetY + y * CONFIG.tileSize + CONFIG.tileSize / 2;
@@ -1391,12 +1513,19 @@ class GameScene extends Phaser.Scene {
         this.physics.add.overlap(this.player, this.gems, this.collectGem, null, this);
         this.physics.add.overlap(this.player, this.items, this.collectItem, null, this);
         this.physics.add.collider(this.player, this.rocks);
+        this.physics.add.overlap(this.player, this.rocks, this.hitByRock, null, this);
         this.physics.add.overlap(this.player, this.boulders, this.hitByBoulder, null, this);
         this.physics.add.overlap(this.player, this.shards, this.hitByShard, null, this);
+        if (this.walls) {
+            this.physics.add.collider(this.player, this.walls);
+        }
 
         // Dynamite collisions
         this.physics.add.collider(this.dynamites, this.rocks, this.dynamiteHitRock, null, this);
         this.physics.add.overlap(this.dynamites, this.boulders, this.dynamiteHitBoulder, null, this);
+        if (this.walls) {
+            this.physics.add.collider(this.dynamites, this.walls);
+        }
 
         // Boulder collisions
         this.physics.add.collider(this.boulders, this.rocks);
@@ -1437,11 +1566,24 @@ class GameScene extends Phaser.Scene {
             fontFamily: GAME_FONT
         });
 
+        this.gemsText = this.add.text(10, 85, `${t.gems}: ${this.gemsRemaining}`, {
+            fontSize: '20px',
+            fill: '#00ffff',
+            fontFamily: GAME_FONT
+        });
+
         this.levelText = this.add.text(790, 10, `${t.level}: ${GAME_STATE.currentLevel + 1}`, {
             fontSize: '20px',
             fill: '#00ff00',
             fontFamily: GAME_FONT
         }).setOrigin(1, 0);
+
+        // Keep HUD fixed to screen
+        this.scoreText.setScrollFactor(0);
+        this.livesText.setScrollFactor(0);
+        this.dynamiteText.setScrollFactor(0);
+        this.gemsText.setScrollFactor(0);
+        this.levelText.setScrollFactor(0);
     }
 
     update() {
@@ -1521,6 +1663,16 @@ class GameScene extends Phaser.Scene {
         dynamite.setBounce(1, 1);
         dynamite.setCollideWorldBounds(true);
 
+        // Subtle oscillating rotation while flying
+        this.tweens.add({
+            targets: dynamite,
+            angle: 12,
+            duration: 180,
+            yoyo: true,
+            repeat: -1,
+            ease: 'Sine.easeInOut'
+        });
+
         this.time.delayedCall(CONFIG.dynamiteLifetime, () => {
             if (dynamite.active) {
                 this.explodeDynamite(dynamite);
@@ -1552,6 +1704,21 @@ class GameScene extends Phaser.Scene {
             alpha: 0,
             duration: 250,
             onComplete: () => explosion.destroy()
+        });
+    }
+
+    createDustPuff(x, y, scale) {
+        const puff = this.add.circle(x, y + 6, CONFIG.tileSize * 0.4, 0xD2C2A0, 0.75);
+        puff.setBlendMode(Phaser.BlendModes.ADD);
+        puff.setDepth(900);
+        this.tweens.add({
+            targets: puff,
+            scale: (scale || 1) * 2.2,
+            alpha: 0,
+            y: y - 16,
+            duration: 320,
+            ease: 'Cubic.easeOut',
+            onComplete: () => puff.destroy()
         });
     }
 
@@ -1646,6 +1813,13 @@ class GameScene extends Phaser.Scene {
         gem.destroy();
         this.addScore(50, gem.x, gem.y);
 
+        this.gemsRemaining--;
+
+        if (this.gemsRemaining > 0) {
+            this.time.delayedCall(CONFIG.gemSpawnDelay, () => this.spawnGem());
+            return;
+        }
+
         // Level complete
         this.levelComplete();
     }
@@ -1672,6 +1846,12 @@ class GameScene extends Phaser.Scene {
     hitByBoulder(player, boulder) {
         this.loseLife();
         boulder.destroy();
+    }
+
+    hitByRock(player, rock) {
+        if (!rock.getData('isFalling')) return;
+        this.loseLife();
+        rock.destroy();
     }
 
     hitByShard(player, shard) {
@@ -1782,6 +1962,9 @@ class GameScene extends Phaser.Scene {
         this.scoreText.setText(`${t.score}: ${GAME_STATE.score}`);
         this.livesText.setText(`${t.lives}: ${GAME_STATE.lives}`);
         this.dynamiteText.setText(`${t.dynamite}: ${GAME_STATE.dynamiteCount}`);
+        if (this.gemsText) {
+            this.gemsText.setText(`${t.gems}: ${this.gemsRemaining}`);
+        }
     }
 }
 

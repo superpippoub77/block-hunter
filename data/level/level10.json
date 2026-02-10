@@ -2,16 +2,18 @@
   "id": "1.0",
   "map": {
     "cols": 12,
-    "rows": 8,
+    "rows":10,
     "tiles": [
-      ["wall","floor","floor","floor","floor","floor","floor","floor","floor","floor","floor","floor"],
-      ["wall","floor","floor","floor","floor","floor","floor","floor","floor","floor","floor","floor"],
-      ["floor","floor","floor","hole","floor","floor","floor","floor","floor","floor","floor","floor"],
-      ["floor","floor","floor","floor","floor","floor","floor","floor","floor","floor","floor","floor"],
-      ["floor","floor","floor","floor","floor","floor","floor","floor","floor","floor","floor","floor"],
-      ["floor","floor","floor","floor","floor","floor","floor","floor","floor","floor","floor","floor"],
-      ["floor","floor","floor","floor","floor","floor","floor","floor","floor","hole","floor","floor"],
-      ["hole","floor","floor","floor","floor","floor","floor","floor","floor","floor","floor","floor"]
+      ["w","-","w","-","-","-","-","-","-","-","-","-"],
+      ["w","-","w","-","-","-","-","-","-","-","-","-"],
+      ["w","w","d","w","-","-","-","-","-","-","-","-"],
+      ["-","-","-","h","-","-","-","-","-","-","-","-"],
+      ["-","h","-","-","-","-","-","-","-","-","-","-"],
+      ["-","-","-","-","-","-","-","-","-","-","-","-"],
+      ["-","-","k","-","-","-","-","-","-","-","-","-"],
+      ["-","-","-","-","-","-","-","-","-","h","-","-"],
+      ["h","-","-","-","-","-","-","-","-","-","-","-"],
+      ["w","-","w","-","-","-","-","-","-","-","-","-"]
     ]
   },
   "staticRocks": {
