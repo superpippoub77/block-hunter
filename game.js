@@ -314,6 +314,9 @@ class PreloadScene extends Phaser.Scene {
         // Load title image
         this.load.image('title', 'images/title.png');
 
+        // Load attract background
+        this.load.image('bg', 'images/bg.png');
+
         // Load game background
         this.load.image('game_bg', 'images/game_bg.png');
 
@@ -456,8 +459,8 @@ class AttractScene extends Phaser.Scene {
         this.currentLangIndex = 0;
         GAME_STATE.language = this.languages[0];
 
-        // Background
-        this.add.rectangle(400, 300, 800, 600, 0x001122);
+        // Background image
+        this.add.image(400, 300, 'bg').setDisplaySize(800, 600);
 
         // Title image (loaded from images/title.png)
         // Appears with a falling-rock effect and then vibrates
@@ -729,7 +732,7 @@ class TopTenScene extends Phaser.Scene {
     create() {
         const t = TRANSLATIONS[GAME_STATE.language];
 
-        this.add.rectangle(400, 300, 800, 600, 0x000033);
+        this.add.image(400, 300, 'bg').setDisplaySize(800, 600);
 
         this.add.text(400, 80, t.topTen, {
             fontSize: '48px',
@@ -943,7 +946,7 @@ class LevelSelectScene extends Phaser.Scene {
     create() {
         const t = TRANSLATIONS[GAME_STATE.language];
 
-        this.add.rectangle(400, 300, 800, 600, 0x112200);
+        this.add.image(400, 300, 'bg').setDisplaySize(800, 600);
 
         this.add.text(400, 150, t.selectDifficulty, {
             fontSize: '40px',
