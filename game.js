@@ -43,6 +43,7 @@ const TRANSLATIONS = {
         lives: 'VITE',
         dynamite: 'DINAMITE',
         level: 'LIVELLO',
+        keys: 'CHIAVI',
         gems: 'GEMME'
     },
     fr: {
@@ -63,6 +64,7 @@ const TRANSLATIONS = {
         lives: 'VIES',
         dynamite: 'DYNAMITE',
         level: 'NIVEAU',
+        keys: 'CLES',
         gems: 'GEMMES'
     },
     de: {
@@ -83,6 +85,7 @@ const TRANSLATIONS = {
         lives: 'LEBEN',
         dynamite: 'DYNAMIT',
         level: 'STUFE',
+        keys: 'SCHLUSSEL',
         gems: 'EDELSTEINE'
     },
     en: {
@@ -103,6 +106,7 @@ const TRANSLATIONS = {
         lives: 'LIVES',
         dynamite: 'DYNAMITE',
         level: 'LEVEL',
+        keys: 'KEYS',
         gems: 'GEMS'
     },
     us: {
@@ -123,6 +127,7 @@ const TRANSLATIONS = {
         lives: 'LIVES',
         dynamite: 'DYNAMITE',
         level: 'LEVEL',
+        keys: 'KEYS',
         gems: 'GEMS'
     },
     ja: {
@@ -143,6 +148,7 @@ const TRANSLATIONS = {
         lives: 'ライフ',
         dynamite: 'ダイナマイト',
         level: 'レベル',
+        keys: 'カギ',
         gems: '宝石'
     },
     es: {
@@ -163,6 +169,7 @@ const TRANSLATIONS = {
         lives: 'VIDAS',
         dynamite: 'DINAMITA',
         level: 'NIVEL',
+        keys: 'LLAVES',
         gems: 'GEMAS'
     },
     zh: {
@@ -183,6 +190,7 @@ const TRANSLATIONS = {
         lives: '生命',
         dynamite: '炸药',
         level: '关卡',
+        keys: '钥匙',
         gems: '宝石'
     }
 };
@@ -196,6 +204,7 @@ const GAME_STATE = {
     score: 0,
     lives: 5,
     dynamiteCount: 20,
+    keysCount: 0,
     topScores: [
         { name: 'AAA', score: 5000 },
         { name: 'BBB', score: 4000 },
@@ -646,6 +655,7 @@ class AttractScene extends Phaser.Scene {
             GAME_STATE.score = 0;
             GAME_STATE.lives = 5;
             GAME_STATE.dynamiteCount = 20;
+            GAME_STATE.keysCount = 0;
             GAME_STATE.currentLevel = 0;
             this.scene.start('LevelSelectScene');
         }
@@ -1092,6 +1102,8 @@ class GameScene extends Phaser.Scene {
         this.hasDoorInMap = false;
         this.mapGemPositions = [];
         this.mapGemIndex = 0;
+        this.keySpawnPositions = [];
+        this.lastKeyPos = null;
         this.createTilemap();
 
         // Create player
@@ -1113,8 +1125,23 @@ class GameScene extends Phaser.Scene {
         // Setup collisions
         this.setupCollisions();
 
+        // Setup world bounds bounce for dynamite
+        if (!this.worldBoundsHandlerAdded) {
+            this.worldBoundsHandlerAdded = true;
+            this.physics.world.on('worldbounds', (body) => {
+                const obj = body?.gameObject;
+                if (!obj || !obj.active) return;
+                if (this.dynamites && this.dynamites.contains(obj)) {
+                    this.bounceAndExplode(obj);
+                }
+            });
+        }
+
         // Setup UI
         this.createUI();
+
+        // Setup level timer (if provided in level data)
+        this.setupLevelTimer();
 
         // Setup input
         this.setupInput();
@@ -1258,8 +1285,7 @@ class GameScene extends Phaser.Scene {
                         'objects',
                         window.OBJECT_FRAMES.door
                     );
-                    door.setDisplaySize(CONFIG.tileSize, CONFIG.tileSize);
-                    door.setData('locked', true);
+                    this.setupDoor(door);
                     this.hasDoorInMap = true;
                 }
 
@@ -1275,6 +1301,10 @@ class GameScene extends Phaser.Scene {
                     );
                     itemSprite.setDisplaySize(CONFIG.tileSize, CONFIG.tileSize);
                     itemSprite.setData('type', type);
+
+                    if (type === 'key' && this.keySpawnPositions) {
+                        this.keySpawnPositions.push({ x: itemSprite.x, y: itemSprite.y });
+                    }
                 }
 
                 if (type === 'gem') {
@@ -1521,6 +1551,14 @@ class GameScene extends Phaser.Scene {
         const keySprite = this.items.create(worldX, worldY, 'objects', window.OBJECT_FRAMES.key);
         keySprite.setDisplaySize(CONFIG.tileSize, CONFIG.tileSize);
         keySprite.setData('type', 'key');
+        this.lastKeyPos = { x: worldX, y: worldY };
+    }
+
+    spawnKeyAt(x, y) {
+        const keySprite = this.items.create(x, y, 'objects', window.OBJECT_FRAMES.key);
+        keySprite.setDisplaySize(CONFIG.tileSize, CONFIG.tileSize);
+        keySprite.setData('type', 'key');
+        this.lastKeyPos = { x, y };
     }
 
     spawnDoor() {
@@ -1537,8 +1575,20 @@ class GameScene extends Phaser.Scene {
 
         // Use door sprite from objects.png (frame 5)
         const door = this.doors.create(worldX, worldY, 'objects', window.OBJECT_FRAMES.door);
+        this.setupDoor(door);
+    }
+
+    setupDoor(door) {
+        if (!door) return;
         door.setDisplaySize(CONFIG.tileSize, CONFIG.tileSize);
         door.setData('locked', true);
+        door.setData('opening', false);
+        if (door.body) {
+            door.body.setSize(CONFIG.tileSize, CONFIG.tileSize);
+        }
+        if (door.refreshBody) {
+            door.refreshBody();
+        }
     }
 
     setupCollisions() {
@@ -1552,12 +1602,22 @@ class GameScene extends Phaser.Scene {
         if (this.walls) {
             this.physics.add.collider(this.player, this.walls);
         }
+        if (this.doors) {
+            this.physics.add.collider(this.player, this.doors, this.onPlayerDoorCollide, null, this);
+        }
 
         // Dynamite collisions
         this.physics.add.collider(this.dynamites, this.rocks, this.dynamiteHitRock, null, this);
         this.physics.add.overlap(this.dynamites, this.boulders, this.dynamiteHitBoulder, null, this);
         if (this.walls) {
-            this.physics.add.collider(this.dynamites, this.walls);
+            this.physics.add.collider(this.dynamites, this.walls, (dynamite) => {
+                this.bounceAndExplode(dynamite);
+            });
+        }
+        if (this.doors) {
+            this.physics.add.collider(this.dynamites, this.doors, (dynamite) => {
+                this.bounceAndExplode(dynamite);
+            });
         }
 
         // Boulder collisions
@@ -1587,19 +1647,25 @@ class GameScene extends Phaser.Scene {
             fontFamily: GAME_FONT
         });
 
-        this.livesText = this.add.text(10, 35, `${t.lives}: ${GAME_STATE.lives}`, {
+        this.livesText = this.add.text(10, 35, `${t.lives}:`, {
             fontSize: '20px',
             fill: '#ff0000',
             fontFamily: GAME_FONT
         });
 
-        this.dynamiteText = this.add.text(10, 60, `${t.dynamite}: ${GAME_STATE.dynamiteCount}`, {
+        this.dynamiteText = this.add.text(10, 60, `${t.dynamite}:`, {
             fontSize: '20px',
             fill: '#ffaa00',
             fontFamily: GAME_FONT
         });
 
-        this.gemsText = this.add.text(10, 85, `${t.gems}: ${this.gemsRemaining}`, {
+        this.keysText = this.add.text(10, 85, `${t.keys}:`, {
+            fontSize: '20px',
+            fill: '#ffff66',
+            fontFamily: GAME_FONT
+        });
+
+        this.gemsText = this.add.text(10, 110, `${t.gems}:`, {
             fontSize: '20px',
             fill: '#00ffff',
             fontFamily: GAME_FONT
@@ -1611,12 +1677,102 @@ class GameScene extends Phaser.Scene {
             fontFamily: GAME_FONT
         }).setOrigin(1, 0);
 
+        this.timerPepitas = [];
+        this.timerPepitasCount = 20;
+        const pepitaSize = 12;
+        const pepitaGap = 2;
+        const pepitaY = CONFIG.height - 16;
+        this.timerLabel = this.add.text(10, pepitaY, 'TIMER', {
+            fontSize: '16px',
+            fill: '#ffffff',
+            fontFamily: GAME_FONT
+        }).setOrigin(0, 0.5);
+        const pepitaStartX = this.timerLabel.getBounds().right + 8;
+        for (let i = 0; i < this.timerPepitasCount; i++) {
+            const pepita = this.add.sprite(
+                pepitaStartX + i * (pepitaSize + pepitaGap),
+                pepitaY,
+                'objects',
+                window.OBJECT_FRAMES.pepita
+            );
+            pepita.setDisplaySize(pepitaSize, pepitaSize);
+            pepita.setScrollFactor(0);
+            pepita.setVisible(false);
+            this.timerPepitas.push(pepita);
+        }
+
         // Keep HUD fixed to screen
         this.scoreText.setScrollFactor(0);
         this.livesText.setScrollFactor(0);
         this.dynamiteText.setScrollFactor(0);
+        this.keysText.setScrollFactor(0);
         this.gemsText.setScrollFactor(0);
         this.levelText.setScrollFactor(0);
+        this.timerLabel.setScrollFactor(0);
+
+        this.timerLabel.setVisible(false);
+        this.timerPepitas.forEach((p) => p.setVisible(false));
+
+        this.livesIcons = [];
+        this.dynamiteIcons = [];
+        this.keysIcons = [];
+        this.gemsIcons = [];
+        this.refreshHudIcons();
+    }
+
+    setupLevelTimer() {
+        const seconds = Number(this.levelData?.timer ?? this.levelData?.map?.timer);
+        if (!seconds || seconds <= 0 || !Number.isFinite(seconds)) {
+            return;
+        }
+
+        this.levelTimeTotal = seconds * 1000;
+        this.levelTimeRemaining = this.levelTimeTotal;
+
+        if (this.timerPepitas && this.timerPepitas.length > 0) {
+            if (this.timerLabel) {
+                this.timerLabel.setVisible(true);
+            }
+            this.timerPepitas.forEach((p) => p.setVisible(true));
+            this.updateTimerBar();
+        }
+
+        if (this.levelTimerEvent) {
+            this.levelTimerEvent.remove();
+        }
+
+        this.levelTimerEvent = this.time.addEvent({
+            delay: 100,
+            loop: true,
+            callback: () => {
+                if (this.levelTimeRemaining <= 0) return;
+                this.levelTimeRemaining -= 100;
+                if (this.levelTimeRemaining <= 0) {
+                    this.levelTimeRemaining = 0;
+                    this.updateTimerBar();
+                    this.onLevelTimeout();
+                } else {
+                    this.updateTimerBar();
+                }
+            }
+        });
+    }
+
+    updateTimerBar() {
+        if (!this.timerPepitas || !this.timerPepitas.length || !this.levelTimeTotal) return;
+        const ratio = Phaser.Math.Clamp(this.levelTimeRemaining / this.levelTimeTotal, 0, 1);
+        const visibleCount = Math.ceil(ratio * this.timerPepitasCount);
+        for (let i = 0; i < this.timerPepitas.length; i++) {
+            this.timerPepitas[i].setVisible(i < visibleCount);
+        }
+    }
+
+    onLevelTimeout() {
+        this.loseLife();
+        if (GAME_STATE.lives > 0) {
+            this.levelTimeRemaining = this.levelTimeTotal;
+            this.updateTimerBar();
+        }
     }
 
     update() {
@@ -1645,6 +1801,9 @@ class GameScene extends Phaser.Scene {
         }
 
         let speed = CONFIG.playerSpeed;
+        if (this.playerSlowFactor && this.playerSlowFactor !== 1) {
+            speed *= this.playerSlowFactor;
+        }
 
         // Check if on sand
         const tile = this.getTileAt(this.player.x, this.player.y);
@@ -1664,8 +1823,32 @@ class GameScene extends Phaser.Scene {
             this.hitHole();
         }
 
+        // Check proximity to doors for opening
+        this.checkDoorProximity();
+
         // Update UI
         this.updateUITexts();
+    }
+
+    checkDoorProximity() {
+        if (!this.doors || !this.player) return;
+        const doors = this.doors.children?.entries || [];
+        for (const door of doors) {
+            if (!door || !door.active) continue;
+            if (!door.getData('locked')) continue;
+            if (door.getData('opening')) continue;
+            if (GAME_STATE.keysCount <= 0) continue;
+
+            const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, door.x, door.y);
+            if (dist <= CONFIG.tileSize * 1.1) {
+                this.tryOpenDoor(this.player, door);
+                break;
+            }
+        }
+    }
+
+    onPlayerDoorCollide(player, door) {
+        this.tryOpenDoor(player, door);
     }
 
     getTileAt(x, y) {
@@ -1695,6 +1878,9 @@ class GameScene extends Phaser.Scene {
         dynamite.setVelocity(dirX * CONFIG.dynamiteSpeed, dirY * CONFIG.dynamiteSpeed);
         dynamite.setBounce(1, 1);
         dynamite.setCollideWorldBounds(true);
+        if (dynamite.body) {
+            dynamite.body.onWorldBounds = true;
+        }
 
         // Subtle oscillating rotation while flying
         this.tweens.add({
@@ -1726,6 +1912,51 @@ class GameScene extends Phaser.Scene {
         });
 
         dynamite.destroy();
+
+        // Slow player if inside explosion radius
+        this.applyExplosionSlow(explosion.x, explosion.y);
+    }
+
+    bounceAndExplode(dynamite) {
+        if (!dynamite || !dynamite.active) return;
+        if (dynamite.getData('bounceExplode')) return;
+        dynamite.setData('bounceExplode', true);
+
+        const vx = dynamite.body?.velocity?.x || 0;
+        const vy = dynamite.body?.velocity?.y || 0;
+        const len = Math.max(1, Math.hypot(vx, vy));
+        const nx = vx / len;
+        const ny = vy / len;
+
+        // Small hop and nudge before exploding
+        this.tweens.add({
+            targets: dynamite,
+            x: dynamite.x + nx * 8,
+            y: dynamite.y + ny * 8 - 4,
+            duration: 120,
+            yoyo: true,
+            ease: 'Sine.easeOut',
+            onComplete: () => {
+                if (dynamite.active) {
+                    this.explodeDynamite(dynamite);
+                }
+            }
+        });
+    }
+
+    applyExplosionSlow(x, y) {
+        if (!this.player || !this.player.active) return;
+        const radius = CONFIG.tileSize * 1.5;
+        const dist = Phaser.Math.Distance.Between(x, y, this.player.x, this.player.y);
+        if (dist > radius) return;
+
+        this.playerSlowFactor = 0.5;
+        if (this.playerSlowTimer) {
+            this.playerSlowTimer.remove();
+        }
+        this.playerSlowTimer = this.time.delayedCall(800, () => {
+            this.playerSlowFactor = 1;
+        });
     }
 
     createExplosionAt(x, y) {
@@ -1862,11 +2093,8 @@ class GameScene extends Phaser.Scene {
 
         if (type === 'key') {
             this.addScore(5, item.x, item.y);
-            // Unlock doors
-            this.doors.children.entries.forEach(door => {
-                door.setData('locked', false);
-                door.setTint(0x00ff00);
-            });
+            GAME_STATE.keysCount++;
+            this.lastKeyPos = { x: item.x, y: item.y };
         } else if (type === 'dynamite') {
             GAME_STATE.dynamiteCount += 5;
         } else if (type === 'pepita') {
@@ -1874,6 +2102,68 @@ class GameScene extends Phaser.Scene {
         }
 
         item.destroy();
+    }
+
+    tryOpenDoor(player, door) {
+        if (!door || !door.active) return;
+        if (door.getData('opening')) return;
+        if (!door.getData('locked')) return;
+        if (GAME_STATE.keysCount <= 0) return;
+
+        GAME_STATE.keysCount--;
+        door.setData('opening', true);
+        door.setData('locked', false);
+        if (door.disableBody) {
+            door.disableBody(true, true);
+        } else {
+            door.setVisible(false);
+            if (door.body) {
+                door.body.enable = false;
+            }
+        }
+
+        // Respawn key and re-close door after 10 seconds
+        this.time.delayedCall(10000, () => {
+            if (!door) return;
+            if (door.enableBody) {
+                door.enableBody(false, door.x, door.y, true, true);
+                if (door.refreshBody) {
+                    door.refreshBody();
+                }
+            } else {
+                door.setVisible(true);
+                if (door.body) {
+                    door.body.enable = true;
+                }
+            }
+            door.setData('locked', true);
+            door.setData('opening', false);
+
+            this.respawnKey();
+        });
+    }
+
+    respawnKey() {
+        // Avoid multiple keys on the field
+        const existingKey = this.items?.children?.entries?.find((item) => item?.getData('type') === 'key');
+        if (existingKey) return;
+
+        if (this.lastKeyPos) {
+            this.spawnKeyAt(this.lastKeyPos.x, this.lastKeyPos.y);
+            return;
+        }
+
+        if (this.keySpawnPositions && this.keySpawnPositions.length > 0) {
+            const pos = this.keySpawnPositions[0];
+            this.spawnKeyAt(pos.x, pos.y);
+            return;
+        }
+
+        const tile = this.getRandomWalkableTile();
+        if (!tile) return;
+        const worldX = this.mapOffsetX + tile.x * CONFIG.tileSize + CONFIG.tileSize / 2;
+        const worldY = this.mapOffsetY + tile.y * CONFIG.tileSize + CONFIG.tileSize / 2;
+        this.spawnKeyAt(worldX, worldY);
     }
 
     hitByBoulder(player, boulder) {
@@ -1993,11 +2283,50 @@ class GameScene extends Phaser.Scene {
     updateUITexts() {
         const t = TRANSLATIONS[GAME_STATE.language];
         this.scoreText.setText(`${t.score}: ${GAME_STATE.score}`);
-        this.livesText.setText(`${t.lives}: ${GAME_STATE.lives}`);
-        this.dynamiteText.setText(`${t.dynamite}: ${GAME_STATE.dynamiteCount}`);
-        if (this.gemsText) {
-            this.gemsText.setText(`${t.gems}: ${this.gemsRemaining}`);
+        this.livesText.setText(`${t.lives}:`);
+        this.dynamiteText.setText(`${t.dynamite}:`);
+        if (this.keysText) {
+            this.keysText.setText(`${t.keys}:`);
         }
+        if (this.gemsText) {
+            this.gemsText.setText(`${t.gems}:`);
+        }
+
+        this.refreshHudIcons();
+    }
+
+    refreshHudIcons() {
+        if (!this.livesText || !this.dynamiteText || !this.keysText) return;
+
+        const iconSize = 16;
+        const gap = 4;
+
+        const clearIcons = (arr) => {
+            arr.forEach((icon) => icon && icon.destroy && icon.destroy());
+            arr.length = 0;
+        };
+
+        clearIcons(this.livesIcons);
+        clearIcons(this.dynamiteIcons);
+        clearIcons(this.keysIcons);
+        clearIcons(this.gemsIcons);
+
+        const placeIcons = (count, arr, frame, label) => {
+            const bounds = label.getBounds();
+            const startX = bounds.right + 6;
+            const y = label.y + label.height / 2 + 1;
+            for (let i = 0; i < count; i++) {
+                const icon = this.add.sprite(startX + i * (iconSize + gap), y, 'objects', frame);
+                icon.setDisplaySize(iconSize, iconSize);
+                icon.setScrollFactor(0);
+                arr.push(icon);
+            }
+        };
+
+        placeIcons(GAME_STATE.lives, this.livesIcons, window.OBJECT_FRAMES.heart, this.livesText);
+        placeIcons(GAME_STATE.dynamiteCount, this.dynamiteIcons, window.OBJECT_FRAMES.dynamite_projectile, this.dynamiteText);
+        placeIcons(GAME_STATE.keysCount, this.keysIcons, window.OBJECT_FRAMES.key, this.keysText);
+        placeIcons(this.gemsRemaining, this.gemsIcons, window.OBJECT_FRAMES.gem, this.gemsText);
     }
 }
 
