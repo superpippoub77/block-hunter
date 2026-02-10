@@ -313,7 +313,7 @@ class PreloadScene extends Phaser.Scene {
         // Row 2: dynamite_chest, door, gem, stones
         // Row 3: key, sand_pile, ghost, pepita
         // Row 4: wall, hole1, hole2, explosion
-        this.load.spritesheet('objects', 'images/objects.png', {
+        this.load.spritesheet('objects', 'images/obj.png', {
             frameWidth: 64,
             frameHeight: 64
         });
@@ -1266,20 +1266,17 @@ class GameScene extends Phaser.Scene {
             size = Phaser.Utils.Array.GetRandom(sizes);
         }
 
-        // Crea la roccia con la texture appropriata
-        let texture = 'rock';
+        // Crea la roccia con la sprite stone
         let scale = 1;
 
         if (size === 'small') {
-            texture = 'rock_small';
             scale = 0.7;
         } else if (size === 'large') {
-            texture = 'rock_large';
             scale = 1.3;
         }
 
-        const rock = this.rocks.create(jitteredX, jitteredY, 'rock');
-        rock.setScale(scale);
+        const rock = this.rocks.create(jitteredX, jitteredY, 'objects', window.OBJECT_FRAMES.stone);
+        rock.setDisplaySize(CONFIG.tileSize * scale, CONFIG.tileSize * scale);
         rock.setData('destructible', true);
         rock.setData('size', size);
 
