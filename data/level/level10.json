@@ -1,0 +1,36 @@
+{
+  "id": "1.0",
+  "map": {
+    "cols": 12,
+    "rows": 8,
+    "tiles": [
+      ["floor","floor","floor","floor","floor","floor","floor","floor","floor","floor","floor","floor"],
+      ["floor","floor","floor","floor","floor","floor","floor","floor","floor","floor","floor","floor"],
+      ["floor","floor","floor","floor","floor","floor","floor","floor","floor","floor","floor","floor"],
+      ["floor","floor","floor","floor","floor","floor","floor","floor","floor","floor","floor","floor"],
+      ["floor","floor","floor","floor","floor","floor","floor","floor","floor","floor","floor","floor"],
+      ["floor","floor","floor","floor","floor","floor","floor","floor","floor","floor","floor","floor"],
+      ["floor","floor","floor","floor","floor","floor","floor","floor","floor","floor","floor","floor"],
+      ["floor","floor","floor","floor","floor","floor","floor","floor","floor","floor","floor","floor"]
+    ]
+  },
+  "staticRocks": {
+    "enabled": true,
+    "dynamicSize": null,
+    "rotation": null,
+    "chaotic": null
+  },
+  "dynamicBoulders": {
+    "enabled": false,
+    "directions": null,
+    "sizes": null
+  },
+  "speed": 1,
+  "escapeRoute": false,
+  "enemies": null,
+  "collectibles": null,
+  "traps": null,
+  "spawnPoints": null,
+  "timeLimit": null,
+  "scoreRules": null
+}

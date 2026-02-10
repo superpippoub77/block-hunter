@@ -1,0 +1,19 @@
+{
+  "id": "2.3",
+  "cols": 14,
+  "rows": 8,
+  "staticRocks": true,
+  "dynamicBoulders": false,
+  "speed": 4,
+  "escapeRoute": true,
+  "map": [
+    ["sand1","sand2","sand3","sand4","sand5","sand6","sand7","sand8","sand9","sand10","sand1","sand2","sand3","sand4"],
+    ["sand2","sand3","sand4","sand5","sand6","sand7","sand8","sand9","sand10","sand1","sand2","sand3","sand4","sand5"],
+    ["sand3","sand4","hole","sand6","sand7","sand8","sand9","sand10","sand1","sand2","sand3","sand4","sand5","sand6"],
+    ["sand4","sand5","sand6","sand7","sand8","sand9","sand10","sand1","sand2","sand3","sand4","sand5","sand6","sand7"],
+    ["sand5","sand6","sand7","sand8","sand9","sand10","sand1","sand2","sand3","sand4","sand5","sand6","sand7","sand8"],
+    ["sand6","sand7","sand8","sand9","sand10","sand1","sand2","sand3","sand4","sand5","sand6","sand7","sand8","sand9"],
+    ["sand7","sand8","sand9","sand10","sand1","sand2","sand3","sand4","sand5","sand6","sand7","sand8","sand9","sand10"],
+    ["sand8","sand9","sand10","sand1","sand2","sand3","sand4","sand5","sand6","sand7","sand8","sand9","sand10","sand1"]
+  ]
+}
