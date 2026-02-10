@@ -588,6 +588,9 @@ class AttractScene extends Phaser.Scene {
         // Setup input
         this.setupInput();
 
+        // Track last movement direction for shooting
+        this.lastMoveDir = { x: 1, y: 0 };
+
         // Update UI
         this.updateUI();
 
@@ -1453,6 +1456,13 @@ class GameScene extends Phaser.Scene {
         if (this.cursors.up.isDown || this.keys.w.isDown) velocityY = -1;
         if (this.cursors.down.isDown || this.keys.s.isDown) velocityY = 1;
 
+        if (velocityX !== 0 || velocityY !== 0) {
+            this.lastMoveDir = {
+                x: Math.sign(velocityX),
+                y: Math.sign(velocityY)
+            };
+        }
+
         // Normalize diagonal movement
         if (velocityX !== 0 && velocityY !== 0) {
             velocityX *= 0.707;
@@ -1500,11 +1510,8 @@ class GameScene extends Phaser.Scene {
         GAME_STATE.dynamiteCount--;
         this.lastDynamiteTime = this.time.now;
 
-        const velocityX = this.player.body.velocity.x;
-        const velocityY = this.player.body.velocity.y;
-
-        let dirX = velocityX !== 0 ? Math.sign(velocityX) : 1;
-        let dirY = velocityY !== 0 ? Math.sign(velocityY) : 0;
+        const dirX = this.lastMoveDir?.x ?? 1;
+        const dirY = this.lastMoveDir?.y ?? 0;
 
         // Use dynamite projectile sprite from objects.png (frame 0)
         const dynamite = this.dynamites.create(this.player.x, this.player.y, 'objects', window.OBJECT_FRAMES.dynamite_projectile);
@@ -1536,10 +1543,67 @@ class GameScene extends Phaser.Scene {
         dynamite.destroy();
     }
 
+    createExplosionAt(x, y) {
+        const explosion = this.add.sprite(x, y, 'objects', window.OBJECT_FRAMES.explosion);
+        explosion.setDisplaySize(CONFIG.tileSize, CONFIG.tileSize);
+        this.tweens.add({
+            targets: explosion,
+            scale: 2,
+            alpha: 0,
+            duration: 250,
+            onComplete: () => explosion.destroy()
+        });
+    }
+
+    addScore(amount, x, y) {
+        GAME_STATE.score += amount;
+        this.showScorePopup(amount, x, y);
+    }
+
+    showScorePopup(amount, x, y) {
+        const posX = typeof x === 'number' ? x : (this.player?.x || 0);
+        const posY = typeof y === 'number' ? y : (this.player?.y || 0);
+        const color = amount >= 0 ? '#00ff66' : '#ff4444';
+        const text = amount > 0 ? `+${amount}` : `${amount}`;
+
+        const popup = this.add.text(posX, posY - 10, text, {
+            fontSize: '16px',
+            fill: color,
+            fontFamily: GAME_FONT,
+            stroke: '#000000',
+            strokeThickness: 3
+        }).setOrigin(0.5);
+
+        popup.setDepth(1000);
+        popup.setScrollFactor(1);
+
+        this.tweens.add({
+            targets: popup,
+            y: posY - 40,
+            alpha: 0,
+            duration: 700,
+            ease: 'Cubic.easeOut',
+            onComplete: () => popup.destroy()
+        });
+    }
+
+    explodeNearbyRocks(centerX, centerY, radius) {
+        const rocks = this.rocks?.children?.entries || [];
+        rocks.forEach((rock) => {
+            if (!rock || !rock.active) return;
+            if (!rock.getData('destructible')) return;
+            const dist = Phaser.Math.Distance.Between(centerX, centerY, rock.x, rock.y);
+            if (dist <= radius) {
+                this.createExplosionAt(rock.x, rock.y);
+                rock.destroy();
+                this.addScore(10, rock.x, rock.y);
+            }
+        });
+    }
+
     dynamiteHitRock(dynamite, rock) {
         if (rock.getData('destructible')) {
-            rock.destroy();
-            GAME_STATE.score += 10;
+            this.explodeNearbyRocks(rock.x, rock.y, CONFIG.tileSize * 1.6);
             this.explodeDynamite(dynamite);
         } else {
             // Bounce off
@@ -1569,7 +1633,7 @@ class GameScene extends Phaser.Scene {
         }
 
         boulder.destroy();
-        GAME_STATE.score += 20;
+        this.addScore(20, boulder.x, boulder.y);
     }
 
     getShardCount(size) {
@@ -1580,7 +1644,7 @@ class GameScene extends Phaser.Scene {
 
     collectGem(player, gem) {
         gem.destroy();
-        GAME_STATE.score += 50;
+        this.addScore(50, gem.x, gem.y);
 
         // Level complete
         this.levelComplete();
@@ -1590,7 +1654,7 @@ class GameScene extends Phaser.Scene {
         const type = item.getData('type');
 
         if (type === 'key') {
-            GAME_STATE.score += 5;
+            this.addScore(5, item.x, item.y);
             // Unlock doors
             this.doors.children.entries.forEach(door => {
                 door.setData('locked', false);
@@ -1623,7 +1687,7 @@ class GameScene extends Phaser.Scene {
         if (this.invulnerable) return;
 
         GAME_STATE.lives--;
-        GAME_STATE.score -= 20;
+        this.addScore(-20, this.player?.x, this.player?.y);
 
         if (GAME_STATE.lives <= 0) {
             this.gameOver();
@@ -1646,7 +1710,7 @@ class GameScene extends Phaser.Scene {
     }
 
     levelComplete() {
-        GAME_STATE.score += 50;
+        this.addScore(50, this.player?.x, this.player?.y);
         GAME_STATE.currentLevel++;
 
         if (GAME_STATE.currentLevel >= LEVEL_CONFIG.levels.length) {
