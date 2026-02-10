@@ -246,6 +246,14 @@ const LEVEL_CONFIG = {
     ]
 };
 
+// Helper function to get level file number from level index
+// Level index 0-4 -> level10-14, 5-9 -> level20-24, etc.
+function getLevelFileName(levelIndex) {
+    const majorLevel = Math.floor(levelIndex / 5) + 1;
+    const minorLevel = levelIndex % 5;
+    return `level${majorLevel}${minorLevel}`;
+}
+
 // ============================================================================
 // BOOT SCENE
 // ============================================================================
@@ -300,53 +308,58 @@ class PreloadScene extends Phaser.Scene {
             frameHeight: 48 
         });
         
-        // Create graphics for assets
+        // Load objects sprite (4x4 matrix = 16 objects)
+        // Row 1: dynamite, heart, stone, player
+        // Row 2: dynamite_chest, door, gem, stones
+        // Row 3: key, sand_pile, ghost, pepita
+        // Row 4: wall, hole1, hole2, explosion
+        this.load.spritesheet('objects', 'images/objects.png', { 
+            frameWidth: 32, 
+            frameHeight: 32 
+        });
+        
+        // Load all level JSON files (50 levels)
+        for (let i = 10; i <= 54; i++) {
+            this.load.json(`level${i}`, `data/level/level${i}.json`);
+        }
+        
+        // Create graphics for remaining assets
         this.createAssets();
     }
 
     createAssets() {
-        // Tiles are now loaded from sprite sheet (wall, hole, sand, floor, stone, hole2)
-        // No need to generate wall, floor, sand, hole textures
+        // Objects sprite frame mapping (4x4 matrix):
+        // Frame 0-3:   dynamite, heart, stone, player
+        // Frame 4-7:   dynamite_chest, door, gem, stones
+        // Frame 8-11:  key, sand_pile, ghost, pepita
+        // Frame 12-15: wall, hole1, hole2, explosion
+        
+        const OBJECT_FRAMES = {
+            dynamite_projectile: 0,
+            heart: 1,
+            stone: 2,
+            player: 3,
+            dynamite_chest: 4,
+            door: 5,
+            gem: 6,
+            stones: 7,
+            key: 8,
+            sand_pile: 9,
+            ghost: 10,
+            pepita: 11,
+            wall: 12,
+            hole1: 13,
+            hole2: 14,
+            explosion: 15
+        };
+        
+        // Create texture references from spritesheet
+        // We'll use the spritesheet directly in game code
+        // Just create the boulders and shards with graphics since they're not in the sprite
         
         const graphics = this.add.graphics();
         
-        // Player
-        graphics.fillStyle(0xFFFF00, 1);
-        graphics.fillRect(0, 0, CONFIG.tileSize, CONFIG.tileSize);
-        graphics.generateTexture('player', CONFIG.tileSize, CONFIG.tileSize);
-        graphics.clear();
-        
-        // Gem
-        graphics.fillStyle(0x00FFFF, 1);
-        graphics.fillCircle(CONFIG.tileSize/2, CONFIG.tileSize/2, CONFIG.tileSize/3);
-        graphics.generateTexture('gem', CONFIG.tileSize, CONFIG.tileSize);
-        graphics.clear();
-        
-        // Key
-        graphics.fillStyle(0xFFD700, 1);
-        graphics.fillCircle(CONFIG.tileSize/2, CONFIG.tileSize/2, CONFIG.tileSize/4);
-        graphics.generateTexture('key', CONFIG.tileSize, CONFIG.tileSize);
-        graphics.clear();
-        
-        // Door
-        graphics.fillStyle(0x8B4513, 1);
-        graphics.fillRect(0, 0, CONFIG.tileSize, CONFIG.tileSize);
-        graphics.generateTexture('door', CONFIG.tileSize, CONFIG.tileSize);
-        graphics.clear();
-        
-        // Dynamite item
-        graphics.fillStyle(0xFF0000, 1);
-        graphics.fillRect(CONFIG.tileSize/4, CONFIG.tileSize/4, CONFIG.tileSize/2, CONFIG.tileSize/2);
-        graphics.generateTexture('dynamite_item', CONFIG.tileSize, CONFIG.tileSize);
-        graphics.clear();
-        
-        // Life (pepita)
-        graphics.fillStyle(0xFF69B4, 1);
-        graphics.fillCircle(CONFIG.tileSize/2, CONFIG.tileSize/2, CONFIG.tileSize/3);
-        graphics.generateTexture('pepita', CONFIG.tileSize, CONFIG.tileSize);
-        graphics.clear();
-        
-        // Boulders (dynamic)
+        // Boulders (dynamic) - not in sprite, generate procedurally
         graphics.fillStyle(0x8B4513, 1);
         graphics.fillCircle(16, 16, 12);
         graphics.generateTexture('boulder_small', 32, 32);
@@ -360,7 +373,7 @@ class PreloadScene extends Phaser.Scene {
         graphics.generateTexture('boulder_large', 48, 48);
         graphics.clear();
         
-        // Static rocks (diverse dimensioni e forme)
+        // Static rocks (diverse dimensioni e forme) - not in sprite
         // Rock small
         graphics.fillStyle(0x555555, 1);
         graphics.fillRect(2, 2, CONFIG.tileSize - 4, CONFIG.tileSize - 4);
@@ -392,19 +405,16 @@ class PreloadScene extends Phaser.Scene {
         graphics.generateTexture('rock_large', CONFIG.tileSize, CONFIG.tileSize);
         graphics.clear();
         
-        // Dynamite projectile
-        graphics.fillStyle(0xFF0000, 1);
-        graphics.fillRect(0, 0, 8, 8);
-        graphics.generateTexture('dynamite', 8, 8);
-        graphics.clear();
-        
-        // Shard
+        // Shard - not in sprite
         graphics.fillStyle(0xAAAAAA, 1);
         graphics.fillRect(0, 0, 6, 6);
         graphics.generateTexture('shard', 6, 6);
         graphics.clear();
         
         graphics.destroy();
+        
+        // Store frame mapping for use in game
+        window.OBJECT_FRAMES = OBJECT_FRAMES;
     }
 
     create() {
@@ -726,38 +736,106 @@ class LevelSelectScene extends Phaser.Scene {
             fontFamily: GAME_FONT
         }).setOrigin(0.5);
         
-        const difficulties = [
+        // Difficulties configuration and selectable UI
+        this.difficulties = [
             { name: t.beginner, mult: 0.8, y: 250 },
             { name: t.medium, mult: 1.0, y: 320 },
             { name: t.hard, mult: 1.3, y: 390 }
         ];
-        
-        difficulties.forEach(diff => {
+
+        // Keep references to text objects and selection state
+        this.diffTexts = [];
+        this.selectedIndex = 0;
+        this.selectionGraphics = this.add.graphics();
+
+        // Helper to change selection (wrap-around)
+        this.changeSelection = (dir) => {
+            this.selectedIndex = (this.selectedIndex + dir + this.difficulties.length) % this.difficulties.length;
+            this.updateSelection();
+        };
+
+        // Update visual state for selection: stroke, shadow and selection box
+        this.updateSelection = () => {
+            // Clear graphics and redraw around selected text
+            this.selectionGraphics.clear();
+
+            this.diffTexts.forEach((txt, idx) => {
+                if (idx === this.selectedIndex) {
+                    txt.setStyle({ fill: '#00ff00', stroke: '#00aa00', strokeThickness: 2 });
+                    // green glow
+                    if (txt.setShadow) txt.setShadow(0, 0, '#00ff00', 8, true, false);
+                } else {
+                    txt.setStyle({ fill: '#ffffff', stroke: '#000000', strokeThickness: 0 });
+                    if (txt.setShadow) txt.setShadow(0, 0, '#000000', 0, false, false);
+                }
+            });
+
+            const selectedText = this.diffTexts[this.selectedIndex];
+            if (selectedText) {
+                const b = selectedText.getBounds();
+                // draw a stroked rectangle a bit bigger than the text bounds
+                this.selectionGraphics.lineStyle(3, 0x00ff00, 1);
+                this.selectionGraphics.strokeRect(b.x - 12, b.y - 8, b.width + 24, b.height + 16);
+            }
+        };
+
+        // Create the text objects and wire pointer events
+        this.difficulties.forEach((diff, idx) => {
             const text = this.add.text(400, diff.y, diff.name, {
                 fontSize: '32px',
                 fill: '#ffffff',
                 fontFamily: GAME_FONT
             }).setOrigin(0.5).setInteractive();
-            
-            text.on('pointerover', () => text.setStyle({ fill: '#00ff00' }));
-            text.on('pointerout', () => text.setStyle({ fill: '#ffffff' }));
+
+            text.on('pointerover', () => {
+                this.selectedIndex = idx;
+                this.updateSelection();
+            });
+            text.on('pointerout', () => {
+                // keep selection visuals (do not clear on out)
+            });
             text.on('pointerdown', () => {
                 GAME_STATE.difficulty = diff.mult;
                 this.scene.start('GameScene');
             });
+
+            this.diffTexts.push(text);
         });
+
+        // Initialize selection visuals
+        this.updateSelection();
         
-        // Keyboard selection
+        // Keyboard navigation: Up/Down to change selection, Enter/Space to confirm
+        this.input.keyboard.on('keydown-UP', () => this.changeSelection(-1));
+        this.input.keyboard.on('keydown-DOWN', () => this.changeSelection(1));
+        this.input.keyboard.on('keydown-ENTER', () => {
+            const diff = this.difficulties[this.selectedIndex];
+            GAME_STATE.difficulty = diff.mult;
+            this.scene.start('GameScene');
+        });
+        this.input.keyboard.on('keydown-SPACE', () => {
+            const diff = this.difficulties[this.selectedIndex];
+            GAME_STATE.difficulty = diff.mult;
+            this.scene.start('GameScene');
+        });
+
+        // Keep numeric shortcuts (also update selection visuals before starting)
         this.input.keyboard.on('keydown-ONE', () => {
-            GAME_STATE.difficulty = 0.8;
+            this.selectedIndex = 0;
+            this.updateSelection();
+            GAME_STATE.difficulty = this.difficulties[0].mult;
             this.scene.start('GameScene');
         });
         this.input.keyboard.on('keydown-TWO', () => {
-            GAME_STATE.difficulty = 1.0;
+            this.selectedIndex = 1;
+            this.updateSelection();
+            GAME_STATE.difficulty = this.difficulties[1].mult;
             this.scene.start('GameScene');
         });
         this.input.keyboard.on('keydown-THREE', () => {
-            GAME_STATE.difficulty = 1.3;
+            this.selectedIndex = 2;
+            this.updateSelection();
+            GAME_STATE.difficulty = this.difficulties[2].mult;
             this.scene.start('GameScene');
         });
     }
@@ -772,7 +850,22 @@ class GameScene extends Phaser.Scene {
     }
 
     create() {
+        // Get level data from JSON
+        const levelFileName = getLevelFileName(GAME_STATE.currentLevel);
+        this.levelData = this.cache.json.get(levelFileName);
+        
+        // Get level config (rules for boulders, etc.)
         this.levelConfig = LEVEL_CONFIG.levels[GAME_STATE.currentLevel];
+        
+        // Merge JSON data into levelConfig
+        if (this.levelData) {
+            this.levelConfig = {
+                ...this.levelConfig,
+                ...this.levelData,
+                // Keep dynamicBoulders from LEVEL_CONFIG as it has direction/size info
+                dynamicBoulders: this.levelConfig.dynamicBoulders
+            };
+        }
         
         // Create tilemap
         this.createTilemap();
@@ -818,45 +911,62 @@ class GameScene extends Phaser.Scene {
 
     createTilemap() {
         this.tiles = [];
-        const offsetX = (CONFIG.width - CONFIG.gridWidth * CONFIG.tileSize) / 2;
-        const offsetY = (CONFIG.height - CONFIG.gridHeight * CONFIG.tileSize) / 2;
+        
+        // Get map data from JSON
+        const mapData = this.levelData?.map;
+        const mapRows = this.levelData?.rows || CONFIG.gridHeight;
+        const mapCols = this.levelData?.cols || CONFIG.gridWidth;
+        
+        // Calculate offset to center the map
+        const offsetX = (CONFIG.width - mapCols * CONFIG.tileSize) / 2;
+        const offsetY = (CONFIG.height - mapRows * CONFIG.tileSize) / 2;
         
         // Tile sprite mapping: 0=wall, 1=hole, 2=sand, 3=floor, 4=stone, 5=hole2
         const TILE_FRAMES = {
             wall: 0,
             hole: 1,
             sand: 2,
+            sand1: 2, sand2: 2, sand3: 2, sand4: 2, sand5: 2,
+            sand6: 2, sand7: 2, sand8: 2, sand9: 2, sand10: 2,
             floor: 3,
             stone: 4,
-            hole2: 5
+            hole2: 5,
+            sandPile: 4  // sandPile uses stone texture
         };
         
-        for (let y = 0; y < CONFIG.gridHeight; y++) {
+        for (let y = 0; y < mapRows; y++) {
             this.tiles[y] = [];
-            for (let x = 0; x < CONFIG.gridWidth; x++) {
+            for (let x = 0; x < mapCols; x++) {
                 let type = 'floor';
                 
-                // Border walls
-                if (x === 0 || x === CONFIG.gridWidth - 1 || y === 0 || y === CONFIG.gridHeight - 1) {
-                    type = 'wall';
+                // If we have map data from JSON, use it
+                if (mapData && mapData[y] && mapData[y][x]) {
+                    type = mapData[y][x];
+                } else {
+                    // Fallback to old random generation
+                    // Border walls
+                    if (x === 0 || x === mapCols - 1 || y === 0 || y === mapRows - 1) {
+                        type = 'wall';
+                    }
+                    // Random sand patches
+                    else if (Math.random() < 0.1) {
+                        type = 'sand';
+                    }
+                    // Random holes
+                    else if (Math.random() < 0.05) {
+                        type = 'hole';
+                    }
                 }
                 
-                // Random sand patches
-                if (type === 'floor' && Math.random() < 0.1) {
-                    type = 'sand';
-                }
-                
-                // Random holes
-                if (type === 'floor' && Math.random() < 0.05) {
-                    type = 'hole';
-                }
+                // Get frame index for this tile type
+                const frameIndex = TILE_FRAMES[type] !== undefined ? TILE_FRAMES[type] : TILE_FRAMES.floor;
                 
                 // Create sprite from tiles spritesheet
                 const tile = this.add.sprite(
                     offsetX + x * CONFIG.tileSize + CONFIG.tileSize / 2,
                     offsetY + y * CONFIG.tileSize + CONFIG.tileSize / 2,
                     'tiles',
-                    TILE_FRAMES[type]
+                    frameIndex
                 );
                 
                 // Scale tile to fit CONFIG.tileSize (64x48 -> 32x32 or keep original)
@@ -866,21 +976,25 @@ class GameScene extends Phaser.Scene {
                 this.tiles[y][x] = { type, sprite: tile };
             }
         }
+        
+        // Store map dimensions for later use
+        this.mapRows = mapRows;
+        this.mapCols = mapCols;
+        this.mapOffsetX = offsetX;
+        this.mapOffsetY = offsetY;
     }
 
     createPlayer() {
         const centerX = CONFIG.width / 2;
         const centerY = CONFIG.height / 2;
         
-        this.player = this.physics.add.sprite(centerX, centerY, 'player');
+        // Use player sprite from objects.png (frame 3)
+        this.player = this.physics.add.sprite(centerX, centerY, 'objects', window.OBJECT_FRAMES.player);
         this.player.setCollideWorldBounds(true);
         this.player.body.setSize(CONFIG.tileSize * 0.8, CONFIG.tileSize * 0.8);
     }
 
     spawnStaticRocks() {
-        const offsetX = (CONFIG.width - CONFIG.gridWidth * CONFIG.tileSize) / 2;
-        const offsetY = (CONFIG.height - CONFIG.gridHeight * CONFIG.tileSize) / 2;
-        
         const numRocks = 10 + GAME_STATE.currentLevel * 2;
         const spawnDelay = Math.max(100, 1000 - GAME_STATE.currentLevel * 30); // Più veloce nei livelli avanzati
         
@@ -892,7 +1006,7 @@ class GameScene extends Phaser.Scene {
             delay: spawnDelay,
             callback: () => {
                 if (this.rocksSpawned < this.rocksToSpawn) {
-                    this.spawnSingleRock(offsetX, offsetY);
+                    this.spawnSingleRock();
                     this.rocksSpawned++;
                 } else {
                     this.rockSpawnTimer.remove();
@@ -903,23 +1017,23 @@ class GameScene extends Phaser.Scene {
         });
     }
     
-    spawnSingleRock(offsetX, offsetY) {
+    spawnSingleRock() {
         // Posizione casuale evitando i bordi e il centro (dove spawna il player)
-        let x, y, attempts = 0;
+        let x, y, attempts = 0, tooClose;
         do {
-            x = Phaser.Math.Between(3, CONFIG.gridWidth - 4);
-            y = Phaser.Math.Between(3, CONFIG.gridHeight - 4);
+            x = Phaser.Math.Between(3, this.mapCols - 4);
+            y = Phaser.Math.Between(3, this.mapRows - 4);
             attempts++;
             
             // Evita il centro dove spawna il player
-            const centerX = Math.floor(CONFIG.gridWidth / 2);
-            const centerY = Math.floor(CONFIG.gridHeight / 2);
-            const tooClose = Math.abs(x - centerX) < 3 && Math.abs(y - centerY) < 3;
+            const centerX = Math.floor(this.mapCols / 2);
+            const centerY = Math.floor(this.mapRows / 2);
+            tooClose = Math.abs(x - centerX) < 3 && Math.abs(y - centerY) < 3;
             
         } while (tooClose && attempts < 50);
         
-        const worldX = offsetX + x * CONFIG.tileSize + CONFIG.tileSize / 2;
-        const worldY = offsetY + y * CONFIG.tileSize + CONFIG.tileSize / 2;
+        const worldX = this.mapOffsetX + x * CONFIG.tileSize + CONFIG.tileSize / 2;
+        const worldY = this.mapOffsetY + y * CONFIG.tileSize + CONFIG.tileSize / 2;
         
         // Dimensione casuale basata sulla configurazione del livello
         const rockConfig = this.levelConfig.staticRocks;
@@ -989,20 +1103,18 @@ class GameScene extends Phaser.Scene {
     }
 
     spawnGem() {
-        const offsetX = (CONFIG.width - CONFIG.gridWidth * CONFIG.tileSize) / 2;
-        const offsetY = (CONFIG.height - CONFIG.gridHeight * CONFIG.tileSize) / 2;
-        
         let x, y, attempts = 0;
         do {
-            x = Phaser.Math.Between(2, CONFIG.gridWidth - 3);
-            y = Phaser.Math.Between(2, CONFIG.gridHeight - 3);
+            x = Phaser.Math.Between(2, this.mapCols - 3);
+            y = Phaser.Math.Between(2, this.mapRows - 3);
             attempts++;
         } while (this.tiles[y][x].type !== 'floor' && attempts < 100);
         
-        const worldX = offsetX + x * CONFIG.tileSize + CONFIG.tileSize / 2;
-        const worldY = offsetY + y * CONFIG.tileSize + CONFIG.tileSize / 2;
+        const worldX = this.mapOffsetX + x * CONFIG.tileSize + CONFIG.tileSize / 2;
+        const worldY = this.mapOffsetY + y * CONFIG.tileSize + CONFIG.tileSize / 2;
         
-        const gem = this.gems.create(worldX, worldY, 'gem');
+        // Use gem sprite from objects.png (frame 6)
+        const gem = this.gems.create(worldX, worldY, 'objects', window.OBJECT_FRAMES.gem);
         
         this.tweens.add({
             targets: gem,
@@ -1014,34 +1126,30 @@ class GameScene extends Phaser.Scene {
     }
 
     spawnKey() {
-        const offsetX = (CONFIG.width - CONFIG.gridWidth * CONFIG.tileSize) / 2;
-        const offsetY = (CONFIG.height - CONFIG.gridHeight * CONFIG.tileSize) / 2;
+        const x = Phaser.Math.Between(2, this.mapCols - 3);
+        const y = Phaser.Math.Between(2, this.mapRows - 3);
         
-        const x = Phaser.Math.Between(2, CONFIG.gridWidth - 3);
-        const y = Phaser.Math.Between(2, CONFIG.gridHeight - 3);
+        const worldX = this.mapOffsetX + x * CONFIG.tileSize + CONFIG.tileSize / 2;
+        const worldY = this.mapOffsetY + y * CONFIG.tileSize + CONFIG.tileSize / 2;
         
-        const worldX = offsetX + x * CONFIG.tileSize + CONFIG.tileSize / 2;
-        const worldY = offsetY + y * CONFIG.tileSize + CONFIG.tileSize / 2;
-        
-        this.items.create(worldX, worldY, 'key').setData('type', 'key');
+        // Use key sprite from objects.png (frame 8)
+        this.items.create(worldX, worldY, 'objects', window.OBJECT_FRAMES.key).setData('type', 'key');
     }
 
     spawnDoor() {
-        const offsetX = (CONFIG.width - CONFIG.gridWidth * CONFIG.tileSize) / 2;
-        const offsetY = (CONFIG.height - CONFIG.gridHeight * CONFIG.tileSize) / 2;
-        
         const side = Phaser.Math.Between(0, 3);
         let x, y;
         
-        if (side === 0) { x = CONFIG.gridWidth - 1; y = Math.floor(CONFIG.gridHeight / 2); }
-        else if (side === 1) { x = 0; y = Math.floor(CONFIG.gridHeight / 2); }
-        else if (side === 2) { x = Math.floor(CONFIG.gridWidth / 2); y = CONFIG.gridHeight - 1; }
-        else { x = Math.floor(CONFIG.gridWidth / 2); y = 0; }
+        if (side === 0) { x = this.mapCols - 1; y = Math.floor(this.mapRows / 2); }
+        else if (side === 1) { x = 0; y = Math.floor(this.mapRows / 2); }
+        else if (side === 2) { x = Math.floor(this.mapCols / 2); y = this.mapRows - 1; }
+        else { x = Math.floor(this.mapCols / 2); y = 0; }
         
-        const worldX = offsetX + x * CONFIG.tileSize + CONFIG.tileSize / 2;
-        const worldY = offsetY + y * CONFIG.tileSize + CONFIG.tileSize / 2;
+        const worldX = this.mapOffsetX + x * CONFIG.tileSize + CONFIG.tileSize / 2;
+        const worldY = this.mapOffsetY + y * CONFIG.tileSize + CONFIG.tileSize / 2;
         
-        const door = this.doors.create(worldX, worldY, 'door');
+        // Use door sprite from objects.png (frame 5)
+        const door = this.doors.create(worldX, worldY, 'objects', window.OBJECT_FRAMES.door);
         door.setData('locked', true);
     }
 
@@ -1146,11 +1254,8 @@ class GameScene extends Phaser.Scene {
     }
 
     getTileAt(x, y) {
-        const offsetX = (CONFIG.width - CONFIG.gridWidth * CONFIG.tileSize) / 2;
-        const offsetY = (CONFIG.height - CONFIG.gridHeight * CONFIG.tileSize) / 2;
-        
-        const gridX = Math.floor((x - offsetX) / CONFIG.tileSize);
-        const gridY = Math.floor((y - offsetY) / CONFIG.tileSize);
+        const gridX = Math.floor((x - this.mapOffsetX) / CONFIG.tileSize);
+        const gridY = Math.floor((y - this.mapOffsetY) / CONFIG.tileSize);
         
         if (gridY >= 0 && gridY < this.tiles.length && gridX >= 0 && gridX < this.tiles[0].length) {
             return this.tiles[gridY][gridX];
@@ -1171,7 +1276,8 @@ class GameScene extends Phaser.Scene {
         let dirX = velocityX !== 0 ? Math.sign(velocityX) : 1;
         let dirY = velocityY !== 0 ? Math.sign(velocityY) : 0;
         
-        const dynamite = this.dynamites.create(this.player.x, this.player.y, 'dynamite');
+        // Use dynamite projectile sprite from objects.png (frame 0)
+        const dynamite = this.dynamites.create(this.player.x, this.player.y, 'objects', window.OBJECT_FRAMES.dynamite_projectile);
         dynamite.setVelocity(dirX * CONFIG.dynamiteSpeed, dirY * CONFIG.dynamiteSpeed);
         dynamite.setBounce(1, 1);
         dynamite.setCollideWorldBounds(true);
@@ -1184,8 +1290,8 @@ class GameScene extends Phaser.Scene {
     }
 
     explodeDynamite(dynamite) {
-        // Create explosion effect
-        const explosion = this.add.circle(dynamite.x, dynamite.y, 40, 0xFF6600, 0.7);
+        // Create explosion effect using explosion sprite from objects.png (frame 15)
+        const explosion = this.add.sprite(dynamite.x, dynamite.y, 'objects', window.OBJECT_FRAMES.explosion);
         this.tweens.add({
             targets: explosion,
             scale: 2,
@@ -1346,27 +1452,24 @@ class GameScene extends Phaser.Scene {
         
         let x, y, vx, vy;
         
-        const offsetX = (CONFIG.width - CONFIG.gridWidth * CONFIG.tileSize) / 2;
-        const offsetY = (CONFIG.height - CONFIG.gridHeight * CONFIG.tileSize) / 2;
-        
         if (direction === 'top') {
-            x = offsetX + Phaser.Math.Between(1, CONFIG.gridWidth - 2) * CONFIG.tileSize;
-            y = offsetY;
+            x = this.mapOffsetX + Phaser.Math.Between(1, this.mapCols - 2) * CONFIG.tileSize;
+            y = this.mapOffsetY;
             vx = Phaser.Math.Between(-50, 50);
             vy = CONFIG.boulderBaseSpeed * this.levelConfig.speed * GAME_STATE.difficulty;
         } else if (direction === 'bottom') {
-            x = offsetX + Phaser.Math.Between(1, CONFIG.gridWidth - 2) * CONFIG.tileSize;
-            y = offsetY + CONFIG.gridHeight * CONFIG.tileSize;
+            x = this.mapOffsetX + Phaser.Math.Between(1, this.mapCols - 2) * CONFIG.tileSize;
+            y = this.mapOffsetY + this.mapRows * CONFIG.tileSize;
             vx = Phaser.Math.Between(-50, 50);
             vy = -CONFIG.boulderBaseSpeed * this.levelConfig.speed * GAME_STATE.difficulty;
         } else if (direction === 'left') {
-            x = offsetX;
-            y = offsetY + Phaser.Math.Between(1, CONFIG.gridHeight - 2) * CONFIG.tileSize;
+            x = this.mapOffsetX;
+            y = this.mapOffsetY + Phaser.Math.Between(1, this.mapRows - 2) * CONFIG.tileSize;
             vx = CONFIG.boulderBaseSpeed * this.levelConfig.speed * GAME_STATE.difficulty;
             vy = Phaser.Math.Between(-50, 50);
         } else {
-            x = offsetX + CONFIG.gridWidth * CONFIG.tileSize;
-            y = offsetY + Phaser.Math.Between(1, CONFIG.gridHeight - 2) * CONFIG.tileSize;
+            x = this.mapOffsetX + this.mapCols * CONFIG.tileSize;
+            y = this.mapOffsetY + Phaser.Math.Between(1, this.mapRows - 2) * CONFIG.tileSize;
             vx = -CONFIG.boulderBaseSpeed * this.levelConfig.speed * GAME_STATE.difficulty;
             vy = Phaser.Math.Between(-50, 50);
         }
