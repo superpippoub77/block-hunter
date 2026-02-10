@@ -4,6 +4,13 @@ import { createFlagCarousel } from '../components/carousel.js';
 import { typeWriter, fallLetters } from '../utility/helper.js';
 
 export function create(scene) {
+    // Accept explicit `scene` parameter or fallback to `this` when Phaser binds it.
+    scene = scene || this;
+    if (!scene || !scene.cameras) {
+        console.warn('[scene.create] scene not available, skipping create');
+        return;
+    }
+
     try {
         // mirror previous behavior: use explicit scene argument instead of `this`
         scene.cameras.main.setBackgroundColor('#0a0e27');

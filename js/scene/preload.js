@@ -2,6 +2,15 @@
 // Exports a single function `preload(scene)` used by the Phaser config.
 
 export function preload(scene) {
+    // Accept either an explicit `scene` parameter or use `this` when Phaser calls
+    // the function with the scene as `this` (common when functions are passed
+    // directly to the Phaser scene config). This keeps both calling styles working.
+    scene = scene || this;
+    if (!scene || !scene.load) {
+        console.warn('[scene.preload] no scene/load available, skipping preload');
+        return;
+    }
+
     try {
         console.log('Preloading assets...');
 

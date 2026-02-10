@@ -1,4 +1,6 @@
 export function update(scene) {
+    // Accept explicit `scene` param or use `this` (Phaser binds scene as `this` when calling)
+    scene = scene || this;
     try {
         if (!window.gameStarted) return;
 
