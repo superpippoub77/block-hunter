@@ -23,7 +23,9 @@ const CONFIG = {
     attractTimeout: 10000,
     topTenTimeout: 10000,
     gemSpawnDelay: 1000,
-    gemsPerLevel: 10
+    gemsPerLevel: 10,
+    cameraEnabled: true, // Flag to enable/disable camera functionality
+    zoomEnabled: true   // Flag to enable/disable zoom functionality
 };
 
 // Native asset sizes (used to compute scale when adapting to CONFIG)
@@ -34,11 +36,11 @@ const OBJECT_NATIVE_SIZE = 64; // objects.png frames are 64x64
 // Load persistent config if present
 try {
     const saved = localStorage.getItem('blockHunterConfig');
-        if (saved) {
+    if (saved) {
         const parsed = JSON.parse(saved);
-    if (parsed.tileSize) CONFIG.tileSize = parsed.tileSize;
-    if (parsed.objectSize) CONFIG.objectSize = parsed.objectSize;
-    if (parsed.cameraZoom) CONFIG.cameraZoom = parsed.cameraZoom;
+        if (parsed.tileSize) CONFIG.tileSize = parsed.tileSize;
+        if (parsed.objectSize) CONFIG.objectSize = parsed.objectSize;
+        if (parsed.cameraZoom) CONFIG.cameraZoom = parsed.cameraZoom;
         // Backwards compatibility: support old 'objectScale' saved values
         else if (parsed.objectScale) CONFIG.objectSize = Math.round(parsed.objectScale * OBJECT_NATIVE_SIZE);
     }
@@ -55,8 +57,8 @@ const TRANSLATIONS = {
         credit: 'CREDITO',
         player1: '1 GIOCATORE',
         player2: '2 GIOCATORI',
-    instructions: 'RACCOGLI TUTTE LE GEMME\nEVITA I MASSI\nWASD - MUOVI\nSPAZIO - DINAMITE',
-    story: 'SEI UN CERCATORE DI TESORI.\nSCAVA, EVITA I MASSI E TROVA LE GEMME',
+        instructions: 'RACCOGLI TUTTE LE GEMME\nEVITA I MASSI\nWASD - MUOVI\nSPAZIO - DINAMITE',
+        story: 'SEI UN CERCATORE DI TESORI.\nSCAVA, EVITA I MASSI E TROVA LE GEMME',
         selectDifficulty: 'SCEGLI DIFFICOLTA',
         beginner: 'PRINCIPIANTE',
         medium: 'MEDIO',
@@ -77,8 +79,8 @@ const TRANSLATIONS = {
         credit: 'CREDIT',
         player1: '1 JOUEUR',
         player2: '2 JOUEURS',
-    instructions: 'COLLECTEZ GEMMES\nEVITEZ ROCHERS\nWASD - BOUGER\nESPACE - DYNAMITE',
-    story: 'VOUS ETES UN CHASSEUR DE TRESORS.\nDEGUERPISSEZ, EVITEZ LES ROCHEUX ET TROUVEZ LES GEMMES',
+        instructions: 'COLLECTEZ GEMMES\nEVITEZ ROCHERS\nWASD - BOUGER\nESPACE - DYNAMITE',
+        story: 'VOUS ETES UN CHASSEUR DE TRESORS.\nDEGUERPISSEZ, EVITEZ LES ROCHEUX ET TROUVEZ LES GEMMES',
         selectDifficulty: 'CHOISIR DIFFICULTE',
         beginner: 'DEBUTANT',
         medium: 'MOYEN',
@@ -99,8 +101,8 @@ const TRANSLATIONS = {
         credit: 'KREDIT',
         player1: '1 SPIELER',
         player2: '2 SPIELER',
-    instructions: 'SAMMLE EDELSTEINE\nVERMEIDE FELSEN\nWASD - BEWEGEN\nLEERTASTE - DYNAMIT',
-    story: 'DU BIST EIN SCHATZSUCHE.\nGRABE, WEICHE FELSEN AUS UND FINDE DIE EDELSTEINE',
+        instructions: 'SAMMLE EDELSTEINE\nVERMEIDE FELSEN\nWASD - BEWEGEN\nLEERTASTE - DYNAMIT',
+        story: 'DU BIST EIN SCHATZSUCHE.\nGRABE, WEICHE FELSEN AUS UND FINDE DIE EDELSTEINE',
         selectDifficulty: 'SCHWIERIGKEIT WAHLEN',
         beginner: 'ANFANGER',
         medium: 'MITTEL',
@@ -121,8 +123,8 @@ const TRANSLATIONS = {
         credit: 'CREDIT',
         player1: '1 PLAYER',
         player2: '2 PLAYERS',
-    instructions: 'COLLECT ALL GEMS\nAVOID BOULDERS\nWASD - MOVE\nSPACE - DYNAMITE',
-    story: 'YOU ARE A TREASURE HUNTER.\nDIG, DODGE BOULDERS AND FIND THE GEMS',
+        instructions: 'COLLECT ALL GEMS\nAVOID BOULDERS\nWASD - MOVE\nSPACE - DYNAMITE',
+        story: 'YOU ARE A TREASURE HUNTER.\nDIG, DODGE BOULDERS AND FIND THE GEMS',
         selectDifficulty: 'SELECT DIFFICULTY',
         beginner: 'BEGINNER',
         medium: 'MEDIUM',
@@ -143,8 +145,8 @@ const TRANSLATIONS = {
         credit: 'CREDIT',
         player1: '1 PLAYER',
         player2: '2 PLAYERS',
-    instructions: 'COLLECT ALL GEMS\nAVOID BOULDERS\nWASD - MOVE\nSPACE - DYNAMITE',
-    story: 'YOU ARE A TREASURE HUNTER.\nDIG, DODGE BOULDERS AND FIND THE GEMS',
+        instructions: 'COLLECT ALL GEMS\nAVOID BOULDERS\nWASD - MOVE\nSPACE - DYNAMITE',
+        story: 'YOU ARE A TREASURE HUNTER.\nDIG, DODGE BOULDERS AND FIND THE GEMS',
         selectDifficulty: 'SELECT DIFFICULTY',
         beginner: 'BEGINNER',
         medium: 'MEDIUM',
@@ -165,8 +167,8 @@ const TRANSLATIONS = {
         credit: 'クレジット',
         player1: '1プレイヤー',
         player2: '2プレイヤー',
-    instructions: '宝石を集める\n岩を避ける\nWASD - 移動\nスペース - ダイナマイト',
-    story: 'あなたは宝探しです。\n掘って、岩を避け、宝石を見つけよう',
+        instructions: '宝石を集める\n岩を避ける\nWASD - 移動\nスペース - ダイナマイト',
+        story: 'あなたは宝探しです。\n掘って、岩を避け、宝石を見つけよう',
         selectDifficulty: '難易度を選択',
         beginner: '初心者',
         medium: '中級',
@@ -187,8 +189,8 @@ const TRANSLATIONS = {
         credit: 'CREDITO',
         player1: '1 JUGADOR',
         player2: '2 JUGADORES',
-    instructions: 'RECOGE TODAS LAS GEMAS\nEVITA LAS ROCAS\nWASD - MOVER\nESPACIO - DINAMITA',
-    story: 'ERES UN CAZADOR DE TESOROS.\nEXCAVA, EVITA ROCAS Y ENCUENTRA LAS GEMAS',
+        instructions: 'RECOGE TODAS LAS GEMAS\nEVITA LAS ROCAS\nWASD - MOVER\nESPACIO - DINAMITA',
+        story: 'ERES UN CAZADOR DE TESOROS.\nEXCAVA, EVITA ROCAS Y ENCUENTRA LAS GEMAS',
         selectDifficulty: 'SELECCIONAR DIFICULTAD',
         beginner: 'PRINCIPIANTE',
         medium: 'MEDIO',
@@ -209,8 +211,8 @@ const TRANSLATIONS = {
         credit: '信用',
         player1: '1玩家',
         player2: '2玩家',
-    instructions: '收集宝石\n避开巨石\nWASD - 移动\n空格 - 炸药',
-    story: '你是一名寻宝者。\n挖掘、躲避巨石，寻找宝石',
+        instructions: '收集宝石\n避开巨石\nWASD - 移动\n空格 - 炸药',
+        story: '你是一名寻宝者。\n挖掘、躲避巨石，寻找宝石',
         selectDifficulty: '选择难度',
         beginner: '初级',
         medium: '中级',
@@ -1023,6 +1025,13 @@ class ConfigScene extends Phaser.Scene {
         const zoomMinus = this.add.text(220, y, '◄', { fontSize: '14px', fill: '#ffffff', fontFamily: GAME_FONT }).setInteractive().setOrigin(0.5);
         const zoomPlus = this.add.text(260, y, '►', { fontSize: '14px', fill: '#ffffff', fontFamily: GAME_FONT }).setInteractive().setOrigin(0.5);
 
+        // Camera enable/disable toggle
+        y += 22;
+        const cameraToggle = this.add.text(30, y, `Camera: ${CONFIG.cameraEnabled ? 'ON' : 'OFF'}`, { fontSize: '12px', fill: '#ffffff', fontFamily: GAME_FONT }).setInteractive();
+        y += 22;
+        const zoomToggle = this.add.text(30, y, `Zoom: ${CONFIG.zoomEnabled ? 'ON' : 'OFF'}`, { fontSize: '12px', fill: '#ffffff', fontFamily: GAME_FONT }).setInteractive();
+        y += 22;
+
         // Apply / Reset buttons
         const applyBtn = this.add.text(340, y, '[ APPLY ]', { fontSize: '12px', fill: '#00ff00', fontFamily: GAME_FONT }).setInteractive().setOrigin(0.5);
         const resetBtn = this.add.text(430, y, '[ RESET ]', { fontSize: '12px', fill: '#ff4444', fontFamily: GAME_FONT }).setInteractive().setOrigin(0.5);
@@ -1063,10 +1072,36 @@ class ConfigScene extends Phaser.Scene {
             this.cameraZoomText.setText(CONFIG.cameraZoom.toFixed(2));
         });
 
+        cameraToggle.on('pointerdown', () => {
+            CONFIG.cameraEnabled = !CONFIG.cameraEnabled;
+            cameraToggle.setText(`Camera: ${CONFIG.cameraEnabled ? 'ON' : 'OFF'}`);
+        });
+
+        zoomToggle.on('pointerdown', () => {
+            CONFIG.zoomEnabled = !CONFIG.zoomEnabled;
+            zoomToggle.setText(`Zoom: ${CONFIG.zoomEnabled ? 'ON' : 'OFF'}`);
+        });
+
+        this.input.keyboard.on('keydown-O', () => {
+            CONFIG.zoomEnabled = !CONFIG.zoomEnabled;
+            zoomToggle.setText(`Zoom: ${CONFIG.zoomEnabled ? 'ON' : 'OFF'}`);
+        });
+
+        this.input.keyboard.on('keydown-I', () => {
+            CONFIG.cameraEnabled = !CONFIG.cameraEnabled;
+            cameraToggle.setText(`Camera: ${CONFIG.cameraEnabled ? 'ON' : 'OFF'}`);
+        });
+
         applyBtn.on('pointerdown', () => {
             try {
-                localStorage.setItem('blockHunterConfig', JSON.stringify({ tileSize: CONFIG.tileSize, objectSize: CONFIG.objectSize, cameraZoom: CONFIG.cameraZoom }));
-            } catch (e) {}
+                localStorage.setItem('blockHunterConfig', JSON.stringify({
+                    tileSize: CONFIG.tileSize,
+                    objectSize: CONFIG.objectSize,
+                    cameraZoom: CONFIG.cameraZoom,
+                    cameraEnabled: CONFIG.cameraEnabled,
+                    zoomEnabled: CONFIG.zoomEnabled
+                }));
+            } catch (e) { }
             // show small confirmation
             const c = this.add.text(520, y, 'SAVED', { fontSize: '12px', fill: '#00ff00', fontFamily: GAME_FONT }).setOrigin(0.5);
             this.time.delayedCall(1200, () => c.destroy());
@@ -1077,10 +1112,14 @@ class ConfigScene extends Phaser.Scene {
             CONFIG.tileSize = 32;
             CONFIG.objectSize = OBJECT_NATIVE_SIZE;
             CONFIG.cameraZoom = 1;
+            CONFIG.cameraEnabled = true;
+            CONFIG.zoomEnabled = true;
             this.tileSizeText.setText(String(CONFIG.tileSize));
             this.objectSizeText.setText(String(CONFIG.objectSize));
             if (this.cameraZoomText) this.cameraZoomText.setText(CONFIG.cameraZoom.toFixed(2));
-            try { localStorage.removeItem('blockHunterConfig'); } catch (e) {}
+            cameraToggle.setText(`Camera: ${CONFIG.cameraEnabled ? 'ON' : 'OFF'}`);
+            zoomToggle.setText(`Zoom: ${CONFIG.zoomEnabled ? 'ON' : 'OFF'}`);
+            try { localStorage.removeItem('blockHunterConfig'); } catch (e) { }
             this.updatePreviewSizes();
         });
 
@@ -1185,7 +1224,7 @@ class ConfigScene extends Phaser.Scene {
                 (this.previewObjectSprites || []).forEach(s => {
                     if (s && s.setScale) s.setScale(basePreviewScale * objectScaleFactor);
                 });
-            } catch (e) {}
+            } catch (e) { }
 
             // update tile previews
             try {
@@ -1193,7 +1232,7 @@ class ConfigScene extends Phaser.Scene {
                 (this.previewTileSprites || []).forEach(s => {
                     if (s && s.setScale) s.setScale(baseTilePreviewScale * (CONFIG.tileSize / TILE_NATIVE_WIDTH));
                 });
-            } catch (e) {}
+            } catch (e) { }
 
             // update config info display text if present
             if (this.tileSizeText) this.tileSizeText.setText(String(CONFIG.tileSize));
@@ -1512,9 +1551,9 @@ class GameScene extends Phaser.Scene {
             mapCols = this.levelData?.cols || CONFIG.gridWidth;
         }
 
-    // Place map at world origin; camera will handle centering for small maps
-    const offsetX = 0;
-    const offsetY = 0;
+        // Place map at world origin; camera will handle centering for small maps
+        const offsetX = 0;
+        const offsetY = 0;
 
         // Tile sprite mapping: 0=wall, 1=hole, 2=sand, 3=floor, 4=stone, 5=hole2
         const TILE_FRAMES = {
@@ -1729,6 +1768,7 @@ class GameScene extends Phaser.Scene {
             attempts++;
 
             // Evita il centro dove spawna il player
+           
             const centerX = Math.floor(this.mapCols / 2);
             const centerY = Math.floor(this.mapRows / 2);
             tooClose = Math.abs(x - centerX) < 3 && Math.abs(y - centerY) < 3;
@@ -1764,10 +1804,10 @@ class GameScene extends Phaser.Scene {
             scale = 1.3;
         }
 
-    const rock = this.rocks.create(jitteredX, jitteredY, 'objects', window.OBJECT_FRAMES.stone);
-    // Apply object size (pixels) converted to scale factor
-    const rockScaleFactor = CONFIG.objectSize / OBJECT_NATIVE_SIZE;
-    rock.setScale(rockScaleFactor);
+        const rock = this.rocks.create(jitteredX, jitteredY, 'objects', window.OBJECT_FRAMES.stone);
+        // Apply object size (pixels) converted to scale factor
+        const rockScaleFactor = CONFIG.objectSize / OBJECT_NATIVE_SIZE;
+        rock.setScale(rockScaleFactor);
         rock.setData('destructible', true);
         rock.setData('size', size);
         rock.setData('isFalling', true);
@@ -1935,9 +1975,9 @@ class GameScene extends Phaser.Scene {
 
     setupDoor(door) {
         if (!door) return;
-    // Apply object size (pixels) converted to scale factor to door
-    const doorScaleFactor = CONFIG.objectSize / OBJECT_NATIVE_SIZE;
-    door.setScale(doorScaleFactor);
+        // Apply object size (pixels) converted to scale factor to door
+        const doorScaleFactor = CONFIG.objectSize / OBJECT_NATIVE_SIZE;
+        door.setScale(doorScaleFactor);
         door.setData('locked', true);
         door.setData('opening', false);
         if (door.body) {
@@ -2083,13 +2123,13 @@ class GameScene extends Phaser.Scene {
         }
 
         // Keep HUD fixed to screen
-    this.scoreText.setScrollFactor(0).setDepth(2000);
-    this.livesText.setScrollFactor(0).setDepth(2000);
-    this.dynamiteText.setScrollFactor(0).setDepth(2000);
-    this.keysText.setScrollFactor(0).setDepth(2000);
-    this.gemsText.setScrollFactor(0).setDepth(2000);
-    this.levelText.setScrollFactor(0).setDepth(2000);
-    this.timerLabel.setScrollFactor(0).setDepth(2000);
+        this.scoreText.setScrollFactor(0).setDepth(2000);
+        this.livesText.setScrollFactor(0).setDepth(2000);
+        this.dynamiteText.setScrollFactor(0).setDepth(2000);
+        this.keysText.setScrollFactor(0).setDepth(2000);
+        this.gemsText.setScrollFactor(0).setDepth(2000);
+        this.levelText.setScrollFactor(0).setDepth(2000);
+        this.timerLabel.setScrollFactor(0).setDepth(2000);
 
         this.timerLabel.setVisible(false);
         // Hide both layers initially
@@ -2262,9 +2302,9 @@ class GameScene extends Phaser.Scene {
         const dirY = this.lastMoveDir?.y ?? 0;
 
         // Use dynamite projectile sprite from objects.png (frame 0)
-    const dynamite = this.dynamites.create(this.player.x, this.player.y, 'objects', window.OBJECT_FRAMES.dynamite_projectile);
-    const dynamiteScaleFactor = CONFIG.objectSize / OBJECT_NATIVE_SIZE;
-    dynamite.setScale(dynamiteScaleFactor);
+        const dynamite = this.dynamites.create(this.player.x, this.player.y, 'objects', window.OBJECT_FRAMES.dynamite_projectile);
+        const dynamiteScaleFactor = CONFIG.objectSize / OBJECT_NATIVE_SIZE;
+        dynamite.setScale(dynamiteScaleFactor);
         // Keep dynamite at original sprite size; update physics body if present
         if (dynamite.body) {
             dynamite.body.setSize(Math.floor(dynamite.displayWidth || dynamite.width), Math.floor(dynamite.displayHeight || dynamite.height));
@@ -2296,10 +2336,10 @@ class GameScene extends Phaser.Scene {
 
     explodeDynamite(dynamite) {
         // Create explosion effect using explosion sprite from objects.png (frame 15)
-    const explosion = this.add.sprite(dynamite.x, dynamite.y, 'objects', window.OBJECT_FRAMES.explosion);
-    const explosionScaleFactor = CONFIG.objectSize / OBJECT_NATIVE_SIZE;
-    explosion.setScale(explosionScaleFactor);
-    // Keep explosion sprite at original size; tween will scale it up visually
+        const explosion = this.add.sprite(dynamite.x, dynamite.y, 'objects', window.OBJECT_FRAMES.explosion);
+        const explosionScaleFactor = CONFIG.objectSize / OBJECT_NATIVE_SIZE;
+        explosion.setScale(explosionScaleFactor);
+        // Keep explosion sprite at original size; tween will scale it up visually
         this.tweens.add({
             targets: explosion,
             scale: 2,
@@ -2357,10 +2397,10 @@ class GameScene extends Phaser.Scene {
     }
 
     createExplosionAt(x, y) {
-    const explosion = this.add.sprite(x, y, 'objects', window.OBJECT_FRAMES.explosion);
-    const explosionScaleFactor2 = CONFIG.objectSize / OBJECT_NATIVE_SIZE;
-    explosion.setScale(explosionScaleFactor2);
-    // Keep explosion sprite at original size; tween will scale it up visually
+        const explosion = this.add.sprite(x, y, 'objects', window.OBJECT_FRAMES.explosion);
+        const explosionScaleFactor2 = CONFIG.objectSize / OBJECT_NATIVE_SIZE;
+        explosion.setScale(explosionScaleFactor2);
+        // Keep explosion sprite at original size; tween will scale it up visually
         this.tweens.add({
             targets: explosion,
             scale: 2,
