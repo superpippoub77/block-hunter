@@ -7,6 +7,8 @@ const CONFIG = {
     width: 800,
     height: 600,
     tileSize: 32,
+    // object size in pixels (width/height) used to scale object sprites
+    objectSize: 32,
     gridWidth: 25,
     gridHeight: 18,
     playerSpeed: 120,
@@ -21,6 +23,25 @@ const CONFIG = {
     gemSpawnDelay: 1000,
     gemsPerLevel: 10
 };
+
+// Native asset sizes (used to compute scale when adapting to CONFIG)
+const TILE_NATIVE_WIDTH = 64; // tiles spritesheet native width per tile frame
+const TILE_NATIVE_HEIGHT = 48;
+const OBJECT_NATIVE_SIZE = 64; // objects.png frames are 64x64
+
+// Load persistent config if present
+try {
+    const saved = localStorage.getItem('blockHunterConfig');
+        if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed.tileSize) CONFIG.tileSize = parsed.tileSize;
+        if (parsed.objectSize) CONFIG.objectSize = parsed.objectSize;
+        // Backwards compatibility: support old 'objectScale' saved values
+        else if (parsed.objectScale) CONFIG.objectSize = Math.round(parsed.objectScale * OBJECT_NATIVE_SIZE);
+    }
+} catch (e) {
+    // ignore localStorage errors
+}
 
 const GAME_FONT = '"Press Start 2P"';
 // Translations
@@ -969,6 +990,78 @@ class ConfigScene extends Phaser.Scene {
             y += 18;
         });
 
+        // --- Size controls: allow configuring TILE SIZE and OBJECT SCALE ---
+        y += 8;
+        this.add.text(20, y, 'SIZE CONFIG:', {
+            fontSize: '14px',
+            fill: '#00ff00',
+            fontFamily: GAME_FONT
+        });
+        y += 20;
+
+        // Tile size control
+        this.add.text(30, y, 'Tile size (px):', { fontSize: '12px', fill: '#ffffff', fontFamily: GAME_FONT });
+        this.tileSizeText = this.add.text(160, y, String(CONFIG.tileSize), { fontSize: '12px', fill: '#ffff00', fontFamily: GAME_FONT }).setOrigin(0, 0.5);
+        const tileMinus = this.add.text(220, y, '◄', { fontSize: '14px', fill: '#ffffff', fontFamily: GAME_FONT }).setInteractive().setOrigin(0.5);
+        const tilePlus = this.add.text(260, y, '►', { fontSize: '14px', fill: '#ffffff', fontFamily: GAME_FONT }).setInteractive().setOrigin(0.5);
+
+        // Object scale control
+        y += 22;
+        this.add.text(30, y, 'Object scale:', { fontSize: '12px', fill: '#ffffff', fontFamily: GAME_FONT });
+    this.objectSizeText = this.add.text(160, y, String(CONFIG.objectSize), { fontSize: '12px', fill: '#ffff00', fontFamily: GAME_FONT }).setOrigin(0, 0.5);
+        const objMinus = this.add.text(220, y, '◄', { fontSize: '14px', fill: '#ffffff', fontFamily: GAME_FONT }).setInteractive().setOrigin(0.5);
+        const objPlus = this.add.text(260, y, '►', { fontSize: '14px', fill: '#ffffff', fontFamily: GAME_FONT }).setInteractive().setOrigin(0.5);
+
+        // Apply / Reset buttons
+        const applyBtn = this.add.text(340, y, '[ APPLY ]', { fontSize: '12px', fill: '#00ff00', fontFamily: GAME_FONT }).setInteractive().setOrigin(0.5);
+        const resetBtn = this.add.text(430, y, '[ RESET ]', { fontSize: '12px', fill: '#ff4444', fontFamily: GAME_FONT }).setInteractive().setOrigin(0.5);
+
+        // Keep lists of preview sprites so we can update scale when config changes
+        this.previewObjectSprites = [];
+        this.previewTileSprites = [];
+
+        // Handlers
+        tileMinus.on('pointerdown', () => {
+            CONFIG.tileSize = Math.max(8, CONFIG.tileSize - 4);
+            this.tileSizeText.setText(String(CONFIG.tileSize));
+            this.updatePreviewSizes();
+        });
+        tilePlus.on('pointerdown', () => {
+            CONFIG.tileSize = Math.min(256, CONFIG.tileSize + 4);
+            this.tileSizeText.setText(String(CONFIG.tileSize));
+            this.updatePreviewSizes();
+        });
+
+        objMinus.on('pointerdown', () => {
+            CONFIG.objectSize = Math.max(8, CONFIG.objectSize - 4);
+            this.objectSizeText.setText(String(CONFIG.objectSize));
+            this.updatePreviewSizes();
+        });
+        objPlus.on('pointerdown', () => {
+            CONFIG.objectSize = Math.min(512, CONFIG.objectSize + 4);
+            this.objectSizeText.setText(String(CONFIG.objectSize));
+            this.updatePreviewSizes();
+        });
+
+        applyBtn.on('pointerdown', () => {
+            try {
+                localStorage.setItem('blockHunterConfig', JSON.stringify({ tileSize: CONFIG.tileSize, objectSize: CONFIG.objectSize }));
+            } catch (e) {}
+            // show small confirmation
+            const c = this.add.text(520, y, 'SAVED', { fontSize: '12px', fill: '#00ff00', fontFamily: GAME_FONT }).setOrigin(0.5);
+            this.time.delayedCall(1200, () => c.destroy());
+            this.updatePreviewSizes();
+        });
+
+        resetBtn.on('pointerdown', () => {
+            CONFIG.tileSize = 32;
+            CONFIG.objectSize = OBJECT_NATIVE_SIZE;
+            this.tileSizeText.setText(String(CONFIG.tileSize));
+            this.objectSizeText.setText(String(CONFIG.objectSize));
+            try { localStorage.removeItem('blockHunterConfig'); } catch (e) {}
+            this.updatePreviewSizes();
+        });
+
         // Objects section
         y += 10;
         this.add.text(20, y, 'OBJECTS SPRITE (4x4):', {
@@ -1004,7 +1097,12 @@ class ConfigScene extends Phaser.Scene {
 
                 // Draw sprite on top
                 const sprite = this.add.sprite(x + spriteSize / 2, y + spriteSize / 2, 'objects', frameIndex);
-                sprite.setDisplaySize(spriteSize, spriteSize);
+                // preview scale: base preview scaling to make sprites fit in the small preview box,
+                // then apply the global objectSize so preview reflects configuration
+                const basePreviewScale = spriteSize / OBJECT_NATIVE_SIZE;
+                const objectScaleFactor = CONFIG.objectSize / OBJECT_NATIVE_SIZE;
+                sprite.setScale(basePreviewScale * objectScaleFactor);
+                this.previewObjectSprites.push(sprite);
 
                 // Label
                 this.add.text(x + spriteSize / 2, y + spriteSize + 5, objectNames[row][col], {
@@ -1031,7 +1129,10 @@ class ConfigScene extends Phaser.Scene {
 
             // Draw tile
             const tile = this.add.sprite(x + spriteSize / 2, tilesStartY + spriteSize / 2, 'tiles', i);
-            tile.setDisplaySize(spriteSize, spriteSize);
+            // preview scale for tiles: fit preview box then apply tileSize/config
+            const baseTilePreviewScale = spriteSize / TILE_NATIVE_WIDTH;
+            tile.setScale(baseTilePreviewScale * (CONFIG.tileSize / TILE_NATIVE_WIDTH));
+            this.previewTileSprites.push(tile);
 
             // Label
             this.add.text(x + spriteSize / 2, tilesStartY + spriteSize + 5, tileNames[i], {
@@ -1052,6 +1153,30 @@ class ConfigScene extends Phaser.Scene {
         this.input.keyboard.on('keydown-ESC', () => {
             this.scene.start('AttractScene');
         });
+
+        // Helper to update preview sprites scaling when CONFIG changes
+        this.updatePreviewSizes = () => {
+            // update object previews
+            try {
+                const basePreviewScale = spriteSize / OBJECT_NATIVE_SIZE;
+                const objectScaleFactor = CONFIG.objectSize / OBJECT_NATIVE_SIZE;
+                (this.previewObjectSprites || []).forEach(s => {
+                    if (s && s.setScale) s.setScale(basePreviewScale * objectScaleFactor);
+                });
+            } catch (e) {}
+
+            // update tile previews
+            try {
+                const baseTilePreviewScale = spriteSize / TILE_NATIVE_WIDTH;
+                (this.previewTileSprites || []).forEach(s => {
+                    if (s && s.setScale) s.setScale(baseTilePreviewScale * (CONFIG.tileSize / TILE_NATIVE_WIDTH));
+                });
+            } catch (e) {}
+
+            // update config info display text if present
+            if (this.tileSizeText) this.tileSizeText.setText(String(CONFIG.tileSize));
+            if (this.objectSizeText) this.objectSizeText.setText(String(CONFIG.objectSize));
+        };
     }
 }
 
@@ -1388,15 +1513,15 @@ class GameScene extends Phaser.Scene {
                         'tiles',
                         frameIndex
                     );
-
-                    // Scale tile to fit CONFIG.tileSize (64x48 -> 32x32 or keep original)
-                    // Since tiles are 64x48 and CONFIG.tileSize is 32, we need to scale down
-                    tileSprite.setDisplaySize(CONFIG.tileSize, CONFIG.tileSize);
+                    // Scale tile to match configured tile size from native tile width
+                    const tileScale = CONFIG.tileSize / TILE_NATIVE_WIDTH;
+                    tileSprite.setScale(tileScale);
 
                     if (type === 'wall' && this.walls) {
                         this.walls.add(tileSprite);
                         if (tileSprite.body) {
-                            tileSprite.body.setSize(CONFIG.tileSize, CONFIG.tileSize);
+                            // Use the actual display size of the sprite for physics body
+                            tileSprite.body.setSize(Math.floor(tileSprite.displayWidth || tileSprite.width), Math.floor(tileSprite.displayHeight || tileSprite.height));
                         }
                     }
                 }
@@ -1422,7 +1547,16 @@ class GameScene extends Phaser.Scene {
                         'objects',
                         frame
                     );
-                    itemSprite.setDisplaySize(CONFIG.tileSize, CONFIG.tileSize);
+                    // Keep item at original sprite size
+                    if (itemSprite.body) {
+                        itemSprite.body.setSize(itemSprite.displayWidth || itemSprite.width, itemSprite.displayHeight || itemSprite.height);
+                    }
+                    // Apply object scale multiplier so items adapt to configuration
+                    const objectScaleFactor = CONFIG.objectSize / OBJECT_NATIVE_SIZE;
+                    itemSprite.setScale(objectScaleFactor);
+                    if (itemSprite.body) {
+                        itemSprite.body.setSize(Math.floor(itemSprite.displayWidth || itemSprite.width), Math.floor(itemSprite.displayHeight || itemSprite.height));
+                    }
                     itemSprite.setData('type', type);
 
                     if (type === 'key' && this.keySpawnPositions) {
@@ -1455,13 +1589,19 @@ class GameScene extends Phaser.Scene {
         const centerX = CONFIG.width / 2;
         const centerY = CONFIG.height / 2;
 
-        // Use player sprite from objects.png (frame 3)
+        // Use player sprite from objects.png (frame 3) and keep original size
         this.player = this.physics.add.sprite(centerX, centerY, 'objects', window.OBJECT_FRAMES.player);
-        // objects.png frames are 64x64 — scale to tile size so player fits the grid
-        this.player.setDisplaySize(CONFIG.tileSize, CONFIG.tileSize);
+        // Apply configured object size (pixels) by converting to a scale factor
+        const playerScaleFactor = CONFIG.objectSize / OBJECT_NATIVE_SIZE;
+        this.player.setScale(playerScaleFactor);
         this.player.setCollideWorldBounds(true);
-        this.player.body.setSize(CONFIG.tileSize * 0.7, CONFIG.tileSize * 0.7);
-        this.player.body.setOffset(CONFIG.tileSize * 0.15, CONFIG.tileSize * 0.15);
+        // Configure body size based on the sprite's actual display size
+        if (this.player.body) {
+            const w = this.player.displayWidth || this.player.width;
+            const h = this.player.displayHeight || this.player.height;
+            this.player.body.setSize(Math.floor(w * 0.7), Math.floor(h * 0.7));
+            this.player.body.setOffset(Math.floor(w * 0.15), Math.floor(h * 0.15));
+        }
     }
 
     spawnStaticRocks() {
@@ -1551,8 +1691,10 @@ class GameScene extends Phaser.Scene {
             scale = 1.3;
         }
 
-        const rock = this.rocks.create(jitteredX, jitteredY, 'objects', window.OBJECT_FRAMES.stone);
-        rock.setDisplaySize(CONFIG.tileSize * scale, CONFIG.tileSize * scale);
+    const rock = this.rocks.create(jitteredX, jitteredY, 'objects', window.OBJECT_FRAMES.stone);
+    // Apply object size (pixels) converted to scale factor
+    const rockScaleFactor = CONFIG.objectSize / OBJECT_NATIVE_SIZE;
+    rock.setScale(rockScaleFactor);
         rock.setData('destructible', true);
         rock.setData('size', size);
         rock.setData('isFalling', true);
@@ -1576,8 +1718,10 @@ class GameScene extends Phaser.Scene {
                 if (!rock || !rock.active || !rock.body) {
                     return;
                 }
-                // Aggiorna il corpo fisico dopo lo scaling
-                rock.body.setSize(CONFIG.tileSize * scale, CONFIG.tileSize * scale);
+                // Aggiorna il corpo fisico dopo lo scaling: use actual display size
+                if (rock.body) {
+                    rock.body.setSize(Math.floor(rock.displayWidth || rock.width), Math.floor(rock.displayHeight || rock.height));
+                }
                 rock.setData('isFalling', false);
                 // Piccolo rimbalzo finale
                 this.tweens.add({
@@ -1647,8 +1791,12 @@ class GameScene extends Phaser.Scene {
 
         // Use gem sprite from objects.png (frame 6)
         const gem = this.gems.create(worldX, worldY, 'objects', window.OBJECT_FRAMES.gem);
-        // Scale gem to tile size (objects.png frames are 64x64)
-        gem.setDisplaySize(CONFIG.tileSize, CONFIG.tileSize);
+        // Apply object size (pixels) converted to scale factor and update physics body
+        const gemScaleFactor = CONFIG.objectSize / OBJECT_NATIVE_SIZE;
+        gem.setScale(gemScaleFactor);
+        if (gem.body) {
+            gem.body.setSize(Math.floor(gem.displayWidth || gem.width), Math.floor(gem.displayHeight || gem.height));
+        }
 
         this.tweens.add({
             targets: gem,
@@ -1672,14 +1820,25 @@ class GameScene extends Phaser.Scene {
 
         // Use key sprite from objects.png (frame 8)
         const keySprite = this.items.create(worldX, worldY, 'objects', window.OBJECT_FRAMES.key);
-        keySprite.setDisplaySize(CONFIG.tileSize, CONFIG.tileSize);
+        // Keep key at original size
+        if (keySprite.body) {
+            keySprite.body.setSize(Math.floor(keySprite.displayWidth || keySprite.width), Math.floor(keySprite.displayHeight || keySprite.height));
+        }
+        const keyScaleFactor = CONFIG.objectSize / OBJECT_NATIVE_SIZE;
+        keySprite.setScale(keyScaleFactor);
+        if (keySprite.body) {
+            keySprite.body.setSize(Math.floor(keySprite.displayWidth || keySprite.width), Math.floor(keySprite.displayHeight || keySprite.height));
+        }
         keySprite.setData('type', 'key');
         this.lastKeyPos = { x: worldX, y: worldY };
     }
 
     spawnKeyAt(x, y) {
         const keySprite = this.items.create(x, y, 'objects', window.OBJECT_FRAMES.key);
-        keySprite.setDisplaySize(CONFIG.tileSize, CONFIG.tileSize);
+        // Keep key at original size
+        if (keySprite.body) {
+            keySprite.body.setSize(Math.floor(keySprite.displayWidth || keySprite.width), Math.floor(keySprite.displayHeight || keySprite.height));
+        }
         keySprite.setData('type', 'key');
         this.lastKeyPos = { x, y };
     }
@@ -1703,11 +1862,13 @@ class GameScene extends Phaser.Scene {
 
     setupDoor(door) {
         if (!door) return;
-        door.setDisplaySize(CONFIG.tileSize, CONFIG.tileSize);
+    // Apply object size (pixels) converted to scale factor to door
+    const doorScaleFactor = CONFIG.objectSize / OBJECT_NATIVE_SIZE;
+    door.setScale(doorScaleFactor);
         door.setData('locked', true);
         door.setData('opening', false);
         if (door.body) {
-            door.body.setSize(CONFIG.tileSize, CONFIG.tileSize);
+            door.body.setSize(Math.floor(door.displayWidth || door.width), Math.floor(door.displayHeight || door.height));
         }
         if (door.refreshBody) {
             door.refreshBody();
@@ -1800,7 +1961,10 @@ class GameScene extends Phaser.Scene {
             fontFamily: GAME_FONT
         }).setOrigin(1, 0);
 
-        this.timerPepitas = [];
+        // Timer pepitas: create background (full-color) icons and a disabled overlay
+        // that will progressively gray out elapsed slots.
+        this.timerPepitas = []; // background (full-color)
+        this.timerPepitasDisabled = []; // overlay (grayed) shown for elapsed slots
         this.timerPepitasCount = 20;
         const pepitaSize = 12;
         const pepitaGap = 2;
@@ -1812,16 +1976,36 @@ class GameScene extends Phaser.Scene {
         }).setOrigin(0, 0.5);
         const pepitaStartX = this.timerLabel.getBounds().right + 8;
         for (let i = 0; i < this.timerPepitasCount; i++) {
+            // background full-color pepita
             const pepita = this.add.sprite(
                 pepitaStartX + i * (pepitaSize + pepitaGap),
                 pepitaY,
                 'objects',
                 window.OBJECT_FRAMES.pepita
             );
-            pepita.setDisplaySize(pepitaSize, pepitaSize);
+            // scale timer icons according to objectSize (pixels)
+            // Note: keep existing relative sizing behaviour but applied to both layers
+            const pepitaScaleFactor = (CONFIG.objectSize / OBJECT_NATIVE_SIZE) * (pepitaSize / OBJECT_NATIVE_SIZE);
+            pepita.setScale(pepitaScaleFactor);
             pepita.setScrollFactor(0);
             pepita.setVisible(false);
             this.timerPepitas.push(pepita);
+
+            // disabled overlay (tinted gray) placed above the background
+            const disabled = this.add.sprite(
+                pepita.x,
+                pepita.y,
+                'objects',
+                window.OBJECT_FRAMES.pepita
+            );
+            disabled.setScale(pepitaScaleFactor);
+            disabled.setScrollFactor(0);
+            // tint to gray to give a "disabled" appearance and slightly lower alpha
+            disabled.setTint(0x888888);
+            disabled.setAlpha(0.95);
+            disabled.setDepth(pepita.depth + 1);
+            disabled.setVisible(false);
+            this.timerPepitasDisabled.push(disabled);
         }
 
         // Keep HUD fixed to screen
@@ -1833,8 +2017,10 @@ class GameScene extends Phaser.Scene {
         this.levelText.setScrollFactor(0);
         this.timerLabel.setScrollFactor(0);
 
-        this.timerLabel.setVisible(false);
-        this.timerPepitas.forEach((p) => p.setVisible(false));
+    this.timerLabel.setVisible(false);
+    // Hide both layers initially
+    this.timerPepitas.forEach((p) => p.setVisible(false));
+    if (this.timerPepitasDisabled) this.timerPepitasDisabled.forEach((d) => d.setVisible(false));
 
         this.livesIcons = [];
         this.dynamiteIcons = [];
@@ -1856,7 +2042,9 @@ class GameScene extends Phaser.Scene {
             if (this.timerLabel) {
                 this.timerLabel.setVisible(true);
             }
+            // Show background icons and hide disabled overlays initially; updateTimerBar will set disabled visibility correctly
             this.timerPepitas.forEach((p) => p.setVisible(true));
+            if (this.timerPepitasDisabled) this.timerPepitasDisabled.forEach((d) => d.setVisible(false));
             this.updateTimerBar();
         }
 
@@ -1884,9 +2072,14 @@ class GameScene extends Phaser.Scene {
     updateTimerBar() {
         if (!this.timerPepitas || !this.timerPepitas.length || !this.levelTimeTotal) return;
         const ratio = Phaser.Math.Clamp(this.levelTimeRemaining / this.levelTimeTotal, 0, 1);
-        const visibleCount = Math.ceil(ratio * this.timerPepitasCount);
+        const activeCount = Math.ceil(ratio * this.timerPepitasCount);
         for (let i = 0; i < this.timerPepitas.length; i++) {
-            this.timerPepitas[i].setVisible(i < visibleCount);
+            // Background always visible when timer active
+            this.timerPepitas[i].setVisible(true);
+            // Disabled overlay is visible for elapsed slots (i >= activeCount)
+            if (this.timerPepitasDisabled && this.timerPepitasDisabled[i]) {
+                this.timerPepitasDisabled[i].setVisible(i >= activeCount);
+            }
         }
     }
 
@@ -1995,9 +2188,14 @@ class GameScene extends Phaser.Scene {
         const dirY = this.lastMoveDir?.y ?? 0;
 
         // Use dynamite projectile sprite from objects.png (frame 0)
-        const dynamite = this.dynamites.create(this.player.x, this.player.y, 'objects', window.OBJECT_FRAMES.dynamite_projectile);
-        // Scale dynamite to tile size
-        dynamite.setDisplaySize(CONFIG.tileSize, CONFIG.tileSize);
+    const dynamite = this.dynamites.create(this.player.x, this.player.y, 'objects', window.OBJECT_FRAMES.dynamite_projectile);
+    const dynamiteScaleFactor = CONFIG.objectSize / OBJECT_NATIVE_SIZE;
+    dynamite.setScale(dynamiteScaleFactor);
+        // Keep dynamite at original sprite size; update physics body if present
+        if (dynamite.body) {
+            dynamite.body.setSize(Math.floor(dynamite.displayWidth || dynamite.width), Math.floor(dynamite.displayHeight || dynamite.height));
+            dynamite.body.onWorldBounds = true;
+        }
         dynamite.setVelocity(dirX * CONFIG.dynamiteSpeed, dirY * CONFIG.dynamiteSpeed);
         dynamite.setBounce(1, 1);
         dynamite.setCollideWorldBounds(true);
@@ -2024,8 +2222,10 @@ class GameScene extends Phaser.Scene {
 
     explodeDynamite(dynamite) {
         // Create explosion effect using explosion sprite from objects.png (frame 15)
-        const explosion = this.add.sprite(dynamite.x, dynamite.y, 'objects', window.OBJECT_FRAMES.explosion);
-        explosion.setDisplaySize(CONFIG.tileSize, CONFIG.tileSize);
+    const explosion = this.add.sprite(dynamite.x, dynamite.y, 'objects', window.OBJECT_FRAMES.explosion);
+    const explosionScaleFactor = CONFIG.objectSize / OBJECT_NATIVE_SIZE;
+    explosion.setScale(explosionScaleFactor);
+    // Keep explosion sprite at original size; tween will scale it up visually
         this.tweens.add({
             targets: explosion,
             scale: 2,
@@ -2083,8 +2283,10 @@ class GameScene extends Phaser.Scene {
     }
 
     createExplosionAt(x, y) {
-        const explosion = this.add.sprite(x, y, 'objects', window.OBJECT_FRAMES.explosion);
-        explosion.setDisplaySize(CONFIG.tileSize, CONFIG.tileSize);
+    const explosion = this.add.sprite(x, y, 'objects', window.OBJECT_FRAMES.explosion);
+    const explosionScaleFactor2 = CONFIG.objectSize / OBJECT_NATIVE_SIZE;
+    explosion.setScale(explosionScaleFactor2);
+    // Keep explosion sprite at original size; tween will scale it up visually
         this.tweens.add({
             targets: explosion,
             scale: 2,
