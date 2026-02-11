@@ -33,5 +33,6 @@
   "traps": null,
   "spawnPoints": null,
   "timeLimit": null,
-  "scoreRules": null
+  "scoreRules": null,
+  "light": "tremolante"
 }
