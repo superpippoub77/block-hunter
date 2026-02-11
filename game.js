@@ -1436,9 +1436,9 @@ class GameScene extends Phaser.Scene {
             mapCols = this.levelData?.cols || CONFIG.gridWidth;
         }
 
-        // Calculate offset to center the map
-        const offsetX = (CONFIG.width - mapCols * CONFIG.tileSize) / 2;
-        const offsetY = (CONFIG.height - mapRows * CONFIG.tileSize) / 2;
+    // Calculate offset to center the map (rounded to avoid sub-pixel gaps)
+    const offsetX = Math.round((CONFIG.width - mapCols * CONFIG.tileSize) / 2);
+    const offsetY = Math.round((CONFIG.height - mapRows * CONFIG.tileSize) / 2);
 
         // Tile sprite mapping: 0=wall, 1=hole, 2=sand, 3=floor, 4=stone, 5=hole2
         const TILE_FRAMES = {
@@ -1506,16 +1506,13 @@ class GameScene extends Phaser.Scene {
                     // Get frame index for this tile type
                     const frameIndex = TILE_FRAMES[tileType] !== undefined ? TILE_FRAMES[tileType] : TILE_FRAMES.floor;
 
-                    // Create sprite from tiles spritesheet
-                    tileSprite = this.add.sprite(
-                        offsetX + x * CONFIG.tileSize + CONFIG.tileSize / 2,
-                        offsetY + y * CONFIG.tileSize + CONFIG.tileSize / 2,
-                        'tiles',
-                        frameIndex
-                    );
-                    // Scale tile to match configured tile size from native tile width
-                    const tileScale = CONFIG.tileSize / TILE_NATIVE_WIDTH;
-                    tileSprite.setScale(tileScale);
+                    // Create sprite from tiles spritesheet at integer-aligned positions
+                    const tx = Math.round(offsetX + x * CONFIG.tileSize + CONFIG.tileSize / 2);
+                    const ty = Math.round(offsetY + y * CONFIG.tileSize + CONFIG.tileSize / 2);
+                    tileSprite = this.add.sprite(tx, ty, 'tiles', frameIndex);
+                    // Force tile to display exactly as a square cell of CONFIG.tileSize
+                    // (avoids gaps when native tile frame height differs from width)
+                    tileSprite.setDisplaySize(CONFIG.tileSize, CONFIG.tileSize);
 
                     if (type === 'wall' && this.walls) {
                         this.walls.add(tileSprite);
@@ -1926,37 +1923,37 @@ class GameScene extends Phaser.Scene {
         const t = TRANSLATIONS[GAME_STATE.language];
 
         this.scoreText = this.add.text(10, 10, `${t.score}: ${GAME_STATE.score}`, {
-            fontSize: '20px',
+            fontSize: '16px',
             fill: '#ffffff',
             fontFamily: GAME_FONT
         });
 
         this.livesText = this.add.text(10, 35, `${t.lives}:`, {
-            fontSize: '20px',
+            fontSize: '2016pxpx',
             fill: '#ff0000',
             fontFamily: GAME_FONT
         });
 
         this.dynamiteText = this.add.text(10, 60, `${t.dynamite}:`, {
-            fontSize: '20px',
+            fontSize: '16px',
             fill: '#ffaa00',
             fontFamily: GAME_FONT
         });
 
         this.keysText = this.add.text(10, 85, `${t.keys}:`, {
-            fontSize: '20px',
+            fontSize: '16px',
             fill: '#ffff66',
             fontFamily: GAME_FONT
         });
 
         this.gemsText = this.add.text(10, 110, `${t.gems}:`, {
-            fontSize: '20px',
+            fontSize: '16px',
             fill: '#00ffff',
             fontFamily: GAME_FONT
         });
 
         this.levelText = this.add.text(790, 10, `${t.level}: ${GAME_STATE.currentLevel + 1}`, {
-            fontSize: '20px',
+            fontSize: '16px',
             fill: '#00ff00',
             fontFamily: GAME_FONT
         }).setOrigin(1, 0);
@@ -1967,7 +1964,7 @@ class GameScene extends Phaser.Scene {
         this.timerPepitasDisabled = []; // overlay (grayed) shown for elapsed slots
         this.timerPepitasCount = 20;
         const pepitaSize = 12;
-        const pepitaGap = 2;
+        const pepitaGap = 1;
         const pepitaY = CONFIG.height - 16;
         this.timerLabel = this.add.text(10, pepitaY, 'TIMER', {
             fontSize: '16px',
