@@ -9,6 +9,8 @@ const CONFIG = {
     tileSize: 32,
     // object size in pixels (width/height) used to scale object sprites
     objectSize: 32,
+    // base camera zoom (1 = default)
+    cameraZoom: 1,
     gridWidth: 25,
     gridHeight: 18,
     playerSpeed: 120,
@@ -34,8 +36,9 @@ try {
     const saved = localStorage.getItem('blockHunterConfig');
         if (saved) {
         const parsed = JSON.parse(saved);
-        if (parsed.tileSize) CONFIG.tileSize = parsed.tileSize;
-        if (parsed.objectSize) CONFIG.objectSize = parsed.objectSize;
+    if (parsed.tileSize) CONFIG.tileSize = parsed.tileSize;
+    if (parsed.objectSize) CONFIG.objectSize = parsed.objectSize;
+    if (parsed.cameraZoom) CONFIG.cameraZoom = parsed.cameraZoom;
         // Backwards compatibility: support old 'objectScale' saved values
         else if (parsed.objectScale) CONFIG.objectSize = Math.round(parsed.objectScale * OBJECT_NATIVE_SIZE);
     }
@@ -974,6 +977,7 @@ class ConfigScene extends Phaser.Scene {
         const configInfo = [
             `SCREEN: ${CONFIG.width}x${CONFIG.height}`,
             `TILE SIZE: ${CONFIG.tileSize}px`,
+            `CAMERA ZOOM: ${CONFIG.cameraZoom.toFixed(2)}`,
             `GRID: ${CONFIG.gridWidth}x${CONFIG.gridHeight}`,
             `PLAYER SPEED: ${CONFIG.playerSpeed}`,
             `BOULDER SPEED: ${CONFIG.boulderBaseSpeed}`,
@@ -1008,9 +1012,16 @@ class ConfigScene extends Phaser.Scene {
         // Object scale control
         y += 22;
         this.add.text(30, y, 'Object scale:', { fontSize: '12px', fill: '#ffffff', fontFamily: GAME_FONT });
-    this.objectSizeText = this.add.text(160, y, String(CONFIG.objectSize), { fontSize: '12px', fill: '#ffff00', fontFamily: GAME_FONT }).setOrigin(0, 0.5);
+        this.objectSizeText = this.add.text(160, y, String(CONFIG.objectSize), { fontSize: '12px', fill: '#ffff00', fontFamily: GAME_FONT }).setOrigin(0, 0.5);
         const objMinus = this.add.text(220, y, '◄', { fontSize: '14px', fill: '#ffffff', fontFamily: GAME_FONT }).setInteractive().setOrigin(0.5);
         const objPlus = this.add.text(260, y, '►', { fontSize: '14px', fill: '#ffffff', fontFamily: GAME_FONT }).setInteractive().setOrigin(0.5);
+
+        // Camera zoom control
+        y += 22;
+        this.add.text(30, y, 'Camera zoom:', { fontSize: '12px', fill: '#ffffff', fontFamily: GAME_FONT });
+        this.cameraZoomText = this.add.text(160, y, CONFIG.cameraZoom.toFixed(2), { fontSize: '12px', fill: '#ffff00', fontFamily: GAME_FONT }).setOrigin(0, 0.5);
+        const zoomMinus = this.add.text(220, y, '◄', { fontSize: '14px', fill: '#ffffff', fontFamily: GAME_FONT }).setInteractive().setOrigin(0.5);
+        const zoomPlus = this.add.text(260, y, '►', { fontSize: '14px', fill: '#ffffff', fontFamily: GAME_FONT }).setInteractive().setOrigin(0.5);
 
         // Apply / Reset buttons
         const applyBtn = this.add.text(340, y, '[ APPLY ]', { fontSize: '12px', fill: '#00ff00', fontFamily: GAME_FONT }).setInteractive().setOrigin(0.5);
@@ -1043,9 +1054,18 @@ class ConfigScene extends Phaser.Scene {
             this.updatePreviewSizes();
         });
 
+        zoomMinus.on('pointerdown', () => {
+            CONFIG.cameraZoom = Math.max(0.5, Math.round((CONFIG.cameraZoom - 0.1) * 10) / 10);
+            this.cameraZoomText.setText(CONFIG.cameraZoom.toFixed(2));
+        });
+        zoomPlus.on('pointerdown', () => {
+            CONFIG.cameraZoom = Math.min(3, Math.round((CONFIG.cameraZoom + 0.1) * 10) / 10);
+            this.cameraZoomText.setText(CONFIG.cameraZoom.toFixed(2));
+        });
+
         applyBtn.on('pointerdown', () => {
             try {
-                localStorage.setItem('blockHunterConfig', JSON.stringify({ tileSize: CONFIG.tileSize, objectSize: CONFIG.objectSize }));
+                localStorage.setItem('blockHunterConfig', JSON.stringify({ tileSize: CONFIG.tileSize, objectSize: CONFIG.objectSize, cameraZoom: CONFIG.cameraZoom }));
             } catch (e) {}
             // show small confirmation
             const c = this.add.text(520, y, 'SAVED', { fontSize: '12px', fill: '#00ff00', fontFamily: GAME_FONT }).setOrigin(0.5);
@@ -1056,8 +1076,10 @@ class ConfigScene extends Phaser.Scene {
         resetBtn.on('pointerdown', () => {
             CONFIG.tileSize = 32;
             CONFIG.objectSize = OBJECT_NATIVE_SIZE;
+            CONFIG.cameraZoom = 1;
             this.tileSizeText.setText(String(CONFIG.tileSize));
             this.objectSizeText.setText(String(CONFIG.objectSize));
+            if (this.cameraZoomText) this.cameraZoomText.setText(CONFIG.cameraZoom.toFixed(2));
             try { localStorage.removeItem('blockHunterConfig'); } catch (e) {}
             this.updatePreviewSizes();
         });
@@ -1176,6 +1198,7 @@ class ConfigScene extends Phaser.Scene {
             // update config info display text if present
             if (this.tileSizeText) this.tileSizeText.setText(String(CONFIG.tileSize));
             if (this.objectSizeText) this.objectSizeText.setText(String(CONFIG.objectSize));
+            if (this.cameraZoomText) this.cameraZoomText.setText(CONFIG.cameraZoom.toFixed(2));
         };
     }
 }
@@ -1314,9 +1337,9 @@ class GameScene extends Phaser.Scene {
 
     create() {
         // Background for all levels
-        this.add.image(CONFIG.width / 2, CONFIG.height / 2, 'game_bg')
+        this.gameBg = this.add.image(CONFIG.width / 2, CONFIG.height / 2, 'game_bg')
             .setDisplaySize(CONFIG.width, CONFIG.height)
-            .setScrollFactor(0)
+            .setScrollFactor(1)
             .setDepth(-1000);
 
         // Get level data from JSON
@@ -1356,6 +1379,59 @@ class GameScene extends Phaser.Scene {
 
         // Create player
         this.createPlayer();
+
+        // Setup camera and world bounds for scrolling
+        const worldWidth = this.mapCols * CONFIG.tileSize;
+        const worldHeight = this.mapRows * CONFIG.tileSize;
+        const worldX = this.mapOffsetX;
+        const worldY = this.mapOffsetY;
+        this.physics.world.setBounds(worldX, worldY, worldWidth, worldHeight);
+        if (this.player && this.player.body) {
+            this.player.body.setCollideWorldBounds(true);
+        }
+
+        // Resize and position background to cover the world, then let it scroll
+        if (this.gameBg) {
+            const bgWidth = Math.max(worldWidth, CONFIG.width);
+            const bgHeight = Math.max(worldHeight, CONFIG.height);
+            this.gameBg.setDisplaySize(bgWidth, bgHeight);
+            this.gameBg.setPosition(worldX + worldWidth / 2, worldY + worldHeight / 2);
+            this.gameBg.setScrollFactor(1);
+        }
+
+        if (this.cameras && this.cameras.main) {
+            const cam = this.cameras.main;
+            const viewW = cam.width;
+            const viewH = cam.height;
+            cam.setBounds(worldX, worldY, worldWidth, worldHeight);
+            cam.roundPixels = true;
+
+            // Auto-zoom for small maps so the camera view becomes smaller than the world
+            // Respect configured base zoom as a minimum.
+            let zoom = Math.max(0.5, CONFIG.cameraZoom || 1);
+            if (worldWidth > 0 && worldHeight > 0 && (worldWidth <= viewW || worldHeight <= viewH)) {
+                const fitZoom = Math.max(viewW / worldWidth, viewH / worldHeight);
+                zoom = Math.max(zoom, fitZoom * 1.1);
+            }
+            cam.setZoom(zoom);
+
+            const viewWorldW = viewW / zoom;
+            const viewWorldH = viewH / zoom;
+            const canScrollX = worldWidth > viewWorldW;
+            const canScrollY = worldHeight > viewWorldH;
+
+            if (canScrollX || canScrollY) {
+                cam.startFollow(this.player, true, 0.08, 0.08);
+                const dzW = canScrollX ? Math.min(viewWorldW * 0.35, worldWidth - viewWorldW) : 0;
+                const dzH = canScrollY ? Math.min(viewWorldH * 0.35, worldHeight - viewWorldH) : 0;
+                if (dzW > 0 && dzH > 0) {
+                    cam.setDeadzone(dzW, dzH);
+                }
+            } else {
+                cam.stopFollow();
+                cam.centerOn(worldX + worldWidth / 2, worldY + worldHeight / 2);
+            }
+        }
 
         // Gems per level
         if (this.mapGemPositions && this.mapGemPositions.length > 0) {
@@ -1436,9 +1512,9 @@ class GameScene extends Phaser.Scene {
             mapCols = this.levelData?.cols || CONFIG.gridWidth;
         }
 
-    // Calculate offset to center the map (rounded to avoid sub-pixel gaps)
-    const offsetX = Math.round((CONFIG.width - mapCols * CONFIG.tileSize) / 2);
-    const offsetY = Math.round((CONFIG.height - mapRows * CONFIG.tileSize) / 2);
+    // Place map at world origin; camera will handle centering for small maps
+    const offsetX = 0;
+    const offsetY = 0;
 
         // Tile sprite mapping: 0=wall, 1=hole, 2=sand, 3=floor, 4=stone, 5=hole2
         const TILE_FRAMES = {
@@ -1929,7 +2005,7 @@ class GameScene extends Phaser.Scene {
         });
 
         this.livesText = this.add.text(10, 35, `${t.lives}:`, {
-            fontSize: '2016pxpx',
+            fontSize: '16px',
             fill: '#ff0000',
             fontFamily: GAME_FONT
         });
@@ -1985,6 +2061,7 @@ class GameScene extends Phaser.Scene {
             const pepitaScaleFactor = (CONFIG.objectSize / OBJECT_NATIVE_SIZE) * (pepitaSize / OBJECT_NATIVE_SIZE);
             pepita.setScale(pepitaScaleFactor);
             pepita.setScrollFactor(0);
+            pepita.setDepth(2000);
             pepita.setVisible(false);
             this.timerPepitas.push(pepita);
 
@@ -2006,18 +2083,18 @@ class GameScene extends Phaser.Scene {
         }
 
         // Keep HUD fixed to screen
-        this.scoreText.setScrollFactor(0);
-        this.livesText.setScrollFactor(0);
-        this.dynamiteText.setScrollFactor(0);
-        this.keysText.setScrollFactor(0);
-        this.gemsText.setScrollFactor(0);
-        this.levelText.setScrollFactor(0);
-        this.timerLabel.setScrollFactor(0);
+    this.scoreText.setScrollFactor(0).setDepth(2000);
+    this.livesText.setScrollFactor(0).setDepth(2000);
+    this.dynamiteText.setScrollFactor(0).setDepth(2000);
+    this.keysText.setScrollFactor(0).setDepth(2000);
+    this.gemsText.setScrollFactor(0).setDepth(2000);
+    this.levelText.setScrollFactor(0).setDepth(2000);
+    this.timerLabel.setScrollFactor(0).setDepth(2000);
 
-    this.timerLabel.setVisible(false);
-    // Hide both layers initially
-    this.timerPepitas.forEach((p) => p.setVisible(false));
-    if (this.timerPepitasDisabled) this.timerPepitasDisabled.forEach((d) => d.setVisible(false));
+        this.timerLabel.setVisible(false);
+        // Hide both layers initially
+        this.timerPepitas.forEach((p) => p.setVisible(false));
+        if (this.timerPepitasDisabled) this.timerPepitasDisabled.forEach((d) => d.setVisible(false));
 
         this.livesIcons = [];
         this.dynamiteIcons = [];
@@ -2641,6 +2718,7 @@ class GameScene extends Phaser.Scene {
                 const icon = this.add.sprite(startX + i * (iconSize + gap), y, 'objects', frame);
                 icon.setDisplaySize(iconSize, iconSize);
                 icon.setScrollFactor(0);
+                icon.setDepth(2000);
                 arr.push(icon);
             }
         };
