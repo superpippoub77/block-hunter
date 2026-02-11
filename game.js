@@ -31,7 +31,8 @@ const TRANSLATIONS = {
         credit: 'CREDITO',
         player1: '1 GIOCATORE',
         player2: '2 GIOCATORI',
-        instructions: 'RACCOGLI TUTTE LE GEMME\nEVITA I MASSI\nWASD - MUOVI\nSPAZIO - DINAMITE',
+    instructions: 'RACCOGLI TUTTE LE GEMME\nEVITA I MASSI\nWASD - MUOVI\nSPAZIO - DINAMITE',
+    story: 'SEI UN CERCATORE DI TESORI.\nSCAVA, EVITA I MASSI E TROVA LE GEMME',
         selectDifficulty: 'SCEGLI DIFFICOLTA',
         beginner: 'PRINCIPIANTE',
         medium: 'MEDIO',
@@ -52,7 +53,8 @@ const TRANSLATIONS = {
         credit: 'CREDIT',
         player1: '1 JOUEUR',
         player2: '2 JOUEURS',
-        instructions: 'COLLECTEZ GEMMES\nEVITEZ ROCHERS\nWASD - BOUGER\nESPACE - DYNAMITE',
+    instructions: 'COLLECTEZ GEMMES\nEVITEZ ROCHERS\nWASD - BOUGER\nESPACE - DYNAMITE',
+    story: 'VOUS ETES UN CHASSEUR DE TRESORS.\nDEGUERPISSEZ, EVITEZ LES ROCHEUX ET TROUVEZ LES GEMMES',
         selectDifficulty: 'CHOISIR DIFFICULTE',
         beginner: 'DEBUTANT',
         medium: 'MOYEN',
@@ -73,7 +75,8 @@ const TRANSLATIONS = {
         credit: 'KREDIT',
         player1: '1 SPIELER',
         player2: '2 SPIELER',
-        instructions: 'SAMMLE EDELSTEINE\nVERMEIDE FELSEN\nWASD - BEWEGEN\nLEERTASTE - DYNAMIT',
+    instructions: 'SAMMLE EDELSTEINE\nVERMEIDE FELSEN\nWASD - BEWEGEN\nLEERTASTE - DYNAMIT',
+    story: 'DU BIST EIN SCHATZSUCHE.\nGRABE, WEICHE FELSEN AUS UND FINDE DIE EDELSTEINE',
         selectDifficulty: 'SCHWIERIGKEIT WAHLEN',
         beginner: 'ANFANGER',
         medium: 'MITTEL',
@@ -94,7 +97,8 @@ const TRANSLATIONS = {
         credit: 'CREDIT',
         player1: '1 PLAYER',
         player2: '2 PLAYERS',
-        instructions: 'COLLECT ALL GEMS\nAVOID BOULDERS\nWASD - MOVE\nSPACE - DYNAMITE',
+    instructions: 'COLLECT ALL GEMS\nAVOID BOULDERS\nWASD - MOVE\nSPACE - DYNAMITE',
+    story: 'YOU ARE A TREASURE HUNTER.\nDIG, DODGE BOULDERS AND FIND THE GEMS',
         selectDifficulty: 'SELECT DIFFICULTY',
         beginner: 'BEGINNER',
         medium: 'MEDIUM',
@@ -115,7 +119,8 @@ const TRANSLATIONS = {
         credit: 'CREDIT',
         player1: '1 PLAYER',
         player2: '2 PLAYERS',
-        instructions: 'COLLECT ALL GEMS\nAVOID BOULDERS\nWASD - MOVE\nSPACE - DYNAMITE',
+    instructions: 'COLLECT ALL GEMS\nAVOID BOULDERS\nWASD - MOVE\nSPACE - DYNAMITE',
+    story: 'YOU ARE A TREASURE HUNTER.\nDIG, DODGE BOULDERS AND FIND THE GEMS',
         selectDifficulty: 'SELECT DIFFICULTY',
         beginner: 'BEGINNER',
         medium: 'MEDIUM',
@@ -136,7 +141,8 @@ const TRANSLATIONS = {
         credit: 'クレジット',
         player1: '1プレイヤー',
         player2: '2プレイヤー',
-        instructions: '宝石を集める\n岩を避ける\nWASD - 移動\nスペース - ダイナマイト',
+    instructions: '宝石を集める\n岩を避ける\nWASD - 移動\nスペース - ダイナマイト',
+    story: 'あなたは宝探しです。\n掘って、岩を避け、宝石を見つけよう',
         selectDifficulty: '難易度を選択',
         beginner: '初心者',
         medium: '中級',
@@ -157,7 +163,8 @@ const TRANSLATIONS = {
         credit: 'CREDITO',
         player1: '1 JUGADOR',
         player2: '2 JUGADORES',
-        instructions: 'RECOGE TODAS LAS GEMAS\nEVITA LAS ROCAS\nWASD - MOVER\nESPACIO - DINAMITA',
+    instructions: 'RECOGE TODAS LAS GEMAS\nEVITA LAS ROCAS\nWASD - MOVER\nESPACIO - DINAMITA',
+    story: 'ERES UN CAZADOR DE TESOROS.\nEXCAVA, EVITA ROCAS Y ENCUENTRA LAS GEMAS',
         selectDifficulty: 'SELECCIONAR DIFICULTAD',
         beginner: 'PRINCIPIANTE',
         medium: 'MEDIO',
@@ -178,7 +185,8 @@ const TRANSLATIONS = {
         credit: '信用',
         player1: '1玩家',
         player2: '2玩家',
-        instructions: '收集宝石\n避开巨石\nWASD - 移动\n空格 - 炸药',
+    instructions: '收集宝石\n避开巨石\nWASD - 移动\n空格 - 炸药',
+    story: '你是一名寻宝者。\n挖掘、躲避巨石，寻找宝石',
         selectDifficulty: '选择难度',
         beginner: '初级',
         medium: '中级',
@@ -552,6 +560,16 @@ class AttractScene extends Phaser.Scene {
             delay: 800
         });
 
+        // Story alternating: toggle between instructions and a short story every few seconds
+        this.showingStory = false; // start showing instructions
+        // Use a repeating timed event to toggle the displayed text
+        this.storyToggleEvent = this.time.addEvent({
+            delay: 5000,
+            loop: true,
+            callback: this.toggleStory,
+            callbackScope: this
+        });
+
         // Language selector with flags
         this.flagSprite = this.add.sprite(400, 400, 'flags', this.currentLangIndex).setOrigin(0.5);
 
@@ -642,6 +660,31 @@ class AttractScene extends Phaser.Scene {
         this.input.keyboard.on('keydown', () => this.resetTimeout());
     }
 
+    // Toggle between instructions and story with a fade animation
+    toggleStory() {
+        const t = TRANSLATIONS[GAME_STATE.language];
+        const newText = this.showingStory ? t.instructions : t.story;
+
+        // Fade out -> change text -> fade in
+        this.tweens.add({
+            targets: this.instructionsText,
+            alpha: 0,
+            duration: 250,
+            onComplete: () => {
+                this.instructionsText.setText(newText);
+                // small reposition in case multi-line height changes
+                this.instructionsText.setOrigin(0.5);
+                this.tweens.add({
+                    targets: this.instructionsText,
+                    alpha: 1,
+                    duration: 300
+                });
+            }
+        });
+
+        this.showingStory = !this.showingStory;
+    }
+
     openConfig() {
         this.scene.start('ConfigScene');
     }
@@ -687,7 +730,9 @@ class AttractScene extends Phaser.Scene {
         } else if (this.titleImage) {
             // no-op: title is an image loaded from images/title.png
         }
-        this.instructionsText.setText(t.instructions);
+    // Show either instructions or story depending on current toggle state
+    const displayedText = (this.showingStory) ? (t.story || t.instructions) : t.instructions;
+    this.instructionsText.setText(displayedText);
 
         // Language is now shown via flag sprite, not text
         // (removed: this.langText.setText(GAME_STATE.language.toUpperCase());)

@@ -1,0 +1,323 @@
+Specifiche del gioco BlockHunter
+Gioco arcade che sta dentro una schermata orizzontale 800 x 600 pixel (visto dall'alto) dove un minatore deve recuperare tutte le gemme all'iterno di una miniera prima che crolli tutto
+All'inizio del gioco compare una schermata di attractmode dove compare il titolo in atto sotto le istruzioni e sotto la scelta della lingua in formato carousel con la possibilità di selezionare la lingua premento i tasti destra o sinistra oppure premendo il pulsante rappresentato dalle frecce destra e sinistra ai bordi del carousel.
+In basso sempre nella stessa schermata si trova la dicitura Insert Coin, per inserire i crediti e devo premere il pulsante 5 o 6 per poterli iniserire ed la scrita cambierà da Insert Coin a Credit 1, ecc
+Se il credito è sufficiente per coprire la possibilità di giocare con 1 giocatore allora coomparirà l'icona di 1 igiocatore in basso a sinistra e se il credito è doppio allora anche l'icona del 2 player sulla destra.
+A questo punto l'utente potrà premere il tasto 1 (1 1player) o 2 (2 player).
+Dopo 10 secondi e se non ho ancora iniziato la partita, deve coparire la schermata di Top Ten con la lista dei 10 record migliori, mantenendo comunque la scelta della lingua e la parte di Insert Coin e dei player, dopo ancora 10 secondi il sistema cambia nuovamente e torna nell'attractmode.
+Dopo aver premuto 1 o 2 per selezionare il player, il gioco mi presenta una pagina di selezione del livello che può essere Beginner, Medium e Hard, questo influenzerà la difficolta del gioco.
+Selezionato il livello inizia il gioco, gli schemi vengono presi da un file di tipo json che contiente una matrice riga colonna di tutte le tile presenti nel sistema.
+Elenco delle tile:
+ - wall = Roccia ostacolo che non si può superare ne spaccare
+ - floor = Pavimento sabbioso nessun effetto
+ - hole = caduta con perdita di vita
+ - hole2 = torna al livello precedente
+ - sand = rallenta la velocità de giocatore in quella cella
+ - gem = gemma da recuperare
+ - key = chiave per aprire le porte
+ - dynamite = cassone di dinamite per aumentare gli spari
+ - pepita = + 1 vita
+ - door = via di uscita
+I livelli sono da 1 a 5 ed ogni sotto livello ha 5 schemi, quindi la numerazione è tipo: livello10.json (livello 1, schema 0)
+Per ogni livelo ci saranno delle difficoltà che andranno ad aumentare mano mano che si salgono di livelli.
+Elenco dei livelli:
+1.0 Compaiono in modo randomico delle dei massi che potranno avere dimensione: piccola, media o larga ed una diversa rotazione all'interno dell' area del gioco
+1.1 Compaiono in modo randomico delle dei massi che potranno avere dimensione: piccola, media o larga ed una diversa rotazione all'interno dell' area del gioco
+
+Il giocatore inizialmente ha 5 vite e 20 di candelotti di dinamite, lo scopo e recuperare le gemme presenti nello schema e può distruggere i massi all'interno del livello oppure schivarli.
+Se il giocatore lancia il candelotti di dinamite:
+	1) se raggiunge il masso lo fa esplodere 
+	2) se il candelott va acontatto con una parete rimbalza e torna indietro e nel caso in cui trovasse un'altra parete allora rimbalza nuovamente e così via, sparisce nel caso in cui non colpisca nulla dopo 5 secondi.
+Se il giocatore viene colpito da una roccia o va contro una roccia perde una vita se viene colpito dalla sua stessa dinamite sparata diminuisce la sua velocità. 
+Se il giocatore va a finire in una buca (hole) perde una vita o hole2 torna al livello precedente se esiste.
+Se recupera la key chiave potrà aprire le o la porta per passare a cunicoli di salvataggio
+Se recupera una cassetta di dinamite (dynamite) ripristina il numero di candelotti di dinamite
+Se prende la sabbia (sand) rallenta la sua velocità per 10 secondi
+Se prende la pepita allora aumentano le vite
+Il giocatore deve recuperare le gemme che compariranno una dopo l'altra nello schema per passare al livello successivo in un certo determinato dempo
+
+Il giocatore si può muovere nelle 8 direzioni.
+
+Elenco dei punti:
+ - rocce spaccate 10 punti
+ - cassetta dinamite 20 punti
+ - vita 30 punti
+ - passaggio di livello 50 punti
+ - colpito da candelotto - 5 punti
+ - caduta nella hole -20 punti o vita
+ - gemma 50 punti
+ - chiave 5 punti
+ 
+ Intorno allo schema si deve creare un bordo di sasso che contorna tutto lo schema, dopo un certo livello a questo bordo si aggiungerà uno ancora più esterno con uno spazio vuoto di sole tail normali, questi soo i corridoi di vie di fuga, per accedere al corridoio bisogna aprire una porta sul primo bordo che potrà essere aperta se il player ha a dispoizone una chiave.
+ Il giocatore potrà quinid entrare nel corridiorio di fuga per sfuggire dai massi, occhio che la prta si chiderà dopo 30 secondi.
+  
+ Elenco degli schemi json:
+ {
+  "globalRules": {
+    "staticRocks": {
+      "sizes": ["small", "medium", "large"],
+      "randomSpawn": true,
+      "generateShards": false
+    },
+    "dynamicBoulders": {
+      "sizes": {
+        "small": { "shards": [0, 1] },
+        "medium": { "shards": [2, 3] },
+        "large": { "shards": [4, 6] }
+      }
+    }
+  },
+  "levels": [
+    {
+      "id": "1.0",
+      "staticRocks": true,
+      "dynamicBoulders": false,
+      "speed": 1,
+      "escapeRoute": false
+    },
+    {
+      "id": "1.1",
+      "staticRocks": true,
+      "dynamicBoulders": false,
+      "speed": 2,
+      "escapeRoute": false
+    },
+    {
+      "id": "1.2",
+      "staticRocks": true,
+      "dynamicBoulders": false,
+      "speed": 3,
+      "escapeRoute": false
+    },
+    {
+      "id": "1.3",
+      "staticRocks": true,
+      "dynamicBoulders": false,
+      "speed": 4,
+      "escapeRoute": true
+    },
+    {
+      "id": "1.4",
+      "staticRocks": true,
+      "dynamicBoulders": false,
+      "speed": 5,
+      "escapeRoute": true
+    },
+
+    {
+      "id": "2.0",
+      "staticRocks": true,
+      "dynamicBoulders": {
+        "directions": ["top"],
+        "sizes": ["medium"]
+      },
+      "speed": 1,
+      "escapeRoute": false
+    },
+    {
+      "id": "2.1",
+      "staticRocks": true,
+      "dynamicBoulders": {
+        "directions": ["bottom"],
+        "sizes": ["medium"]
+      },
+      "speed": 2,
+      "escapeRoute": false
+    },
+    {
+      "id": "2.2",
+      "staticRocks": true,
+      "dynamicBoulders": {
+        "directions": ["top", "bottom"],
+        "sizes": ["medium"]
+      },
+      "speed": 1,
+      "escapeRoute": false
+    },
+    {
+      "id": "2.3",
+      "staticRocks": true,
+      "dynamicBoulders": {
+        "directions": ["top", "bottom"],
+        "sizes": ["medium", "large"]
+      },
+      "speed": 2,
+      "escapeRoute": true
+    },
+    {
+      "id": "2.4",
+      "staticRocks": true,
+      "dynamicBoulders": {
+        "directions": ["top", "bottom"],
+        "sizes": ["large"]
+      },
+      "speed": 3,
+      "escapeRoute": true
+    },
+
+    {
+      "id": "3.0",
+      "staticRocks": true,
+      "dynamicBoulders": {
+        "directions": ["right"],
+        "sizes": ["medium"]
+      },
+      "speed": 1,
+      "escapeRoute": false
+    },
+    {
+      "id": "3.1",
+      "staticRocks": true,
+      "dynamicBoulders": {
+        "directions": ["left"],
+        "sizes": ["medium"]
+      },
+      "speed": 2,
+      "escapeRoute": false
+    },
+    {
+      "id": "3.2",
+      "staticRocks": true,
+      "dynamicBoulders": {
+        "directions": ["left", "right"],
+        "sizes": ["medium"]
+      },
+      "speed": 1,
+      "escapeRoute": false
+    },
+    {
+      "id": "3.3",
+      "staticRocks": true,
+      "dynamicBoulders": {
+        "directions": ["left", "right"],
+        "sizes": ["medium", "large"]
+      },
+      "speed": 2,
+      "escapeRoute": true
+    },
+    {
+      "id": "3.4",
+      "staticRocks": true,
+      "dynamicBoulders": {
+        "directions": ["left", "right"],
+        "sizes": ["large"]
+      },
+      "speed": 3,
+      "escapeRoute": true
+    },
+
+    {
+      "id": "4.0",
+      "staticRocks": true,
+      "dynamicBoulders": {
+        "directions": ["top", "bottom", "left", "right"],
+        "sizes": ["medium"]
+      },
+      "speed": 1,
+      "escapeRoute": true
+    },
+    {
+      "id": "4.1",
+      "staticRocks": true,
+      "dynamicBoulders": {
+        "directions": ["top", "bottom", "left", "right"],
+        "sizes": ["medium", "large"]
+      },
+      "speed": 2,
+      "escapeRoute": true
+    },
+    {
+      "id": "4.2",
+      "staticRocks": true,
+      "dynamicBoulders": {
+        "directions": ["top", "bottom", "left", "right"],
+        "sizes": ["large"]
+      },
+      "speed": 3,
+      "escapeRoute": true
+    },
+    {
+      "id": "4.3",
+      "staticRocks": true,
+      "dynamicBoulders": {
+        "directions": ["top", "bottom", "left", "right"],
+        "sizes": ["large", "small"]
+      },
+      "speed": 4,
+      "escapeRoute": true
+    },
+    {
+      "id": "4.4",
+      "staticRocks": true,
+      "dynamicBoulders": {
+        "directions": ["top", "bottom", "left", "right"],
+        "sizes": ["large"]
+      },
+      "speed": 5,
+      "escapeRoute": true
+    },
+
+    {
+      "id": "5.0",
+      "staticRocks": {
+        "dynamicSize": true
+      },
+      "dynamicBoulders": false,
+      "speed": 1,
+      "escapeRoute": false
+    },
+    {
+      "id": "5.1",
+      "staticRocks": {
+        "dynamicSize": true
+      },
+      "dynamicBoulders": {
+        "directions": ["top", "bottom", "left", "right"],
+        "sizes": ["medium", "large"]
+      },
+      "speed": 2,
+      "escapeRoute": true
+    },
+    {
+      "id": "5.2",
+      "staticRocks": {
+        "dynamicSize": true
+      },
+      "dynamicBoulders": {
+        "directions": ["top", "bottom", "left", "right"],
+        "sizes": ["large"]
+      },
+      "speed": 3,
+      "escapeRoute": true
+    },
+    {
+      "id": "5.3",
+      "staticRocks": {
+        "dynamicSize": true,
+        "rotation": true
+      },
+      "dynamicBoulders": {
+        "directions": ["top", "bottom", "left", "right"],
+        "sizes": ["large"]
+      },
+      "speed": 4,
+      "escapeRoute": true
+    },
+    {
+      "id": "5.4",
+      "staticRocks": {
+        "dynamicSize": true,
+        "chaotic": true
+      },
+      "dynamicBoulders": {
+        "directions": ["top", "bottom", "left", "right"],
+        "sizes": ["large", "small"]
+      },
+      "speed": 5,
+      "escapeRoute": true
+    }
+  ]
+}
+
+
+Le rocce che cadono dall'esterno quindi dall'alto, basso, destra e sinistra se trovano lungo il tragitto una roccia si appoggiano su di essa impilandosi (di fila)
