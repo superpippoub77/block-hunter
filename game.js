@@ -227,6 +227,44 @@ const GAME_STATE = {
     ]
 };
 
+// Utility: draw a rounded panel (semi-transparent fill + black border) around a text object
+function drawTextPanel(graphics, textObj, opts = {}) {
+    const paddingX = opts.paddingX || 12;
+    const paddingY = opts.paddingY || 6;
+    const radius = opts.radius || 6;
+
+    graphics.clear();
+    if (!textObj || !textObj.text) return;
+
+    const width = (textObj.width || 0) + paddingX * 2;
+    const height = (textObj.height || 0) + paddingY * 2;
+    const x = textObj.x - width * (textObj.originX || 0.5);
+    const y = textObj.y - height * (textObj.originY || 0.5);
+
+    // semi-transparent dark fill
+    graphics.fillStyle(0x000000, 0.35);
+    if (graphics.fillRoundedRect) {
+        graphics.fillRoundedRect(x, y, width, height, radius);
+    } else {
+        graphics.fillRect(x, y, width, height);
+    }
+
+    // black border
+    graphics.lineStyle(2, 0x000000, 1);
+    if (graphics.strokeRoundedRect) {
+        graphics.strokeRoundedRect(x, y, width, height, radius);
+    } else {
+        graphics.strokeRect(x, y, width, height);
+    }
+
+    // Ensure panel sits behind the text
+    try {
+        graphics.setDepth((textObj.depth || 0) - 1);
+    } catch (e) {
+        // ignore if depth cannot be set
+    }
+}
+
 // Level configurations
 const LEVEL_CONFIG = {
     globalRules: {
@@ -614,6 +652,9 @@ class AttractScene extends Phaser.Scene {
             fontFamily: GAME_FONT
         }).setOrigin(0.5);
 
+        // Panels (background + black border) for UI texts
+        this.coinPanel = this.add.graphics();
+
         // Player buttons
         this.player1Text = this.add.text(150, 550, '', {
             fontSize: '18px',
@@ -621,11 +662,15 @@ class AttractScene extends Phaser.Scene {
             fontFamily: GAME_FONT
         }).setOrigin(0.5);
 
+        this.player1Panel = this.add.graphics();
+
         this.player2Text = this.add.text(650, 550, '', {
             fontSize: '18px',
             fill: '#666666',
             fontFamily: GAME_FONT
         }).setOrigin(0.5);
+
+        this.player2Panel = this.add.graphics();
 
         // Setup input
         this.setupInput();
@@ -730,9 +775,35 @@ class AttractScene extends Phaser.Scene {
         } else if (this.titleImage) {
             // no-op: title is an image loaded from images/title.png
         }
-    // Show either instructions or story depending on current toggle state
-    const displayedText = (this.showingStory) ? (t.story || t.instructions) : t.instructions;
-    this.instructionsText.setText(displayedText);
+        // Show either instructions or story depending on current toggle state
+        const displayedText = (this.showingStory) ? (t.story || t.instructions) : t.instructions;
+        this.instructionsText.setText(displayedText);
+
+        // Make sure UI texts are above panels
+        this.coinText.setDepth(2);
+        this.player1Text.setDepth(2);
+        this.player2Text.setDepth(2);
+
+        // Draw/update panels: coin always visible, player panels visible only when active
+        if (this.coinPanel) drawTextPanel(this.coinPanel, this.coinText, { paddingX: 14, paddingY: 8 });
+
+        if (this.player1Panel) {
+            if (GAME_STATE.credits >= 1) {
+                // Highlight player panel when active
+                drawTextPanel(this.player1Panel, this.player1Text, { paddingX: 10, paddingY: 6 });
+            } else {
+                // hide when inactive
+                this.player1Panel.clear();
+            }
+        }
+
+        if (this.player2Panel) {
+            if (GAME_STATE.credits >= 2) {
+                drawTextPanel(this.player2Panel, this.player2Text, { paddingX: 10, paddingY: 6 });
+            } else {
+                this.player2Panel.clear();
+            }
+        }
 
         // Language is now shown via flag sprite, not text
         // (removed: this.langText.setText(GAME_STATE.language.toUpperCase());)
@@ -779,11 +850,15 @@ class TopTenScene extends Phaser.Scene {
 
         this.add.image(400, 300, 'bg').setDisplaySize(800, 600);
 
-        this.add.text(400, 80, t.topTen, {
+        const topTitle = this.add.text(400, 80, t.topTen, {
             fontSize: '48px',
             fill: '#ffff00',
             fontFamily: GAME_FONT
         }).setOrigin(0.5);
+
+        // Panel behind Top Ten title
+        this.topTitlePanel = this.add.graphics();
+        drawTextPanel(this.topTitlePanel, topTitle, { paddingX: 18, paddingY: 10, radius: 8 });
 
         let y = 150;
         GAME_STATE.topScores.forEach((entry, i) => {
