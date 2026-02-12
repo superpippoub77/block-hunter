@@ -9,25 +9,7 @@ const CONFIG = {};
 const GAME_STATE = {};
 
 // Load configuration from /data/config.json
-function loadConfig(callback) {
-    fetch('data/config.json')
-        .then(res => res.json())
-        .then(data => {
-            // Copy all config keys to CONFIG
-            Object.assign(CONFIG, data);
-            // Copy game state keys to GAME_STATE
-            const stateKeys = [
-                'credits','language','difficulty','currentLevel','score','lives','dynamiteCount','keysCount','topScores'
-            ];
-            stateKeys.forEach(k => {
-                if (data[k] !== undefined) GAME_STATE[k] = data[k];
-            });
-            if (typeof callback === 'function') callback(data);
-        })
-        .catch(() => {
-            if (typeof callback === 'function') callback(null);
-        });
-}
+// Rimosso: la configurazione viene caricata solo tramite loadConfigAndStartGame
 
 // Native asset sizes (used to compute scale when adapting to CONFIG)
 const TILE_NATIVE_WIDTH = 64; // tiles spritesheet native width per tile frame
@@ -187,14 +169,8 @@ class BootScene extends Phaser.Scene {
     }
 
     create() {
-        // Attendi che la configurazione sia caricata prima di passare a PreloadScene
-        if (!CONFIG.tileSize) {
-            loadConfig(() => {
-                this.scene.start('PreloadScene');
-            });
-        } else {
-            this.scene.start('PreloadScene');
-        }
+        // La configurazione è già caricata da loadConfigAndStartGame, quindi si può passare direttamente
+        this.scene.start('PreloadScene');
     }
 }
 
@@ -405,7 +381,7 @@ class AttractScene extends Phaser.Scene {
                         if (vibTween && vibTween.stop) vibTween.stop();
                         if (rotTween && rotTween.stop) rotTween.stop();
                         if (blinkTween && blinkTween.stop) blinkTween.stop();
-                    } catch (e) {}
+                    } catch (e) { }
                     this.titleImage.x = 400;
                     this.titleImage.y = 150;
                     this.titleImage.angle = 0;
@@ -1576,7 +1552,7 @@ class GameScene extends Phaser.Scene {
             attempts++;
 
             // Evita il centro dove spawna il player
-           
+
             const centerX = Math.floor(this.mapCols / 2);
             const centerY = Math.floor(this.mapRows / 2);
             tooClose = Math.abs(x - centerX) < 3 && Math.abs(y - centerY) < 3;
@@ -2660,20 +2636,43 @@ class GameOverScene extends Phaser.Scene {
 // ============================================================================
 // GAME CONFIGURATION
 // ============================================================================
-const config = {
-    type: Phaser.AUTO,
-    width: CONFIG.width,
-    height: CONFIG.height,
-    parent: 'game-container',
-    backgroundColor: '#000000',
-    physics: {
-        default: 'arcade',
-        arcade: {
-            gravity: { y: 0 },
-            debug: false
-        }
-    },
-    scene: [BootScene, PreloadScene, AttractScene, TopTenScene, ConfigScene, LevelSelectScene, GameScene, GameOverScene]
-};
+function loadConfigAndStartGame() {
+    fetch('/data/config.json')
+        .then(response => response.json())
+        .then(cfg => {
+            // Copy all config keys to CONFIG
+            Object.assign(CONFIG, cfg);
 
-const game = new Phaser.Game(config);
+            const config = {
+                type: Phaser.AUTO,
+                width: CONFIG.width,
+                height: CONFIG.height,
+                parent: 'game-container',
+                backgroundColor: '#000000',
+                physics: {
+                    default: 'arcade',
+                    arcade: {
+                        gravity: { y: 0 },
+                        debug: false
+                    }
+                },
+                scene: [BootScene, PreloadScene, AttractScene, TopTenScene, ConfigScene, LevelSelectScene, GameScene, GameOverScene]
+            };
+
+            // Copy game state keys to GAME_STATE
+            const stateKeys = [
+                'credits', 'language', 'difficulty', 'currentLevel', 'score', 'lives', 'dynamiteCount', 'keysCount', 'topScores'
+            ];
+            stateKeys.forEach(k => {
+                if (cfg[k] !== undefined) GAME_STATE[k] = cfg[k];
+            });
+
+            new Phaser.Game(config);
+        })
+        .catch(err => {
+            console.error('Errore caricamento config.json:', err);
+            alert('Impossibile caricare la configurazione del gioco.');
+        });
+}
+
+loadConfigAndStartGame();
