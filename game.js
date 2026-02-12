@@ -1275,8 +1275,10 @@ class GameScene extends Phaser.Scene {
             this.gemsRemaining = CONFIG.gemsPerLevel;
         }
 
-        // Spawn static rocks
-        this.spawnStaticRocks();
+        // Spawn static rocks solo se non disabilitato da config
+        if (!CONFIG.disableStaticRocks) {
+            this.spawnStaticRocks();
+        }
 
         // Spawn first gem
         this.time.delayedCall(CONFIG.gemSpawnDelay, () => this.spawnGem());

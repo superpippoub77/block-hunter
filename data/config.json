@@ -27,6 +27,7 @@
   "lives": 5,
   "dynamiteCount": 20,
   "keysCount": 0,
+  "disableStaticRocks": true,
   "topScores": [
     { "name": "AAA", "score": 5000 },
     { "name": "BBB", "score": 4000 },
