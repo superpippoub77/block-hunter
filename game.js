@@ -2,256 +2,73 @@
 // BLOCKHUNTER - Arcade Game in Phaser 3
 // ============================================================================
 
-// Global configuration
-const CONFIG = {
-    width: 800,
-    height: 600,
-    tileSize: 32,
-    // object size in pixels (width/height) used to scale object sprites
-    objectSize: 32,
-    // base camera zoom (1 = default)
-    cameraZoom: 1,
-    gridWidth: 25,
-    gridHeight: 18,
-    playerSpeed: 120,
-    boulderBaseSpeed: 60,
-    dynamiteSpeed: 200,
-    shardSpeed: 150,
-    dynamiteLifetime: 5000,
-    shardLifetime: 2000,
-    doorCloseTime: 30000,
-    attractTimeout: 10000,
-    topTenTimeout: 10000,
-    gemSpawnDelay: 1000,
-    gemsPerLevel: 10,
-    cameraEnabled: true, // Flag to enable/disable camera functionality
-    zoomEnabled: true   // Flag to enable/disable zoom functionality
-};
+// Global configuration (populated from /data/config.json)
+const CONFIG = {};
+
+// Game state (populated from /data/config.json)
+const GAME_STATE = {};
+
+// Load configuration from /data/config.json
+function loadConfig(callback) {
+    fetch('data/config.json')
+        .then(res => res.json())
+        .then(data => {
+            // Copy all config keys to CONFIG
+            Object.assign(CONFIG, data);
+            // Copy game state keys to GAME_STATE
+            const stateKeys = [
+                'credits','language','difficulty','currentLevel','score','lives','dynamiteCount','keysCount','topScores'
+            ];
+            stateKeys.forEach(k => {
+                if (data[k] !== undefined) GAME_STATE[k] = data[k];
+            });
+            if (typeof callback === 'function') callback(data);
+        })
+        .catch(() => {
+            if (typeof callback === 'function') callback(null);
+        });
+}
 
 // Native asset sizes (used to compute scale when adapting to CONFIG)
 const TILE_NATIVE_WIDTH = 64; // tiles spritesheet native width per tile frame
 const TILE_NATIVE_HEIGHT = 48;
 const OBJECT_NATIVE_SIZE = 64; // objects.png frames are 64x64
 
-// Load persistent config if present
-try {
-    const saved = localStorage.getItem('blockHunterConfig');
-    if (saved) {
-        const parsed = JSON.parse(saved);
-        if (parsed.tileSize) CONFIG.tileSize = parsed.tileSize;
-        if (parsed.objectSize) CONFIG.objectSize = parsed.objectSize;
-        if (parsed.cameraZoom) CONFIG.cameraZoom = parsed.cameraZoom;
-        // Backwards compatibility: support old 'objectScale' saved values
-        else if (parsed.objectScale) CONFIG.objectSize = Math.round(parsed.objectScale * OBJECT_NATIVE_SIZE);
+// Load persistent config if present (optional: can be merged after loadConfig)
+function mergeLocalConfig() {
+    try {
+        const saved = localStorage.getItem('blockHunterConfig');
+        if (saved) {
+            const parsed = JSON.parse(saved);
+            if (parsed.tileSize) CONFIG.tileSize = parsed.tileSize;
+            if (parsed.objectSize) CONFIG.objectSize = parsed.objectSize;
+            if (parsed.cameraZoom) CONFIG.cameraZoom = parsed.cameraZoom;
+            // Backwards compatibility: support old 'objectScale' saved values
+            else if (parsed.objectScale) CONFIG.objectSize = Math.round(parsed.objectScale * OBJECT_NATIVE_SIZE);
+        }
+    } catch (e) {
+        // ignore localStorage errors
     }
-} catch (e) {
-    // ignore localStorage errors
 }
 
 const GAME_FONT = '"Press Start 2P"';
 // Translations
-const TRANSLATIONS = {
-    it: {
-        title: 'BLOCKHUNTER',
-        insertCoin: 'INSERISCI MONETA',
-        credit: 'CREDITO',
-        player1: '1 GIOCATORE',
-        player2: '2 GIOCATORI',
-        instructions: 'RACCOGLI TUTTE LE GEMME\nEVITA I MASSI\nWASD - MUOVI\nSPAZIO - DINAMITE',
-        story: 'SEI UN CERCATORE DI TESORI.\nSCAVA, EVITA I MASSI E TROVA LE GEMME',
-        selectDifficulty: 'SCEGLI DIFFICOLTA',
-        beginner: 'PRINCIPIANTE',
-        medium: 'MEDIO',
-        hard: 'DIFFICILE',
-        gameOver: 'FINE PARTITA',
-        enterName: 'INSERISCI NOME',
-        topTen: 'CLASSIFICA',
-        score: 'PUNTEGGIO',
-        lives: 'VITE',
-        dynamite: 'DINAMITE',
-        level: 'LIVELLO',
-        keys: 'CHIAVI',
-        gems: 'GEMME'
-    },
-    fr: {
-        title: 'BLOCKHUNTER',
-        insertCoin: 'INSERER PIECE',
-        credit: 'CREDIT',
-        player1: '1 JOUEUR',
-        player2: '2 JOUEURS',
-        instructions: 'COLLECTEZ GEMMES\nEVITEZ ROCHERS\nWASD - BOUGER\nESPACE - DYNAMITE',
-        story: 'VOUS ETES UN CHASSEUR DE TRESORS.\nDEGUERPISSEZ, EVITEZ LES ROCHEUX ET TROUVEZ LES GEMMES',
-        selectDifficulty: 'CHOISIR DIFFICULTE',
-        beginner: 'DEBUTANT',
-        medium: 'MOYEN',
-        hard: 'DIFFICILE',
-        gameOver: 'FIN DU JEU',
-        enterName: 'ENTREZ NOM',
-        topTen: 'MEILLEURS SCORES',
-        score: 'SCORE',
-        lives: 'VIES',
-        dynamite: 'DYNAMITE',
-        level: 'NIVEAU',
-        keys: 'CLES',
-        gems: 'GEMMES'
-    },
-    de: {
-        title: 'BLOCKHUNTER',
-        insertCoin: 'MUNZE EINWERFEN',
-        credit: 'KREDIT',
-        player1: '1 SPIELER',
-        player2: '2 SPIELER',
-        instructions: 'SAMMLE EDELSTEINE\nVERMEIDE FELSEN\nWASD - BEWEGEN\nLEERTASTE - DYNAMIT',
-        story: 'DU BIST EIN SCHATZSUCHE.\nGRABE, WEICHE FELSEN AUS UND FINDE DIE EDELSTEINE',
-        selectDifficulty: 'SCHWIERIGKEIT WAHLEN',
-        beginner: 'ANFANGER',
-        medium: 'MITTEL',
-        hard: 'SCHWER',
-        gameOver: 'SPIEL VORBEI',
-        enterName: 'NAME EINGEBEN',
-        topTen: 'TOP TEN',
-        score: 'PUNKTE',
-        lives: 'LEBEN',
-        dynamite: 'DYNAMIT',
-        level: 'STUFE',
-        keys: 'SCHLUSSEL',
-        gems: 'EDELSTEINE'
-    },
-    en: {
-        title: 'BLOCKHUNTER',
-        insertCoin: 'INSERT COIN',
-        credit: 'CREDIT',
-        player1: '1 PLAYER',
-        player2: '2 PLAYERS',
-        instructions: 'COLLECT ALL GEMS\nAVOID BOULDERS\nWASD - MOVE\nSPACE - DYNAMITE',
-        story: 'YOU ARE A TREASURE HUNTER.\nDIG, DODGE BOULDERS AND FIND THE GEMS',
-        selectDifficulty: 'SELECT DIFFICULTY',
-        beginner: 'BEGINNER',
-        medium: 'MEDIUM',
-        hard: 'HARD',
-        gameOver: 'GAME OVER',
-        enterName: 'ENTER NAME',
-        topTen: 'TOP TEN SCORES',
-        score: 'SCORE',
-        lives: 'LIVES',
-        dynamite: 'DYNAMITE',
-        level: 'LEVEL',
-        keys: 'KEYS',
-        gems: 'GEMS'
-    },
-    us: {
-        title: 'BLOCKHUNTER',
-        insertCoin: 'INSERT COIN',
-        credit: 'CREDIT',
-        player1: '1 PLAYER',
-        player2: '2 PLAYERS',
-        instructions: 'COLLECT ALL GEMS\nAVOID BOULDERS\nWASD - MOVE\nSPACE - DYNAMITE',
-        story: 'YOU ARE A TREASURE HUNTER.\nDIG, DODGE BOULDERS AND FIND THE GEMS',
-        selectDifficulty: 'SELECT DIFFICULTY',
-        beginner: 'BEGINNER',
-        medium: 'MEDIUM',
-        hard: 'HARD',
-        gameOver: 'GAME OVER',
-        enterName: 'ENTER NAME',
-        topTen: 'TOP TEN SCORES',
-        score: 'SCORE',
-        lives: 'LIVES',
-        dynamite: 'DYNAMITE',
-        level: 'LEVEL',
-        keys: 'KEYS',
-        gems: 'GEMS'
-    },
-    ja: {
-        title: 'BLOCKHUNTER',
-        insertCoin: 'コインを入れる',
-        credit: 'クレジット',
-        player1: '1プレイヤー',
-        player2: '2プレイヤー',
-        instructions: '宝石を集める\n岩を避ける\nWASD - 移動\nスペース - ダイナマイト',
-        story: 'あなたは宝探しです。\n掘って、岩を避け、宝石を見つけよう',
-        selectDifficulty: '難易度を選択',
-        beginner: '初心者',
-        medium: '中級',
-        hard: '上級',
-        gameOver: 'ゲームオーバー',
-        enterName: '名前を入力',
-        topTen: 'トップテン',
-        score: 'スコア',
-        lives: 'ライフ',
-        dynamite: 'ダイナマイト',
-        level: 'レベル',
-        keys: 'カギ',
-        gems: '宝石'
-    },
-    es: {
-        title: 'BLOCKHUNTER',
-        insertCoin: 'INSERTAR MONEDA',
-        credit: 'CREDITO',
-        player1: '1 JUGADOR',
-        player2: '2 JUGADORES',
-        instructions: 'RECOGE TODAS LAS GEMAS\nEVITA LAS ROCAS\nWASD - MOVER\nESPACIO - DINAMITA',
-        story: 'ERES UN CAZADOR DE TESOROS.\nEXCAVA, EVITA ROCAS Y ENCUENTRA LAS GEMAS',
-        selectDifficulty: 'SELECCIONAR DIFICULTAD',
-        beginner: 'PRINCIPIANTE',
-        medium: 'MEDIO',
-        hard: 'DIFICIL',
-        gameOver: 'FIN DEL JUEGO',
-        enterName: 'INTRODUCE NOMBRE',
-        topTen: 'MEJORES PUNTUACIONES',
-        score: 'PUNTUACION',
-        lives: 'VIDAS',
-        dynamite: 'DINAMITA',
-        level: 'NIVEL',
-        keys: 'LLAVES',
-        gems: 'GEMAS'
-    },
-    zh: {
-        title: 'BLOCKHUNTER',
-        insertCoin: '投币',
-        credit: '信用',
-        player1: '1玩家',
-        player2: '2玩家',
-        instructions: '收集宝石\n避开巨石\nWASD - 移动\n空格 - 炸药',
-        story: '你是一名寻宝者。\n挖掘、躲避巨石，寻找宝石',
-        selectDifficulty: '选择难度',
-        beginner: '初级',
-        medium: '中级',
-        hard: '困难',
-        gameOver: '游戏结束',
-        enterName: '输入名字',
-        topTen: '前十名',
-        score: '分数',
-        lives: '生命',
-        dynamite: '炸药',
-        level: '关卡',
-        keys: '钥匙',
-        gems: '宝石'
-    }
-};
+const TRANSLATIONS = {};
 
-// Game state
-const GAME_STATE = {
-    credits: 0,
-    language: 'en',
-    difficulty: 1.0,
-    currentLevel: 0,
-    score: 0,
-    lives: 5,
-    dynamiteCount: 20,
-    keysCount: 0,
-    topScores: [
-        { name: 'AAA', score: 5000 },
-        { name: 'BBB', score: 4000 },
-        { name: 'CCC', score: 3000 },
-        { name: 'DDD', score: 2000 },
-        { name: 'EEE', score: 1000 },
-        { name: 'FFF', score: 900 },
-        { name: 'GGG', score: 800 },
-        { name: 'HHH', score: 700 },
-        { name: 'III', score: 600 },
-        { name: 'JJJ', score: 500 }
-    ]
-};
+function loadTranslations(lang, callback) {
+    fetch(`data/dic/${lang}.json`)
+        .then(res => res.json())
+        .then(data => {
+            TRANSLATIONS[lang] = data;
+            if (typeof callback === 'function') callback(data);
+        })
+        .catch(() => {
+            TRANSLATIONS[lang] = {};
+            if (typeof callback === 'function') callback({});
+        });
+}
+
+
 
 // Utility: draw a rounded panel (semi-transparent fill + black border) around a text object
 function drawTextPanel(graphics, textObj, opts = {}) {
