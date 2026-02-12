@@ -189,6 +189,16 @@ class BootScene extends Phaser.Scene {
     create() {
         this.scene.start('PreloadScene');
     }
+        create() {
+            // Attendi che la configurazione sia caricata prima di creare le texture
+            if (!CONFIG.tileSize) {
+                loadConfig(function() {
+                    this.createAssets();
+                }.bind(this));
+            } else {
+                this.createAssets();
+            }
+        }
 }
 
 // ============================================================================
