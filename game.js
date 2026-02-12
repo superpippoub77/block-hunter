@@ -187,18 +187,15 @@ class BootScene extends Phaser.Scene {
     }
 
     create() {
-        this.scene.start('PreloadScene');
-    }
-        create() {
-            // Attendi che la configurazione sia caricata prima di creare le texture
-            if (!CONFIG.tileSize) {
-                loadConfig(function() {
-                    this.createAssets();
-                }.bind(this));
-            } else {
-                this.createAssets();
-            }
+        // Attendi che la configurazione sia caricata prima di passare a PreloadScene
+        if (!CONFIG.tileSize) {
+            loadConfig(() => {
+                this.scene.start('PreloadScene');
+            });
+        } else {
+            this.scene.start('PreloadScene');
         }
+    }
 }
 
 // ============================================================================
@@ -242,8 +239,12 @@ class PreloadScene extends Phaser.Scene {
         });
 
         // Load all level JSON files (50 levels)
-        for (let i = 10; i <= 54; i++) {
-            this.load.json(`level${i}`, `data/level/level${i}.json`);
+        // Carica solo i livelli con sottolivello 0-4 per ogni decade
+        for (let decade = 1; decade <= 5; decade++) {
+            for (let sub = 0; sub <= 4; sub++) {
+                const num = decade * 10 + sub;
+                this.load.json(`level${num}`, `data/level/level${num}.json`);
+            }
         }
 
         // Create graphics for remaining assets
@@ -341,7 +342,11 @@ class PreloadScene extends Phaser.Scene {
     }
 
     create() {
-        this.scene.start('AttractScene');
+        // Carica le traduzioni prima di avviare la scena AttractScene
+        const lang = CONFIG.language || 'it';
+        loadTranslations(lang, () => {
+            this.scene.start('AttractScene');
+        });
     }
 }
 
@@ -362,13 +367,9 @@ class AttractScene extends Phaser.Scene {
         this.add.image(400, 300, 'bg').setDisplaySize(800, 600);
 
         // Title image (loaded from images/title.png)
-        // Appears with a falling-rock effect and then vibrates
-        // If you want to localize the title per language, replace the texture key accordingly.
         this.titleImage = this.add.image(400, -120, 'title').setOrigin(0.5);
-        // Start slightly bigger to emphasize the drop
         this.titleImage.setScale(1.3);
 
-        // Landing tween: drop into place with bounce, then start vibration + blink
         this.tweens.add({
             targets: this.titleImage,
             y: 150,
@@ -376,7 +377,6 @@ class AttractScene extends Phaser.Scene {
             duration: 800,
             ease: 'Bounce.easeOut',
             onComplete: () => {
-                // Start temporary vibration/rotation/blink tweens and stop them after a short time
                 const vibTween = this.tweens.add({
                     targets: this.titleImage,
                     x: '+=6',
@@ -385,7 +385,6 @@ class AttractScene extends Phaser.Scene {
                     repeat: -1,
                     ease: 'Sine.easeInOut'
                 });
-
                 const rotTween = this.tweens.add({
                     targets: this.titleImage,
                     angle: 2,
@@ -394,7 +393,6 @@ class AttractScene extends Phaser.Scene {
                     repeat: -1,
                     ease: 'Sine.easeInOut'
                 });
-
                 const blinkTween = this.tweens.add({
                     targets: this.titleImage,
                     alpha: 0.6,
@@ -402,18 +400,12 @@ class AttractScene extends Phaser.Scene {
                     yoyo: true,
                     repeat: -1
                 });
-
-                // Stop the temporary effects after a short duration (3 seconds)
                 this.time.delayedCall(3000, () => {
                     try {
                         if (vibTween && vibTween.stop) vibTween.stop();
                         if (rotTween && rotTween.stop) rotTween.stop();
                         if (blinkTween && blinkTween.stop) blinkTween.stop();
-                    } catch (e) {
-                        // ignore if tweens already removed
-                    }
-
-                    // Reset to stable final state
+                    } catch (e) {}
                     this.titleImage.x = 400;
                     this.titleImage.y = 150;
                     this.titleImage.angle = 0;
@@ -423,24 +415,19 @@ class AttractScene extends Phaser.Scene {
             }
         });
 
-        // Instructions
         this.instructionsText = this.add.text(400, 280, '', {
             fontSize: '16px',
             fill: '#ffffff',
             fontFamily: GAME_FONT,
             align: 'center'
         }).setOrigin(0.5);
-
-        // Falling effect for instructions (like boulders)
-        this.instructionsText.y = -50; // Start above screen
+        this.instructionsText.y = -50;
         this.tweens.add({
             targets: this.instructionsText,
             y: 280,
             duration: 800,
             ease: 'Bounce.easeOut'
         });
-
-        // Subtle continuous wobble to simulate unstable rock
         this.tweens.add({
             targets: this.instructionsText,
             angle: -1,
@@ -451,20 +438,28 @@ class AttractScene extends Phaser.Scene {
             delay: 800
         });
 
-        // Story alternating: toggle between instructions and a short story every few seconds
-        this.showingStory = false; // start showing instructions
-        // Use a repeating timed event to toggle the displayed text
-        this.storyToggleEvent = this.time.addEvent({
-            delay: 5000,
-            loop: true,
-            callback: this.toggleStory,
-            callbackScope: this
-        });
+        // Panels and UI elements
+        this.coinText = this.add.text(400, 480, '', {
+            fontSize: '24px',
+            fill: '#ffee00ff',
+            fontFamily: GAME_FONT
+        }).setOrigin(0.5);
+        this.coinPanel = this.add.graphics();
+        this.player1Text = this.add.text(150, 550, '', {
+            fontSize: '18px',
+            fill: '#666666',
+            fontFamily: GAME_FONT
+        }).setOrigin(0.5);
+        this.player1Panel = this.add.graphics();
+        this.player2Text = this.add.text(650, 550, '', {
+            fontSize: '18px',
+            fill: '#666666',
+            fontFamily: GAME_FONT
+        }).setOrigin(0.5);
+        this.player2Panel = this.add.graphics();
 
         // Language selector with flags
         this.flagSprite = this.add.sprite(400, 400, 'flags', this.currentLangIndex).setOrigin(0.5);
-
-        // Flag waving animation (sventolio)
         this.tweens.add({
             targets: this.flagSprite,
             scaleX: 1.05,
@@ -475,7 +470,6 @@ class AttractScene extends Phaser.Scene {
             repeat: -1,
             ease: 'Sine.easeInOut'
         });
-
         this.tweens.add({
             targets: this.flagSprite,
             y: 398,
@@ -485,57 +479,36 @@ class AttractScene extends Phaser.Scene {
             ease: 'Sine.easeInOut',
             delay: 200
         });
-
         this.add.text(320, 400, '◄', {
             fontSize: '24px',
             fill: '#ffffff',
             fontFamily: GAME_FONT
         }).setOrigin(0.5).setInteractive().on('pointerdown', () => this.changeLanguage(-1));
-
         this.add.text(480, 400, '►', {
             fontSize: '24px',
             fill: '#ffffff',
             fontFamily: GAME_FONT
         }).setOrigin(0.5).setInteractive().on('pointerdown', () => this.changeLanguage(1));
 
-        // Insert coin text
-        this.coinText = this.add.text(400, 480, '', {
-            fontSize: '24px',
-            fill: '#ffee00ff',
-            fontFamily: GAME_FONT
-        }).setOrigin(0.5);
-
-        // Panels (background + black border) for UI texts
-        this.coinPanel = this.add.graphics();
-
-        // Player buttons
-        this.player1Text = this.add.text(150, 550, '', {
-            fontSize: '18px',
-            fill: '#666666',
-            fontFamily: GAME_FONT
-        }).setOrigin(0.5);
-
-        this.player1Panel = this.add.graphics();
-
-        this.player2Text = this.add.text(650, 550, '', {
-            fontSize: '18px',
-            fill: '#666666',
-            fontFamily: GAME_FONT
-        }).setOrigin(0.5);
-
-        this.player2Panel = this.add.graphics();
-
         // Setup input
         this.setupInput();
-
-        // Track last movement direction for shooting
         this.lastMoveDir = { x: 1, y: 0 };
 
-        // Update UI
-        this.updateUI();
+        // Story alternating: toggle between instructions and a short story every few seconds
+        this.showingStory = false;
 
-        // Attract timeout
-        this.resetTimeout();
+        // Carica le traduzioni prima di mostrare la UI
+        loadTranslations(GAME_STATE.language, () => {
+            // Story toggle event solo dopo che le traduzioni sono pronte
+            this.storyToggleEvent = this.time.addEvent({
+                delay: 5000,
+                loop: true,
+                callback: this.toggleStory,
+                callbackScope: this
+            });
+            this.updateUI();
+            this.resetTimeout();
+        });
     }
 
     setupInput() {
@@ -619,17 +592,26 @@ class AttractScene extends Phaser.Scene {
     }
 
     updateUI() {
-        const t = TRANSLATIONS[GAME_STATE.language];
+        // Fallback to empty object if translations not loaded
+        const t = TRANSLATIONS[GAME_STATE.language] || {};
+
+        // Provide default strings if missing
+        const title = t.title || 'BLOCK HUNTER';
+        const instructions = t.instructions || 'INSERT COIN TO START';
+        const story = t.story || '';
+        const insertCoin = t.insertCoin || 'INSERT COIN';
+        const credit = t.credit || 'CREDIT';
+        const player1 = t.player1 || 'PLAYER 1';
+        const player2 = t.player2 || 'PLAYER 2';
 
         // Title used to be a text object; now we use an image. Keep backward compatibility
-        // in case other code still created a text title elsewhere.
         if (this.titleText && typeof this.titleText.setText === 'function') {
-            this.titleText.setText(t.title);
+            this.titleText.setText(title);
         } else if (this.titleImage) {
             // no-op: title is an image loaded from images/title.png
         }
         // Show either instructions or story depending on current toggle state
-        const displayedText = (this.showingStory) ? (t.story || t.instructions) : t.instructions;
+        const displayedText = (this.showingStory) ? (story || instructions) : instructions;
         this.instructionsText.setText(displayedText);
 
         // Make sure UI texts are above panels
@@ -659,24 +641,23 @@ class AttractScene extends Phaser.Scene {
         }
 
         // Language is now shown via flag sprite, not text
-        // (removed: this.langText.setText(GAME_STATE.language.toUpperCase());)
 
         if (GAME_STATE.credits === 0) {
-            this.coinText.setText(t.insertCoin);
+            this.coinText.setText(insertCoin);
         } else {
-            this.coinText.setText(t.credit + ' ' + GAME_STATE.credits);
+            this.coinText.setText(credit + ' ' + GAME_STATE.credits);
         }
 
         if (GAME_STATE.credits >= 1) {
-            this.player1Text.setText(t.player1).setStyle({ fill: '#00ff00' });
+            this.player1Text.setText(player1).setStyle({ fill: '#00ff00' });
         } else {
-            this.player1Text.setText(t.player1).setStyle({ fill: '#666666' });
+            this.player1Text.setText(player1).setStyle({ fill: '#666666' });
         }
 
         if (GAME_STATE.credits >= 2) {
-            this.player2Text.setText(t.player2).setStyle({ fill: '#00ff00' });
+            this.player2Text.setText(player2).setStyle({ fill: '#00ff00' });
         } else {
-            this.player2Text.setText(t.player2).setStyle({ fill: '#666666' });
+            this.player2Text.setText(player2).setStyle({ fill: '#666666' });
         }
     }
 
