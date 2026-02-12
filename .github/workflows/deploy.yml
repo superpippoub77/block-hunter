@@ -25,6 +25,7 @@ jobs:
         exclude: |
           **/*
           !index.html
+          !game.js
           !css/**
           !js/**
           !data/**
