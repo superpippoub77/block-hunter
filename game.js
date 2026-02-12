@@ -2637,7 +2637,7 @@ class GameOverScene extends Phaser.Scene {
 // GAME CONFIGURATION
 // ============================================================================
 function loadConfigAndStartGame() {
-    fetch('/data/config.json')
+    fetch('data/config.json')
         .then(response => response.json())
         .then(cfg => {
             // Copy all config keys to CONFIG
