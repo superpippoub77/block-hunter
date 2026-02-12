@@ -152,12 +152,24 @@ class BootScene extends Phaser.Scene {
     }
 
     preload() {
-        // Create loading text
-        const text = this.add.text(400, 300, 'LOADING...', {
+        // Create loading text with blinking cursor
+        const baseText = 'LOADING...';
+        let showCursor = true;
+        const text = this.add.text(400, 300, baseText + ' |', {
             fontSize: '32px',
             fill: '#fff',
             fontFamily: GAME_FONT
         }).setOrigin(0.5);
+
+        // Blinking cursor effect
+        this.time.addEvent({
+            delay: 500,
+            loop: true,
+            callback: () => {
+                showCursor = !showCursor;
+                text.setText(baseText + (showCursor ? ' |' : ''));
+            }
+        });
 
         this.tweens.add({
             targets: text,
