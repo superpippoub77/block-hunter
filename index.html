@@ -57,7 +57,16 @@
 <body>
     <div id="game-container"></div>
     <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
-    <script src="game.js"></script>
+    <script type="module" src="game.js"></script>
+    <script>
+        window.onload = async function () {
+            if (await inizialization()) {
+                console.log('Gioco inizializzato con successo.');
+            } else {
+                console.error('Errore durante l\'inizializzazione del gioco.');
+            }
+        };
+    </script>
 </body>
 
 </html>

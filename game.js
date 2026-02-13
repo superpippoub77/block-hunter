@@ -2,6 +2,8 @@
 // BLOCKHUNTER - Arcade Game in Phaser 3
 // ============================================================================
 
+import { OBJECT_FRAMES } from './data/module/constants.js';
+
 // Global configuration (populated from /data/config.json)
 const CONFIG = {};
 
@@ -143,48 +145,7 @@ function getLevelFileName(levelIndex) {
     return `level${majorLevel}${minorLevel}`;
 }
 
-// ============================================================================
-// BOOT SCENE
-// ============================================================================
-class BootScene extends Phaser.Scene {
-    constructor() {
-        super('BootScene');
-    }
 
-    preload() {
-        // Create loading text with blinking cursor
-        const baseText = 'LOADING...';
-        let showCursor = true;
-        const text = this.add.text(400, 300, baseText + ' |', {
-            fontSize: '32px',
-            fill: '#fff',
-            fontFamily: GAME_FONT
-        }).setOrigin(0.5);
-
-        // Blinking cursor effect
-        this.time.addEvent({
-            delay: 500,
-            loop: true,
-            callback: () => {
-                showCursor = !showCursor;
-                text.setText(baseText + (showCursor ? ' |' : ''));
-            }
-        });
-
-        this.tweens.add({
-            targets: text,
-            alpha: 0.3,
-            duration: 500,
-            yoyo: true,
-            repeat: -1
-        });
-    }
-
-    create() {
-        // La configurazione è già caricata da loadConfigAndStartGame, quindi si può passare direttamente
-        this.scene.start('PreloadScene');
-    }
-}
 
 // ============================================================================
 // PRELOAD SCENE
@@ -194,37 +155,31 @@ class PreloadScene extends Phaser.Scene {
         super('PreloadScene');
     }
 
+    // Load title, background, tiles, objects, and all level JSON files
     preload() {
-        // Load title image
-        this.load.image('title', 'images/title.png');
-
-        // Load attract background
-        this.load.image('bg', 'images/bg.png');
-
-        // Load game background
-        this.load.image('game_bg', 'images/game_bg.png');
-
-        // Load flags sprite (8 flags: it, fr, de, en, us, ja, es, zh - 64x32 each)
-        this.load.spritesheet('flags', 'images/flags.png', {
-            frameWidth: 64,
-            frameHeight: 32
-        });
-
-        // Load tiles sprite (6 tiles: wall, hole, sand, floor, stone, hole2 - 64x48 each)
-        this.load.spritesheet('tiles', 'images/tiles.png', {
-            frameWidth: 60,
-            frameHeight: 48
-        });
-
-        // Load objects sprite (4x4 matrix = 16 objects)
-        // Row 1: dynamite, heart, stone, player
-        // Row 2: dynamite_chest, door, gem, stones
-        // Row 3: key, sand_pile, ghost, pepita
-        // Row 4: wall, hole1, hole2, explosion
-        this.load.spritesheet('objects', 'images/obj.png', {
-            frameWidth: 64,
-            frameHeight: 64
-        });
+        this.load
+            .image('title', 'images/title.png')
+            .image('bg', 'images/attract_bg.png')
+            .image('game_bg', 'images/game_bg.png')
+            // Load flags sprite (8 flags: it, fr, de, en, us, ja, es, zh - 64x32 each)
+            .spritesheet('flags', 'images/flags.png', {
+                frameWidth: 64,
+                frameHeight: 32
+            })
+            // Load tiles sprite (6 tiles: wall, hole, sand, floor, stone, hole2 - 64x48 each)
+            .spritesheet('tiles', 'images/tiles.png', {
+                frameWidth: 60,
+                frameHeight: 48
+            })
+            // Load objects sprite (4x4 matrix = 16 objects)
+            // Row 1: dynamite, heart, stone, player
+            // Row 2: dynamite_chest, door, gem, stones
+            // Row 3: key, sand_pile, ghost, pepita
+            // Row 4: wall, hole1, hole2, explosion
+            .spritesheet('objects', 'images/obj.png', {
+                frameWidth: 64,
+                frameHeight: 64
+            });
 
         // Load all level JSON files (50 levels)
         // Carica solo i livelli con sottolivello 0-4 per ogni decade
@@ -237,34 +192,10 @@ class PreloadScene extends Phaser.Scene {
 
         // Create graphics for remaining assets
         this.createAssets();
+        console.log("Assets loaded and created.");
     }
 
     createAssets() {
-        // Objects sprite frame mapping (4x4 matrix):
-        // Frame 0-3:   dynamite, heart, stone, player
-        // Frame 4-7:   dynamite_chest, door, gem, stones
-        // Frame 8-11:  key, sand_pile, ghost, pepita
-        // Frame 12-15: wall, hole1, hole2, explosion
-
-        const OBJECT_FRAMES = {
-            dynamite_projectile: 0,
-            heart: 1,
-            stone: 2,
-            player: 3,
-            dynamite_chest: 4,
-            door: 5,
-            gem: 6,
-            stones: 7,
-            key: 8,
-            sand_pile: 9,
-            ghost: 10,
-            pepita: 11,
-            wall: 12,
-            hole1: 13,
-            hole2: 14,
-            explosion: 15
-        };
-
         // Create texture references from spritesheet
         // We'll use the spritesheet directly in game code
         // Just create the boulders and shards with graphics since they're not in the sprite
@@ -324,9 +255,6 @@ class PreloadScene extends Phaser.Scene {
         graphics.clear();
 
         graphics.destroy();
-
-        // Store frame mapping for use in game
-        window.OBJECT_FRAMES = OBJECT_FRAMES;
     }
 
     create() {
@@ -1441,7 +1369,7 @@ class GameScene extends Phaser.Scene {
                         offsetX + x * CONFIG.tileSize + CONFIG.tileSize / 2,
                         offsetY + y * CONFIG.tileSize + CONFIG.tileSize / 2,
                         'objects',
-                        window.OBJECT_FRAMES.door
+                        OBJECT_FRAMES.door
                     );
                     this.setupDoor(door);
                     this.hasDoorInMap = true;
@@ -1449,8 +1377,8 @@ class GameScene extends Phaser.Scene {
 
                 if ((type === 'key' || type === 'pepita' || type === 'dynamite') && this.items) {
                     const frame = type === 'key'
-                        ? window.OBJECT_FRAMES.key
-                        : (type === 'pepita' ? window.OBJECT_FRAMES.pepita : window.OBJECT_FRAMES.dynamite_chest);
+                        ? OBJECT_FRAMES.key
+                        : (type === 'pepita' ? OBJECT_FRAMES.pepita : OBJECT_FRAMES.dynamite_chest);
                     const itemSprite = this.items.create(
                         offsetX + x * CONFIG.tileSize + CONFIG.tileSize / 2,
                         offsetY + y * CONFIG.tileSize + CONFIG.tileSize / 2,
@@ -1500,7 +1428,7 @@ class GameScene extends Phaser.Scene {
         const centerY = CONFIG.height / 2;
 
         // Use player sprite from objects.png (frame 3) and keep original size
-        this.player = this.physics.add.sprite(centerX, centerY, 'objects', window.OBJECT_FRAMES.player);
+        this.player = this.physics.add.sprite(centerX, centerY, 'objects', OBJECT_FRAMES.player);
         // Apply configured object size (pixels) by converting to a scale factor
         const playerScaleFactor = CONFIG.objectSize / OBJECT_NATIVE_SIZE;
         this.player.setScale(playerScaleFactor);
@@ -1602,7 +1530,7 @@ class GameScene extends Phaser.Scene {
             scale = 1.3;
         }
 
-        const rock = this.rocks.create(jitteredX, jitteredY, 'objects', window.OBJECT_FRAMES.stone);
+        const rock = this.rocks.create(jitteredX, jitteredY, 'objects', OBJECT_FRAMES.stone);
         // Apply object size (pixels) converted to scale factor
         const rockScaleFactor = CONFIG.objectSize / OBJECT_NATIVE_SIZE;
         rock.setScale(rockScaleFactor);
@@ -1701,7 +1629,7 @@ class GameScene extends Phaser.Scene {
         }
 
         // Use gem sprite from objects.png (frame 6)
-        const gem = this.gems.create(worldX, worldY, 'objects', window.OBJECT_FRAMES.gem);
+        const gem = this.gems.create(worldX, worldY, 'objects', OBJECT_FRAMES.gem);
         // Apply object size (pixels) converted to scale factor and update physics body
         const gemScaleFactor = CONFIG.objectSize / OBJECT_NATIVE_SIZE;
         gem.setScale(gemScaleFactor);
@@ -1730,7 +1658,7 @@ class GameScene extends Phaser.Scene {
         const worldY = this.mapOffsetY + y * CONFIG.tileSize + CONFIG.tileSize / 2;
 
         // Use key sprite from objects.png (frame 8)
-        const keySprite = this.items.create(worldX, worldY, 'objects', window.OBJECT_FRAMES.key);
+        const keySprite = this.items.create(worldX, worldY, 'objects', OBJECT_FRAMES.key);
         // Keep key at original size
         if (keySprite.body) {
             keySprite.body.setSize(Math.floor(keySprite.displayWidth || keySprite.width), Math.floor(keySprite.displayHeight || keySprite.height));
@@ -1745,7 +1673,7 @@ class GameScene extends Phaser.Scene {
     }
 
     spawnKeyAt(x, y) {
-        const keySprite = this.items.create(x, y, 'objects', window.OBJECT_FRAMES.key);
+        const keySprite = this.items.create(x, y, 'objects', OBJECT_FRAMES.key);
         // Keep key at original size
         if (keySprite.body) {
             keySprite.body.setSize(Math.floor(keySprite.displayWidth || keySprite.width), Math.floor(keySprite.displayHeight || keySprite.height));
@@ -1767,7 +1695,7 @@ class GameScene extends Phaser.Scene {
         const worldY = this.mapOffsetY + y * CONFIG.tileSize + CONFIG.tileSize / 2;
 
         // Use door sprite from objects.png (frame 5)
-        const door = this.doors.create(worldX, worldY, 'objects', window.OBJECT_FRAMES.door);
+        const door = this.doors.create(worldX, worldY, 'objects', OBJECT_FRAMES.door);
         this.setupDoor(door);
     }
 
@@ -1892,7 +1820,7 @@ class GameScene extends Phaser.Scene {
                 pepitaStartX + i * (pepitaSize + pepitaGap),
                 pepitaY,
                 'objects',
-                window.OBJECT_FRAMES.pepita
+                OBJECT_FRAMES.pepita
             );
             // scale timer icons according to objectSize (pixels)
             // Note: keep existing relative sizing behaviour but applied to both layers
@@ -1908,7 +1836,7 @@ class GameScene extends Phaser.Scene {
                 pepita.x,
                 pepita.y,
                 'objects',
-                window.OBJECT_FRAMES.pepita
+                OBJECT_FRAMES.pepita
             );
             disabled.setScale(pepitaScaleFactor);
             disabled.setScrollFactor(0);
@@ -2100,7 +2028,7 @@ class GameScene extends Phaser.Scene {
         const dirY = this.lastMoveDir?.y ?? 0;
 
         // Use dynamite projectile sprite from objects.png (frame 0)
-        const dynamite = this.dynamites.create(this.player.x, this.player.y, 'objects', window.OBJECT_FRAMES.dynamite_projectile);
+        const dynamite = this.dynamites.create(this.player.x, this.player.y, 'objects', OBJECT_FRAMES.dynamite_projectile);
         const dynamiteScaleFactor = CONFIG.objectSize / OBJECT_NATIVE_SIZE;
         dynamite.setScale(dynamiteScaleFactor);
         // Keep dynamite at original sprite size; update physics body if present
@@ -2134,7 +2062,7 @@ class GameScene extends Phaser.Scene {
 
     explodeDynamite(dynamite) {
         // Create explosion effect using explosion sprite from objects.png (frame 15)
-        const explosion = this.add.sprite(dynamite.x, dynamite.y, 'objects', window.OBJECT_FRAMES.explosion);
+        const explosion = this.add.sprite(dynamite.x, dynamite.y, 'objects', OBJECT_FRAMES.explosion);
         const explosionScaleFactor = CONFIG.objectSize / OBJECT_NATIVE_SIZE;
         explosion.setScale(explosionScaleFactor);
         // Keep explosion sprite at original size; tween will scale it up visually
@@ -2195,7 +2123,7 @@ class GameScene extends Phaser.Scene {
     }
 
     createExplosionAt(x, y) {
-        const explosion = this.add.sprite(x, y, 'objects', window.OBJECT_FRAMES.explosion);
+        const explosion = this.add.sprite(x, y, 'objects', OBJECT_FRAMES.explosion);
         const explosionScaleFactor2 = CONFIG.objectSize / OBJECT_NATIVE_SIZE;
         explosion.setScale(explosionScaleFactor2);
         // Keep explosion sprite at original size; tween will scale it up visually
@@ -2561,10 +2489,10 @@ class GameScene extends Phaser.Scene {
             }
         };
 
-        placeIcons(GAME_STATE.lives, this.livesIcons, window.OBJECT_FRAMES.heart, this.livesText);
-        placeIcons(GAME_STATE.dynamiteCount, this.dynamiteIcons, window.OBJECT_FRAMES.dynamite_projectile, this.dynamiteText);
-        placeIcons(GAME_STATE.keysCount, this.keysIcons, window.OBJECT_FRAMES.key, this.keysText);
-        placeIcons(this.gemsRemaining, this.gemsIcons, window.OBJECT_FRAMES.gem, this.gemsText);
+        placeIcons(GAME_STATE.lives, this.livesIcons, OBJECT_FRAMES.heart, this.livesText);
+        placeIcons(GAME_STATE.dynamiteCount, this.dynamiteIcons, OBJECT_FRAMES.dynamite_projectile, this.dynamiteText);
+        placeIcons(GAME_STATE.keysCount, this.keysIcons, OBJECT_FRAMES.key, this.keysText);
+        placeIcons(this.gemsRemaining, this.gemsIcons, OBJECT_FRAMES.gem, this.gemsText);
     }
 }
 
@@ -2648,45 +2576,47 @@ class GameOverScene extends Phaser.Scene {
 }
 
 // ============================================================================
-// GAME CONFIGURATION
+// GAME INITIALIZATION
+// Caricamento della configurazione da file JSON e avvio del gioco con Phaser
 // ============================================================================
-function loadConfigAndStartGame() {
-    fetch('data/config.json')
-        .then(response => response.json())
-        .then(cfg => {
-            // Copy all config keys to CONFIG
-            Object.assign(CONFIG, cfg);
+async function inizialization() {
+    try {
+        const response = await fetch('data/config.json');
+        const cfg = await response.json();
+        // Copy all config keys to CONFIG
+        Object.assign(CONFIG, cfg);
 
-            const config = {
-                type: Phaser.AUTO,
-                width: CONFIG.width,
-                height: CONFIG.height,
-                parent: 'game-container',
-                backgroundColor: '#000000',
-                physics: {
-                    default: 'arcade',
-                    arcade: {
-                        gravity: { y: 0 },
-                        debug: false
-                    }
-                },
-                scene: [BootScene, PreloadScene, AttractScene, TopTenScene, ConfigScene, LevelSelectScene, GameScene, GameOverScene]
-            };
+        const config = {
+            type: Phaser.AUTO,
+            width: CONFIG.width,
+            height: CONFIG.height,
+            parent: 'game-container',
+            backgroundColor: '#000000',
+            physics: {
+                default: 'arcade',
+                arcade: {
+                    gravity: { y: 0 },
+                    debug: false
+                }
+            },
+            scene: [PreloadScene, AttractScene, TopTenScene, ConfigScene, LevelSelectScene, GameScene, GameOverScene]
+        };
 
-            // Copy game state keys to GAME_STATE
-            const stateKeys = [
-                'credits', 'language', 'difficulty', 'currentLevel', 'score', 'lives', 'dynamiteCount', 'keysCount', 'topScores'
-            ];
-            stateKeys.forEach(k => {
-                if (cfg[k] !== undefined) GAME_STATE[k] = cfg[k];
-            });
-
-            new Phaser.Game(config);
-        })
-        .catch(err => {
-            console.error('Errore caricamento config.json:', err);
-            alert('Impossibile caricare la configurazione del gioco.');
+        // Copy game state keys to GAME_STATE
+        const stateKeys = [
+            'credits', 'language', 'difficulty', 'currentLevel', 'score', 'lives', 'dynamiteCount', 'keysCount', 'topScores'
+        ];
+        stateKeys.forEach(k => {
+            if (cfg[k] !== undefined) GAME_STATE[k] = cfg[k];
         });
+
+        new Phaser.Game(config);
+        return true;
+    } catch (err) {
+        console.error('Errore caricamento config.json:', err);
+        alert('Impossibile caricare la configurazione del gioco.');
+        return false;
+    }
 }
 
-loadConfigAndStartGame();
+window.inizialization = inizialization;
