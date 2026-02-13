@@ -30,7 +30,7 @@ function mergeLocalConfig() {
             const parsed = JSON.parse(saved);
             if (parsed.tileSize) CONFIG.tileSize = parsed.tileSize;
             if (parsed.objectSize) CONFIG.objectSize = parsed.objectSize;
-            if (parsed.cameraZoom) CONFIG.cameraZoom = parsed.cameraZoom;
+            if (parsed.playerSize) CONFIG.playerSize = parsed.playerSize;
             // Backwards compatibility: support old 'objectScale' saved values
             else if (parsed.objectScale) CONFIG.objectSize = Math.round(parsed.objectScale * OBJECT_NATIVE_SIZE);
         }
@@ -160,6 +160,18 @@ class PreloadScene extends Phaser.Scene {
     preload() {
         this.load
             .image('title', 'images/title.png')
+            .image('explorer', 'images/explorer.png')
+            .image('title_explosion', 'images/title_explosion.png')
+            .audio('intro_bgm', 'data/music/intro.mp3')
+            .audio('game_bgm', 'data/music/game.mp3')
+            .audio('step_sfx', 'data/music/step.mp3')
+            .audio('stone_sfx', 'data/music/stone.mp3')
+            .audio('explosion_sfx', 'data/music/explosion.mp3')
+            .audio('gem_sfx', 'data/music/gem.mp3')
+            .audio('level_completed_sfx', 'data/music/level_completed.mp3')
+            .audio('coin_sfx', 'data/music/coin.mp3')
+            .audio('select_sfx', 'data/music/select.mp3')
+            .audio('ghost_sfx', 'data/music/ghost.mp3')
             .image('bg', 'images/attract_bg.png')
             .image('game_bg', 'images/game_bg.png')
             // Load flags sprite (8 flags: it, fr, de, en, us, ja, es, zh - 64x32 each)
@@ -301,12 +313,28 @@ class AttractScene extends Phaser.Scene {
     }
 
     create() {
+        const gameMusic = this.sound.get('game_bgm');
+        if (gameMusic && gameMusic.isPlaying) {
+            gameMusic.stop();
+        }
+
         this.languages = ['it', 'fr', 'de', 'en', 'us', 'ja', 'es', 'zh'];
         this.currentLangIndex = 0;
         GAME_STATE.language = this.languages[0];
 
+        // Intro music before gameplay
+        const existingIntro = this.sound.get('intro_bgm');
+        if (existingIntro) {
+            if (!existingIntro.isPlaying) {
+                existingIntro.play({ loop: true, volume: 0.35 });
+            }
+        } else {
+            this.sound.play('intro_bgm', { loop: true, volume: 0.35 });
+        }
+
         // Background image
         this.add.image(400, 300, 'bg').setDisplaySize(800, 600);
+        this.add.rectangle(400, 300, 800, 600, 0x000000, 0.35).setDepth(0.1);
 
         // Title image (loaded from images/title.png)
         this.titleImage = this.add.image(400, -120, 'title').setOrigin(0.5);
@@ -353,6 +381,63 @@ class AttractScene extends Phaser.Scene {
                     this.titleImage.angle = 0;
                     this.titleImage.alpha = 1;
                     this.titleImage.setScale(1);
+
+                    const explorerImage = this.add.image(-220, 430, 'explorer').setOrigin(0.5);
+                    explorerImage.setDepth(20);
+                    this.tweens.add({
+                        targets: explorerImage,
+                        x: 400,
+                        duration: 2000,
+                        ease: 'Sine.easeOut',
+                        onComplete: () => {
+                            this.tweens.add({
+                                targets: explorerImage,
+                                alpha: 0,
+                                duration: 250,
+                                onComplete: () => {
+                                    explorerImage.destroy();
+
+                                    this.titleImage.setVisible(false);
+
+                                    const explosionTitle = this.add.image(400, 150, 'title_explosion').setOrigin(0.5);
+                                    explosionTitle.setAlpha(0);
+                                    explosionTitle.setDepth(21);
+
+                                    this.tweens.add({
+                                        targets: explosionTitle,
+                                        alpha: 1,
+                                        duration: 180,
+                                        onComplete: () => {
+                                            this.time.delayedCall(1200, () => {
+                                                this.tweens.add({
+                                                    targets: explosionTitle,
+                                                    y: -180,
+                                                    alpha: 0,
+                                                    duration: 420,
+                                                    ease: 'Cubic.easeIn',
+                                                    onComplete: () => {
+                                                        explosionTitle.destroy();
+                                                        this.titleImage.setVisible(true);
+                                                        this.titleImage.x = 400;
+                                                        this.titleImage.y = -120;
+                                                        this.titleImage.angle = 0;
+                                                        this.titleImage.alpha = 1;
+                                                        this.titleImage.setScale(1);
+                                                        this.tweens.add({
+                                                            targets: this.titleImage,
+                                                            y: 150,
+                                                            duration: 800,
+                                                            ease: 'Bounce.easeOut'
+                                                        });
+                                                    }
+                                                });
+                                            });
+                                        }
+                                    });
+                                }
+                            });
+                        }
+                    });
                 });
             }
         });
@@ -503,6 +588,9 @@ class AttractScene extends Phaser.Scene {
     }
 
     insertCoin() {
+        if (this.sound) {
+            this.sound.play('coin_sfx', { volume: 0.45 });
+        }
         GAME_STATE.credits++;
         this.updateUI();
         this.resetTimeout();
@@ -510,6 +598,10 @@ class AttractScene extends Phaser.Scene {
 
     startGame(players) {
         if (GAME_STATE.credits >= players) {
+            const intro = this.sound.get('intro_bgm');
+            if (intro && intro.isPlaying) {
+                intro.stop();
+            }
             GAME_STATE.credits -= players;
             GAME_STATE.score = 0;
             GAME_STATE.lives = 5;
@@ -521,6 +613,9 @@ class AttractScene extends Phaser.Scene {
     }
 
     changeLanguage(dir) {
+        if (this.sound) {
+            this.sound.play('select_sfx', { volume: 0.4 });
+        }
         this.currentLangIndex = (this.currentLangIndex + dir + this.languages.length) % this.languages.length;
         GAME_STATE.language = this.languages[this.currentLangIndex];
 
@@ -628,6 +723,7 @@ class TopTenScene extends Phaser.Scene {
         const t = TRANSLATIONS[GAME_STATE.language] || {};
 
         this.add.image(400, 300, 'bg').setDisplaySize(800, 600);
+        this.add.rectangle(400, 300, 800, 600, 0x000000, 0.35).setDepth(0.1);
 
         // Fallback: se la traduzione manca, mostra 'CLASSIFICA'
         const topTenTitle = t.topTen || 'CLASSIFICA';
@@ -734,7 +830,7 @@ class ConfigScene extends Phaser.Scene {
         const configInfo = [
             `SCREEN: ${CONFIG.width}x${CONFIG.height}`,
             `TILE SIZE: ${CONFIG.tileSize}px`,
-            `CAMERA ZOOM: ${CONFIG.cameraZoom.toFixed(2)}`,
+            `PLAYER SIZE: ${CONFIG.playerSize}px`,
             `GRID: ${CONFIG.gridWidth}x${CONFIG.gridHeight}`,
             `PLAYER SPEED: ${CONFIG.playerSpeed}`,
             `BOULDER SPEED: ${CONFIG.boulderBaseSpeed}`,
@@ -773,18 +869,13 @@ class ConfigScene extends Phaser.Scene {
         const objMinus = this.add.text(220, y, '◄', { fontSize: '14px', fill: '#ffffff', fontFamily: GAME_FONT }).setInteractive().setOrigin(0.5);
         const objPlus = this.add.text(260, y, '►', { fontSize: '14px', fill: '#ffffff', fontFamily: GAME_FONT }).setInteractive().setOrigin(0.5);
 
-        // Camera zoom control
+        // Player size control
         y += 22;
-        this.add.text(30, y, 'Camera zoom:', { fontSize: '12px', fill: '#ffffff', fontFamily: GAME_FONT });
-        this.cameraZoomText = this.add.text(160, y, CONFIG.cameraZoom.toFixed(2), { fontSize: '12px', fill: '#ffff00', fontFamily: GAME_FONT }).setOrigin(0, 0.5);
-        const zoomMinus = this.add.text(220, y, '◄', { fontSize: '14px', fill: '#ffffff', fontFamily: GAME_FONT }).setInteractive().setOrigin(0.5);
-        const zoomPlus = this.add.text(260, y, '►', { fontSize: '14px', fill: '#ffffff', fontFamily: GAME_FONT }).setInteractive().setOrigin(0.5);
+        this.add.text(30, y, 'Player size:', { fontSize: '12px', fill: '#ffffff', fontFamily: GAME_FONT });
+        this.playerSizeText = this.add.text(160, y, String(CONFIG.playerSize), { fontSize: '12px', fill: '#ffff00', fontFamily: GAME_FONT }).setOrigin(0, 0.5);
+        const playerMinus = this.add.text(220, y, '◄', { fontSize: '14px', fill: '#ffffff', fontFamily: GAME_FONT }).setInteractive().setOrigin(0.5);
+        const playerPlus = this.add.text(260, y, '►', { fontSize: '14px', fill: '#ffffff', fontFamily: GAME_FONT }).setInteractive().setOrigin(0.5);
 
-        // Camera enable/disable toggle
-        y += 22;
-        const cameraToggle = this.add.text(30, y, `Camera: ${CONFIG.cameraEnabled ? 'ON' : 'OFF'}`, { fontSize: '12px', fill: '#ffffff', fontFamily: GAME_FONT }).setInteractive();
-        y += 22;
-        const zoomToggle = this.add.text(30, y, `Zoom: ${CONFIG.zoomEnabled ? 'ON' : 'OFF'}`, { fontSize: '12px', fill: '#ffffff', fontFamily: GAME_FONT }).setInteractive();
         y += 22;
 
         // Apply / Reset buttons
@@ -818,33 +909,15 @@ class ConfigScene extends Phaser.Scene {
             this.updatePreviewSizes();
         });
 
-        zoomMinus.on('pointerdown', () => {
-            CONFIG.cameraZoom = Math.max(0.5, Math.round((CONFIG.cameraZoom - 0.1) * 10) / 10);
-            this.cameraZoomText.setText(CONFIG.cameraZoom.toFixed(2));
+        playerMinus.on('pointerdown', () => {
+            CONFIG.playerSize = Math.max(8, CONFIG.playerSize - 4);
+            this.playerSizeText.setText(String(CONFIG.playerSize));
+            this.updatePreviewSizes();
         });
-        zoomPlus.on('pointerdown', () => {
-            CONFIG.cameraZoom = Math.min(3, Math.round((CONFIG.cameraZoom + 0.1) * 10) / 10);
-            this.cameraZoomText.setText(CONFIG.cameraZoom.toFixed(2));
-        });
-
-        cameraToggle.on('pointerdown', () => {
-            CONFIG.cameraEnabled = !CONFIG.cameraEnabled;
-            cameraToggle.setText(`Camera: ${CONFIG.cameraEnabled ? 'ON' : 'OFF'}`);
-        });
-
-        zoomToggle.on('pointerdown', () => {
-            CONFIG.zoomEnabled = !CONFIG.zoomEnabled;
-            zoomToggle.setText(`Zoom: ${CONFIG.zoomEnabled ? 'ON' : 'OFF'}`);
-        });
-
-        this.input.keyboard.on('keydown-O', () => {
-            CONFIG.zoomEnabled = !CONFIG.zoomEnabled;
-            zoomToggle.setText(`Zoom: ${CONFIG.zoomEnabled ? 'ON' : 'OFF'}`);
-        });
-
-        this.input.keyboard.on('keydown-I', () => {
-            CONFIG.cameraEnabled = !CONFIG.cameraEnabled;
-            cameraToggle.setText(`Camera: ${CONFIG.cameraEnabled ? 'ON' : 'OFF'}`);
+        playerPlus.on('pointerdown', () => {
+            CONFIG.playerSize = Math.min(512, CONFIG.playerSize + 4);
+            this.playerSizeText.setText(String(CONFIG.playerSize));
+            this.updatePreviewSizes();
         });
 
         applyBtn.on('pointerdown', () => {
@@ -852,9 +925,7 @@ class ConfigScene extends Phaser.Scene {
                 localStorage.setItem('blockHunterConfig', JSON.stringify({
                     tileSize: CONFIG.tileSize,
                     objectSize: CONFIG.objectSize,
-                    cameraZoom: CONFIG.cameraZoom,
-                    cameraEnabled: CONFIG.cameraEnabled,
-                    zoomEnabled: CONFIG.zoomEnabled
+                    playerSize: CONFIG.playerSize
                 }));
             } catch (e) { }
             // show small confirmation
@@ -866,14 +937,10 @@ class ConfigScene extends Phaser.Scene {
         resetBtn.on('pointerdown', () => {
             CONFIG.tileSize = 32;
             CONFIG.objectSize = OBJECT_NATIVE_SIZE;
-            CONFIG.cameraZoom = 1;
-            CONFIG.cameraEnabled = true;
-            CONFIG.zoomEnabled = true;
+            CONFIG.playerSize = OBJECT_NATIVE_SIZE;
             this.tileSizeText.setText(String(CONFIG.tileSize));
             this.objectSizeText.setText(String(CONFIG.objectSize));
-            if (this.cameraZoomText) this.cameraZoomText.setText(CONFIG.cameraZoom.toFixed(2));
-            cameraToggle.setText(`Camera: ${CONFIG.cameraEnabled ? 'ON' : 'OFF'}`);
-            zoomToggle.setText(`Zoom: ${CONFIG.zoomEnabled ? 'ON' : 'OFF'}`);
+            this.playerSizeText.setText(String(CONFIG.playerSize));
             try { localStorage.removeItem('blockHunterConfig'); } catch (e) { }
             this.updatePreviewSizes();
         });
@@ -992,7 +1059,7 @@ class ConfigScene extends Phaser.Scene {
             // update config info display text if present
             if (this.tileSizeText) this.tileSizeText.setText(String(CONFIG.tileSize));
             if (this.objectSizeText) this.objectSizeText.setText(String(CONFIG.objectSize));
-            if (this.cameraZoomText) this.cameraZoomText.setText(CONFIG.cameraZoom.toFixed(2));
+            if (this.playerSizeText) this.playerSizeText.setText(String(CONFIG.playerSize));
         };
     }
 }
@@ -1009,6 +1076,7 @@ class LevelSelectScene extends Phaser.Scene {
         const t = TRANSLATIONS[GAME_STATE.language];
 
         this.add.image(400, 300, 'bg').setDisplaySize(800, 600);
+        this.add.rectangle(400, 300, 800, 600, 0x000000, 0.35).setDepth(0.1);
 
         this.add.text(400, 150, t.selectDifficulty, {
             fontSize: '40px',
@@ -1027,10 +1095,16 @@ class LevelSelectScene extends Phaser.Scene {
         this.diffTexts = [];
         this.selectedIndex = 0;
         this.selectionGraphics = this.add.graphics();
+        this.playSelectSfx = () => {
+            if (this.sound) {
+                this.sound.play('select_sfx', { volume: 0.4 });
+            }
+        };
 
         // Helper to change selection (wrap-around)
         this.changeSelection = (dir) => {
             this.selectedIndex = (this.selectedIndex + dir + this.difficulties.length) % this.difficulties.length;
+            this.playSelectSfx();
             this.updateSelection();
         };
 
@@ -1068,6 +1142,9 @@ class LevelSelectScene extends Phaser.Scene {
             }).setOrigin(0.5).setInteractive();
 
             text.on('pointerover', () => {
+                if (this.selectedIndex !== idx) {
+                    this.playSelectSfx();
+                }
                 this.selectedIndex = idx;
                 this.updateSelection();
             });
@@ -1075,6 +1152,7 @@ class LevelSelectScene extends Phaser.Scene {
                 // keep selection visuals (do not clear on out)
             });
             text.on('pointerdown', () => {
+                this.playSelectSfx();
                 GAME_STATE.difficulty = diff.mult;
                 this.scene.start('GameScene');
             });
@@ -1089,11 +1167,13 @@ class LevelSelectScene extends Phaser.Scene {
         this.input.keyboard.on('keydown-UP', () => this.changeSelection(-1));
         this.input.keyboard.on('keydown-DOWN', () => this.changeSelection(1));
         this.input.keyboard.on('keydown-ENTER', () => {
+            this.playSelectSfx();
             const diff = this.difficulties[this.selectedIndex];
             GAME_STATE.difficulty = diff.mult;
             this.scene.start('GameScene');
         });
         this.input.keyboard.on('keydown-SPACE', () => {
+            this.playSelectSfx();
             const diff = this.difficulties[this.selectedIndex];
             GAME_STATE.difficulty = diff.mult;
             this.scene.start('GameScene');
@@ -1101,18 +1181,21 @@ class LevelSelectScene extends Phaser.Scene {
 
         // Keep numeric shortcuts (also update selection visuals before starting)
         this.input.keyboard.on('keydown-ONE', () => {
+            this.playSelectSfx();
             this.selectedIndex = 0;
             this.updateSelection();
             GAME_STATE.difficulty = this.difficulties[0].mult;
             this.scene.start('GameScene');
         });
         this.input.keyboard.on('keydown-TWO', () => {
+            this.playSelectSfx();
             this.selectedIndex = 1;
             this.updateSelection();
             GAME_STATE.difficulty = this.difficulties[1].mult;
             this.scene.start('GameScene');
         });
         this.input.keyboard.on('keydown-THREE', () => {
+            this.playSelectSfx();
             this.selectedIndex = 2;
             this.updateSelection();
             GAME_STATE.difficulty = this.difficulties[2].mult;
@@ -1134,9 +1217,25 @@ class GameScene extends Phaser.Scene {
         loadTranslations(GAME_STATE.language, () => {
             this.initializeGame();
         });
+
+        const intro = this.sound.get('intro_bgm');
+        if (intro && intro.isPlaying) {
+            intro.stop();
+        }
+
+        const existingGame = this.sound.get('game_bgm');
+        if (existingGame) {
+            if (!existingGame.isPlaying) {
+                existingGame.play({ loop: true, volume: 0.28 });
+            }
+        } else {
+            this.sound.play('game_bgm', { loop: true, volume: 0.28 });
+        }
     }
 
     initializeGame() {
+        this.isLevelTransitioning = false;
+
         // Player front walk animation (used for down direction)
         if (!this.anims.exists('player_front_walk')) {
             this.anims.create({
@@ -1198,6 +1297,7 @@ class GameScene extends Phaser.Scene {
         this.walls = this.physics.add.staticGroup();
         this.rocks = this.physics.add.staticGroup();
         this.boulders = this.physics.add.group();
+        this.ghosts = this.physics.add.group();
         this.gems = this.physics.add.group();
         this.items = this.physics.add.group();
         this.dynamites = this.physics.add.group();
@@ -1230,33 +1330,16 @@ class GameScene extends Phaser.Scene {
             const bgWidth = Math.max(worldWidth, CONFIG.width);
             const bgHeight = Math.max(worldHeight, CONFIG.height);
             this.gameBg.setDisplaySize(bgWidth, bgHeight);
-            this.gameBg.setPosition(worldX + worldWidth / 2, worldY + worldHeight / 2);
+            this.gameBg.setPosition(worldX + bgWidth / 2, worldY + bgHeight / 2);
             this.gameBg.setScrollFactor(1);
         }
 
-        if (this.cameras && this.cameras.main) {
-            const cam = this.cameras.main;
-            cam.setBounds(worldX, worldY, worldWidth, worldHeight);
-            cam.roundPixels = true;
-
-            // ALWAYS use zoom = 1 (no scaling, pixel-perfect)
-            cam.setZoom(1);
-            
-            // ALWAYS start camera at top-left corner of the world
-            cam.setScroll(worldX, worldY);
-            
-            // ALWAYS follow the player so they can explore the whole map
-            if (this.player) {
-                const lerp = (typeof CONFIG.cameraLerp === 'number') ? CONFIG.cameraLerp : 0.1;
-                cam.startFollow(this.player, true, lerp, lerp);
-                
-                // Set a small deadzone (configurable, default 20% of viewport)
-                const dzFactor = (typeof CONFIG.cameraDeadzoneFactor === 'number') ? CONFIG.cameraDeadzoneFactor : 0.2;
-                const dzW = cam.width * dzFactor;
-                const dzH = cam.height * dzFactor;
-                cam.setDeadzone(dzW, dzH);
-            }
-        }
+        // Camera follow: move view with player to explore larger maps
+        const camera = this.cameras.main;
+        camera.setBounds(worldX, worldY, worldWidth, worldHeight);
+        camera.startFollow(this.player, true, 0.12, 0.12);
+        camera.setDeadzone(CONFIG.width * 0.3, CONFIG.height * 0.3);
+        camera.roundPixels = true;
 
         // Gems per level
         if (this.mapGemPositions && this.mapGemPositions.length > 0) {
@@ -1269,6 +1352,9 @@ class GameScene extends Phaser.Scene {
         if (!CONFIG.disableStaticRocks) {
             this.spawnStaticRocks();
         }
+
+        // Spawn ghosts (count from level JSON, e.g. "ghost": 3)
+        this.spawnGhosts();
 
         // Spawn first gem
         this.time.delayedCall(CONFIG.gemSpawnDelay, () => this.spawnGem());
@@ -1563,7 +1649,8 @@ class GameScene extends Phaser.Scene {
         // Use dedicated front player spritesheet (frame 0 idle)
         this.player = this.physics.add.sprite(px, py, 'player_front', 0);
         // Keep configured player size in pixels
-        this.player.setDisplaySize(CONFIG.objectSize, CONFIG.objectSize);
+        const playerDisplaySize = Number(CONFIG.playerSize) || Number(CONFIG.objectSize) || OBJECT_NATIVE_SIZE;
+        this.player.setDisplaySize(playerDisplaySize, playerDisplaySize);
         this.playerFacing = 'front';
         this.playerVerticalFacing = 'front';
         this.player.setFlipX(false);
@@ -1668,7 +1755,8 @@ class GameScene extends Phaser.Scene {
         const rock = this.rocks.create(jitteredX, jitteredY, 'objects', OBJECT_FRAMES.stone);
         // Apply object size (pixels) converted to scale factor
         const rockScaleFactor = CONFIG.objectSize / OBJECT_NATIVE_SIZE;
-        rock.setScale(rockScaleFactor);
+        const finalScale = scale * rockScaleFactor;
+        rock.setScale(finalScale);
         rock.setData('destructible', true);
         rock.setData('size', size);
         rock.setData('isFalling', true);
@@ -1679,17 +1767,17 @@ class GameScene extends Phaser.Scene {
         rock.setAngle(startAngle);
 
         // Effetto di apparizione con zoom da grosso a piccolo (caduta)
-        rock.setScale(scale * 3); // Inizia 3x più grande
+        rock.setScale(finalScale * 3); // Inizia 3x più grande
         rock.alpha = 0.7; // Leggermente trasparente all'inizio
         this.tweens.add({
             targets: rock,
-            scale: scale,
+            scale: finalScale,
             alpha: 1,
             angle: endAngle,
             duration: 400,
             ease: 'Cubic.easeOut', // Effetto di caduta naturale
             onComplete: () => {
-                if (!rock || !rock.active || !rock.body) {
+                if (!rock || !rock.active) {
                     return;
                 }
                 // Aggiorna il corpo fisico dopo lo scaling: use actual display size
@@ -1697,23 +1785,31 @@ class GameScene extends Phaser.Scene {
                     rock.body.setSize(Math.floor(rock.displayWidth || rock.width), Math.floor(rock.displayHeight || rock.height));
                 }
                 rock.setData('isFalling', false);
+
+                // Effetto terremoto del pavimento all'impatto della stone
+                const impactIntensity = size === 'large' ? 0.008 : (size === 'medium' ? 0.005 : 0.003);
+                const impactDuration = size === 'large' ? 180 : (size === 'medium' ? 130 : 90);
+                const impactVolume = size === 'large' ? 0.65 : (size === 'medium' ? 0.5 : 0.35);
+                if (this.cameras && this.cameras.main) {
+                    this.cameras.main.shake(impactDuration, impactIntensity, false);
+                }
+                if (this.sound) {
+                    this.sound.play('stone_sfx', { volume: impactVolume });
+                }
+
                 // Piccolo rimbalzo finale
                 this.tweens.add({
                     targets: rock,
-                    scale: scale * 1.1,
+                    scale: finalScale * 1.1,
                     duration: 100,
                     yoyo: true,
                     ease: 'Sine.easeInOut'
                 });
 
-                // Effetto di tonfo: leggero shake camera + squash rapido
-                if (this.cameras && this.cameras.main) {
-                    this.cameras.main.shake(80, 0.002);
-                }
                 this.tweens.add({
                     targets: rock,
-                    scaleX: scale * 1.05,
-                    scaleY: scale * 0.95,
+                    scaleX: finalScale * 1.05,
+                    scaleY: finalScale * 0.95,
                     duration: 80,
                     yoyo: true,
                     ease: 'Sine.easeOut'
@@ -1768,10 +1864,6 @@ class GameScene extends Phaser.Scene {
     // Apply object size (pixels) converted to scale factor and update physics body
     const gemScaleFactor = CONFIG.objectSize / OBJECT_NATIVE_SIZE;
     gem.setScale(gemScaleFactor);
-    // Make sure the UI camera never renders this world gem. Gems can spawn
-    // at arbitrary times (after level start or after collection), so we
-    // explicitly tell the uiCamera to ignore each gem as it's created.
-    try { if (this.uiCamera) this.uiCamera.ignore(gem); } catch (e) { }
         if (gem.body) {
             gem.body.setSize(Math.floor(gem.displayWidth || gem.width), Math.floor(gem.displayHeight || gem.height));
         }
@@ -1860,6 +1952,7 @@ class GameScene extends Phaser.Scene {
         this.physics.add.collider(this.player, this.rocks);
         this.physics.add.overlap(this.player, this.rocks, this.hitByRock, null, this);
         this.physics.add.overlap(this.player, this.boulders, this.hitByBoulder, null, this);
+        this.physics.add.overlap(this.player, this.ghosts, this.hitByGhost, null, this);
         this.physics.add.overlap(this.player, this.shards, this.hitByShard, null, this);
         if (this.walls) {
             this.physics.add.collider(this.player, this.walls);
@@ -1885,6 +1978,124 @@ class GameScene extends Phaser.Scene {
         // Boulder collisions
         this.physics.add.collider(this.boulders, this.rocks);
         this.physics.add.collider(this.boulders, this.boulders);
+
+        // Ghost collisions
+        if (this.walls) {
+            this.physics.add.collider(this.ghosts, this.walls, this.onGhostBlocked, null, this);
+        }
+        if (this.rocks) {
+            this.physics.add.collider(this.ghosts, this.rocks, this.onGhostBlocked, null, this);
+        }
+        if (this.doors) {
+            this.physics.add.collider(this.ghosts, this.doors, this.onGhostBlocked, null, this);
+        }
+    }
+
+    getGhostCountForLevel() {
+        const direct = Number(this.levelData?.ghost);
+        if (Number.isFinite(direct) && direct > 0) {
+            return Math.floor(direct);
+        }
+        const inMap = Number(this.levelData?.map?.ghost);
+        if (Number.isFinite(inMap) && inMap > 0) {
+            return Math.floor(inMap);
+        }
+        return 0;
+    }
+
+    spawnGhosts() {
+        if (!this.ghosts) return;
+
+        const count = this.getGhostCountForLevel();
+        if (count <= 0) {
+            this.stopGhostSfx();
+            return;
+        }
+
+        this.startGhostSfx(count);
+
+        const ghostSpeed = Number(CONFIG.ghostSpeed) > 0 ? Number(CONFIG.ghostSpeed) : 80;
+
+        for (let i = 0; i < count; i++) {
+            const tile = this.getRandomWalkableTile();
+            if (!tile) continue;
+
+            const worldX = this.mapOffsetX + tile.x * CONFIG.tileSize + CONFIG.tileSize / 2;
+            const worldY = this.mapOffsetY + tile.y * CONFIG.tileSize + CONFIG.tileSize / 2;
+
+            const ghost = this.ghosts.create(worldX, worldY, 'objects', OBJECT_FRAMES.ghost);
+            const ghostScaleFactor = CONFIG.objectSize / OBJECT_NATIVE_SIZE;
+            ghost.setScale(ghostScaleFactor);
+            ghost.setData('speed', ghostSpeed);
+            if (ghost.body) {
+                ghost.body.setSize(Math.floor(ghost.displayWidth || ghost.width), Math.floor(ghost.displayHeight || ghost.height));
+                ghost.body.setCollideWorldBounds(true);
+                ghost.body.setBounce(1, 1);
+            }
+
+            this.setGhostRandomVelocity(ghost);
+
+            this.tweens.add({
+                targets: ghost,
+                alpha: 0.55,
+                duration: 500,
+                yoyo: true,
+                repeat: -1,
+                ease: 'Sine.easeInOut'
+            });
+        }
+
+        this.ghostDirectionTimer = this.time.addEvent({
+            delay: 900,
+            loop: true,
+            callback: () => {
+                const ghosts = this.ghosts?.children?.entries || [];
+                ghosts.forEach((ghost) => {
+                    if (!ghost || !ghost.active) return;
+                    if (Math.random() < 0.35) {
+                        this.setGhostRandomVelocity(ghost);
+                    }
+                });
+            }
+        });
+    }
+
+    startGhostSfx(ghostCount = 1) {
+        if (!this.sound) return;
+        const volume = Phaser.Math.Clamp(0.12 + (Math.max(1, ghostCount) - 1) * 0.035, 0.12, 0.45);
+        const existing = this.sound.get('ghost_sfx');
+        if (existing) {
+            if (existing.setVolume) {
+                existing.setVolume(volume);
+            }
+            if (!existing.isPlaying) {
+                existing.play({ loop: true, volume });
+            }
+        } else {
+            this.sound.play('ghost_sfx', { loop: true, volume });
+        }
+    }
+
+    stopGhostSfx() {
+        if (!this.sound) return;
+        const sfx = this.sound.get('ghost_sfx');
+        if (sfx && sfx.isPlaying) {
+            sfx.stop();
+        }
+    }
+
+    setGhostRandomVelocity(ghost) {
+        if (!ghost || !ghost.active) return;
+        const speed = Number(ghost.getData('speed')) || 80;
+        const direction = Phaser.Math.Between(0, 3);
+        if (direction === 0) ghost.setVelocity(speed, 0);
+        else if (direction === 1) ghost.setVelocity(-speed, 0);
+        else if (direction === 2) ghost.setVelocity(0, speed);
+        else ghost.setVelocity(0, -speed);
+    }
+
+    onGhostBlocked(ghost) {
+        this.setGhostRandomVelocity(ghost);
     }
 
     setupInput() {
@@ -1898,103 +2109,25 @@ class GameScene extends Phaser.Scene {
         });
 
         this.lastDynamiteTime = 0;
+        this.lastStepSoundTime = 0;
     }
 
     createUI() {
         console.log('Creating UI with language:', GAME_STATE.language);
         const t = TRANSLATIONS[GAME_STATE.language];
 
-        // Create a HUD container so we can render it with a separate UI camera
-        // and avoid it being affected by the main world camera's zoom/follow.
         if (!this.hudContainer) {
             this.hudContainer = this.add.container(0, 0);
         }
+        this.hudContainer.setScrollFactor(0);
 
-        // Ensure a UI camera exists (renders HUD without zoom/scroll)
-        if (!this.uiCamera) {
-            try {
-                this.uiCamera = this.cameras.add(0, 0, CONFIG.width, CONFIG.height);
-                // Keep UI camera at default zoom and no scroll
-                this.uiCamera.setScroll(0, 0);
-                this.uiCamera.setZoom(1);
-                // Ensure main camera ignores HUD so it doesn't render/use transforms on it
-                if (this.cameras && this.cameras.main && this.hudContainer) {
-                    this.cameras.main.ignore(this.hudContainer);
-                }
-                // Make UI camera render only the HUD: ignore all existing display objects
-                // except the hudContainer, and ignore any future children added to the scene.
-                try {
-                    const dl = this.sys && this.sys.displayList ? this.sys.displayList : null;
-                    if (dl && dl.list && Array.isArray(dl.list)) {
-                        // Initial pass: ignore all existing display objects except the HUD
-                        dl.list.forEach((child) => {
-                            if (child !== this.hudContainer) {
-                                try { this.uiCamera.ignore(child); } catch (e) { }
-                            }
-                        });
-                        // Robustness: some objects are created in the next few frames
-                        // (tweens, delayed spawns). Run a short-lived timer to re-apply
-                        // ignores a few times so newly-created objects are also ignored.
-                        try {
-                            this.time.addEvent({
-                                delay: 200,
-                                repeat: 10,
-                                callback: () => {
-                                    dl.list.forEach((child) => {
-                                        if (child !== this.hudContainer) {
-                                            try { this.uiCamera.ignore(child); } catch (e) { }
-                                        }
-                                    });
-                                }
-                            });
-                        } catch (e) { /* ignore timer errors */ }
-                    }
-                } catch (e) {
-                    // ignore errors when setting ignores
-                }
-            } catch (e) {
-                // Older Phaser builds or unusual contexts may throw; in that case
-                // fall back to scrollFactor(0) as previously used.
-                console.warn('UI camera creation failed, falling back to scrollFactor(0)');
-            }
-        }
-
-        // Create HUD text objects and add them to the hud container so they are
-        // rendered by the UI camera and unaffected by the main camera zoom/follow.
+        // Create HUD text objects and add them to the HUD container.
         this.scoreText = this.add.text(10, 10, `${t.score_label}: ${GAME_STATE.score}`, {
             fontSize: '16px',
             fill: '#ffffff',
             fontFamily: GAME_FONT
         });
         this.hudContainer.add(this.scoreText);
-
-        this.livesText = this.add.text(10, 35, `${t.lives_label}: ${GAME_STATE.lives}`, {
-            fontSize: '16px',
-            fill: '#ff0000',
-            fontFamily: GAME_FONT
-        });
-        this.hudContainer.add(this.livesText);
-
-        this.dynamiteText = this.add.text(10, 60, `${t.dynamite_label}: ${GAME_STATE.dynamiteCount}`, {
-            fontSize: '16px',
-            fill: '#ffaa00',
-            fontFamily: GAME_FONT
-        });
-        this.hudContainer.add(this.dynamiteText);
-
-        this.keysText = this.add.text(10, 85, `${t.keys_label}: ${GAME_STATE.keysCount}`, {
-            fontSize: '16px',
-            fill: '#ffff66',
-            fontFamily: GAME_FONT
-        });
-        this.hudContainer.add(this.keysText);
-
-        this.gemsText = this.add.text(10, 110, `${t.gems_label}: ${this.gemsRemaining}`, {
-            fontSize: '16px',
-            fill: '#00ffff',
-            fontFamily: GAME_FONT
-        });
-        this.hudContainer.add(this.gemsText);
 
         this.levelText = this.add.text(790, 10, `${t.level_label}: ${GAME_STATE.currentLevel + 1}`, {
             fontSize: '16px',
@@ -2054,7 +2187,6 @@ class GameScene extends Phaser.Scene {
             this.timerPepitasDisabled.push(disabled);
         }
 
-    // HUD depth: ensure UI camera renders it above the world
     this.hudContainer.setDepth(2000);
     // Hide timer label initially
     this.timerLabel.setVisible(false);
@@ -2062,10 +2194,7 @@ class GameScene extends Phaser.Scene {
     this.timerPepitas.forEach((p) => p.setVisible(false));
     if (this.timerPepitasDisabled) this.timerPepitasDisabled.forEach((d) => d.setVisible(false));
 
-        this.livesIcons = [];
-        this.dynamiteIcons = [];
-        this.keysIcons = [];
-        this.gemsIcons = [];
+        this.topStatsObjects = [];
         this.refreshHudIcons();
     }
 
@@ -2171,6 +2300,13 @@ class GameScene extends Phaser.Scene {
 
         // Directional walk animations: down/front, up/back, right/right, left/right+flipX
         const isMoving = velocityX !== 0 || velocityY !== 0;
+        if (isMoving) {
+            const stepInterval = 180;
+            if (!this.lastStepSoundTime || (this.time.now - this.lastStepSoundTime) >= stepInterval) {
+                this.sound.play('step_sfx', { volume: 0.34 });
+                this.lastStepSoundTime = this.time.now;
+            }
+        }
         if (isMoving) {
             let nextFacing = this.playerFacing || 'front';
             if (Math.abs(velocityX) > Math.abs(velocityY)) {
@@ -2307,6 +2443,8 @@ class GameScene extends Phaser.Scene {
             ease: 'Sine.easeInOut'
         });
 
+        this.attachDynamiteSmokeTrail(dynamite);
+
         this.time.delayedCall(CONFIG.dynamiteLifetime, () => {
             if (dynamite.active) {
                 this.explodeDynamite(dynamite);
@@ -2315,10 +2453,20 @@ class GameScene extends Phaser.Scene {
     }
 
     explodeDynamite(dynamite) {
+        if (!dynamite || !dynamite.active) return;
+
+        const smokeTrailEvent = dynamite.getData('smokeTrailEvent');
+        if (smokeTrailEvent && smokeTrailEvent.remove) {
+            smokeTrailEvent.remove(false);
+        }
+
         // Create explosion effect using explosion sprite from objects.png (frame 15)
         const explosion = this.add.sprite(dynamite.x, dynamite.y, 'objects', OBJECT_FRAMES.explosion);
         const explosionScaleFactor = CONFIG.objectSize / OBJECT_NATIVE_SIZE;
         explosion.setScale(explosionScaleFactor);
+        if (this.sound) {
+            this.sound.play('explosion_sfx', { volume: 0.6 });
+        }
         // Keep explosion sprite at original size; tween will scale it up visually
         this.tweens.add({
             targets: explosion,
@@ -2403,6 +2551,54 @@ class GameScene extends Phaser.Scene {
             ease: 'Cubic.easeOut',
             onComplete: () => puff.destroy()
         });
+    }
+
+    attachDynamiteSmokeTrail(dynamite) {
+        if (!dynamite || !dynamite.active) return;
+
+        const smokeEvent = this.time.addEvent({
+            delay: 28,
+            loop: true,
+            callback: () => {
+                if (!dynamite || !dynamite.active) {
+                    if (smokeEvent && smokeEvent.remove) {
+                        smokeEvent.remove(false);
+                    }
+                    return;
+                }
+
+                for (let i = 0; i < 2; i++) {
+                    const smoke = this.add.circle(
+                        dynamite.x + Phaser.Math.Between(-4, 4),
+                        dynamite.y + Phaser.Math.Between(-4, 4),
+                        Phaser.Math.Between(3, 6),
+                        0xb8b8b8,
+                        0.62
+                    );
+                    smoke.setDepth(850);
+
+                    this.tweens.add({
+                        targets: smoke,
+                        y: smoke.y - Phaser.Math.Between(14, 24),
+                        x: smoke.x + Phaser.Math.Between(-8, 8),
+                        scale: 2.8,
+                        alpha: 0,
+                        duration: 520,
+                        ease: 'Sine.easeOut',
+                        onComplete: () => smoke.destroy()
+                    });
+                }
+            }
+        });
+
+        dynamite.setData('smokeTrailEvent', smokeEvent);
+        if (dynamite.once) {
+            dynamite.once('destroy', () => {
+                if (smokeEvent && smokeEvent.remove) {
+                    smokeEvent.remove(false);
+                }
+            });
+        }
     }
 
     addScore(amount, x, y) {
@@ -2493,6 +2689,9 @@ class GameScene extends Phaser.Scene {
     }
 
     collectGem(player, gem) {
+        if (this.sound) {
+            this.sound.play('gem_sfx', { volume: 0.45 });
+        }
         gem.destroy();
         this.addScore(50, gem.x, gem.y);
 
@@ -2601,6 +2800,10 @@ class GameScene extends Phaser.Scene {
         shard.destroy();
     }
 
+    hitByGhost(player, ghost) {
+        this.loseLife();
+    }
+
     hitHole() {
         this.loseLife();
     }
@@ -2632,12 +2835,37 @@ class GameScene extends Phaser.Scene {
     }
 
     levelComplete() {
-        this.addScore(50, this.player?.x, this.player?.y);
-        GAME_STATE.currentLevel++;
+        if (this.isLevelTransitioning) {
+            return;
+        }
+        this.isLevelTransitioning = true;
 
-        if (GAME_STATE.currentLevel >= LEVEL_CONFIG.levels.length) {
-            // Game won!
-            GAME_STATE.currentLevel = 0;
+        this.stopGhostSfx();
+
+        if (this.sound) {
+            this.sound.play('level_completed_sfx', { volume: 0.6 });
+        }
+        this.addScore(50, this.player?.x, this.player?.y);
+        const totalLevels = LEVEL_CONFIG.levels.length;
+        const nextLevel = (GAME_STATE.currentLevel + 1) % totalLevels;
+        GAME_STATE.currentLevel = nextLevel;
+
+        // Stop ongoing gameplay timers before switching level
+        if (this.boulderTimer) {
+            this.boulderTimer.remove();
+            this.boulderTimer = null;
+        }
+        if (this.rockSpawnTimer) {
+            this.rockSpawnTimer.remove();
+            this.rockSpawnTimer = null;
+        }
+        if (this.levelTimerEvent) {
+            this.levelTimerEvent.remove();
+            this.levelTimerEvent = null;
+        }
+        if (this.ghostDirectionTimer) {
+            this.ghostDirectionTimer.remove();
+            this.ghostDirectionTimer = null;
         }
 
         this.time.delayedCall(1000, () => {
@@ -2646,6 +2874,11 @@ class GameScene extends Phaser.Scene {
     }
 
     gameOver() {
+        this.stopGhostSfx();
+        const gameMusic = this.sound.get('game_bgm');
+        if (gameMusic && gameMusic.isPlaying) {
+            gameMusic.stop();
+        }
         this.scene.start('GameOverScene');
     }
 
@@ -2703,56 +2936,84 @@ class GameScene extends Phaser.Scene {
         const t = TRANSLATIONS[GAME_STATE.language];
         // Use the same keys as createUI and the JSON translations (suffix _label)
         this.scoreText.setText(`${t.score_label}: ${GAME_STATE.score}`);
-        // Show current lives count next to the label
-        this.livesText.setText(`${t.lives_label}: ${GAME_STATE.lives}`);
-        this.dynamiteText.setText(`${t.dynamite_label}: ${GAME_STATE.dynamiteCount}`);
-        if (this.keysText) {
-            this.keysText.setText(`${t.keys_label}: ${GAME_STATE.keysCount}`);
-        }
-        if (this.gemsText) {
-            // gemsRemaining tracks how many gems still to collect in this level
-            this.gemsText.setText(`${t.gems_label}: ${this.gemsRemaining}`);
-        }
+        this.levelText.setText(`${t.level_label}: ${GAME_STATE.currentLevel + 1}`);
 
         this.refreshHudIcons();
     }
 
     refreshHudIcons() {
-        if (!this.livesText || !this.dynamiteText || !this.keysText) return;
+        if (!this.scoreText || !this.levelText || !this.hudContainer) return;
+
+        if (!this.topStatsObjects) {
+            this.topStatsObjects = [];
+        }
+        this.topStatsObjects.forEach((obj) => {
+            if (obj && obj.destroy) obj.destroy();
+        });
+        this.topStatsObjects.length = 0;
 
         const iconSize = 16;
-        const gap = 4;
+        const iconGap = 3;
+        const sectionGap = 14;
+        const topY = 18;
 
-        const clearIcons = (arr) => {
-            arr.forEach((icon) => icon && icon.destroy && icon.destroy());
-            arr.length = 0;
+        const scoreBounds = this.scoreText.getBounds();
+        const levelBounds = this.levelText.getBounds();
+        const laneStart = scoreBounds.right + 14;
+        const laneEnd = levelBounds.x - 14;
+        let x = laneStart;
+
+        const addIcon = (frame) => {
+            const icon = this.add.sprite(x, topY, 'objects', frame).setDisplaySize(iconSize, iconSize);
+            icon.setDepth(2000);
+            this.hudContainer.add(icon);
+            this.topStatsObjects.push(icon);
+            x += iconSize + iconGap;
+            return icon;
         };
 
-        clearIcons(this.livesIcons);
-        clearIcons(this.dynamiteIcons);
-        clearIcons(this.keysIcons);
-        clearIcons(this.gemsIcons);
+        const addCountText = (value, color = '#ffffff') => {
+            const txt = this.add.text(x, topY, String(value), {
+                fontSize: '14px',
+                fill: color,
+                fontFamily: GAME_FONT
+            }).setOrigin(0, 0.5);
+            txt.setDepth(2000);
+            this.hudContainer.add(txt);
+            this.topStatsObjects.push(txt);
+            x += txt.width + sectionGap;
+            return txt;
+        };
 
-        const placeIcons = (count, arr, frame, label) => {
-            const bounds = label.getBounds();
-            const startX = bounds.right + 6;
-            const y = label.y + label.height / 2 + 1;
-            for (let i = 0; i < count; i++) {
-                const icon = this.add.sprite(startX + i * (iconSize + gap), y, 'objects', frame);
-                icon.setDisplaySize(iconSize, iconSize);
-                // Add icons to hudContainer so they are rendered by UI camera
-                if (this.hudContainer) {
-                    this.hudContainer.add(icon);
-                }
-                icon.setDepth(2000);
-                arr.push(icon);
+        // Cuori: solo icone
+        for (let i = 0; i < GAME_STATE.lives; i++) {
+            addIcon(OBJECT_FRAMES.heart);
+        }
+        x += sectionGap;
+
+        // Chiavi: solo icone
+        for (let i = 0; i < GAME_STATE.keysCount; i++) {
+            addIcon(OBJECT_FRAMES.key);
+        }
+        x += sectionGap;
+
+        // Dinamite: una sola icona + numero rimanente
+        addIcon(OBJECT_FRAMES.dynamite_projectile);
+        addCountText(GAME_STATE.dynamiteCount, '#ffaa00');
+
+        // Gemme: una sola icona + numero rimanente
+        addIcon(OBJECT_FRAMES.gem);
+        addCountText(this.gemsRemaining, '#00ffff');
+
+        // Centra l'intero blocco tra punteggio e livello
+        const usedWidth = x - laneStart;
+        const availableWidth = Math.max(0, laneEnd - laneStart);
+        const offset = Math.max(0, (availableWidth - usedWidth) / 2);
+        this.topStatsObjects.forEach((obj) => {
+            if (obj && typeof obj.x === 'number') {
+                obj.x += offset;
             }
-        };
-
-        placeIcons(GAME_STATE.lives, this.livesIcons, OBJECT_FRAMES.heart, this.livesText);
-        placeIcons(GAME_STATE.dynamiteCount, this.dynamiteIcons, OBJECT_FRAMES.dynamite_projectile, this.dynamiteText);
-        placeIcons(GAME_STATE.keysCount, this.keysIcons, OBJECT_FRAMES.key, this.keysText);
-        placeIcons(this.gemsRemaining, this.gemsIcons, OBJECT_FRAMES.gem, this.gemsText);
+        });
     }
 }
 
@@ -2845,6 +3106,12 @@ async function inizialization() {
         const cfg = await response.json();
         // Copy all config keys to CONFIG
         Object.assign(CONFIG, cfg);
+        if (!Number.isFinite(Number(CONFIG.playerSize)) || Number(CONFIG.playerSize) <= 0) {
+            CONFIG.playerSize = Number(CONFIG.objectSize) || OBJECT_NATIVE_SIZE;
+        }
+        if (!Number.isFinite(Number(CONFIG.ghostSpeed)) || Number(CONFIG.ghostSpeed) <= 0) {
+            CONFIG.ghostSpeed = 80;
+        }
 
         const config = {
             type: Phaser.AUTO,
