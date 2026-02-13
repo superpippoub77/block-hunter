@@ -17,8 +17,8 @@
   "topTenTimeout": 10000,
   "gemSpawnDelay": 1000,
   "gemsPerLevel": 10,
-  "cameraEnabled": false,
-  "zoomEnabled": false,
+  "cameraEnabled": true,
+  "zoomEnabled": true,
   "credits": 0,
   "language": "en",
   "difficulty": 1.0,
@@ -28,6 +28,7 @@
   "dynamiteCount": 20,
   "keysCount": 0,
   "disableStaticRocks": true,
+  "zoomMode": "fit",
   "topScores": [
     { "name": "AAA", "score": 5000 },
     { "name": "BBB", "score": 4000 },

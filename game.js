@@ -10,6 +10,10 @@ const CONFIG = {};
 // Game state (populated from /data/config.json)
 const GAME_STATE = {};
 
+
+const GAME_FONT = '"Press Start 2P"';
+// Translations
+const TRANSLATIONS = {};
 // Load configuration from /data/config.json
 // Rimosso: la configurazione viene caricata solo tramite loadConfigAndStartGame
 
@@ -35,9 +39,6 @@ function mergeLocalConfig() {
     }
 }
 
-const GAME_FONT = '"Press Start 2P"';
-// Translations
-const TRANSLATIONS = {};
 
 function loadTranslations(lang, callback) {
     fetch(`data/dic/${lang}.json`)
@@ -1109,6 +1110,13 @@ class GameScene extends Phaser.Scene {
     }
 
     create() {
+        // Carica le traduzioni prima di inizializzare la scena
+        loadTranslations(GAME_STATE.language, () => {
+            this.initializeGame();
+        });
+    }
+
+    initializeGame() {
         // Background for all levels
         this.gameBg = this.add.image(CONFIG.width / 2, CONFIG.height / 2, 'game_bg')
             .setDisplaySize(CONFIG.width, CONFIG.height)
@@ -1179,30 +1187,97 @@ class GameScene extends Phaser.Scene {
             cam.setBounds(worldX, worldY, worldWidth, worldHeight);
             cam.roundPixels = true;
 
-            // Auto-zoom for small maps so the camera view becomes smaller than the world
-            // Respect configured base zoom as a minimum.
-            let zoom = Math.max(0.5, CONFIG.cameraZoom || 1);
-            if (worldWidth > 0 && worldHeight > 0 && (worldWidth <= viewW || worldHeight <= viewH)) {
-                const fitZoom = Math.max(viewW / worldWidth, viewH / worldHeight);
-                zoom = Math.max(zoom, fitZoom * 1.1);
+            // Gestione zoom con modalità configurabile (CONFIG.zoomMode)
+            // Supported modes: 'adaptive' (default), 'fit', 'none'
+            // Respects optional CONFIG.minZoom, CONFIG.maxZoom and CONFIG.allowZoomIn
+            let zoom = CONFIG.cameraZoom || 1;
+            const minZoom = (typeof CONFIG.minZoom === 'number') ? CONFIG.minZoom : 0.5;
+            const maxZoom = (typeof CONFIG.maxZoom === 'number') ? CONFIG.maxZoom : 2;
+
+            if (CONFIG.zoomEnabled !== false) {
+                const zoomMode = CONFIG.zoomMode || 'adaptive';
+                if (worldWidth > 0 && worldHeight > 0) {
+                    // fitZoom: zoom value that fits the whole world into the viewport
+                    const fitZoom = Math.min(viewW / worldWidth, viewH / worldHeight);
+                    // fillZoom: zoom value that fills the viewport with the world (may upscale)
+                    const fillZoom = Math.max(viewW / worldWidth, viewH / worldHeight);
+
+                    if (zoomMode === 'fit') {
+                        zoom = fitZoom;
+                    } else if (zoomMode === 'adaptive') {
+                        // If world is larger than view, zoom out to fit
+                        if (worldWidth > viewW || worldHeight > viewH) {
+                            zoom = Math.min(zoom, fitZoom);
+                        } else {
+                            // World smaller than view: optionally zoom in to reduce margins
+                            if (CONFIG.allowZoomIn) {
+                                // Prefer configured cameraZoom but allow filling up to fillZoom
+                                zoom = Math.min(maxZoom, Math.max(zoom, Math.min(fillZoom, maxZoom)));
+                            } else {
+                                // Keep at least 1x (no downscale)
+                                zoom = Math.max(zoom, 1);
+                            }
+                        }
+                    } else if (zoomMode === 'none') {
+                        zoom = CONFIG.cameraZoom || 1;
+                    }
+                }
+            } else {
+                // zoom disabled: use neutral zoom (1) or explicit cameraZoom if provided
+                zoom = CONFIG.cameraZoom || 1;
             }
+
+            // Clamp to safe bounds
+            zoom = Phaser.Math.Clamp(zoom, minZoom, maxZoom);
             cam.setZoom(zoom);
 
-            const viewWorldW = viewW / zoom;
-            const viewWorldH = viewH / zoom;
-            const canScrollX = worldWidth > viewWorldW;
-            const canScrollY = worldHeight > viewWorldH;
+            // If the world is larger than the viewport, start the camera at the
+            // top-left corner (world origin). This ensures the map initially
+            // appears from the top-left and the player can move into hidden
+            // areas. If the world fits the view, we'll center it below.
+            const worldLargerThanView = (worldWidth > viewW) || (worldHeight > viewH);
+            if (worldLargerThanView) {
+                try { cam.setScroll(worldX, worldY); } catch (e) { }
+            }
 
-            if (canScrollX || canScrollY) {
-                cam.startFollow(this.player, true, 0.08, 0.08);
-                const dzW = canScrollX ? Math.min(viewWorldW * 0.35, worldWidth - viewWorldW) : 0;
-                const dzH = canScrollY ? Math.min(viewWorldH * 0.35, worldHeight - viewWorldH) : 0;
-                if (dzW > 0 && dzH > 0) {
-                    cam.setDeadzone(dzW, dzH);
+            // Gestione camera follow
+            if (CONFIG.cameraEnabled !== false) {
+                const viewWorldW = viewW / zoom;
+                const viewWorldH = viewH / zoom;
+                const canScrollX = worldWidth > viewWorldW;
+                const canScrollY = worldHeight > viewWorldH;
+                if (canScrollX || canScrollY) {
+                    // Use configurable lerp and deadzone factor so behavior can be
+                    // tuned from data/config.json without further code edits.
+                    const lerp = (typeof CONFIG.cameraLerp === 'number') ? CONFIG.cameraLerp : 0.08;
+                    cam.startFollow(this.player, true, lerp, lerp);
+                    const dzFactor = (typeof CONFIG.cameraDeadzoneFactor === 'number') ? CONFIG.cameraDeadzoneFactor : 0.35;
+                    const dzW = canScrollX ? Math.min(viewWorldW * dzFactor, worldWidth - viewWorldW) : 0;
+                    const dzH = canScrollY ? Math.min(viewWorldH * dzFactor, worldHeight - viewWorldH) : 0;
+                    // Set deadzone if at least one axis can scroll. Phaser requires positive
+                    // dimensions for setDeadzone, so provide a small fallback for the
+                    // non-scrollable axis to allow a one-axis deadzone to work.
+                    if (dzW > 0 || dzH > 0) {
+                        const setW = dzW > 0 ? dzW : 2;
+                        const setH = dzH > 0 ? dzH : 2;
+                        cam.setDeadzone(setW, setH);
+                    }
+                } else {
+                    cam.stopFollow();
+                    // If world is larger than view start at top-left, otherwise center
+                    if (worldWidth > viewW || worldHeight > viewH) {
+                        try { cam.setScroll(worldX, worldY); } catch (e) { }
+                    } else {
+                        cam.centerOn(worldX + worldWidth / 2, worldY + worldHeight / 2);
+                    }
                 }
             } else {
                 cam.stopFollow();
-                cam.centerOn(worldX + worldWidth / 2, worldY + worldHeight / 2);
+                if (worldWidth > viewW || worldHeight > viewH) {
+                    try { cam.setScroll(worldX, worldY); } catch (e) { }
+                } else {
+                    cam.centerOn(worldX + worldWidth / 2, worldY + worldHeight / 2);
+                }
             }
         }
 
@@ -1431,14 +1506,85 @@ class GameScene extends Phaser.Scene {
         this.mapCols = mapCols;
         this.mapOffsetX = offsetX;
         this.mapOffsetY = offsetY;
+
+        // --- Debug: draw light tile outlines to visualize the grid ---
+        // Create a graphics layer that outlines each tile. Useful to see
+        // tile boundaries (including empty tiles). Toggle with 'G'.
+        try {
+            if (this.tileGridDebug) { this.tileGridDebug.clear(); }
+            this.tileGridDebug = this.add.graphics();
+            // Draw a thin semi-transparent stroke
+            this.tileGridDebug.lineStyle(1, 0xffffff, 0.18);
+            for (let y = 0; y < mapRows; y++) {
+                for (let x = 0; x < mapCols; x++) {
+                    const rectX = offsetX + x * CONFIG.tileSize;
+                    const rectY = offsetY + y * CONFIG.tileSize;
+                    this.tileGridDebug.strokeRect(rectX, rectY, CONFIG.tileSize, CONFIG.tileSize);
+                }
+            }
+            // Put debug overlay above tiles but below sprites (adjust depth if needed)
+            this.tileGridDebug.setDepth(50);
+            // Create/clear labels array
+            try {
+                if (this.tileGridLabels && Array.isArray(this.tileGridLabels)) {
+                    this.tileGridLabels.forEach(l => { try { l.destroy(); } catch (e) { } });
+                }
+            } catch (e) { }
+            this.tileGridLabels = [];
+
+            // Create small coordinate labels centered in each tile when debug enabled
+            const labelStyle = { font: '10px monospace', fill: '#ffffff', align: 'center' };
+            for (let y = 0; y < mapRows; y++) {
+                for (let x = 0; x < mapCols; x++) {
+                    const cx = offsetX + x * CONFIG.tileSize + CONFIG.tileSize / 2;
+                    const cy = offsetY + y * CONFIG.tileSize + CONFIG.tileSize / 2;
+                    const txt = this.add.text(cx, cy, `${y},${x}`, labelStyle).setOrigin(0.5);
+                    txt.setAlpha(0.7);
+                    txt.setDepth(51);
+                    // Keep label hidden unless debug enabled
+                    txt.visible = !!CONFIG.debugTileGrid;
+                    this.tileGridLabels.push(txt);
+                }
+            }
+
+            // Visibility controlled by config but still toggleable with G
+            this.tileGridDebug.visible = !!CONFIG.debugTileGrid;
+            // Toggle visibility with G key (affects both strokes and labels)
+            this.input.keyboard.on('keydown-G', () => {
+                const visible = !this.tileGridDebug.visible;
+                this.tileGridDebug.visible = visible;
+                if (this.tileGridLabels && Array.isArray(this.tileGridLabels)) {
+                    this.tileGridLabels.forEach(l => { l.visible = visible; });
+                }
+            });
+        } catch (e) {
+            // ignore if input not ready or in non-interactive context
+        }
     }
 
     createPlayer() {
-        const centerX = CONFIG.width / 2;
-        const centerY = CONFIG.height / 2;
+        // Determine initial player position. Support per-level `playerStart`
+        // inside level data. `playerStart` may be specified as pixel coords
+        // { x: 123, y: 456 } or as tile indices { row: r, col: c }.
+        let px = CONFIG.width / 2;
+        let py = CONFIG.height / 2;
+
+        try {
+            if (this.levelData && this.levelData.playerStart) {
+                const ps = this.levelData.playerStart;
+                if (typeof ps.x === 'number' && typeof ps.y === 'number') {
+                    px = ps.x;
+                    py = ps.y;
+                } else if (typeof ps.row === 'number' && typeof ps.col === 'number') {
+                    // convert tile indices to world pixels (center of tile)
+                    px = this.mapOffsetX + ps.col * CONFIG.tileSize + CONFIG.tileSize / 2;
+                    py = this.mapOffsetY + ps.row * CONFIG.tileSize + CONFIG.tileSize / 2;
+                }
+            }
+        } catch (e) { /* fall back to center */ }
 
         // Use player sprite from objects.png (frame 3) and keep original size
-        this.player = this.physics.add.sprite(centerX, centerY, 'objects', OBJECT_FRAMES.player);
+        this.player = this.physics.add.sprite(px, py, 'objects', OBJECT_FRAMES.player);
         // Apply configured object size (pixels) by converting to a scale factor
         const playerScaleFactor = CONFIG.objectSize / OBJECT_NATIVE_SIZE;
         this.player.setScale(playerScaleFactor);
@@ -1638,11 +1784,15 @@ class GameScene extends Phaser.Scene {
             worldY = this.mapOffsetY + y * CONFIG.tileSize + CONFIG.tileSize / 2;
         }
 
-        // Use gem sprite from objects.png (frame 6)
-        const gem = this.gems.create(worldX, worldY, 'objects', OBJECT_FRAMES.gem);
-        // Apply object size (pixels) converted to scale factor and update physics body
-        const gemScaleFactor = CONFIG.objectSize / OBJECT_NATIVE_SIZE;
-        gem.setScale(gemScaleFactor);
+    // Use gem sprite from objects.png (frame 6)
+    const gem = this.gems.create(worldX, worldY, 'objects', OBJECT_FRAMES.gem);
+    // Apply object size (pixels) converted to scale factor and update physics body
+    const gemScaleFactor = CONFIG.objectSize / OBJECT_NATIVE_SIZE;
+    gem.setScale(gemScaleFactor);
+    // Make sure the UI camera never renders this world gem. Gems can spawn
+    // at arbitrary times (after level start or after collection), so we
+    // explicitly tell the uiCamera to ignore each gem as it's created.
+    try { if (this.uiCamera) this.uiCamera.ignore(gem); } catch (e) { }
         if (gem.body) {
             gem.body.setSize(Math.floor(gem.displayWidth || gem.width), Math.floor(gem.displayHeight || gem.height));
         }
@@ -1772,43 +1922,107 @@ class GameScene extends Phaser.Scene {
     }
 
     createUI() {
+        console.log('Creating UI with language:', GAME_STATE.language);
         const t = TRANSLATIONS[GAME_STATE.language];
 
-        this.scoreText = this.add.text(10, 10, `${t.score}: ${GAME_STATE.score}`, {
+        // Create a HUD container so we can render it with a separate UI camera
+        // and avoid it being affected by the main world camera's zoom/follow.
+        if (!this.hudContainer) {
+            this.hudContainer = this.add.container(0, 0);
+        }
+
+        // Ensure a UI camera exists (renders HUD without zoom/scroll)
+        if (!this.uiCamera) {
+            try {
+                this.uiCamera = this.cameras.add(0, 0, CONFIG.width, CONFIG.height);
+                // Keep UI camera at default zoom and no scroll
+                this.uiCamera.setScroll(0, 0);
+                this.uiCamera.setZoom(1);
+                // Ensure main camera ignores HUD so it doesn't render/use transforms on it
+                if (this.cameras && this.cameras.main && this.hudContainer) {
+                    this.cameras.main.ignore(this.hudContainer);
+                }
+                // Make UI camera render only the HUD: ignore all existing display objects
+                // except the hudContainer, and ignore any future children added to the scene.
+                try {
+                    const dl = this.sys && this.sys.displayList ? this.sys.displayList : null;
+                    if (dl && dl.list && Array.isArray(dl.list)) {
+                        // Initial pass: ignore all existing display objects except the HUD
+                        dl.list.forEach((child) => {
+                            if (child !== this.hudContainer) {
+                                try { this.uiCamera.ignore(child); } catch (e) { }
+                            }
+                        });
+                        // Robustness: some objects are created in the next few frames
+                        // (tweens, delayed spawns). Run a short-lived timer to re-apply
+                        // ignores a few times so newly-created objects are also ignored.
+                        try {
+                            this.time.addEvent({
+                                delay: 200,
+                                repeat: 10,
+                                callback: () => {
+                                    dl.list.forEach((child) => {
+                                        if (child !== this.hudContainer) {
+                                            try { this.uiCamera.ignore(child); } catch (e) { }
+                                        }
+                                    });
+                                }
+                            });
+                        } catch (e) { /* ignore timer errors */ }
+                    }
+                } catch (e) {
+                    // ignore errors when setting ignores
+                }
+            } catch (e) {
+                // Older Phaser builds or unusual contexts may throw; in that case
+                // fall back to scrollFactor(0) as previously used.
+                console.warn('UI camera creation failed, falling back to scrollFactor(0)');
+            }
+        }
+
+        // Create HUD text objects and add them to the hud container so they are
+        // rendered by the UI camera and unaffected by the main camera zoom/follow.
+        this.scoreText = this.add.text(10, 10, `${t.score_label}: ${GAME_STATE.score}`, {
             fontSize: '16px',
             fill: '#ffffff',
             fontFamily: GAME_FONT
         });
+        this.hudContainer.add(this.scoreText);
 
-        this.livesText = this.add.text(10, 35, `${t.lives}:`, {
+        this.livesText = this.add.text(10, 35, `${t.lives_label}: ${GAME_STATE.lives}`, {
             fontSize: '16px',
             fill: '#ff0000',
             fontFamily: GAME_FONT
         });
+        this.hudContainer.add(this.livesText);
 
-        this.dynamiteText = this.add.text(10, 60, `${t.dynamite}:`, {
+        this.dynamiteText = this.add.text(10, 60, `${t.dynamite_label}: ${GAME_STATE.dynamiteCount}`, {
             fontSize: '16px',
             fill: '#ffaa00',
             fontFamily: GAME_FONT
         });
+        this.hudContainer.add(this.dynamiteText);
 
-        this.keysText = this.add.text(10, 85, `${t.keys}:`, {
+        this.keysText = this.add.text(10, 85, `${t.keys_label}: ${GAME_STATE.keysCount}`, {
             fontSize: '16px',
             fill: '#ffff66',
             fontFamily: GAME_FONT
         });
+        this.hudContainer.add(this.keysText);
 
-        this.gemsText = this.add.text(10, 110, `${t.gems}:`, {
+        this.gemsText = this.add.text(10, 110, `${t.gems_label}: ${this.gemsRemaining}`, {
             fontSize: '16px',
             fill: '#00ffff',
             fontFamily: GAME_FONT
         });
+        this.hudContainer.add(this.gemsText);
 
-        this.levelText = this.add.text(790, 10, `${t.level}: ${GAME_STATE.currentLevel + 1}`, {
+        this.levelText = this.add.text(790, 10, `${t.level_label}: ${GAME_STATE.currentLevel + 1}`, {
             fontSize: '16px',
             fill: '#00ff00',
             fontFamily: GAME_FONT
         }).setOrigin(1, 0);
+        this.hudContainer.add(this.levelText);
 
         // Timer pepitas: create background (full-color) icons and a disabled overlay
         // that will progressively gray out elapsed slots.
@@ -1823,6 +2037,7 @@ class GameScene extends Phaser.Scene {
             fill: '#ffffff',
             fontFamily: GAME_FONT
         }).setOrigin(0, 0.5);
+        this.hudContainer.add(this.timerLabel);
         const pepitaStartX = this.timerLabel.getBounds().right + 8;
         for (let i = 0; i < this.timerPepitasCount; i++) {
             // background full-color pepita
@@ -1839,6 +2054,7 @@ class GameScene extends Phaser.Scene {
             pepita.setScrollFactor(0);
             pepita.setDepth(2000);
             pepita.setVisible(false);
+            this.hudContainer.add(pepita);
             this.timerPepitas.push(pepita);
 
             // disabled overlay (tinted gray) placed above the background
@@ -1855,22 +2071,17 @@ class GameScene extends Phaser.Scene {
             disabled.setAlpha(0.95);
             disabled.setDepth(pepita.depth + 1);
             disabled.setVisible(false);
+            this.hudContainer.add(disabled);
             this.timerPepitasDisabled.push(disabled);
         }
 
-        // Keep HUD fixed to screen
-        this.scoreText.setScrollFactor(0).setDepth(2000);
-        this.livesText.setScrollFactor(0).setDepth(2000);
-        this.dynamiteText.setScrollFactor(0).setDepth(2000);
-        this.keysText.setScrollFactor(0).setDepth(2000);
-        this.gemsText.setScrollFactor(0).setDepth(2000);
-        this.levelText.setScrollFactor(0).setDepth(2000);
-        this.timerLabel.setScrollFactor(0).setDepth(2000);
-
-        this.timerLabel.setVisible(false);
+    // HUD depth: ensure UI camera renders it above the world
+    this.hudContainer.setDepth(2000);
+    // Hide timer label initially
+    this.timerLabel.setVisible(false);
         // Hide both layers initially
-        this.timerPepitas.forEach((p) => p.setVisible(false));
-        if (this.timerPepitasDisabled) this.timerPepitasDisabled.forEach((d) => d.setVisible(false));
+    this.timerPepitas.forEach((p) => p.setVisible(false));
+    if (this.timerPepitasDisabled) this.timerPepitasDisabled.forEach((d) => d.setVisible(false));
 
         this.livesIcons = [];
         this.dynamiteIcons = [];
@@ -2457,14 +2668,17 @@ class GameScene extends Phaser.Scene {
 
     updateUITexts() {
         const t = TRANSLATIONS[GAME_STATE.language];
-        this.scoreText.setText(`${t.score}: ${GAME_STATE.score}`);
-        this.livesText.setText(`${t.lives}:`);
-        this.dynamiteText.setText(`${t.dynamite}:`);
+        // Use the same keys as createUI and the JSON translations (suffix _label)
+        this.scoreText.setText(`${t.score_label}: ${GAME_STATE.score}`);
+        // Show current lives count next to the label
+        this.livesText.setText(`${t.lives_label}: ${GAME_STATE.lives}`);
+        this.dynamiteText.setText(`${t.dynamite_label}: ${GAME_STATE.dynamiteCount}`);
         if (this.keysText) {
-            this.keysText.setText(`${t.keys}:`);
+            this.keysText.setText(`${t.keys_label}: ${GAME_STATE.keysCount}`);
         }
         if (this.gemsText) {
-            this.gemsText.setText(`${t.gems}:`);
+            // gemsRemaining tracks how many gems still to collect in this level
+            this.gemsText.setText(`${t.gems_label}: ${this.gemsRemaining}`);
         }
 
         this.refreshHudIcons();
@@ -2493,7 +2707,10 @@ class GameScene extends Phaser.Scene {
             for (let i = 0; i < count; i++) {
                 const icon = this.add.sprite(startX + i * (iconSize + gap), y, 'objects', frame);
                 icon.setDisplaySize(iconSize, iconSize);
-                icon.setScrollFactor(0);
+                // Add icons to hudContainer so they are rendered by UI camera
+                if (this.hudContainer) {
+                    this.hudContainer.add(icon);
+                }
                 icon.setDepth(2000);
                 arr.push(icon);
             }
