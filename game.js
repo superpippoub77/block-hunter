@@ -2134,7 +2134,8 @@ class GameScene extends Phaser.Scene {
             a: Phaser.Input.Keyboard.KeyCodes.A,
             s: Phaser.Input.Keyboard.KeyCodes.S,
             d: Phaser.Input.Keyboard.KeyCodes.D,
-            space: Phaser.Input.Keyboard.KeyCodes.SPACE
+            space: Phaser.Input.Keyboard.KeyCodes.SPACE,
+            l: Phaser.Input.Keyboard.KeyCodes.L
         });
 
         this.lastDynamiteTime = 0;
@@ -2296,8 +2297,14 @@ class GameScene extends Phaser.Scene {
 
         if (isOff) {
             this.levelLightOverlay.setAlpha(0.82);
+            this.isRoomDark = true;
+            this.headlampEnabled = false;
+            this.setupHeadlampMask();
             return;
         }
+
+        this.isRoomDark = false;
+        this.headlampEnabled = false;
 
         if (isFixed) {
             this.levelLightOverlay.setAlpha(0.48);
@@ -2345,11 +2352,105 @@ class GameScene extends Phaser.Scene {
         });
     }
 
+    setupHeadlampMask() {
+        if (!this.levelLightOverlay || !this.isRoomDark) return;
+
+        if (this.headlampMaskGraphics) {
+            this.headlampMaskGraphics.destroy();
+            this.headlampMaskGraphics = null;
+        }
+
+        this.headlampMaskGraphics = this.make.graphics({ x: 0, y: 0, add: false });
+        this.levelLightMask = this.headlampMaskGraphics.createGeometryMask();
+        this.levelLightMask.invertAlpha = true;
+        this.levelLightOverlay.setMask(this.levelLightMask);
+        this.updateHeadlampCone();
+    }
+
+    toggleHeadlamp() {
+        if (!this.isRoomDark) return;
+        this.headlampEnabled = !this.headlampEnabled;
+        this.updateHeadlampCone();
+    }
+
+    getHeadlampDirectionVector() {
+        const facing = this.playerFacing || 'front';
+        if (facing === 'back') return { x: 0, y: -1 };
+        if (facing === 'right') return { x: 1, y: 0 };
+        if (facing === 'left') return { x: -1, y: 0 };
+        if (facing === 'back_right') return { x: 0.707, y: -0.707 };
+        if (facing === 'back_left') return { x: -0.707, y: -0.707 };
+
+        const dx = this.lastMoveDir?.x ?? 0;
+        const dy = this.lastMoveDir?.y ?? 1;
+        const len = Math.hypot(dx, dy) || 1;
+        return { x: dx / len, y: dy / len };
+    }
+
+    updateHeadlampCone() {
+        if (!this.headlampMaskGraphics) return;
+
+        this.headlampMaskGraphics.clear();
+
+        if (!this.headlampEnabled || !this.player || !this.player.active || !this.isRoomDark) {
+            return;
+        }
+
+        const camera = this.cameras.main;
+        const px = this.player.x - camera.worldView.x;
+        const py = this.player.y - camera.worldView.y;
+
+        const direction = this.getHeadlampDirectionVector();
+        const baseAngle = Math.atan2(direction.y, direction.x);
+        const range = CONFIG.tileSize * 4.8;
+
+        // Soft cone gradient: bright center + fading edges
+        const drawConeLayer = (halfAngleDeg, rangeMul, alpha) => {
+            const halfAngle = Phaser.Math.DegToRad(halfAngleDeg);
+            const layerRange = range * rangeMul;
+            const points = [{ x: px, y: py }];
+            const segments = 22;
+            for (let i = 0; i <= segments; i++) {
+                const t = i / segments;
+                const angle = baseAngle - halfAngle + t * (halfAngle * 2);
+                points.push({
+                    x: px + Math.cos(angle) * layerRange,
+                    y: py + Math.sin(angle) * layerRange
+                });
+            }
+            this.headlampMaskGraphics.fillStyle(0xffffff, alpha);
+            this.headlampMaskGraphics.fillPoints(points, true);
+        };
+
+        // Outer soft spill
+        drawConeLayer(40, 1.0, 0.28);
+        // Mid cone
+        drawConeLayer(30, 0.93, 0.48);
+        // Bright core
+        drawConeLayer(18, 0.86, 0.9);
+
+        // Glow near the helmet (center brightest)
+        this.headlampMaskGraphics.fillStyle(0xffffff, 1);
+        this.headlampMaskGraphics.fillCircle(px, py, Math.max(14, CONFIG.tileSize * 0.62));
+        this.headlampMaskGraphics.fillStyle(0xffffff, 0.45);
+        this.headlampMaskGraphics.fillCircle(px, py, Math.max(20, CONFIG.tileSize * 0.95));
+    }
+
     stopLevelLightEffect() {
         if (this.levelLightTimer) {
             this.levelLightTimer.remove();
             this.levelLightTimer = null;
         }
+        if (this.levelLightOverlay) {
+            this.levelLightOverlay.clearMask();
+        }
+        if (this.headlampMaskGraphics) {
+            this.headlampMaskGraphics.destroy();
+            this.headlampMaskGraphics = null;
+        }
+        this.levelLightMask = null;
+        this.isRoomDark = false;
+        this.headlampEnabled = false;
         if (this.levelLightOverlay) {
             this.levelLightOverlay.destroy();
             this.levelLightOverlay = null;
@@ -2482,6 +2583,11 @@ class GameScene extends Phaser.Scene {
             this.shootDynamite();
         }
 
+        // Toggle miner headlamp when room light is off
+        if (Phaser.Input.Keyboard.JustDown(this.keys.l)) {
+            this.toggleHeadlamp();
+        }
+
         // Check if on hole
         if (tile && tile.type === 'hole') {
             this.hitHole();
@@ -2489,6 +2595,11 @@ class GameScene extends Phaser.Scene {
 
         // Check proximity to doors for opening
         this.checkDoorProximity();
+
+        // Update headlamp cone to follow player/camera direction
+        if (this.isRoomDark && this.headlampEnabled) {
+            this.updateHeadlampCone();
+        }
 
         // Ghost visual perspective update (foreground ghosts look bigger)
         this.updateGhostPerspective();
