@@ -180,6 +180,26 @@ class PreloadScene extends Phaser.Scene {
             .spritesheet('objects', 'images/obj.png', {
                 frameWidth: 64,
                 frameHeight: 64
+            })
+            // Front walking animation spritesheet (1 row, 7 frames, 172x135 each)
+            .spritesheet('player_front', 'images/player_front.png', {
+                frameWidth: 139,
+                frameHeight: 135
+            })
+            // Back walking animation spritesheet (same layout as player_front)
+            .spritesheet('player_back', 'images/player_back.png', {
+                frameWidth: 139,
+                frameHeight: 135
+            })
+            // Right walking animation spritesheet (same layout as player_front)
+            .spritesheet('player_right', 'images/player_right.png', {
+                frameWidth: 139,
+                frameHeight: 135
+            })
+            // Back-right walking animation spritesheet (same layout as player_front)
+            .spritesheet('player_back_right', 'images/player_back_rigth.png', {
+                frameWidth: 139,
+                frameHeight: 135
             });
 
         // Load all level JSON files (50 levels)
@@ -1117,6 +1137,40 @@ class GameScene extends Phaser.Scene {
     }
 
     initializeGame() {
+        // Player front walk animation (used for down direction)
+        if (!this.anims.exists('player_front_walk')) {
+            this.anims.create({
+                key: 'player_front_walk',
+                frames: this.anims.generateFrameNumbers('player_front', { start: 0, end: 6 }),
+                frameRate: 10,
+                repeat: -1
+            });
+        }
+        if (!this.anims.exists('player_back_walk')) {
+            this.anims.create({
+                key: 'player_back_walk',
+                frames: this.anims.generateFrameNumbers('player_back', { start: 0, end: 6 }),
+                frameRate: 10,
+                repeat: -1
+            });
+        }
+        if (!this.anims.exists('player_right_walk')) {
+            this.anims.create({
+                key: 'player_right_walk',
+                frames: this.anims.generateFrameNumbers('player_right', { start: 0, end: 6 }),
+                frameRate: 10,
+                repeat: -1
+            });
+        }
+        if (!this.anims.exists('player_back_right_walk')) {
+            this.anims.create({
+                key: 'player_back_right_walk',
+                frames: this.anims.generateFrameNumbers('player_back_right', { start: 0, end: 6 }),
+                frameRate: 10,
+                repeat: -1
+            });
+        }
+
         // Background for all levels
         this.gameBg = this.add.image(CONFIG.width / 2, CONFIG.height / 2, 'game_bg')
             .setDisplaySize(CONFIG.width, CONFIG.height)
@@ -1506,11 +1560,13 @@ class GameScene extends Phaser.Scene {
             }
         } catch (e) { /* fall back to center */ }
 
-        // Use player sprite from objects.png (frame 3) and keep original size
-        this.player = this.physics.add.sprite(px, py, 'objects', OBJECT_FRAMES.player);
-        // Apply configured object size (pixels) by converting to a scale factor
-        const playerScaleFactor = CONFIG.objectSize / OBJECT_NATIVE_SIZE;
-        this.player.setScale(playerScaleFactor);
+        // Use dedicated front player spritesheet (frame 0 idle)
+        this.player = this.physics.add.sprite(px, py, 'player_front', 0);
+        // Keep configured player size in pixels
+        this.player.setDisplaySize(CONFIG.objectSize, CONFIG.objectSize);
+        this.playerFacing = 'front';
+        this.playerVerticalFacing = 'front';
+        this.player.setFlipX(false);
         this.player.setCollideWorldBounds(true);
         // Configure body size based on the sprite's actual display size
         if (this.player.body) {
@@ -2112,6 +2168,60 @@ class GameScene extends Phaser.Scene {
         }
 
         this.player.setVelocity(velocityX * speed, velocityY * speed);
+
+        // Directional walk animations: down/front, up/back, right/right, left/right+flipX
+        const isMoving = velocityX !== 0 || velocityY !== 0;
+        if (isMoving) {
+            let nextFacing = this.playerFacing || 'front';
+            if (Math.abs(velocityX) > Math.abs(velocityY)) {
+                const verticalFacing = this.playerVerticalFacing || 'front';
+                if (verticalFacing === 'back') {
+                    nextFacing = velocityX > 0 ? 'back_right' : 'back_left';
+                } else {
+                    nextFacing = velocityX > 0 ? 'right' : 'left';
+                }
+            } else {
+                nextFacing = velocityY < 0 ? 'back' : 'front';
+                this.playerVerticalFacing = nextFacing;
+            }
+            this.playerFacing = nextFacing;
+
+            let animKey = 'player_front_walk';
+            if (nextFacing === 'back') animKey = 'player_back_walk';
+            else if (nextFacing === 'back_right' || nextFacing === 'back_left') animKey = 'player_back_right_walk';
+            else if (nextFacing === 'right' || nextFacing === 'left') animKey = 'player_right_walk';
+
+            if (!this.player.anims.isPlaying || this.player.anims.currentAnim?.key !== animKey) {
+                this.player.anims.play(animKey, true);
+            }
+            this.player.setFlipX(nextFacing === 'left' || nextFacing === 'back_left');
+        } else {
+            const currentAnimKey = this.player.anims.currentAnim?.key;
+            if (this.player.anims.isPlaying && (currentAnimKey === 'player_front_walk' || currentAnimKey === 'player_back_walk' || currentAnimKey === 'player_right_walk' || currentAnimKey === 'player_back_right_walk')) {
+                this.player.anims.stop();
+            }
+
+            const facing = this.playerFacing || 'front';
+            if (facing === 'back') {
+                this.player.setTexture('player_back', 0);
+                this.player.setFlipX(false);
+            } else if (facing === 'back_right') {
+                this.player.setTexture('player_back_right', 0);
+                this.player.setFlipX(false);
+            } else if (facing === 'back_left') {
+                this.player.setTexture('player_back_right', 0);
+                this.player.setFlipX(true);
+            } else if (facing === 'right') {
+                this.player.setTexture('player_right', 0);
+                this.player.setFlipX(false);
+            } else if (facing === 'left') {
+                this.player.setTexture('player_right', 0);
+                this.player.setFlipX(true);
+            } else {
+                this.player.setTexture('player_front', 0);
+                this.player.setFlipX(false);
+            }
+        }
 
         // Shoot dynamite
         if (Phaser.Input.Keyboard.JustDown(this.keys.space)) {
