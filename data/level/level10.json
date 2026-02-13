@@ -39,6 +39,6 @@
   "spawnPoints": null,
   "timeLimit": null,
   "scoreRules": null,
-  "light": "tremolante",
+  "light": "flash",
   "ghost":3
 }

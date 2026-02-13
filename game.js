@@ -1380,6 +1380,9 @@ class GameScene extends Phaser.Scene {
         // Setup level timer (if provided in level data)
         this.setupLevelTimer();
 
+        // Setup per-level light effect: tremolante, fissa, flash, spenta
+        this.setupLevelLightEffect();
+
         // Setup input
         this.setupInput();
 
@@ -2264,6 +2267,95 @@ class GameScene extends Phaser.Scene {
         });
     }
 
+    setupLevelLightEffect() {
+        this.stopLevelLightEffect();
+
+        const lightModeRaw = this.levelData?.light ?? this.levelConfig?.light;
+        const lightMode = String(lightModeRaw || '')
+            .trim()
+            .toLowerCase()
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '');
+        if (!lightMode) {
+            return;
+        }
+
+        const isOff = lightMode === 'spenta' || lightMode === 'off';
+        const isFixed = lightMode === 'fissa' || lightMode === 'fixed';
+        const isFlash = lightMode.startsWith('flash') || lightMode.includes('lampo') || lightMode === 'lightning';
+
+        this.levelLightOverlay = this.add.rectangle(
+            CONFIG.width / 2,
+            CONFIG.height / 2,
+            CONFIG.width,
+            CONFIG.height,
+            0x000000
+        );
+        this.levelLightOverlay.setScrollFactor(0);
+        this.levelLightOverlay.setDepth(1800);
+
+        if (isOff) {
+            this.levelLightOverlay.setAlpha(0.82);
+            return;
+        }
+
+        if (isFixed) {
+            this.levelLightOverlay.setAlpha(0.48);
+            return;
+        }
+
+        if (isFlash) {
+            this.levelLightOverlay.setAlpha(0.56);
+            this.levelLightTimer = this.time.addEvent({
+                delay: 1300,
+                loop: true,
+                callback: () => {
+                    if (!this.levelLightOverlay || !this.levelLightOverlay.active) return;
+                    const overlay = this.levelLightOverlay;
+                    overlay.setFillStyle(0xffffff, 1);
+                    overlay.setAlpha(0);
+                    this.tweens.add({
+                        targets: overlay,
+                        alpha: 0.24,
+                        duration: 35,
+                        yoyo: true,
+                        repeat: 1,
+                        ease: 'Linear',
+                        onComplete: () => {
+                            if (!overlay || !overlay.active) return;
+                            overlay.setFillStyle(0x000000, 1);
+                            overlay.setAlpha(0.56);
+                        }
+                    });
+                }
+            });
+            return;
+        }
+
+        // Default / 'tremolante'
+        this.levelLightOverlay.setAlpha(0.52);
+        this.levelLightTimer = this.time.addEvent({
+            delay: 120,
+            loop: true,
+            callback: () => {
+                if (!this.levelLightOverlay || !this.levelLightOverlay.active) return;
+                const flickerAlpha = Phaser.Math.FloatBetween(0.42, 0.62);
+                this.levelLightOverlay.setAlpha(flickerAlpha);
+            }
+        });
+    }
+
+    stopLevelLightEffect() {
+        if (this.levelLightTimer) {
+            this.levelLightTimer.remove();
+            this.levelLightTimer = null;
+        }
+        if (this.levelLightOverlay) {
+            this.levelLightOverlay.destroy();
+            this.levelLightOverlay = null;
+        }
+    }
+
     updateTimerBar() {
         if (!this.timerPepitas || !this.timerPepitas.length || !this.levelTimeTotal) return;
         const ratio = Phaser.Math.Clamp(this.levelTimeRemaining / this.levelTimeTotal, 0, 1);
@@ -2896,6 +2988,7 @@ class GameScene extends Phaser.Scene {
         }
         this.isLevelTransitioning = true;
 
+        this.stopLevelLightEffect();
         this.stopGhostSfx();
 
         if (this.sound) {
@@ -2930,6 +3023,7 @@ class GameScene extends Phaser.Scene {
     }
 
     gameOver() {
+        this.stopLevelLightEffect();
         this.stopGhostSfx();
         const gameMusic = this.sound.get('game_bgm');
         if (gameMusic && gameMusic.isPlaying) {
