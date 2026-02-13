@@ -1182,102 +1182,25 @@ class GameScene extends Phaser.Scene {
 
         if (this.cameras && this.cameras.main) {
             const cam = this.cameras.main;
-            const viewW = cam.width;
-            const viewH = cam.height;
             cam.setBounds(worldX, worldY, worldWidth, worldHeight);
             cam.roundPixels = true;
 
-            // Gestione zoom con modalità configurabile (CONFIG.zoomMode)
-            // Supported modes: 'adaptive' (default), 'fit', 'none'
-            // Respects optional CONFIG.minZoom, CONFIG.maxZoom and CONFIG.allowZoomIn
-            let zoom = CONFIG.cameraZoom || 1;
-            const minZoom = (typeof CONFIG.minZoom === 'number') ? CONFIG.minZoom : 0.5;
-            const maxZoom = (typeof CONFIG.maxZoom === 'number') ? CONFIG.maxZoom : 2;
-
-            if (CONFIG.zoomEnabled !== false) {
-                const zoomMode = CONFIG.zoomMode || 'adaptive';
-                if (worldWidth > 0 && worldHeight > 0) {
-                    // fitZoom: zoom value that fits the whole world into the viewport
-                    const fitZoom = Math.min(viewW / worldWidth, viewH / worldHeight);
-                    // fillZoom: zoom value that fills the viewport with the world (may upscale)
-                    const fillZoom = Math.max(viewW / worldWidth, viewH / worldHeight);
-
-                    if (zoomMode === 'fit') {
-                        zoom = fitZoom;
-                    } else if (zoomMode === 'adaptive') {
-                        // If world is larger than view, zoom out to fit
-                        if (worldWidth > viewW || worldHeight > viewH) {
-                            zoom = Math.min(zoom, fitZoom);
-                        } else {
-                            // World smaller than view: optionally zoom in to reduce margins
-                            if (CONFIG.allowZoomIn) {
-                                // Prefer configured cameraZoom but allow filling up to fillZoom
-                                zoom = Math.min(maxZoom, Math.max(zoom, Math.min(fillZoom, maxZoom)));
-                            } else {
-                                // Keep at least 1x (no downscale)
-                                zoom = Math.max(zoom, 1);
-                            }
-                        }
-                    } else if (zoomMode === 'none') {
-                        zoom = CONFIG.cameraZoom || 1;
-                    }
-                }
-            } else {
-                // zoom disabled: use neutral zoom (1) or explicit cameraZoom if provided
-                zoom = CONFIG.cameraZoom || 1;
-            }
-
-            // Clamp to safe bounds
-            zoom = Phaser.Math.Clamp(zoom, minZoom, maxZoom);
-            cam.setZoom(zoom);
-
-            // If the world is larger than the viewport, start the camera at the
-            // top-left corner (world origin). This ensures the map initially
-            // appears from the top-left and the player can move into hidden
-            // areas. If the world fits the view, we'll center it below.
-            const worldLargerThanView = (worldWidth > viewW) || (worldHeight > viewH);
-            if (worldLargerThanView) {
-                try { cam.setScroll(worldX, worldY); } catch (e) { }
-            }
-
-            // Gestione camera follow
-            if (CONFIG.cameraEnabled !== false) {
-                const viewWorldW = viewW / zoom;
-                const viewWorldH = viewH / zoom;
-                const canScrollX = worldWidth > viewWorldW;
-                const canScrollY = worldHeight > viewWorldH;
-                if (canScrollX || canScrollY) {
-                    // Use configurable lerp and deadzone factor so behavior can be
-                    // tuned from data/config.json without further code edits.
-                    const lerp = (typeof CONFIG.cameraLerp === 'number') ? CONFIG.cameraLerp : 0.08;
-                    cam.startFollow(this.player, true, lerp, lerp);
-                    const dzFactor = (typeof CONFIG.cameraDeadzoneFactor === 'number') ? CONFIG.cameraDeadzoneFactor : 0.35;
-                    const dzW = canScrollX ? Math.min(viewWorldW * dzFactor, worldWidth - viewWorldW) : 0;
-                    const dzH = canScrollY ? Math.min(viewWorldH * dzFactor, worldHeight - viewWorldH) : 0;
-                    // Set deadzone if at least one axis can scroll. Phaser requires positive
-                    // dimensions for setDeadzone, so provide a small fallback for the
-                    // non-scrollable axis to allow a one-axis deadzone to work.
-                    if (dzW > 0 || dzH > 0) {
-                        const setW = dzW > 0 ? dzW : 2;
-                        const setH = dzH > 0 ? dzH : 2;
-                        cam.setDeadzone(setW, setH);
-                    }
-                } else {
-                    cam.stopFollow();
-                    // If world is larger than view start at top-left, otherwise center
-                    if (worldWidth > viewW || worldHeight > viewH) {
-                        try { cam.setScroll(worldX, worldY); } catch (e) { }
-                    } else {
-                        cam.centerOn(worldX + worldWidth / 2, worldY + worldHeight / 2);
-                    }
-                }
-            } else {
-                cam.stopFollow();
-                if (worldWidth > viewW || worldHeight > viewH) {
-                    try { cam.setScroll(worldX, worldY); } catch (e) { }
-                } else {
-                    cam.centerOn(worldX + worldWidth / 2, worldY + worldHeight / 2);
-                }
+            // ALWAYS use zoom = 1 (no scaling, pixel-perfect)
+            cam.setZoom(1);
+            
+            // ALWAYS start camera at top-left corner of the world
+            cam.setScroll(worldX, worldY);
+            
+            // ALWAYS follow the player so they can explore the whole map
+            if (this.player) {
+                const lerp = (typeof CONFIG.cameraLerp === 'number') ? CONFIG.cameraLerp : 0.1;
+                cam.startFollow(this.player, true, lerp, lerp);
+                
+                // Set a small deadzone (configurable, default 20% of viewport)
+                const dzFactor = (typeof CONFIG.cameraDeadzoneFactor === 'number') ? CONFIG.cameraDeadzoneFactor : 0.2;
+                const dzW = cam.width * dzFactor;
+                const dzH = cam.height * dzFactor;
+                cam.setDeadzone(dzW, dzH);
             }
         }
 

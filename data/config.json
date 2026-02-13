@@ -18,7 +18,7 @@
   "gemSpawnDelay": 1000,
   "gemsPerLevel": 10,
   "cameraEnabled": true,
-  "zoomEnabled": true,
+  "zoomEnabled": false,
   "credits": 0,
   "language": "en",
   "difficulty": 1.0,
@@ -28,17 +28,49 @@
   "dynamiteCount": 20,
   "keysCount": 0,
   "disableStaticRocks": true,
-  "zoomMode": "fit",
+  "cameraDeadzoneFactor": 0.2,
+  "cameraLerp": 0.1,
+  "debugTileGrid": true,
   "topScores": [
-    { "name": "AAA", "score": 5000 },
-    { "name": "BBB", "score": 4000 },
-    { "name": "CCC", "score": 3000 },
-    { "name": "DDD", "score": 2000 },
-    { "name": "EEE", "score": 1000 },
-    { "name": "FFF", "score": 900 },
-    { "name": "GGG", "score": 800 },
-    { "name": "HHH", "score": 700 },
-    { "name": "III", "score": 600 },
-    { "name": "JJJ", "score": 500 }
+    {
+      "name": "AAA",
+      "score": 5000
+    },
+    {
+      "name": "BBB",
+      "score": 4000
+    },
+    {
+      "name": "CCC",
+      "score": 3000
+    },
+    {
+      "name": "DDD",
+      "score": 2000
+    },
+    {
+      "name": "EEE",
+      "score": 1000
+    },
+    {
+      "name": "FFF",
+      "score": 900
+    },
+    {
+      "name": "GGG",
+      "score": 800
+    },
+    {
+      "name": "HHH",
+      "score": 700
+    },
+    {
+      "name": "III",
+      "score": 600
+    },
+    {
+      "name": "JJJ",
+      "score": 500
+    }
   ]
 }
