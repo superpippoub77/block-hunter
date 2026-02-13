@@ -10,6 +10,7 @@
   "ghostSpeed": 80,
   "boulderBaseSpeed": 60,
   "dynamiteSpeed": 200,
+  "dynamiteSize": 40,
   "shardSpeed": 150,
   "dynamiteLifetime": 5000,
   "shardLifetime": 2000,

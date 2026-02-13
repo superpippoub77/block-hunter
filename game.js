@@ -1979,16 +1979,6 @@ class GameScene extends Phaser.Scene {
         this.physics.add.collider(this.boulders, this.rocks);
         this.physics.add.collider(this.boulders, this.boulders);
 
-        // Ghost collisions
-        if (this.walls) {
-            this.physics.add.collider(this.ghosts, this.walls, this.onGhostBlocked, null, this);
-        }
-        if (this.rocks) {
-            this.physics.add.collider(this.ghosts, this.rocks, this.onGhostBlocked, null, this);
-        }
-        if (this.doors) {
-            this.physics.add.collider(this.ghosts, this.doors, this.onGhostBlocked, null, this);
-        }
     }
 
     getGhostCountForLevel() {
@@ -2026,6 +2016,8 @@ class GameScene extends Phaser.Scene {
             const ghost = this.ghosts.create(worldX, worldY, 'objects', OBJECT_FRAMES.ghost);
             const ghostScaleFactor = CONFIG.objectSize / OBJECT_NATIVE_SIZE;
             ghost.setScale(ghostScaleFactor);
+            ghost.setData('baseScale', ghostScaleFactor);
+            ghost.setData('flutterPhase', Phaser.Math.FloatBetween(0, Math.PI * 2));
             ghost.setData('speed', ghostSpeed);
             if (ghost.body) {
                 ghost.body.setSize(Math.floor(ghost.displayWidth || ghost.width), Math.floor(ghost.displayHeight || ghost.height));
@@ -2042,6 +2034,18 @@ class GameScene extends Phaser.Scene {
                 yoyo: true,
                 repeat: -1,
                 ease: 'Sine.easeInOut'
+            });
+
+            // Flutter effect: ghosts float up/down and slightly change size
+            const hoverAmplitude = Math.max(3, Math.round(CONFIG.tileSize * 0.08));
+            this.tweens.add({
+                targets: ghost,
+                y: ghost.y - hoverAmplitude,
+                duration: Phaser.Math.Between(420, 620),
+                yoyo: true,
+                repeat: -1,
+                ease: 'Sine.easeInOut',
+                delay: Phaser.Math.Between(0, 220)
             });
         }
 
@@ -2094,8 +2098,30 @@ class GameScene extends Phaser.Scene {
         else ghost.setVelocity(0, -speed);
     }
 
-    onGhostBlocked(ghost) {
-        this.setGhostRandomVelocity(ghost);
+    updateGhostPerspective() {
+        const ghosts = this.ghosts?.children?.entries || [];
+        if (!ghosts.length) return;
+
+        const worldTop = this.mapOffsetY;
+        const worldBottom = this.mapOffsetY + this.mapRows * CONFIG.tileSize;
+        const worldHeight = Math.max(1, worldBottom - worldTop);
+
+        ghosts.forEach((ghost) => {
+            if (!ghost || !ghost.active) return;
+
+            const baseScale = Number(ghost.getData('baseScale')) || (CONFIG.objectSize / OBJECT_NATIVE_SIZE);
+            const phase = Number(ghost.getData('flutterPhase')) || 0;
+
+            // Foreground perspective: lower on screen => bigger
+            const yNorm = Phaser.Math.Clamp((ghost.y - worldTop) / worldHeight, 0, 1);
+            const perspectiveScale = 0.82 + yNorm * 0.38;
+
+            // Continuous flutter scaling
+            const flutterScale = 1 + Math.sin(this.time.now * 0.006 + phase) * 0.06;
+
+            const finalScale = baseScale * perspectiveScale * flutterScale;
+            ghost.setScale(finalScale);
+        });
     }
 
     setupInput() {
@@ -2372,6 +2398,9 @@ class GameScene extends Phaser.Scene {
         // Check proximity to doors for opening
         this.checkDoorProximity();
 
+        // Ghost visual perspective update (foreground ghosts look bigger)
+        this.updateGhostPerspective();
+
         // Update UI
         this.updateUITexts();
     }
@@ -2416,22 +2445,49 @@ class GameScene extends Phaser.Scene {
 
         const dirX = this.lastMoveDir?.x ?? 1;
         const dirY = this.lastMoveDir?.y ?? 0;
+        const baseSpeed = CONFIG.dynamiteSpeed;
+        const launchSpeed = baseSpeed * 1.45;
+        const cruiseSpeed = baseSpeed * 0.72;
+        const dynamiteDisplaySize = Number(CONFIG.dynamiteSize) > 0
+            ? Number(CONFIG.dynamiteSize)
+            : Math.max(8, Math.round((Number(CONFIG.objectSize) || OBJECT_NATIVE_SIZE) * 0.6));
 
         // Use dynamite projectile sprite from objects.png (frame 0)
         const dynamite = this.dynamites.create(this.player.x, this.player.y, 'objects', OBJECT_FRAMES.dynamite_projectile);
-        const dynamiteScaleFactor = CONFIG.objectSize / OBJECT_NATIVE_SIZE;
-        dynamite.setScale(dynamiteScaleFactor);
+        dynamite.setDisplaySize(dynamiteDisplaySize * 1.12, dynamiteDisplaySize * 1.12);
+        this.tweens.add({
+            targets: dynamite,
+            displayWidth: dynamiteDisplaySize,
+            displayHeight: dynamiteDisplaySize,
+            duration: 260,
+            ease: 'Quad.easeOut'
+        });
         // Keep dynamite at original sprite size; update physics body if present
         if (dynamite.body) {
             dynamite.body.setSize(Math.floor(dynamite.displayWidth || dynamite.width), Math.floor(dynamite.displayHeight || dynamite.height));
             dynamite.body.onWorldBounds = true;
         }
-        dynamite.setVelocity(dirX * CONFIG.dynamiteSpeed, dirY * CONFIG.dynamiteSpeed);
+        dynamite.setVelocity(dirX * launchSpeed, dirY * launchSpeed);
+        dynamite.setDamping(true);
+        dynamite.setDrag(baseSpeed * 2.4, baseSpeed * 2.4);
         dynamite.setBounce(1, 1);
         dynamite.setCollideWorldBounds(true);
         if (dynamite.body) {
             dynamite.body.onWorldBounds = true;
         }
+
+        // Throw feeling: starts fast then slows down (small parabola-like launch feel)
+        this.time.delayedCall(380, () => {
+            if (!dynamite || !dynamite.active) return;
+            dynamite.setDrag(baseSpeed * 0.4, baseSpeed * 0.4);
+            const vx = dynamite.body?.velocity?.x || 0;
+            const vy = dynamite.body?.velocity?.y || 0;
+            const speedNow = Math.hypot(vx, vy);
+            if (speedNow > cruiseSpeed && speedNow > 0.0001) {
+                const scale = cruiseSpeed / speedNow;
+                dynamite.setVelocity(vx * scale, vy * scale);
+            }
+        });
 
         // Subtle oscillating rotation while flying
         this.tweens.add({
@@ -3111,6 +3167,9 @@ async function inizialization() {
         }
         if (!Number.isFinite(Number(CONFIG.ghostSpeed)) || Number(CONFIG.ghostSpeed) <= 0) {
             CONFIG.ghostSpeed = 80;
+        }
+        if (!Number.isFinite(Number(CONFIG.dynamiteSize)) || Number(CONFIG.dynamiteSize) <= 0) {
+            CONFIG.dynamiteSize = Math.max(8, Math.round((Number(CONFIG.objectSize) || OBJECT_NATIVE_SIZE) * 0.6));
         }
 
         const config = {
