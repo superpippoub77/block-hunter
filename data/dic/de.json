@@ -23,5 +23,8 @@
   "sound_off": "TON: AUS",
   "insert_coin": "MÜNZE EINFÜGEN",
   "coin_info": "1 Spieler: {per} Münze{perPlural} — 2 Spieler: {two} Münzen",
-  "byline": "von SpikeCode"
+  "hard": "EXPERTE",
+  "byline": "von SpikeCode",
+  "topTen": "BESTENLISTE",
+  "story": "In den tiefen unterirdischen Labyrinthen,\n sucht der Blockjäger nach Edelsteinen\n und weicht rollenden Felsen aus.\n Wirst du überleben und der Beste werden?"
 }

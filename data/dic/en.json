@@ -10,6 +10,7 @@
   "beginner": "BEGINNER",
   "medium": "MEDIUM",
   "expert": "EXPERT",
+  "hard": "HARD",
   "players_1": "1 PLAYER",
   "players_2": "2 PLAYERS",
   "top_ten": "TOP TEN",
@@ -41,5 +42,7 @@
   "continue_time_label": "TIME",
   "press_5_insert": "Press '5' to insert coin",
   "byline": "by SpikeCode",
-  "coin_info": "1 player: {per} coin{perPlural} — 2 players: {two} coins"
+  "coin_info": "1 player: {per} coin{perPlural} — 2 players: {two} coins",
+  "topTen": "TOP TEN",
+  "story": "In the deep underground labyrinths,\n the block hunter seeks precious gems\n and dodges unstoppable boulders.\n Will you survive and become the best?"
 }

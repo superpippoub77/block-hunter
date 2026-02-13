@@ -10,6 +10,7 @@
   "beginner": "DEBUTANT",
   "medium": "MOYEN",
   "expert": "EXPERT",
+  "hard": "EXPERT",
   "players_1": "1 JOUEUR",
   "players_2": "2 JOUEURS",
   "top_ten": "MEILLEURS SCORES",
@@ -41,5 +42,7 @@
   "dynamite_label": "DYNAMITE",
   "invul_label": "INVUL",
   "byline": "by SpikeCode",
-  "coin_info": "1 joueur: {per} pièce{perPlural} — 2 joueurs: {two} pièces"
+  "coin_info": "1 joueur: {per} pièce{perPlural} — 2 joueurs: {two} pièces",
+  "topTen": "MEILLEURS SCORES",
+  "story": "Dans les labyrinthes souterrains,\n le chasseur de blocs cherche des gemmes précieuses\n et évite les rochers.\n Survivrez-vous et deviendrez-vous le meilleur?"
 }

@@ -196,27 +196,32 @@ class PreloadScene extends Phaser.Scene {
     }
 
     createAssets() {
-        // Create texture references from spritesheet
-        // We'll use the spritesheet directly in game code
-        // Just create the boulders and shards with graphics since they're not in the sprite
-
-        const graphics = this.add.graphics();
-
-        // Boulders (dynamic) - not in sprite, generate procedurally
-        graphics.fillStyle(0x8B4513, 1);
-        graphics.fillCircle(16, 16, 12);
-        graphics.generateTexture('boulder_small', 32, 32);
-        graphics.clear();
-
-        graphics.fillCircle(20, 20, 18);
-        graphics.generateTexture('boulder_medium', 40, 40);
-        graphics.clear();
-
-        graphics.fillCircle(24, 24, 22);
-        graphics.generateTexture('boulder_large', 48, 48);
-        graphics.clear();
+        // Usa il frame "stone" (frameIndex = 2) della spritesheet "objects" per i boulder
+        const stoneFrameIndex = 2;
+        const stoneTextureKey = 'objects';
+        const stoneFrame = this.textures.getFrame(stoneTextureKey, stoneFrameIndex);
+        if (stoneFrame) {
+            // Crea una canvas temporanea per ridimensionare il frame
+            const createBoulderTexture = (key, size) => {
+                const canvas = this.textures.createCanvas(key + '_tmp', size, size);
+                const ctx = canvas.getContext('2d');
+                // Disegna il frame "stone" scalato
+                ctx.drawImage(
+                    stoneFrame.canvas,
+                    stoneFrame.cutX, stoneFrame.cutY, stoneFrame.width, stoneFrame.height,
+                    0, 0, size, size
+                );
+                // Trasferisci su una texture Phaser
+                this.textures.addCanvas(key, canvas.canvas);
+                this.textures.remove(key + '_tmp');
+            };
+            createBoulderTexture('boulder_small', 32);
+            createBoulderTexture('boulder_medium', 40);
+            createBoulderTexture('boulder_large', 48);
+        }
 
         // Static rocks (diverse dimensioni e forme) - not in sprite
+        const graphics = this.add.graphics();
         // Rock small
         graphics.fillStyle(0x555555, 1);
         graphics.fillRect(2, 2, CONFIG.tileSize - 4, CONFIG.tileSize - 4);
@@ -503,7 +508,10 @@ class AttractScene extends Phaser.Scene {
             this.flagSprite.setFrame(this.currentLangIndex);
         }
 
-        this.updateUI();
+        // Carica il nuovo dizionario e aggiorna la UI solo dopo il caricamento
+        loadTranslations(GAME_STATE.language, () => {
+            this.updateUI();
+        });
         this.resetTimeout();
     }
 
@@ -515,7 +523,7 @@ class AttractScene extends Phaser.Scene {
         const title = t.title || 'BLOCK HUNTER';
         const instructions = t.instructions || 'INSERT COIN TO START';
         const story = t.story || '';
-        const insertCoin = t.insertCoin || 'INSERT COIN';
+        const insertCoin = t.insert_coin || 'INSERT COIN';
         const credit = t.credit || 'CREDIT';
         const player1 = t.player1 || 'PLAYER 1';
         const player2 = t.player2 || 'PLAYER 2';
@@ -596,11 +604,13 @@ class TopTenScene extends Phaser.Scene {
     }
 
     create() {
-        const t = TRANSLATIONS[GAME_STATE.language];
+        const t = TRANSLATIONS[GAME_STATE.language] || {};
 
         this.add.image(400, 300, 'bg').setDisplaySize(800, 600);
 
-        const topTitle = this.add.text(400, 80, t.topTen, {
+        // Fallback: se la traduzione manca, mostra 'CLASSIFICA'
+        const topTenTitle = t.topTen || 'CLASSIFICA';
+        const topTitle = this.add.text(400, 80, topTenTitle, {
             fontSize: '48px',
             fill: '#ffff00',
             fontFamily: GAME_FONT
@@ -989,7 +999,7 @@ class LevelSelectScene extends Phaser.Scene {
         this.difficulties = [
             { name: t.beginner, mult: 0.8, y: 250 },
             { name: t.medium, mult: 1.0, y: 320 },
-            { name: t.hard, mult: 1.3, y: 390 }
+            { name: t.hard || t.expert, mult: 1.3, y: 390 }
         ];
 
         // Keep references to text objects and selection state

@@ -23,5 +23,8 @@
   "sound_off": "SONIDO: OFF",
   "insert_coin": "INSERTAR MONEDA",
   "coin_info": "1 jugador: {per} moneda{perPlural} — 2 jugadores: {two} monedas",
-  "byline": "por SpikeCode"
+  "hard": "EXPERTO",
+  "byline": "por SpikeCode",
+  "topTen": "CLASIFICACIÓN",
+  "story": "En los profundos laberintos subterráneos,\n el cazador de bloques busca gemas preciosas\n y esquiva rocas imparables.\n ¿Sobrevivirás y serás el mejor?"
 }
