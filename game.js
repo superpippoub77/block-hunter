@@ -181,15 +181,20 @@ class PreloadScene extends Phaser.Scene {
             })
             // Load tiles sprite (6 tiles: wall, hole, sand, floor, stone, hole2 - 64x48 each)
             .spritesheet('tiles', 'images/tiles.png', {
-                frameWidth: 60,
-                frameHeight: 48
+                frameWidth: 64,
+                frameHeight: 64
+            })
+            // Load wall sprite sheet (7 columns x 3 rows, 64x64 each frame)
+            .spritesheet('wall_tiles', 'images/wall.png', {
+                frameWidth: 64,
+                frameHeight: 64
             })
             // Load objects sprite (4x4 matrix = 16 objects)
             // Row 1: dynamite, heart, stone, player
             // Row 2: dynamite_chest, door, gem, stones
             // Row 3: key, sand_pile, ghost, pepita
-            // Row 4: wall, hole1, hole2, explosion
-            .spritesheet('objects', 'images/obj.png', {
+            // Row 4: skull...wall, hole1, hole2, explosion
+            .spritesheet('objects', 'images/obj_game.png', {
                 frameWidth: 64,
                 frameHeight: 64
             })
@@ -1445,38 +1450,65 @@ class GameScene extends Phaser.Scene {
             sandPile: 4  // sandPile uses stone texture
         };
 
-        const mapSymbolToType = (value) => {
-            if (typeof value !== 'string') return value;
+        const mapSymbolToCell = (value) => {
+            if (typeof value !== 'string') {
+                return {
+                    type: value,
+                    wallFrame: 0
+                };
+            }
+
+            const wallMatch = value.match(/^w(\d)(\d)$/i);
+            if (wallMatch) {
+                const row = Number(wallMatch[1]);
+                const col = Number(wallMatch[2]);
+                const validRow = row >= 0 && row <= 2;
+                const validCol = col >= 0 && col <= 6;
+                return {
+                    type: 'wall',
+                    wallFrame: (validRow && validCol) ? (row * 7 + col) : 0
+                };
+            }
+
             if (value.length === 1) {
                 switch (value) {
-                    case 'w': return 'wall';
-                    case 'h': return 'hole';
-                    case 's': return 'hole2';
-                    case 'g': return 'gem';
-                    case '-': return 'empty';
-                    case 'd': return 'door';
-                    case 'k': return 'key';
-                    case 'p': return 'pepita';
-                    case 'b': return 'dynamite';
-                    default: return value;
+                    case 'w': return { type: 'wall', wallFrame: 0 };
+                    case 'm': return { type: 'skeleton', wallFrame: 0 };
+                    case 'h': return { type: 'hole', wallFrame: 0 };
+                    case 's': return { type: 'hole2', wallFrame: 0 };
+                    case 'g': return { type: 'gem', wallFrame: 0 };
+                    case '-': return { type: 'empty', wallFrame: 0 };
+                    case 'd': return { type: 'door', wallFrame: 0 };
+                    case 'k': return { type: 'key', wallFrame: 0 };
+                    case 'p': return { type: 'pepita', wallFrame: 0 };
+                    case 'b': return { type: 'dynamite', wallFrame: 0 };
+                    default: return { type: value, wallFrame: 0 };
                 }
             }
-            return value;
+
+            return {
+                type: value,
+                wallFrame: 0
+            };
         };
 
         for (let y = 0; y < mapRows; y++) {
             this.tiles[y] = [];
             for (let x = 0; x < mapCols; x++) {
                 let type = 'floor';
+                let wallFrame = 0;
 
                 // If we have map data from JSON, use it
                 if (mapData && mapData[y] && mapData[y][x] !== undefined) {
-                    type = mapSymbolToType(mapData[y][x]);
+                    const cell = mapSymbolToCell(mapData[y][x]);
+                    type = cell.type;
+                    wallFrame = cell.wallFrame;
                 } else {
                     // Fallback to old random generation
                     // Border walls
                     if (x === 0 || x === mapCols - 1 || y === 0 || y === mapRows - 1) {
                         type = 'wall';
+                        wallFrame = 0;
                     }
                     // Random sand patches
                     else if (Math.random() < 0.1) {
@@ -1491,17 +1523,20 @@ class GameScene extends Phaser.Scene {
                 // Normalize item/door/gem tiles to floor for base tile rendering
                 const tileType = (type === 'door' || type === 'key' || type === 'pepita' || type === 'dynamite' || type === 'gem')
                     ? 'floor'
-                    : type;
+                    : (type === 'skeleton' ? 'empty' : type);
                 let tileSprite = null;
 
                 if (tileType !== 'empty') {
                     // Get frame index for this tile type
-                    const frameIndex = TILE_FRAMES[tileType] !== undefined ? TILE_FRAMES[tileType] : TILE_FRAMES.floor;
+                    const frameIndex = tileType === 'wall'
+                        ? wallFrame
+                        : (TILE_FRAMES[tileType] !== undefined ? TILE_FRAMES[tileType] : TILE_FRAMES.floor);
+                    const tileTexture = tileType === 'wall' ? 'wall_tiles' : 'tiles';
 
                     // Create sprite from tiles spritesheet at integer-aligned positions
                     const tx = Math.round(offsetX + x * CONFIG.tileSize + CONFIG.tileSize / 2);
                     const ty = Math.round(offsetY + y * CONFIG.tileSize + CONFIG.tileSize / 2);
-                    tileSprite = this.add.sprite(tx, ty, 'tiles', frameIndex);
+                    tileSprite = this.add.sprite(tx, ty, tileTexture, frameIndex);
                     // Force tile to display exactly as a square cell of CONFIG.tileSize
                     // (avoids gaps when native tile frame height differs from width)
                     tileSprite.setDisplaySize(CONFIG.tileSize, CONFIG.tileSize);
@@ -1526,10 +1561,12 @@ class GameScene extends Phaser.Scene {
                     this.hasDoorInMap = true;
                 }
 
-                if ((type === 'key' || type === 'pepita' || type === 'dynamite') && this.items) {
+                if ((type === 'key' || type === 'pepita' || type === 'dynamite' || type === 'skeleton') && this.items) {
                     const frame = type === 'key'
                         ? OBJECT_FRAMES.key
-                        : (type === 'pepita' ? OBJECT_FRAMES.pepita : OBJECT_FRAMES.dynamite_chest);
+                        : (type === 'pepita'
+                            ? OBJECT_FRAMES.pepita
+                            : (type === 'dynamite' ? OBJECT_FRAMES.dynamite_chest : OBJECT_FRAMES.wall));
                     const itemSprite = this.items.create(
                         offsetX + x * CONFIG.tileSize + CONFIG.tileSize / 2,
                         offsetY + y * CONFIG.tileSize + CONFIG.tileSize / 2,
@@ -2142,6 +2179,118 @@ class GameScene extends Phaser.Scene {
         this.lastStepSoundTime = 0;
     }
 
+    activateCompanionHelper(durationMs = 20000) {
+        const helperDuration = Number(durationMs) > 0 ? Number(durationMs) : 20000;
+
+        if (!this.companionSprite || !this.companionSprite.active) {
+            const scaleFactor = (Number(CONFIG.objectSize) || OBJECT_NATIVE_SIZE) / OBJECT_NATIVE_SIZE;
+            this.companionSprite = this.add.sprite(
+                (this.player?.x || 0) + CONFIG.tileSize * 0.8,
+                this.player?.y || 0,
+                'objects',
+                OBJECT_FRAMES.wall
+            );
+            this.companionSprite.setScale(scaleFactor);
+            this.companionSprite.setAlpha(0.95);
+            this.companionSprite.setDepth((this.player?.depth || 0) + 1);
+        }
+
+        if (this.companionExpireEvent) {
+            this.companionExpireEvent.remove(false);
+        }
+
+        this.companionExpireEvent = this.time.delayedCall(helperDuration, () => {
+            this.deactivateCompanionHelper();
+        });
+
+        this.tweens.add({
+            targets: this.companionSprite,
+            alpha: 0.7,
+            duration: 180,
+            yoyo: true,
+            repeat: 2
+        });
+    }
+
+    deactivateCompanionHelper() {
+        if (this.companionExpireEvent) {
+            this.companionExpireEvent.remove(false);
+            this.companionExpireEvent = null;
+        }
+
+        if (this.companionSprite && this.companionSprite.active) {
+            this.companionSprite.destroy();
+        }
+        this.companionSprite = null;
+    }
+
+    updateCompanionPosition() {
+        if (!this.companionSprite || !this.companionSprite.active || !this.player || !this.player.active) return;
+
+        const side = CONFIG.tileSize * 0.8;
+        const targetX = this.player.x + side;
+        const targetY = this.player.y;
+
+        this.companionSprite.x = Phaser.Math.Linear(this.companionSprite.x, targetX, 0.28);
+        this.companionSprite.y = Phaser.Math.Linear(this.companionSprite.y, targetY, 0.28);
+    }
+
+    shootCompanionDynamite(dirX, dirY, dynamiteDisplaySize, baseSpeed, launchSpeed, cruiseSpeed) {
+        if (!this.companionSprite || !this.companionSprite.active || !this.dynamites) return;
+
+        const dynamite = this.dynamites.create(this.companionSprite.x, this.companionSprite.y, 'objects', OBJECT_FRAMES.dynamite_projectile);
+        dynamite.setDisplaySize(dynamiteDisplaySize * 1.12, dynamiteDisplaySize * 1.12);
+        dynamite.setTint(0x99ffee);
+
+        this.tweens.add({
+            targets: dynamite,
+            displayWidth: dynamiteDisplaySize,
+            displayHeight: dynamiteDisplaySize,
+            duration: 260,
+            ease: 'Quad.easeOut'
+        });
+
+        if (dynamite.body) {
+            dynamite.body.setSize(Math.floor(dynamite.displayWidth || dynamite.width), Math.floor(dynamite.displayHeight || dynamite.height));
+            dynamite.body.onWorldBounds = true;
+        }
+
+        dynamite.setVelocity(dirX * launchSpeed, dirY * launchSpeed);
+        dynamite.setDamping(true);
+        dynamite.setDrag(baseSpeed * 2.4, baseSpeed * 2.4);
+        dynamite.setBounce(1, 1);
+        dynamite.setCollideWorldBounds(true);
+
+        this.time.delayedCall(380, () => {
+            if (!dynamite || !dynamite.active) return;
+            dynamite.setDrag(baseSpeed * 0.4, baseSpeed * 0.4);
+            const vx = dynamite.body?.velocity?.x || 0;
+            const vy = dynamite.body?.velocity?.y || 0;
+            const speedNow = Math.hypot(vx, vy);
+            if (speedNow > cruiseSpeed && speedNow > 0.0001) {
+                const scale = cruiseSpeed / speedNow;
+                dynamite.setVelocity(vx * scale, vy * scale);
+            }
+        });
+
+        this.tweens.add({
+            targets: dynamite,
+            angle: 12,
+            duration: 180,
+            yoyo: true,
+            repeat: -1,
+            ease: 'Sine.easeInOut'
+        });
+
+        this.attachDynamiteSmokeTrail(dynamite);
+
+        this.time.delayedCall(CONFIG.dynamiteLifetime, () => {
+            if (dynamite.active) {
+                this.explodeDynamite(dynamite);
+            }
+        });
+    }
+
     createUI() {
         console.log('Creating UI with language:', GAME_STATE.language);
         const t = TRANSLATIONS[GAME_STATE.language];
@@ -2583,6 +2732,8 @@ class GameScene extends Phaser.Scene {
             this.shootDynamite();
         }
 
+        this.updateCompanionPosition();
+
         // Toggle miner headlamp when room light is off
         if (Phaser.Input.Keyboard.JustDown(this.keys.l)) {
             this.toggleHeadlamp();
@@ -2709,6 +2860,10 @@ class GameScene extends Phaser.Scene {
                 this.explodeDynamite(dynamite);
             }
         });
+
+        if (this.companionSprite && this.companionSprite.active) {
+            this.shootCompanionDynamite(dirX, dirY, dynamiteDisplaySize, baseSpeed, launchSpeed, cruiseSpeed);
+        }
     }
 
     explodeDynamite(dynamite) {
@@ -2976,6 +3131,9 @@ class GameScene extends Phaser.Scene {
             GAME_STATE.dynamiteCount += 5;
         } else if (type === 'pepita') {
             GAME_STATE.lives++;
+        } else if (type === 'skeleton') {
+            this.addScore(20, item.x, item.y);
+            this.activateCompanionHelper(20000);
         }
 
         item.destroy();
@@ -3099,6 +3257,8 @@ class GameScene extends Phaser.Scene {
         }
         this.isLevelTransitioning = true;
 
+        this.deactivateCompanionHelper();
+
         this.stopLevelLightEffect();
         this.stopGhostSfx();
 
@@ -3136,6 +3296,7 @@ class GameScene extends Phaser.Scene {
     gameOver() {
         this.stopLevelLightEffect();
         this.stopGhostSfx();
+        this.deactivateCompanionHelper();
         const gameMusic = this.sound.get('game_bgm');
         if (gameMusic && gameMusic.isPlaying) {
             gameMusic.stop();
