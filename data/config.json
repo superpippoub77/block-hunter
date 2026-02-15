@@ -8,6 +8,7 @@
   "gridHeight": 18,
   "playerSpeed": 220,
   "ghostSpeed": 80,
+  "batSpeed": 90,
   "boulderBaseSpeed": 60,
   "dynamiteSpeed": 200,
   "dynamiteSize": 40,

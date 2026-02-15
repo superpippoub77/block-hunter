@@ -12,6 +12,7 @@ export const OBJECT_FRAMES = {
     dynamite_chest: 4,
     door: 5,
     gem: 6,
+    cart: 7,
     stones: 7,
     key: 8,
     sand_pile: 9,

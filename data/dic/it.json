@@ -40,6 +40,7 @@
   "byline": "by SpikeCode",
   "coin_info": "1 giocatore: {per} moneta{perPlural} — 2 giocatori: {two} monete",
   "game_over": "GAME OVER",
+  "level_completed": "LIVELLO COMPLETATO",
   "insert_coin_to_continue": "INSERISCI MONETA PER CONTINUARE",
   "continue_time_label": "TEMPO",
   "press_5_insert": "Premi '5' per inserire moneta",

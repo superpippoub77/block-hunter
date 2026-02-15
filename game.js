@@ -184,7 +184,7 @@ class PreloadScene extends Phaser.Scene {
                 frameWidth: 64,
                 frameHeight: 64
             })
-            // Load wall sprite sheet (7 columns x 3 rows, 64x64 each frame)
+            // Load wall sprite sheet (1 row x 7 columns, 64x64 each frame)
             .spritesheet('wall_tiles', 'images/wall.png', {
                 frameWidth: 64,
                 frameHeight: 64
@@ -217,6 +217,11 @@ class PreloadScene extends Phaser.Scene {
             .spritesheet('player_back_right', 'images/player_back_rigth.png', {
                 frameWidth: 139,
                 frameHeight: 135
+            })
+            // Bat flying animation spritesheet (1 row, 6 frames)
+            .spritesheet('bat', 'images/batpng.png', {
+                frameWidth: 64,
+                frameHeight: 64
             });
 
         // Load all level JSON files (50 levels)
@@ -728,7 +733,6 @@ class TopTenScene extends Phaser.Scene {
         const t = TRANSLATIONS[GAME_STATE.language] || {};
 
         this.add.image(400, 300, 'bg').setDisplaySize(800, 600);
-        this.add.rectangle(400, 300, 800, 600, 0x000000, 0.35).setDepth(0.1);
 
         // Fallback: se la traduzione manca, mostra 'CLASSIFICA'
         const topTenTitle = t.topTen || 'CLASSIFICA';
@@ -1081,7 +1085,6 @@ class LevelSelectScene extends Phaser.Scene {
         const t = TRANSLATIONS[GAME_STATE.language];
 
         this.add.image(400, 300, 'bg').setDisplaySize(800, 600);
-        this.add.rectangle(400, 300, 800, 600, 0x000000, 0.35).setDepth(0.1);
 
         this.add.text(400, 150, t.selectDifficulty, {
             fontSize: '40px',
@@ -1274,6 +1277,14 @@ class GameScene extends Phaser.Scene {
                 repeat: -1
             });
         }
+        if (!this.anims.exists('bat_fly')) {
+            this.anims.create({
+                key: 'bat_fly',
+                frames: this.anims.generateFrameNumbers('bat', { start: 0, end: 5 }),
+                frameRate: 12,
+                repeat: -1
+            });
+        }
 
         // Background for all levels
         this.gameBg = this.add.image(CONFIG.width / 2, CONFIG.height / 2, 'game_bg')
@@ -1303,6 +1314,7 @@ class GameScene extends Phaser.Scene {
         this.rocks = this.physics.add.staticGroup();
         this.boulders = this.physics.add.group();
         this.ghosts = this.physics.add.group();
+        this.bats = this.physics.add.group();
         this.gems = this.physics.add.group();
         this.items = this.physics.add.group();
         this.dynamites = this.physics.add.group();
@@ -1314,7 +1326,15 @@ class GameScene extends Phaser.Scene {
         this.mapGemPositions = [];
         this.mapGemIndex = 0;
         this.keySpawnPositions = [];
+        this.ghostSpawnPositions = [];
         this.lastKeyPos = null;
+        this.cartPowerActive = false;
+        this.cartPowerUntil = 0;
+        this.cartPowerTimer = null;
+        this.playerCollisionRefs = [];
+        this.playerGemStock = 0;
+        this.batDirectionTimer = null;
+        this.batSpawnPositions = [];
         this.createTilemap();
 
         // Create player
@@ -1360,6 +1380,7 @@ class GameScene extends Phaser.Scene {
 
         // Spawn ghosts (count from level JSON, e.g. "ghost": 3)
         this.spawnGhosts();
+        this.spawnBatsFromMap();
 
         // Spawn first gem
         this.time.delayedCall(CONFIG.gemSpawnDelay, () => this.spawnGem());
@@ -1385,7 +1406,7 @@ class GameScene extends Phaser.Scene {
         // Setup level timer (if provided in level data)
         this.setupLevelTimer();
 
-        // Setup per-level light effect: tremolante, fissa, flash, spenta
+        // Setup per-level light effect: piena, tremolante, flash, spenta
         this.setupLevelLightEffect();
 
         // Setup input
@@ -1450,45 +1471,88 @@ class GameScene extends Phaser.Scene {
             sandPile: 4  // sandPile uses stone texture
         };
 
-        const mapSymbolToCell = (value) => {
+        const parseSingleMapSymbol = (value) => {
             if (typeof value !== 'string') {
                 return {
                     type: value,
-                    wallFrame: 0
+                    wallFrame: 0,
+                    wallRotation: 0
                 };
             }
 
             const wallMatch = value.match(/^w(\d)(\d)$/i);
             if (wallMatch) {
-                const row = Number(wallMatch[1]);
-                const col = Number(wallMatch[2]);
-                const validRow = row >= 0 && row <= 2;
-                const validCol = col >= 0 && col <= 6;
+                const baseCol = Number(wallMatch[1]);
+                const rotationCode = Number(wallMatch[2]);
+                const validBaseCol = baseCol >= 0 && baseCol <= 6;
+                const validRotation = rotationCode >= 0 && rotationCode <= 3;
+
+                // New format: wCR => C=column (0..6), R=rotation (0..3, clockwise 90° steps)
+                if (validBaseCol && validRotation) {
+                    return {
+                        type: 'wall',
+                        wallFrame: baseCol,
+                        wallRotation: rotationCode
+                    };
+                }
+
+                // Legacy compatibility: wRC => R=row (0..2), C=column (0..6)
+                const legacyRow = baseCol;
+                const legacyCol = rotationCode;
+                const validLegacyRow = legacyRow >= 0 && legacyRow <= 2;
+                const validLegacyCol = legacyCol >= 0 && legacyCol <= 6;
                 return {
                     type: 'wall',
-                    wallFrame: (validRow && validCol) ? (row * 7 + col) : 0
+                    wallFrame: (validLegacyRow && validLegacyCol) ? (legacyRow * 7 + legacyCol) : 0,
+                    wallRotation: 0
                 };
             }
 
             if (value.length === 1) {
                 switch (value) {
-                    case 'w': return { type: 'wall', wallFrame: 0 };
-                    case 'm': return { type: 'skeleton', wallFrame: 0 };
-                    case 'h': return { type: 'hole', wallFrame: 0 };
-                    case 's': return { type: 'hole2', wallFrame: 0 };
-                    case 'g': return { type: 'gem', wallFrame: 0 };
-                    case '-': return { type: 'empty', wallFrame: 0 };
-                    case 'd': return { type: 'door', wallFrame: 0 };
-                    case 'k': return { type: 'key', wallFrame: 0 };
-                    case 'p': return { type: 'pepita', wallFrame: 0 };
-                    case 'b': return { type: 'dynamite', wallFrame: 0 };
-                    default: return { type: value, wallFrame: 0 };
+                    case 'w': return { type: 'wall', wallFrame: 0, wallRotation: 0 };
+                    case 'm': return { type: 'skeleton', wallFrame: 0, wallRotation: 0 };
+                    case 'h': return { type: 'hole', wallFrame: 0, wallRotation: 0 };
+                    case 's': return { type: 'hole2', wallFrame: 0, wallRotation: 0 };
+                    case 'g': return { type: 'gem', wallFrame: 0, wallRotation: 0 };
+                    case '-': return { type: 'empty', wallFrame: 0, wallRotation: 0 };
+                    case 'd': return { type: 'door', wallFrame: 0, wallRotation: 0 };
+                    case 'k': return { type: 'key', wallFrame: 0, wallRotation: 0 };
+                    case 'p': return { type: 'pepita', wallFrame: 0, wallRotation: 0 };
+                    case 'b': return { type: 'dynamite', wallFrame: 0, wallRotation: 0 };
+                    case 'c': return { type: 'cart', wallFrame: 0, wallRotation: 0 };
+                    default: return { type: value, wallFrame: 0, wallRotation: 0 };
                 }
             }
 
             return {
                 type: value,
-                wallFrame: 0
+                wallFrame: 0,
+                wallRotation: 0
+            };
+        };
+
+        const mapSymbolToCell = (value) => {
+            if (typeof value === 'string') {
+                const slashIndex = value.indexOf('/');
+                if (slashIndex > 0 && slashIndex < value.length - 1) {
+                    const coverPart = value.slice(0, slashIndex).trim();
+                    const revealPart = value.slice(slashIndex + 1).trim();
+                    if (coverPart && revealPart) {
+                        const coverCell = parseSingleMapSymbol(coverPart);
+                        const revealCell = parseSingleMapSymbol(revealPart);
+                        return {
+                            ...coverCell,
+                            hiddenReveal: revealCell
+                        };
+                    }
+                }
+            }
+
+            const singleCell = parseSingleMapSymbol(value);
+            return {
+                ...singleCell,
+                hiddenReveal: null
             };
         };
 
@@ -1497,18 +1561,23 @@ class GameScene extends Phaser.Scene {
             for (let x = 0; x < mapCols; x++) {
                 let type = 'floor';
                 let wallFrame = 0;
+                let wallRotation = 0;
+                let hiddenReveal = null;
 
                 // If we have map data from JSON, use it
                 if (mapData && mapData[y] && mapData[y][x] !== undefined) {
                     const cell = mapSymbolToCell(mapData[y][x]);
                     type = cell.type;
                     wallFrame = cell.wallFrame;
+                    wallRotation = cell.wallRotation || 0;
+                    hiddenReveal = cell.hiddenReveal || null;
                 } else {
                     // Fallback to old random generation
                     // Border walls
                     if (x === 0 || x === mapCols - 1 || y === 0 || y === mapRows - 1) {
                         type = 'wall';
                         wallFrame = 0;
+                        wallRotation = 0;
                     }
                     // Random sand patches
                     else if (Math.random() < 0.1) {
@@ -1524,14 +1593,16 @@ class GameScene extends Phaser.Scene {
                 const tileType = (type === 'door' || type === 'key' || type === 'pepita' || type === 'dynamite' || type === 'gem')
                     ? 'floor'
                     : (type === 'skeleton' ? 'empty' : type);
+                const normalizedTileType = (tileType === 'bat' || tileType === 'ghost') ? 'floor' : tileType;
                 let tileSprite = null;
+                let coverSprite = null;
 
-                if (tileType !== 'empty') {
+                if (normalizedTileType !== 'empty') {
                     // Get frame index for this tile type
-                    const frameIndex = tileType === 'wall'
+                    const frameIndex = normalizedTileType === 'wall'
                         ? wallFrame
-                        : (TILE_FRAMES[tileType] !== undefined ? TILE_FRAMES[tileType] : TILE_FRAMES.floor);
-                    const tileTexture = tileType === 'wall' ? 'wall_tiles' : 'tiles';
+                        : (TILE_FRAMES[normalizedTileType] !== undefined ? TILE_FRAMES[normalizedTileType] : TILE_FRAMES.floor);
+                    const tileTexture = normalizedTileType === 'wall' ? 'wall_tiles' : 'tiles';
 
                     // Create sprite from tiles spritesheet at integer-aligned positions
                     const tx = Math.round(offsetX + x * CONFIG.tileSize + CONFIG.tileSize / 2);
@@ -1541,8 +1612,13 @@ class GameScene extends Phaser.Scene {
                     // (avoids gaps when native tile frame height differs from width)
                     tileSprite.setDisplaySize(CONFIG.tileSize, CONFIG.tileSize);
 
+                    if (type === 'wall' && wallRotation) {
+                        tileSprite.setAngle(wallRotation * 90);
+                    }
+
                     if (type === 'wall' && this.walls) {
                         this.walls.add(tileSprite);
+                        coverSprite = tileSprite;
                         if (tileSprite.body) {
                             // Use the actual display size of the sprite for physics body
                             tileSprite.body.setSize(Math.floor(tileSprite.displayWidth || tileSprite.width), Math.floor(tileSprite.displayHeight || tileSprite.height));
@@ -1559,14 +1635,17 @@ class GameScene extends Phaser.Scene {
                     );
                     this.setupDoor(door);
                     this.hasDoorInMap = true;
+                    coverSprite = door;
                 }
 
-                if ((type === 'key' || type === 'pepita' || type === 'dynamite' || type === 'skeleton') && this.items) {
+                if ((type === 'key' || type === 'pepita' || type === 'dynamite' || type === 'skeleton' || type === 'cart') && this.items) {
                     const frame = type === 'key'
                         ? OBJECT_FRAMES.key
                         : (type === 'pepita'
                             ? OBJECT_FRAMES.pepita
-                            : (type === 'dynamite' ? OBJECT_FRAMES.dynamite_chest : OBJECT_FRAMES.wall));
+                            : (type === 'dynamite'
+                                ? OBJECT_FRAMES.dynamite_chest
+                                : (type === 'cart' ? OBJECT_FRAMES.cart : OBJECT_FRAMES.wall)));
                     const itemSprite = this.items.create(
                         offsetX + x * CONFIG.tileSize + CONFIG.tileSize / 2,
                         offsetY + y * CONFIG.tileSize + CONFIG.tileSize / 2,
@@ -1584,6 +1663,9 @@ class GameScene extends Phaser.Scene {
                         itemSprite.body.setSize(Math.floor(itemSprite.displayWidth || itemSprite.width), Math.floor(itemSprite.displayHeight || itemSprite.height));
                     }
                     itemSprite.setData('type', type);
+                    itemSprite.setData('gridX', x);
+                    itemSprite.setData('gridY', y);
+                    coverSprite = itemSprite;
 
                     if (type === 'key' && this.keySpawnPositions) {
                         this.keySpawnPositions.push({ x: itemSprite.x, y: itemSprite.y });
@@ -1600,7 +1682,33 @@ class GameScene extends Phaser.Scene {
                     });
                 }
 
-                this.tiles[y][x] = { type: tileType, sprite: tileSprite };
+                if (type === 'ghost') {
+                    if (!this.ghostSpawnPositions) {
+                        this.ghostSpawnPositions = [];
+                    }
+                    this.ghostSpawnPositions.push({
+                        x: offsetX + x * CONFIG.tileSize + CONFIG.tileSize / 2,
+                        y: offsetY + y * CONFIG.tileSize + CONFIG.tileSize / 2
+                    });
+                }
+
+                if (type === 'bat') {
+                    if (!this.batSpawnPositions) {
+                        this.batSpawnPositions = [];
+                    }
+                    this.batSpawnPositions.push({
+                        x: offsetX + x * CONFIG.tileSize + CONFIG.tileSize / 2,
+                        y: offsetY + y * CONFIG.tileSize + CONFIG.tileSize / 2
+                    });
+                }
+
+                this.tiles[y][x] = { type: normalizedTileType, sprite: tileSprite };
+                if (hiddenReveal) {
+                    this.tiles[y][x].hiddenReveal = hiddenReveal;
+                    this.tiles[y][x].coverType = type;
+                    this.tiles[y][x].coverSprite = coverSprite;
+                    this.tiles[y][x].hiddenRevealed = false;
+                }
             }
         }
 
@@ -1989,21 +2097,32 @@ class GameScene extends Phaser.Scene {
         // Player collisions
         this.physics.add.overlap(this.player, this.gems, this.collectGem, null, this);
         this.physics.add.overlap(this.player, this.items, this.collectItem, null, this);
-        this.physics.add.collider(this.player, this.rocks);
+        this.physics.add.overlap(this.player, this.bats, this.hitByBat, null, this);
+        const playerRockCollider = this.physics.add.collider(this.player, this.rocks);
+        if (playerRockCollider) {
+            this.playerCollisionRefs.push(playerRockCollider);
+        }
         this.physics.add.overlap(this.player, this.rocks, this.hitByRock, null, this);
         this.physics.add.overlap(this.player, this.boulders, this.hitByBoulder, null, this);
         this.physics.add.overlap(this.player, this.ghosts, this.hitByGhost, null, this);
         this.physics.add.overlap(this.player, this.shards, this.hitByShard, null, this);
         if (this.walls) {
-            this.physics.add.collider(this.player, this.walls);
+            const playerWallCollider = this.physics.add.collider(this.player, this.walls);
+            if (playerWallCollider) {
+                this.playerCollisionRefs.push(playerWallCollider);
+            }
         }
         if (this.doors) {
-            this.physics.add.collider(this.player, this.doors, this.onPlayerDoorCollide, null, this);
+            const playerDoorCollider = this.physics.add.collider(this.player, this.doors, this.onPlayerDoorCollide, null, this);
+            if (playerDoorCollider) {
+                this.playerCollisionRefs.push(playerDoorCollider);
+            }
         }
 
         // Dynamite collisions
         this.physics.add.collider(this.dynamites, this.rocks, this.dynamiteHitRock, null, this);
         this.physics.add.overlap(this.dynamites, this.boulders, this.dynamiteHitBoulder, null, this);
+        this.physics.add.overlap(this.dynamites, this.bats, this.dynamiteHitBat, null, this);
         if (this.walls) {
             this.physics.add.collider(this.dynamites, this.walls, (dynamite) => {
                 this.bounceAndExplode(dynamite);
@@ -2021,6 +2140,89 @@ class GameScene extends Phaser.Scene {
 
     }
 
+    spawnMapBat(worldX, worldY) {
+        if (!this.bats) return;
+
+        const bat = this.bats.create(worldX, worldY, 'bat', 0);
+        const batScaleFactor = CONFIG.objectSize / OBJECT_NATIVE_SIZE;
+        bat.setScale(batScaleFactor);
+        if (bat.body) {
+            bat.body.setSize(Math.floor(bat.displayWidth || bat.width), Math.floor(bat.displayHeight || bat.height));
+            bat.body.setCollideWorldBounds(true);
+            bat.body.setBounce(1, 1);
+        }
+        bat.setData('speed', this.getBatSpeedForLevel());
+        bat.setData('nextStealAt', 0);
+        if (bat.anims) {
+            bat.play('bat_fly', true);
+        }
+        this.setBatRandomVelocity(bat);
+
+        if (!this.batDirectionTimer) {
+            this.batDirectionTimer = this.time.addEvent({
+                delay: 700,
+                loop: true,
+                callback: () => {
+                    const bats = this.bats?.children?.entries || [];
+                    bats.forEach((entry) => {
+                        if (!entry || !entry.active) return;
+                        if (Math.random() < 0.45) {
+                            this.setBatRandomVelocity(entry);
+                        }
+                    });
+                }
+            });
+        }
+    }
+
+    setBatRandomVelocity(bat) {
+        if (!bat || !bat.active) return;
+        const speed = Number(bat.getData('speed')) || 90;
+        const dx = Phaser.Math.FloatBetween(-1, 1);
+        const dy = Phaser.Math.FloatBetween(-1, 1);
+        const len = Math.hypot(dx, dy) || 1;
+        bat.setVelocity((dx / len) * speed, (dy / len) * speed);
+    }
+
+    getBatCountForLevel() {
+        const direct = Number(this.levelData?.bat);
+        if (Number.isFinite(direct) && direct > 0) {
+            return Math.floor(direct);
+        }
+        const inMap = Number(this.levelData?.map?.bat);
+        if (Number.isFinite(inMap) && inMap > 0) {
+            return Math.floor(inMap);
+        }
+        return 0;
+    }
+
+    getBatSpeedForLevel() {
+        const direct = Number(this.levelData?.batSpeed);
+        if (Number.isFinite(direct) && direct > 0) {
+            return direct;
+        }
+        const inMap = Number(this.levelData?.map?.batSpeed);
+        if (Number.isFinite(inMap) && inMap > 0) {
+            return inMap;
+        }
+        return Number(CONFIG.batSpeed) > 0 ? Number(CONFIG.batSpeed) : 90;
+    }
+
+    spawnBatsFromMap() {
+        if (!this.bats) return;
+        const requestedCount = this.getBatCountForLevel();
+        if (requestedCount <= 0) return;
+
+        const spawnPositions = Array.isArray(this.batSpawnPositions) ? this.batSpawnPositions : [];
+        if (!spawnPositions.length) return;
+
+        for (let i = 0; i < requestedCount; i++) {
+            const pos = spawnPositions[i % spawnPositions.length];
+            if (!pos) continue;
+            this.spawnMapBat(pos.x, pos.y);
+        }
+    }
+
     getGhostCountForLevel() {
         const direct = Number(this.levelData?.ghost);
         if (Number.isFinite(direct) && direct > 0) {
@@ -2031,6 +2233,18 @@ class GameScene extends Phaser.Scene {
             return Math.floor(inMap);
         }
         return 0;
+    }
+
+    getGhostSpeedForLevel() {
+        const direct = Number(this.levelData?.ghostSpeed);
+        if (Number.isFinite(direct) && direct > 0) {
+            return direct;
+        }
+        const inMap = Number(this.levelData?.map?.ghostSpeed);
+        if (Number.isFinite(inMap) && inMap > 0) {
+            return inMap;
+        }
+        return Number(CONFIG.ghostSpeed) > 0 ? Number(CONFIG.ghostSpeed) : 80;
     }
 
     spawnGhosts() {
@@ -2044,14 +2258,23 @@ class GameScene extends Phaser.Scene {
 
         this.startGhostSfx(count);
 
-        const ghostSpeed = Number(CONFIG.ghostSpeed) > 0 ? Number(CONFIG.ghostSpeed) : 80;
+        const ghostSpeed = this.getGhostSpeedForLevel();
+        const spawnPositions = Array.isArray(this.ghostSpawnPositions) ? this.ghostSpawnPositions : [];
 
         for (let i = 0; i < count; i++) {
-            const tile = this.getRandomWalkableTile();
-            if (!tile) continue;
-
-            const worldX = this.mapOffsetX + tile.x * CONFIG.tileSize + CONFIG.tileSize / 2;
-            const worldY = this.mapOffsetY + tile.y * CONFIG.tileSize + CONFIG.tileSize / 2;
+            let worldX;
+            let worldY;
+            if (spawnPositions.length > 0) {
+                const pos = spawnPositions[i % spawnPositions.length];
+                if (!pos) continue;
+                worldX = pos.x;
+                worldY = pos.y;
+            } else {
+                const tile = this.getRandomWalkableTile();
+                if (!tile) continue;
+                worldX = this.mapOffsetX + tile.x * CONFIG.tileSize + CONFIG.tileSize / 2;
+                worldY = this.mapOffsetY + tile.y * CONFIG.tileSize + CONFIG.tileSize / 2;
+            }
 
             const ghost = this.ghosts.create(worldX, worldY, 'objects', OBJECT_FRAMES.ghost);
             const ghostScaleFactor = CONFIG.objectSize / OBJECT_NATIVE_SIZE;
@@ -2131,11 +2354,10 @@ class GameScene extends Phaser.Scene {
     setGhostRandomVelocity(ghost) {
         if (!ghost || !ghost.active) return;
         const speed = Number(ghost.getData('speed')) || 80;
-        const direction = Phaser.Math.Between(0, 3);
-        if (direction === 0) ghost.setVelocity(speed, 0);
-        else if (direction === 1) ghost.setVelocity(-speed, 0);
-        else if (direction === 2) ghost.setVelocity(0, speed);
-        else ghost.setVelocity(0, -speed);
+        const dx = Phaser.Math.FloatBetween(-1, 1);
+        const dy = Phaser.Math.FloatBetween(-1, 1);
+        const len = Math.hypot(dx, dy) || 1;
+        ghost.setVelocity((dx / len) * speed, (dy / len) * speed);
     }
 
     updateGhostPerspective() {
@@ -2431,8 +2653,15 @@ class GameScene extends Phaser.Scene {
         }
 
         const isOff = lightMode === 'spenta' || lightMode === 'off';
+        const isFull = lightMode === 'piena' || lightMode === 'full';
         const isFixed = lightMode === 'fissa' || lightMode === 'fixed';
         const isFlash = lightMode.startsWith('flash') || lightMode.includes('lampo') || lightMode === 'lightning';
+
+        if (isFull) {
+            this.isRoomDark = false;
+            this.headlampEnabled = false;
+            return;
+        }
 
         this.levelLightOverlay = this.add.rectangle(
             CONFIG.width / 2,
@@ -2657,6 +2886,9 @@ class GameScene extends Phaser.Scene {
         if (this.playerSlowFactor && this.playerSlowFactor !== 1) {
             speed *= this.playerSlowFactor;
         }
+        if (this.cartPowerActive) {
+            speed *= 2;
+        }
 
         // Check if on sand
         const tile = this.getTileAt(this.player.x, this.player.y);
@@ -2790,6 +3022,158 @@ class GameScene extends Phaser.Scene {
         return null;
     }
 
+    revealHiddenMapObjects(centerX, centerY, radius) {
+        if (!this.tiles || !this.tiles.length) return;
+        const maxDist = Number(radius) || CONFIG.tileSize;
+
+        for (let gridY = 0; gridY < this.tiles.length; gridY++) {
+            for (let gridX = 0; gridX < this.tiles[gridY].length; gridX++) {
+                const tile = this.tiles[gridY]?.[gridX];
+                if (!tile || !tile.hiddenReveal || tile.hiddenRevealed) continue;
+
+                const worldX = this.mapOffsetX + gridX * CONFIG.tileSize + CONFIG.tileSize / 2;
+                const worldY = this.mapOffsetY + gridY * CONFIG.tileSize + CONFIG.tileSize / 2;
+                const dist = Phaser.Math.Distance.Between(centerX, centerY, worldX, worldY);
+                if (dist > maxDist) continue;
+
+                if (tile.coverSprite && tile.coverSprite.active) {
+                    tile.coverSprite.destroy();
+                }
+
+                this.spawnRevealedCellObject(gridX, gridY, tile.hiddenReveal);
+                tile.hiddenRevealed = true;
+                tile.hiddenReveal = null;
+                tile.coverSprite = null;
+            }
+        }
+    }
+
+    revealHiddenAtGrid(gridX, gridY) {
+        if (typeof gridX !== 'number' || typeof gridY !== 'number') return;
+        const tile = this.tiles?.[gridY]?.[gridX];
+        if (!tile || !tile.hiddenReveal || tile.hiddenRevealed) return;
+
+        if (tile.coverSprite && tile.coverSprite.active) {
+            tile.coverSprite.destroy();
+        }
+
+        this.spawnRevealedCellObject(gridX, gridY, tile.hiddenReveal);
+        tile.hiddenRevealed = true;
+        tile.hiddenReveal = null;
+        tile.coverSprite = null;
+    }
+
+    spawnRevealedCellObject(gridX, gridY, revealCell) {
+        if (!revealCell || typeof revealCell.type !== 'string') return;
+
+        const worldX = this.mapOffsetX + gridX * CONFIG.tileSize + CONFIG.tileSize / 2;
+        const worldY = this.mapOffsetY + gridY * CONFIG.tileSize + CONFIG.tileSize / 2;
+        const revealType = revealCell.type;
+
+        const TILE_FRAMES = {
+            hole: 1,
+            sand: 2,
+            floor: 3,
+            stone: 4,
+            hole2: 5
+        };
+
+        const createItemFromType = (itemType) => {
+            if (!this.items) return;
+            const frame = itemType === 'key'
+                ? OBJECT_FRAMES.key
+                : (itemType === 'pepita'
+                    ? OBJECT_FRAMES.pepita
+                    : (itemType === 'dynamite'
+                        ? OBJECT_FRAMES.dynamite_chest
+                        : (itemType === 'cart' ? OBJECT_FRAMES.cart : OBJECT_FRAMES.wall)));
+            const itemSprite = this.items.create(worldX, worldY, 'objects', frame);
+            const objectScaleFactor = CONFIG.objectSize / OBJECT_NATIVE_SIZE;
+            itemSprite.setScale(objectScaleFactor);
+            if (itemSprite.body) {
+                itemSprite.body.setSize(Math.floor(itemSprite.displayWidth || itemSprite.width), Math.floor(itemSprite.displayHeight || itemSprite.height));
+            }
+            itemSprite.setData('type', itemType);
+            itemSprite.setData('gridX', gridX);
+            itemSprite.setData('gridY', gridY);
+
+            if (itemType === 'key' && this.keySpawnPositions) {
+                this.keySpawnPositions.push({ x: itemSprite.x, y: itemSprite.y });
+            }
+        };
+
+        if (revealType === 'wall') {
+            const wallSprite = this.add.sprite(worldX, worldY, 'wall_tiles', revealCell.wallFrame || 0);
+            wallSprite.setDisplaySize(CONFIG.tileSize, CONFIG.tileSize);
+            if (revealCell.wallRotation) {
+                wallSprite.setAngle((revealCell.wallRotation || 0) * 90);
+            }
+            if (this.walls) {
+                this.walls.add(wallSprite);
+                if (wallSprite.body) {
+                    wallSprite.body.setSize(Math.floor(wallSprite.displayWidth || wallSprite.width), Math.floor(wallSprite.displayHeight || wallSprite.height));
+                }
+            }
+            this.tiles[gridY][gridX].type = 'wall';
+            this.tiles[gridY][gridX].sprite = wallSprite;
+            return;
+        }
+
+        if (revealType === 'door') {
+            if (this.doors) {
+                const door = this.doors.create(worldX, worldY, 'objects', OBJECT_FRAMES.door);
+                this.setupDoor(door);
+                this.hasDoorInMap = true;
+            }
+            this.tiles[gridY][gridX].type = 'floor';
+            return;
+        }
+
+        if (revealType === 'key' || revealType === 'pepita' || revealType === 'dynamite' || revealType === 'skeleton' || revealType === 'cart') {
+            createItemFromType(revealType);
+            this.tiles[gridY][gridX].type = 'floor';
+            return;
+        }
+
+        if (revealType === 'gem') {
+            if (this.gems) {
+                const gem = this.gems.create(worldX, worldY, 'objects', OBJECT_FRAMES.gem);
+                const gemScaleFactor = CONFIG.objectSize / OBJECT_NATIVE_SIZE;
+                gem.setScale(gemScaleFactor);
+                if (gem.body) {
+                    gem.body.setSize(Math.floor(gem.displayWidth || gem.width), Math.floor(gem.displayHeight || gem.height));
+                }
+                this.tweens.add({
+                    targets: gem,
+                    scale: 1.2,
+                    duration: 500,
+                    yoyo: true,
+                    repeat: -1
+                });
+                this.gemsRemaining = (Number(this.gemsRemaining) || 0) + 1;
+            }
+            this.tiles[gridY][gridX].type = 'floor';
+            return;
+        }
+
+        if (revealType === 'empty') {
+            this.tiles[gridY][gridX].type = 'empty';
+            this.tiles[gridY][gridX].sprite = null;
+            return;
+        }
+
+        const baseFrame = TILE_FRAMES[revealType];
+        if (baseFrame !== undefined) {
+            const tileSprite = this.add.sprite(worldX, worldY, 'tiles', baseFrame);
+            tileSprite.setDisplaySize(CONFIG.tileSize, CONFIG.tileSize);
+            this.tiles[gridY][gridX].type = revealType;
+            this.tiles[gridY][gridX].sprite = tileSprite;
+            return;
+        }
+
+        this.tiles[gridY][gridX].type = 'floor';
+    }
+
     shootDynamite() {
         if (GAME_STATE.dynamiteCount <= 0) return;
         if (this.time.now - this.lastDynamiteTime < 300) return;
@@ -2894,6 +3278,7 @@ class GameScene extends Phaser.Scene {
 
         // Slow player if inside explosion radius
         this.applyExplosionSlow(explosion.x, explosion.y);
+        this.revealHiddenMapObjects(explosion.x, explosion.y, CONFIG.tileSize * 0.95);
     }
 
     bounceAndExplode(dynamite) {
@@ -2967,6 +3352,37 @@ class GameScene extends Phaser.Scene {
         });
     }
 
+    createBloodSplatter(x, y) {
+        const centerX = typeof x === 'number' ? x : (this.player?.x || 0);
+        const centerY = typeof y === 'number' ? y : (this.player?.y || 0);
+        const particleCount = Phaser.Math.Between(20, 32);
+
+        for (let i = 0; i < particleCount; i++) {
+            const droplet = this.add.circle(
+                centerX + Phaser.Math.Between(-12, 12),
+                centerY + Phaser.Math.Between(-12, 12),
+                Phaser.Math.Between(3, 7),
+                Phaser.Utils.Array.GetRandom([0xb30000, 0xcc0000, 0x8a0303]),
+                Phaser.Math.FloatBetween(0.78, 1)
+            );
+            droplet.setDepth(1100);
+
+            const angle = Phaser.Math.FloatBetween(0, Math.PI * 2);
+            const distance = Phaser.Math.Between(18, 52);
+
+            this.tweens.add({
+                targets: droplet,
+                x: droplet.x + Math.cos(angle) * distance,
+                y: droplet.y + Math.sin(angle) * distance + Phaser.Math.Between(8, 26),
+                alpha: 0,
+                scale: Phaser.Math.FloatBetween(0.7, 1),
+                duration: Phaser.Math.Between(340, 560),
+                ease: 'Cubic.easeOut',
+                onComplete: () => droplet.destroy()
+            });
+        }
+    }
+
     attachDynamiteSmokeTrail(dynamite) {
         if (!dynamite || !dynamite.active) return;
 
@@ -3015,8 +3431,24 @@ class GameScene extends Phaser.Scene {
         }
     }
 
-    addScore(amount, x, y) {
-        GAME_STATE.score += amount;
+    addScore(amount, x, y, skipUnderflowLifeLoss = false) {
+        const nextScore = (Number(GAME_STATE.score) || 0) + (Number(amount) || 0);
+
+        if (nextScore < 0) {
+            GAME_STATE.score = 0;
+            this.showScorePopup(amount, x, y);
+            if (!skipUnderflowLifeLoss) {
+                this.loseLife({
+                    skipScorePenalty: true,
+                    reason: 'score_underflow',
+                    popupX: x,
+                    popupY: y
+                });
+            }
+            return;
+        }
+
+        GAME_STATE.score = nextScore;
         this.showScorePopup(amount, x, y);
     }
 
@@ -3047,6 +3479,31 @@ class GameScene extends Phaser.Scene {
         });
     }
 
+    showLifeLossPopup(x, y) {
+        const posX = typeof x === 'number' ? x : (this.player?.x || 0);
+        const posY = typeof y === 'number' ? y : (this.player?.y || 0);
+
+        const popup = this.add.text(posX, posY - 28, 'LIFE -1', {
+            fontSize: '16px',
+            fill: '#ff3355',
+            fontFamily: GAME_FONT,
+            stroke: '#000000',
+            strokeThickness: 3
+        }).setOrigin(0.5);
+
+        popup.setDepth(1001);
+        popup.setScrollFactor(1);
+
+        this.tweens.add({
+            targets: popup,
+            y: posY - 60,
+            alpha: 0,
+            duration: 800,
+            ease: 'Cubic.easeOut',
+            onComplete: () => popup.destroy()
+        });
+    }
+
     explodeNearbyRocks(centerX, centerY, radius) {
         const rocks = this.rocks?.children?.entries || [];
         rocks.forEach((rock) => {
@@ -3072,6 +3529,13 @@ class GameScene extends Phaser.Scene {
 
     dynamiteHitBoulder(dynamite, boulder) {
         this.destroyBoulder(boulder);
+        this.explodeDynamite(dynamite);
+    }
+
+    dynamiteHitBat(dynamite, bat) {
+        if (!bat || !bat.active) return;
+        this.addScore(12, bat.x, bat.y);
+        bat.destroy();
         this.explodeDynamite(dynamite);
     }
 
@@ -3108,6 +3572,7 @@ class GameScene extends Phaser.Scene {
         }
         gem.destroy();
         this.addScore(50, gem.x, gem.y);
+        this.playerGemStock = (Number(this.playerGemStock) || 0) + 1;
 
         this.gemsRemaining--;
 
@@ -3122,6 +3587,8 @@ class GameScene extends Phaser.Scene {
 
     collectItem(player, item) {
         const type = item.getData('type');
+        const gridX = item.getData('gridX');
+        const gridY = item.getData('gridY');
 
         if (type === 'key') {
             this.addScore(5, item.x, item.y);
@@ -3131,12 +3598,62 @@ class GameScene extends Phaser.Scene {
             GAME_STATE.dynamiteCount += 5;
         } else if (type === 'pepita') {
             GAME_STATE.lives++;
+        } else if (type === 'cart') {
+            this.activateCartPowerup(10000);
         } else if (type === 'skeleton') {
             this.addScore(20, item.x, item.y);
             this.activateCompanionHelper(20000);
         }
 
         item.destroy();
+        this.revealHiddenAtGrid(gridX, gridY);
+    }
+
+    activateCartPowerup(durationMs = 10000) {
+        this.cartPowerActive = true;
+        this.cartPowerUntil = this.time.now + Math.max(0, Number(durationMs) || 0);
+
+        if (this.cartPowerTimer) {
+            this.cartPowerTimer.remove(false);
+        }
+
+        if (Array.isArray(this.playerCollisionRefs)) {
+            this.playerCollisionRefs.forEach((collider) => {
+                if (collider) {
+                    collider.active = false;
+                }
+            });
+        }
+
+        if (this.player) {
+            this.player.setAlpha(0.85);
+        }
+
+        this.cartPowerTimer = this.time.delayedCall(Math.max(0, Number(durationMs) || 0), () => {
+            this.deactivateCartPowerup();
+        });
+    }
+
+    deactivateCartPowerup() {
+        this.cartPowerActive = false;
+        this.cartPowerUntil = 0;
+
+        if (this.cartPowerTimer) {
+            this.cartPowerTimer.remove(false);
+            this.cartPowerTimer = null;
+        }
+
+        if (Array.isArray(this.playerCollisionRefs)) {
+            this.playerCollisionRefs.forEach((collider) => {
+                if (collider) {
+                    collider.active = true;
+                }
+            });
+        }
+
+        if (this.player) {
+            this.player.setAlpha(1);
+        }
     }
 
     tryOpenDoor(player, door) {
@@ -3145,7 +3662,7 @@ class GameScene extends Phaser.Scene {
         if (!door.getData('locked')) return;
         if (GAME_STATE.keysCount <= 0) return;
 
-        GAME_STATE.keysCount--;
+        GAME_STATE.keysCount = Math.max(0, GAME_STATE.keysCount - 1);
         door.setData('opening', true);
         door.setData('locked', false);
         if (door.disableBody) {
@@ -3221,15 +3738,47 @@ class GameScene extends Phaser.Scene {
         this.loseLife();
     }
 
+    hitByBat(player, bat) {
+        if (!bat || !bat.active) return;
+        if (this.cartPowerActive) return;
+
+        const now = this.time.now;
+        const nextStealAt = Number(bat.getData('nextStealAt')) || 0;
+        if (now < nextStealAt) return;
+        bat.setData('nextStealAt', now + 1000);
+
+        this.createBloodSplatter(player?.x, player?.y);
+
+        if ((Number(this.playerGemStock) || 0) > 0) {
+            this.playerGemStock = Math.max(0, (Number(this.playerGemStock) || 0) - 1);
+            this.showScorePopup(-1, player?.x, player?.y);
+            return;
+        }
+
+        this.loseLife();
+    }
+
     hitHole() {
         this.loseLife();
     }
 
-    loseLife() {
+    loseLife(options = {}) {
+        if (this.cartPowerActive) return;
         if (this.invulnerable) return;
 
+        const skipScorePenalty = !!options.skipScorePenalty;
+        const reason = options.reason || '';
+        const popupX = options.popupX;
+        const popupY = options.popupY;
+
         GAME_STATE.lives--;
-        this.addScore(-20, this.player?.x, this.player?.y);
+        if (!skipScorePenalty) {
+            this.addScore(-20, this.player?.x, this.player?.y, true);
+        }
+
+        if (reason === 'score_underflow') {
+            this.showLifeLossPopup(popupX, popupY);
+        }
 
         if (GAME_STATE.lives <= 0) {
             this.gameOver();
@@ -3257,6 +3806,8 @@ class GameScene extends Phaser.Scene {
         }
         this.isLevelTransitioning = true;
 
+        const t = TRANSLATIONS[GAME_STATE.language] || {};
+
         this.deactivateCompanionHelper();
 
         this.stopLevelLightEffect();
@@ -3269,6 +3820,31 @@ class GameScene extends Phaser.Scene {
         const totalLevels = LEVEL_CONFIG.levels.length;
         const nextLevel = (GAME_STATE.currentLevel + 1) % totalLevels;
         GAME_STATE.currentLevel = nextLevel;
+
+        const completedText = t.level_completed || t.levelComplete || 'LEVEL COMPLETED';
+        const camera = this.cameras.main;
+        const completedOverlay = this.add.rectangle(
+            camera.width / 2,
+            camera.height / 2,
+            camera.width,
+            camera.height,
+            0x000000,
+            1
+        ).setScrollFactor(0).setDepth(4000);
+
+        const completedLabel = this.add.text(
+            camera.width / 2,
+            camera.height / 2,
+            completedText,
+            {
+                fontSize: '34px',
+                fill: '#ffffff',
+                fontFamily: GAME_FONT,
+                stroke: '#000000',
+                strokeThickness: 5,
+                align: 'center'
+            }
+        ).setOrigin(0.5).setDepth(4001).setScrollFactor(0);
 
         // Stop ongoing gameplay timers before switching level
         if (this.boulderTimer) {
@@ -3287,15 +3863,34 @@ class GameScene extends Phaser.Scene {
             this.ghostDirectionTimer.remove();
             this.ghostDirectionTimer = null;
         }
+        if (this.batDirectionTimer) {
+            this.batDirectionTimer.remove();
+            this.batDirectionTimer = null;
+        }
 
-        this.time.delayedCall(1000, () => {
+        let transitioned = false;
+        const goToNextLevel = () => {
+            if (transitioned) return;
+            transitioned = true;
+            if (completedLabel && completedLabel.destroy) completedLabel.destroy();
+            if (completedOverlay && completedOverlay.destroy) completedOverlay.destroy();
             this.scene.restart();
-        });
+        };
+
+        this.time.delayedCall(1500, goToNextLevel);
+        setTimeout(() => {
+            if (!this || !this.scene || !this.scene.isActive()) return;
+            goToNextLevel();
+        }, 2600);
     }
 
     gameOver() {
         this.stopLevelLightEffect();
         this.stopGhostSfx();
+        if (this.batDirectionTimer) {
+            this.batDirectionTimer.remove();
+            this.batDirectionTimer = null;
+        }
         this.deactivateCompanionHelper();
         const gameMusic = this.sound.get('game_bgm');
         if (gameMusic && gameMusic.isPlaying) {

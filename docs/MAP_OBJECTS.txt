@@ -1,0 +1,103 @@
+BLOCK HUNTER - OGGETTI MAPPA (TOKEN) E RUOLI
+
+Formato generale della griglia:
+- Ogni cella contiene un token stringa (es. "w20", "k", "-").
+- Sintassi speciale cover/reveal: "A/B"
+  Significa: A è l'oggetto iniziale visibile/distruttibile,
+  quando A viene distrutto (o raccolto se è un item), appare B nella stessa cella.
+
+------------------------------------------------------------
+TOKEN BASE
+------------------------------------------------------------
+- "-"
+  Vuoto. Cella camminabile senza sprite base.
+
+- "w"
+  Muro base (frame 0).
+
+- "wXY"
+  Muro variante da spritesheet wall.png.
+  X = colonna base muro (0..6)
+  Y = rotazione (0..3)
+      0 = 0°
+      1 = 90° orario
+      2 = 180°
+      3 = 270° orario
+  Esempio: "w23" => colonna 2 ruotata di 270°.
+
+- "h"
+  Buco tipo 1 (tile hole). Se il player ci passa, perde vita.
+
+- "s"
+  Buco tipo 2 (tile hole2).
+
+- "g"
+  Posizione gemma da mappa (spawn gemma in quel punto).
+
+- "d"
+  Porta bloccata (door). Si apre con una chiave.
+
+- "k"
+  Chiave (key).
+
+- "p"
+  Pepita/cuore vita extra (incrementa vite).
+
+- "b"
+  Cassa dinamite (aggiunge dinamite).
+
+- "c"
+  Carrello power-up.
+  Se raccolto: velocità x2, invincibile, attraversa muri/porte/rocce e non perde vite/punti per 10 secondi.
+
+- "m"
+  Scheletro/companion item (attiva helper compagno).
+
+- "ghost"
+  Punto di partenza spawn fantasmi (marker mappa, non conteggio).
+  Il numero reale di fantasmi si imposta nel JSON livello con:
+  - "ghost": N
+  Esempio: "ghost": 2 => spawna 2 fantasmi usando i marker "ghost" presenti in mappa.
+
+- "bat"
+  Punto di partenza spawn pipistrelli (marker mappa, non conteggio).
+  Il numero reale di pipistrelli si imposta nel JSON livello con:
+  - "bat": N
+  Esempio: "bat": 2 => spawna 2 pipistrelli usando i marker "bat" presenti in mappa.
+  Comportamento pipistrello:
+  - Si muove libero nella miniera (ignora ostacoli).
+  - Se tocca il player: ruba 1 gemma posseduta dal player.
+  - Se il player non ha gemme possedute: toglie 1 vita.
+  - Può essere eliminato con la dinamite (sparisce definitivamente nel livello).
+
+------------------------------------------------------------
+SINTASSI COVER/REVEAL CON SLASH
+------------------------------------------------------------
+- "A/B"
+  A = oggetto iniziale (cover)
+  B = oggetto nascosto che compare dopo distruzione/raccolta di A.
+
+Esempi pratici:
+- "w10/k"   -> distruggi muro, compare chiave.
+- "w63/d"   -> distruggi muro, compare porta.
+- "m/p"     -> raccogli scheletro, compare pepita.
+- "w20/w31" -> distruggi muro, compare un altro muro con altra variante.
+
+------------------------------------------------------------
+VALORI CONSIGLIATI PER B (OGGETTO CHE COMPARE)
+------------------------------------------------------------
+Supportati e testati:
+- wall: "w" o "wXY"
+- "d" (door)
+- "k" (key)
+- "p" (pepita)
+- "b" (dynamite)
+- "c" (cart power-up)
+- "m" (skeleton)
+- "ghost" (enemy ghost spawn marker)
+- "bat" (enemy bat)
+- "g" (gem)
+- "h" / "s" / "-"
+
+Nota:
+- Usa preferibilmente i token sopra per comportamento coerente con il gameplay.
