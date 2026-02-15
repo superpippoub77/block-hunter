@@ -1402,6 +1402,7 @@ class GameScene extends Phaser.Scene {
 
         // Setup UI
         this.createUI();
+        this.showLevelObjective();
 
         // Setup level timer (if provided in level data)
         this.setupLevelTimer();
@@ -2597,6 +2598,44 @@ class GameScene extends Phaser.Scene {
 
         this.topStatsObjects = [];
         this.refreshHudIcons();
+    }
+
+    showLevelObjective() {
+        const objectiveLabel = this.levelData?.objectiveLabel;
+        if (!objectiveLabel || typeof objectiveLabel !== 'string') return;
+
+        const t = TRANSLATIONS[GAME_STATE.language] || {};
+        const objectiveText = t[objectiveLabel] || objectiveLabel;
+        if (!objectiveText || typeof objectiveText !== 'string') return;
+
+        const x = this.cameras.main.width / 2;
+        const y = 64;
+        const textObj = this.add.text(x, y, objectiveText, {
+            fontSize: '14px',
+            fill: '#ffffff',
+            fontFamily: GAME_FONT,
+            align: 'center',
+            stroke: '#000000',
+            strokeThickness: 3,
+            wordWrap: { width: Math.max(320, this.cameras.main.width - 80), useAdvancedWrap: true }
+        }).setOrigin(0.5).setDepth(2100).setScrollFactor(0);
+
+        const panel = this.add.graphics();
+        drawTextPanel(panel, textObj, { paddingX: 14, paddingY: 10, radius: 8 });
+        panel.setDepth(2099);
+        panel.setScrollFactor(0);
+
+        this.tweens.add({
+            targets: [textObj, panel],
+            alpha: 0,
+            duration: 900,
+            delay: 2800,
+            ease: 'Cubic.easeOut',
+            onComplete: () => {
+                if (textObj && textObj.destroy) textObj.destroy();
+                if (panel && panel.destroy) panel.destroy();
+            }
+        });
     }
 
     setupLevelTimer() {

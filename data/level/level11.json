@@ -33,6 +33,7 @@
   },
   "speed": 1,
   "escapeRoute": false,
+  "objectiveLabel": "objective_collect_gems_and_survive",
   "enemies": null,
   "collectibles": null,
   "traps": null,

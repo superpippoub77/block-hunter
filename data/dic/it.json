@@ -31,6 +31,8 @@
   },
   "score_label": "PUNTEGGIO",
   "level_label": "LIVELLO",
+  "objective_collect_gems_and_survive": "Raccogli le gemme e sopravvivi ai pericoli.",
+  "objective_collect_gems_and_escape": "Raccogli le gemme, trova la chiave e raggiungi l'uscita.",
   "lives_label": "VITE",
   "gems_label": "GEMME",
   "keys_label": "CHIAVI",

@@ -6,6 +6,7 @@
   "dynamicBoulders": false,
   "speed": 5,
   "escapeRoute": true,
+  "objectiveLabel": "objective_collect_gems_and_escape",
   "map": [
     ["sand1","sand1","sand2","sand2","sand3","sand3","sand4","sand4","sand5","sand5","sand6","sand6","sand7","sand7","sand8","sand8","sand9","sand9"],
     ["sand2","sand3","sand3","sand4","sand4","sand5","sand5","sand6","sand6","sand7","sand7","sand8","sand8","sand9","sand9","sand10","sand10","sand1"],

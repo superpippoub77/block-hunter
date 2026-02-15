@@ -6,6 +6,7 @@
   "dynamicBoulders": false,
   "speed": 3,
   "escapeRoute": false,
+  "objectiveLabel": "objective_collect_gems_and_survive",
   "map": [
     ["sand1","sand2","sand3","sand4","sand5","sand6","sand7","sand8","sand9","sand10"],
     ["sand2","sand3","sand4","sand5","sand6","sand7","sand8","sand9","sand10","sand1"],

@@ -12,6 +12,8 @@
   "players_2": "2 SPIELER",
   "score_label": "PUNKTE",
   "level_label": "LEVEL",
+  "objective_collect_gems_and_survive": "Sammle Edelsteine und überlebe die Gefahren.",
+  "objective_collect_gems_and_escape": "Sammle Edelsteine, finde einen Schlüssel und erreiche den Ausgang.",
   "lives_label": "LEBEN",
   "gems_label": "EDELSTEINE",
   "keys_label": "SCHLÜSSEL",

@@ -101,3 +101,14 @@ Supportati e testati:
 
 Nota:
 - Usa preferibilmente i token sopra per comportamento coerente con il gameplay.
+
+------------------------------------------------------------
+METADATI LIVELLO (ROOT JSON)
+------------------------------------------------------------
+- "objectiveLabel": "chiave_dizionario"
+  Mostra una breve descrizione dell'obiettivo a inizio livello.
+  La chiave punta al file traduzioni corrente (data/dic/*.json).
+
+Esempi usati:
+- "objective_collect_gems_and_survive"
+- "objective_collect_gems_and_escape"

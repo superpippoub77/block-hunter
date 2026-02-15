@@ -12,6 +12,8 @@
   "players_2": "2 玩家",
   "score_label": "得分",
   "level_label": "关卡",
+   "objective_collect_gems_and_survive": "收集宝石并在危险中生存。",
+   "objective_collect_gems_and_escape": "收集宝石、找到钥匙并到达出口。",
   "lives_label": "生命",
   "gems_label": "宝石",
   "keys_label": "钥匙",

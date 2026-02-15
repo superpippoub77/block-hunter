@@ -12,6 +12,8 @@
   "players_2": "2 プレイヤー",
   "score_label": "スコア",
   "level_label": "レベル",
+  "objective_collect_gems_and_survive": "ジェムを集めて危険を生き延びよう。",
+  "objective_collect_gems_and_escape": "ジェムを集め、鍵を見つけて出口へ行こう。",
   "lives_label": "ライフ",
   "gems_label": "ジェム",
   "keys_label": "鍵",

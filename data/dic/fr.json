@@ -35,6 +35,8 @@
   "press_5_insert": "Appuyez sur '5' pour insérer une pièce",
   "score_label": "SCORE",
   "level_label": "NIVEAU",
+  "objective_collect_gems_and_survive": "Ramasse les gemmes et survis aux dangers.",
+  "objective_collect_gems_and_escape": "Ramasse les gemmes, trouve une clé et atteins la sortie.",
   "lives_label": "VIES",
   "gems_label": "GEMMES",
   "keys_label": "CLÉS",

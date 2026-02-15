@@ -15,6 +15,8 @@
   "lives_label": "VIDAS",
   "gems_label": "GEMAS",
   "keys_label": "LLAVES",
+    "objective_collect_gems_and_survive": "Recoge gemas y sobrevive a los peligros.",
+    "objective_collect_gems_and_escape": "Recoge gemas, encuentra una llave y llega a la salida.",
   "outside_label": "EXTERIOR",
   "dynamite_label": "DINAMITA",
   "invul_label": "INVUL",

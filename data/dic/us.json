@@ -12,6 +12,8 @@
   "players_2": "2 PLAYERS",
   "score_label": "SCORE",
   "level_label": "LEVEL",
+  "objective_collect_gems_and_survive": "Collect gems and survive the hazards.",
+  "objective_collect_gems_and_escape": "Collect gems, find a key, and reach the exit.",
   "lives_label": "LIVES",
   "gems_label": "GEMS",
   "keys_label": "KEYS",
