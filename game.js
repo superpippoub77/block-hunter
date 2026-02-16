@@ -2357,8 +2357,13 @@ class GameScene extends Phaser.Scene {
         }
 
         // Boulder collisions
-        this.physics.add.collider(this.boulders, this.rocks);
-        this.physics.add.collider(this.boulders, this.boulders);
+        this.physics.add.collider(this.boulders, this.rocks, (boulder, rock) => {
+            this.trySplitRollingBoulder(boulder, rock);
+        });
+        this.physics.add.collider(this.boulders, this.boulders, (boulderA, boulderB) => {
+            this.trySplitRollingBoulder(boulderA, boulderB);
+            this.trySplitRollingBoulder(boulderB, boulderA);
+        });
 
     }
 
@@ -3120,7 +3125,7 @@ class GameScene extends Phaser.Scene {
         }
     }
 
-    update() {
+    update(time, delta) {
         if (!this.player || !this.player.active) return;
 
         // Player movement
@@ -3249,6 +3254,9 @@ class GameScene extends Phaser.Scene {
 
         // Ghost visual perspective update (foreground ghosts look bigger)
         this.updateGhostPerspective();
+
+        // Dynamic boulders roll and slow down over time
+        this.updateRollingBoulders(delta);
 
         // Update UI
         this.updateUITexts();
@@ -4186,13 +4194,113 @@ class GameScene extends Phaser.Scene {
         });
     }
 
+    getRollingStoneScale(size) {
+        const objectScaleFactor = CONFIG.objectSize / OBJECT_NATIVE_SIZE;
+        const sizeScale = size === 'small' ? 0.7 : (size === 'large' ? 1.3 : 1);
+        return sizeScale * objectScaleFactor;
+    }
+
+    spawnRollingBoulder(x, y, size, vx, vy, splitGeneration = 0) {
+        const boulder = this.boulders.create(x, y, 'objects', OBJECT_FRAMES.stone);
+        const finalScale = this.getRollingStoneScale(size);
+
+        boulder.setScale(finalScale);
+        boulder.setAngle(Phaser.Math.Between(0, 360));
+        boulder.setVelocity(vx, vy);
+        boulder.setData('size', size);
+        boulder.setData('splitGeneration', splitGeneration);
+        boulder.setData('isSplitting', false);
+
+        const initialSpeed = Math.sqrt((vx * vx) + (vy * vy));
+        boulder.setData('rollingMinSpeed', Phaser.Math.Between(36, 56));
+        boulder.setData('rollingStartSpeed', initialSpeed);
+        boulder.setData('rollingDecayRate', Phaser.Math.FloatBetween(0.45, 0.78));
+        boulder.setData('rollingPulsePhase', Phaser.Math.FloatBetween(0, Math.PI * 2));
+        boulder.setData('rollingPulseAmp', Phaser.Math.FloatBetween(0.2, 0.35));
+        boulder.setData('rollingPulseFreq', Phaser.Math.FloatBetween(7.8, 11.2));
+        boulder.setData('rollingAge', 0);
+        boulder.setData('rollingHopInterval', Phaser.Math.Between(120, 190));
+        boulder.setData('rollingHopTimer', Phaser.Math.Between(35, 120));
+        boulder.setData('rollingHopPower', Phaser.Math.Between(24, 50));
+        boulder.setData('rollingLateralPower', Phaser.Math.Between(14, 34));
+        boulder.setData('rollingSpinSign', Math.random() < 0.5 ? -1 : 1);
+        boulder.setData('rollingSpeed', initialSpeed);
+        boulder.setData('rollingBaseScale', finalScale);
+
+        if (boulder.body) {
+            boulder.body.setAllowGravity(false);
+            boulder.body.setCollideWorldBounds(true);
+            boulder.body.setSize(Math.floor(boulder.displayWidth || boulder.width), Math.floor(boulder.displayHeight || boulder.height));
+        }
+        boulder.setBounce(0.9);
+        this.attachBoulderSmokeTrail(boulder);
+
+        return boulder;
+    }
+
+    trySplitRollingBoulder(boulder, impactObject) {
+        if (!boulder || !boulder.active || !boulder.body) return;
+        if (boulder.getData('isSplitting')) return;
+
+        const dynamicBoulders = this.levelConfig?.dynamicBoulders;
+        if (dynamicBoulders && typeof dynamicBoulders === 'object' && dynamicBoulders.splitOnImpact === false) {
+            return;
+        }
+
+        const splitGeneration = Number(boulder.getData('splitGeneration')) || 0;
+        const maxSplitGenerationRaw = Number(dynamicBoulders?.maxSplitGeneration);
+        const maxSplitGeneration = Number.isFinite(maxSplitGenerationRaw)
+            ? Math.max(0, Math.floor(maxSplitGenerationRaw))
+            : 1;
+        if (splitGeneration >= maxSplitGeneration) return;
+
+        const sourceSize = boulder.getData('size') || 'medium';
+        const nextSize = sourceSize === 'large' ? 'medium' : 'small';
+
+        const splitRange = Array.isArray(dynamicBoulders?.splitPiecesRange)
+            ? dynamicBoulders.splitPiecesRange
+            : [2, 3];
+        const rangeMinRaw = Number(splitRange[0]);
+        const rangeMaxRaw = Number(splitRange[1]);
+        const rangeMin = Number.isFinite(rangeMinRaw) ? Math.max(1, Math.floor(rangeMinRaw)) : 2;
+        const rangeMax = Number.isFinite(rangeMaxRaw) ? Math.max(rangeMin, Math.floor(rangeMaxRaw)) : 3;
+        const pieces = Phaser.Math.Between(rangeMin, rangeMax);
+
+        const baseSpeed = Math.max(80, Math.sqrt((boulder.body.velocity.x ** 2) + (boulder.body.velocity.y ** 2)));
+        const baseAngle = (impactObject && impactObject.active)
+            ? Phaser.Math.Angle.Between(impactObject.x, impactObject.y, boulder.x, boulder.y)
+            : Phaser.Math.FloatBetween(0, Math.PI * 2);
+
+        boulder.setData('isSplitting', true);
+
+        for (let i = 0; i < pieces; i++) {
+            const spread = Phaser.Math.FloatBetween(-0.9, 0.9) + ((i - (pieces - 1) / 2) * 0.55);
+            const angle = baseAngle + spread;
+            const pieceSpeed = baseSpeed * Phaser.Math.FloatBetween(0.55, 0.9);
+            const pieceVx = Math.cos(angle) * pieceSpeed;
+            const pieceVy = Math.sin(angle) * pieceSpeed;
+
+            const offsetDist = Phaser.Math.Between(6, 14);
+            const spawnX = boulder.x + Math.cos(angle) * offsetDist;
+            const spawnY = boulder.y + Math.sin(angle) * offsetDist;
+            this.spawnRollingBoulder(spawnX, spawnY, nextSize, pieceVx, pieceVy, splitGeneration + 1);
+        }
+
+        this.createDustPuff(boulder.x, boulder.y, 0.9);
+        this.createExplosionAt(boulder.x, boulder.y);
+        boulder.destroy();
+    }
+
     spawnBoulder() {
         const dynamicBoulders = this.levelConfig?.dynamicBoulders;
         if (!dynamicBoulders) return;
         if (typeof dynamicBoulders === 'object' && dynamicBoulders.enabled === false) return;
 
         const defaultDirections = ['top', 'bottom', 'left', 'right'];
-        const defaultSizes = Object.keys(LEVEL_CONFIG.globalRules?.dynamicBoulders?.sizes || {});
+        const staticRockConfig = this.levelConfig?.staticRocks;
+        const defaultSizes = (Array.isArray(staticRockConfig?.sizes) && staticRockConfig.sizes.length > 0)
+            ? staticRockConfig.sizes
+            : (LEVEL_CONFIG.globalRules?.staticRocks?.sizes || ['small', 'medium', 'large']);
 
         const directions = (typeof dynamicBoulders === 'object' && Array.isArray(dynamicBoulders.directions) && dynamicBoulders.directions.length > 0)
             ? dynamicBoulders.directions
@@ -4230,10 +4338,137 @@ class GameScene extends Phaser.Scene {
             vy = Phaser.Math.Between(-50, 50);
         }
 
-        const boulder = this.boulders.create(x, y, `boulder_${size}`);
-        boulder.setVelocity(vx, vy);
-        boulder.setData('size', size);
-        boulder.setBounce(0.8);
+        this.spawnRollingBoulder(x, y, size, vx, vy, 0);
+    }
+
+    attachBoulderSmokeTrail(boulder) {
+        if (!boulder || !boulder.active) return;
+
+        const smokeEvent = this.time.addEvent({
+            delay: 34,
+            loop: true,
+            callback: () => {
+                if (!boulder || !boulder.active) {
+                    if (smokeEvent && smokeEvent.remove) {
+                        smokeEvent.remove(false);
+                    }
+                    return;
+                }
+
+                const velocityX = Number(boulder.body?.velocity?.x) || 0;
+                const velocityY = Number(boulder.body?.velocity?.y) || 0;
+                const trailX = boulder.x - Math.sign(velocityX) * Phaser.Math.Between(2, 6);
+                const trailY = boulder.y - Math.sign(velocityY) * Phaser.Math.Between(2, 6);
+
+                const trailParticles = 2;
+                for (let i = 0; i < trailParticles; i++) {
+                    const smoke = this.add.circle(
+                        trailX + Phaser.Math.Between(-3, 3),
+                        trailY + Phaser.Math.Between(-2, 2),
+                        Phaser.Math.Between(4, 7),
+                        Phaser.Utils.Array.GetRandom([0x8b6a42, 0x7c5a37, 0x6f4e2e, 0x5f452a, 0x9a7749]),
+                        Phaser.Math.FloatBetween(0.58, 0.74)
+                    );
+                    smoke.setDepth(860);
+
+                    this.tweens.add({
+                        targets: smoke,
+                        y: smoke.y - Phaser.Math.Between(3, 8),
+                        x: smoke.x + Phaser.Math.Between(-8, 8),
+                        scale: Phaser.Math.FloatBetween(1.8, 2.7),
+                        alpha: 0,
+                        duration: Phaser.Math.Between(300, 560),
+                        ease: 'Sine.easeOut',
+                        onComplete: () => smoke.destroy()
+                    });
+                }
+            }
+        });
+
+        boulder.setData('smokeTrailEvent', smokeEvent);
+        if (boulder.once) {
+            boulder.once('destroy', () => {
+                if (smokeEvent && smokeEvent.remove) {
+                    smokeEvent.remove(false);
+                }
+            });
+        }
+    }
+
+    updateRollingBoulders(deltaMs = 16) {
+        const boulders = this.boulders?.children?.entries || [];
+        if (!boulders.length) return;
+
+        const dt = Math.max(0.001, (Number(deltaMs) || 16) / 1000);
+
+        boulders.forEach((boulder) => {
+            if (!boulder || !boulder.active || !boulder.body) return;
+
+            const vx = Number(boulder.body.velocity?.x) || 0;
+            const vy = Number(boulder.body.velocity?.y) || 0;
+            const currentSpeed = Math.sqrt((vx * vx) + (vy * vy));
+            if (currentSpeed <= 0.001) return;
+
+            const minSpeed = Number(boulder.getData('rollingMinSpeed')) || 30;
+            const startSpeed = Number(boulder.getData('rollingStartSpeed')) || currentSpeed;
+            const decayRate = Number(boulder.getData('rollingDecayRate')) || 0.62;
+            const pulsePhase = Number(boulder.getData('rollingPulsePhase')) || 0;
+            const pulseAmp = Number(boulder.getData('rollingPulseAmp')) || 0.22;
+            const pulseFreq = Number(boulder.getData('rollingPulseFreq')) || 8.8;
+            const baseScale = Number(boulder.getData('rollingBaseScale')) || 1;
+
+            const age = (Number(boulder.getData('rollingAge')) || 0) + dt;
+            boulder.setData('rollingAge', age);
+
+            const decayedBase = Math.max(minSpeed, startSpeed * Math.exp(-decayRate * age));
+            const pulseMul = 1 + Math.sin(age * pulseFreq + pulsePhase) * pulseAmp;
+            const targetSpeed = Math.max(minSpeed, decayedBase * pulseMul);
+
+            let hopTimer = (Number(boulder.getData('rollingHopTimer')) || 0) - (dt * 1000);
+            if (hopTimer <= 0) {
+                const dirX0 = vx / currentSpeed;
+                const dirY0 = vy / currentSpeed;
+                const perpX = -dirY0;
+                const perpY = dirX0;
+                const hopPower = Number(boulder.getData('rollingHopPower')) || 26;
+                const lateralPower = Number(boulder.getData('rollingLateralPower')) || 18;
+
+                const kickX = dirX0 * hopPower + perpX * Phaser.Math.Between(-lateralPower, lateralPower);
+                const kickY = dirY0 * hopPower + perpY * Phaser.Math.Between(-lateralPower, lateralPower);
+                boulder.setVelocity(vx + kickX, vy + kickY);
+
+                this.tweens.add({
+                    targets: boulder,
+                    scaleX: baseScale * 1.12,
+                    scaleY: baseScale * 0.88,
+                    duration: 75,
+                    yoyo: true,
+                    ease: 'Quad.easeOut'
+                });
+
+                const interval = Number(boulder.getData('rollingHopInterval')) || 170;
+                hopTimer = interval + Phaser.Math.Between(-45, 45);
+            }
+            boulder.setData('rollingHopTimer', hopTimer);
+
+            const adjustedVx = Number(boulder.body.velocity?.x) || 0;
+            const adjustedVy = Number(boulder.body.velocity?.y) || 0;
+            const adjustedSpeed = Math.max(0.001, Math.sqrt((adjustedVx * adjustedVx) + (adjustedVy * adjustedVy)));
+            const dirX = adjustedVx / adjustedSpeed;
+            const dirY = adjustedVy / adjustedSpeed;
+
+            const desiredVx = dirX * targetSpeed;
+            const desiredVy = dirY * targetSpeed;
+            const blend = Phaser.Math.Clamp(dt * 8, 0.08, 0.35);
+            const nextVx = Phaser.Math.Linear(adjustedVx, desiredVx, blend);
+            const nextVy = Phaser.Math.Linear(adjustedVy, desiredVy, blend);
+
+            boulder.setVelocity(nextVx, nextVy);
+            boulder.setData('rollingSpeed', targetSpeed);
+
+            const spinSign = Number(boulder.getData('rollingSpinSign')) || 1;
+            boulder.setAngularVelocity(spinSign * Phaser.Math.Clamp(targetSpeed * 4.6, 95, 980));
+        });
     }
 
     updateUITexts() {

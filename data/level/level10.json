@@ -30,7 +30,10 @@
   "dynamicBoulders": {
     "enabled": true,
     "directions": ["top", "bottom", "left", "right"],
-    "sizes": null
+    "sizes": null,
+    "splitOnImpact": true,
+    "splitPiecesRange": [2, 3],
+    "maxSplitGeneration": 1
   },
   "speed": 1,
   "escapeRoute": true,
