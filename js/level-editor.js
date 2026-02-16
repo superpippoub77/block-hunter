@@ -119,6 +119,25 @@ function parseNullableInput(text) {
     return raw;
 }
 
+function tokenToMiniMapColor(token) {
+    const normalized = normalizeToken(token);
+    if (normalized === '-') return '#0f1f3e';
+    if (normalized === 'f') return '#2f4f67';
+    if (normalized === 'h') return '#101010';
+    if (normalized === 's') return '#27103d';
+    if (normalized === 'g') return '#1f3f88';
+    if (normalized === 'd') return '#7f5a22';
+    if (normalized === 'k') return '#8f7918';
+    if (normalized === 'p') return '#a05e1e';
+    if (normalized === 'b') return '#8e2d2d';
+    if (normalized === 'c') return '#2b8a8a';
+    if (normalized === 'm') return '#6a6a6a';
+    if (normalized === 'ghost') return '#64e1d8';
+    if (normalized === 'bat') return '#7a58d1';
+    if (WALL_TOKEN_REGEX.test(normalized)) return '#4b5f80';
+    return '#526f9f';
+}
+
 function normalizeToken(token) {
     const raw = String(token ?? '-').trim();
     if (!raw) return '-';
@@ -519,6 +538,8 @@ class LevelEditorScene extends Phaser.Scene {
                 .setStrokeStyle(2, 0xffdd77, 1);
             this.selectionLayer.add(s);
         }
+
+        drawMiniMapPreview(this);
     }
 
     updateSelectedCellInfo() {
@@ -581,6 +602,67 @@ function setStatus(message, isError = false) {
     if (!target) return;
     target.style.color = isError ? '#ff8f9a' : '#8ee89f';
     target.textContent = message;
+}
+
+function drawMiniMapPreview(scene) {
+    if (!scene) return;
+    const canvas = el('miniMapPreview');
+    if (!canvas) return;
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const width = canvas.width;
+    const height = canvas.height;
+    ctx.clearRect(0, 0, width, height);
+
+    const rows = scene.rows || 1;
+    const cols = scene.cols || 1;
+    const cell = Math.max(2, Math.floor(Math.min(width / cols, height / rows)));
+    const mapW = cell * cols;
+    const mapH = cell * rows;
+    const offX = Math.floor((width - mapW) / 2);
+    const offY = Math.floor((height - mapH) / 2);
+
+    ctx.fillStyle = '#060d1f';
+    ctx.fillRect(0, 0, width, height);
+
+    for (let row = 0; row < rows; row++) {
+        for (let col = 0; col < cols; col++) {
+            const cellData = scene.cells?.[row]?.[col];
+            const base = cellData?.base || '-';
+            const reveal = cellData?.reveal;
+
+            ctx.fillStyle = tokenToMiniMapColor(base);
+            const x = offX + col * cell;
+            const y = offY + row * cell;
+            ctx.fillRect(x, y, cell, cell);
+
+            if (reveal) {
+                ctx.fillStyle = tokenToMiniMapColor(reveal);
+                ctx.fillRect(x + Math.floor(cell * 0.55), y + Math.floor(cell * 0.55), Math.ceil(cell * 0.4), Math.ceil(cell * 0.4));
+            }
+
+            if (cell >= 6) {
+                ctx.strokeStyle = 'rgba(140, 176, 230, 0.22)';
+                ctx.strokeRect(x + 0.5, y + 0.5, cell - 1, cell - 1);
+            }
+        }
+    }
+
+    const playerRow = clamp(Math.floor(parseNumber(el('playerRow')?.value, 1)), 0, Math.max(0, rows - 1));
+    const playerCol = clamp(Math.floor(parseNumber(el('playerCol')?.value, 1)), 0, Math.max(0, cols - 1));
+    ctx.fillStyle = '#19ff7d';
+    const px = offX + playerCol * cell + cell / 2;
+    const py = offY + playerRow * cell + cell / 2;
+    const pr = Math.max(2, Math.floor(cell * 0.28));
+    ctx.beginPath();
+    ctx.arc(px, py, pr, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.strokeStyle = '#7cc7ff';
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(offX + 0.5, offY + 0.5, mapW - 1, mapH - 1);
 }
 
 function readLevelFromForm() {
@@ -809,6 +891,21 @@ function bindUI() {
             target.value = '';
         }
     });
+
+    const realtimeFields = [
+        'playerRow', 'playerCol', 'gridCols', 'gridRows', 'mapTimer', 'revealMode',
+        'levelId', 'levelSpeed', 'ghostCount', 'batCount', 'ghostSpeed', 'batSpeed',
+        'objectiveLabel', 'lightMode', 'escapeRoute', 'srEnabled', 'srShardBurstCount',
+        'srDynamicSize', 'srRotation', 'srChaotic', 'dbEnabled', 'dbSplitOnImpact',
+        'dbDirections', 'dbSizes', 'dbSplitRange', 'dbMaxSplitGen', 'extraRootJson'
+    ];
+
+    realtimeFields.forEach((id) => {
+        const input = el(id);
+        if (!input) return;
+        input.addEventListener('input', () => drawMiniMapPreview(getScene()));
+        input.addEventListener('change', () => drawMiniMapPreview(getScene()));
+    });
 }
 
 window.addEventListener('level-editor-ready', () => {
@@ -818,5 +915,6 @@ window.addEventListener('level-editor-ready', () => {
         scene.loadFromJson(DEFAULT_LEVEL);
     }
     bindUI();
+    drawMiniMapPreview(scene);
     setStatus('Editor pronto.');
 });
