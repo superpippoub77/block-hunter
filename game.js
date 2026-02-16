@@ -222,6 +222,11 @@ class PreloadScene extends Phaser.Scene {
             .spritesheet('bat', 'images/batpng.png', {
                 frameWidth: 64,
                 frameHeight: 64
+            })
+            // Ghost animation spritesheet (1 row, 5 frames)
+            .spritesheet('ghost', 'images/ghost.png', {
+                frameWidth: 64,
+                frameHeight: 64
             });
 
         // Load all level JSON files (50 levels)
@@ -1285,6 +1290,15 @@ class GameScene extends Phaser.Scene {
                 repeat: -1
             });
         }
+        if (!this.anims.exists('ghost_float')) {
+            this.anims.create({
+                key: 'ghost_float',
+                frames: this.anims.generateFrameNumbers('ghost', { start: 0, end: 4 }),
+                frameRate: 10,
+                yoyo: true,
+                repeat: -1
+            });
+        }
 
         // Background for all levels
         this.gameBg = this.add.image(CONFIG.width / 2, CONFIG.height / 2, 'game_bg')
@@ -1301,11 +1315,23 @@ class GameScene extends Phaser.Scene {
 
         // Merge JSON data into levelConfig
         if (this.levelData) {
+            const baseDynamicBoulders = this.levelConfig?.dynamicBoulders;
+            const levelDynamicBoulders = this.levelData?.dynamicBoulders;
+            let mergedDynamicBoulders = baseDynamicBoulders;
+
+            if (levelDynamicBoulders === false) {
+                mergedDynamicBoulders = false;
+            } else if (levelDynamicBoulders && typeof levelDynamicBoulders === 'object') {
+                mergedDynamicBoulders = {
+                    ...(baseDynamicBoulders && typeof baseDynamicBoulders === 'object' ? baseDynamicBoulders : {}),
+                    ...levelDynamicBoulders
+                };
+            }
+
             this.levelConfig = {
                 ...this.levelConfig,
                 ...this.levelData,
-                // Keep dynamicBoulders from LEVEL_CONFIG as it has direction/size info
-                dynamicBoulders: this.levelConfig.dynamicBoulders
+                dynamicBoulders: mergedDynamicBoulders
             };
         }
 
@@ -1320,6 +1346,7 @@ class GameScene extends Phaser.Scene {
         this.dynamites = this.physics.add.group();
         this.shards = this.physics.add.group();
         this.doors = this.physics.add.staticGroup();
+        this.hole2Exits = this.physics.add.staticGroup();
 
         // Create tilemap
         this.hasDoorInMap = false;
@@ -1327,6 +1354,8 @@ class GameScene extends Phaser.Scene {
         this.mapGemIndex = 0;
         this.keySpawnPositions = [];
         this.ghostSpawnPositions = [];
+        this.hole2ExitPositions = [];
+        this.hole2ExitsActive = false;
         this.lastKeyPos = null;
         this.cartPowerActive = false;
         this.cartPowerUntil = 0;
@@ -1382,8 +1411,12 @@ class GameScene extends Phaser.Scene {
         this.spawnGhosts();
         this.spawnBatsFromMap();
 
-        // Spawn first gem
-        this.time.delayedCall(CONFIG.gemSpawnDelay, () => this.spawnGem());
+        // Spawn first gem, otherwise activate map exits immediately
+        if ((Number(this.gemsRemaining) || 0) > 0) {
+            this.time.delayedCall(CONFIG.gemSpawnDelay, () => this.spawnGem());
+        } else {
+            this.activateHole2Exits();
+        }
 
         // Setup collisions
         this.setupCollisions();
@@ -1414,7 +1447,10 @@ class GameScene extends Phaser.Scene {
         this.setupInput();
 
         // Start boulder spawning
-        if (this.levelConfig.dynamicBoulders) {
+        const dynamicBoulders = this.levelConfig?.dynamicBoulders;
+        const dynamicBouldersEnabled = !!dynamicBoulders
+            && (typeof dynamicBoulders !== 'object' || dynamicBoulders.enabled !== false);
+        if (dynamicBouldersEnabled) {
             this.startBoulderSpawning();
         }
 
@@ -1591,7 +1627,7 @@ class GameScene extends Phaser.Scene {
                 }
 
                 // Normalize item/door/gem tiles to floor for base tile rendering
-                const tileType = (type === 'door' || type === 'key' || type === 'pepita' || type === 'dynamite' || type === 'gem')
+                const tileType = (type === 'door' || type === 'key' || type === 'pepita' || type === 'dynamite' || type === 'gem' || type === 'hole2')
                     ? 'floor'
                     : (type === 'skeleton' ? 'empty' : type);
                 const normalizedTileType = (tileType === 'bat' || tileType === 'ghost') ? 'floor' : tileType;
@@ -1680,6 +1716,18 @@ class GameScene extends Phaser.Scene {
                     this.mapGemPositions.push({
                         x: offsetX + x * CONFIG.tileSize + CONFIG.tileSize / 2,
                         y: offsetY + y * CONFIG.tileSize + CONFIG.tileSize / 2
+                    });
+                }
+
+                if (type === 'hole2') {
+                    if (!this.hole2ExitPositions) {
+                        this.hole2ExitPositions = [];
+                    }
+                    this.hole2ExitPositions.push({
+                        x: offsetX + x * CONFIG.tileSize + CONFIG.tileSize / 2,
+                        y: offsetY + y * CONFIG.tileSize + CONFIG.tileSize / 2,
+                        gridX: x,
+                        gridY: y
                     });
                 }
 
@@ -2094,6 +2142,51 @@ class GameScene extends Phaser.Scene {
         }
     }
 
+    spawnHole2ExitAt(worldX, worldY, gridX = null, gridY = null) {
+        if (!this.hole2Exits) return;
+
+        const exits = this.hole2Exits.children?.entries || [];
+        const alreadyExists = exits.some((entry) => {
+            if (!entry || !entry.active) return false;
+            return Math.abs(entry.x - worldX) < 1 && Math.abs(entry.y - worldY) < 1;
+        });
+        if (alreadyExists) return;
+
+        const hole2Exit = this.hole2Exits.create(worldX, worldY, 'objects', OBJECT_FRAMES.hole2);
+        const hole2ScaleFactor = CONFIG.objectSize / OBJECT_NATIVE_SIZE;
+        hole2Exit.setScale(hole2ScaleFactor);
+        hole2Exit.setData('gridX', gridX);
+        hole2Exit.setData('gridY', gridY);
+        if (hole2Exit.body) {
+            hole2Exit.body.setSize(Math.floor(hole2Exit.displayWidth || hole2Exit.width), Math.floor(hole2Exit.displayHeight || hole2Exit.height));
+        }
+        if (hole2Exit.refreshBody) {
+            hole2Exit.refreshBody();
+        }
+    }
+
+    activateHole2Exits() {
+        if (this.hole2ExitsActive) return;
+
+        const exits = Array.isArray(this.hole2ExitPositions) ? this.hole2ExitPositions : [];
+        if (!exits.length) {
+            this.levelComplete();
+            return;
+        }
+
+        this.hole2ExitsActive = true;
+        exits.forEach((exitPos) => {
+            this.spawnHole2ExitAt(exitPos.x, exitPos.y, exitPos.gridX, exitPos.gridY);
+        });
+    }
+
+    onPlayerReachHole2Exit(player, hole2Exit) {
+        if (!this.hole2ExitsActive) return;
+        if (!hole2Exit || !hole2Exit.active) return;
+        if ((Number(this.gemsRemaining) || 0) > 0) return;
+        this.levelComplete();
+    }
+
     setupCollisions() {
         // Player collisions
         this.physics.add.overlap(this.player, this.gems, this.collectGem, null, this);
@@ -2107,6 +2200,7 @@ class GameScene extends Phaser.Scene {
         this.physics.add.overlap(this.player, this.boulders, this.hitByBoulder, null, this);
         this.physics.add.overlap(this.player, this.ghosts, this.hitByGhost, null, this);
         this.physics.add.overlap(this.player, this.shards, this.hitByShard, null, this);
+        this.physics.add.overlap(this.player, this.hole2Exits, this.onPlayerReachHole2Exit, null, this);
         if (this.walls) {
             const playerWallCollider = this.physics.add.collider(this.player, this.walls);
             if (playerWallCollider) {
@@ -2277,12 +2371,15 @@ class GameScene extends Phaser.Scene {
                 worldY = this.mapOffsetY + tile.y * CONFIG.tileSize + CONFIG.tileSize / 2;
             }
 
-            const ghost = this.ghosts.create(worldX, worldY, 'objects', OBJECT_FRAMES.ghost);
+            const ghost = this.ghosts.create(worldX, worldY, 'ghost', 0);
             const ghostScaleFactor = CONFIG.objectSize / OBJECT_NATIVE_SIZE;
             ghost.setScale(ghostScaleFactor);
             ghost.setData('baseScale', ghostScaleFactor);
             ghost.setData('flutterPhase', Phaser.Math.FloatBetween(0, Math.PI * 2));
             ghost.setData('speed', ghostSpeed);
+            if (this.anims.exists('ghost_float')) {
+                ghost.play('ghost_float');
+            }
             if (ghost.body) {
                 ghost.body.setSize(Math.floor(ghost.displayWidth || ghost.width), Math.floor(ghost.displayHeight || ghost.height));
                 ghost.body.setCollideWorldBounds(true);
@@ -3195,6 +3292,19 @@ class GameScene extends Phaser.Scene {
             return;
         }
 
+        if (revealType === 'hole2') {
+            if (!this.hole2ExitPositions) {
+                this.hole2ExitPositions = [];
+            }
+            this.hole2ExitPositions.push({ x: worldX, y: worldY, gridX, gridY });
+            this.tiles[gridY][gridX].type = 'floor';
+
+            if (this.hole2ExitsActive && (Number(this.gemsRemaining) || 0) <= 0) {
+                this.spawnHole2ExitAt(worldX, worldY, gridX, gridY);
+            }
+            return;
+        }
+
         if (revealType === 'empty') {
             this.tiles[gridY][gridX].type = 'empty';
             this.tiles[gridY][gridX].sprite = null;
@@ -3620,8 +3730,7 @@ class GameScene extends Phaser.Scene {
             return;
         }
 
-        // Level complete
-        this.levelComplete();
+        this.activateHole2Exits();
     }
 
     collectItem(player, item) {
@@ -3950,10 +4059,21 @@ class GameScene extends Phaser.Scene {
     }
 
     spawnBoulder() {
-        if (!this.levelConfig.dynamicBoulders) return;
+        const dynamicBoulders = this.levelConfig?.dynamicBoulders;
+        if (!dynamicBoulders) return;
+        if (typeof dynamicBoulders === 'object' && dynamicBoulders.enabled === false) return;
 
-        const directions = this.levelConfig.dynamicBoulders.directions;
-        const sizes = this.levelConfig.dynamicBoulders.sizes;
+        const defaultDirections = ['top', 'bottom', 'left', 'right'];
+        const defaultSizes = Object.keys(LEVEL_CONFIG.globalRules?.dynamicBoulders?.sizes || {});
+
+        const directions = (typeof dynamicBoulders === 'object' && Array.isArray(dynamicBoulders.directions) && dynamicBoulders.directions.length > 0)
+            ? dynamicBoulders.directions
+            : defaultDirections;
+        const sizes = (typeof dynamicBoulders === 'object' && Array.isArray(dynamicBoulders.sizes) && dynamicBoulders.sizes.length > 0)
+            ? dynamicBoulders.sizes
+            : defaultSizes;
+
+        if (!directions.length || !sizes.length) return;
 
         const direction = Phaser.Utils.Array.GetRandom(directions);
         const size = Phaser.Utils.Array.GetRandom(sizes);

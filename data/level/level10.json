@@ -5,7 +5,7 @@
     "rows": 12,
     "timer": 120,
     "tiles": [
-      ["m","-","-","-","-","-","h","-","-","-","c","-"],
+      ["m","-","-","-","-","-","h","-","-","-","c","s"],
       ["-","-","-","-","-","p","-","-","-","-","-","-"],
       ["-","-","w53","w33/m","w02","d","w03","w04","w05","-","-","-"],
       ["ghost","-","w06","f","f","f","f","f","w10","-","g","-"],
@@ -27,8 +27,8 @@
     "chaotic": null
   },
   "dynamicBoulders": {
-    "enabled": false,
-    "directions": null,
+    "enabled": true,
+    "directions": ["top", "bottom", "left", "right"],
     "sizes": null
   },
   "speed": 1,
