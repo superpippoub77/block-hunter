@@ -2435,6 +2435,103 @@ class GameScene extends Phaser.Scene {
         bat.setVelocity((dx / len) * speed, (dy / len) * speed);
     }
 
+    startBatGemCarryAndDrop(bat) {
+        if (!bat || !bat.active) {
+            this.respawnStolenGemInMap(this.player?.x, this.player?.y);
+            return;
+        }
+
+        this.releaseBatCarriedGem(bat, false);
+
+        const gemScaleFactor = (CONFIG.objectSize / OBJECT_NATIVE_SIZE) * 0.62;
+        const carriedGem = this.add.sprite(bat.x, bat.y, 'objects', OBJECT_FRAMES.gem);
+        carriedGem.setScale(gemScaleFactor);
+        carriedGem.setAlpha(0.92);
+        carriedGem.setDepth((bat.depth || 0) + 2);
+
+        bat.setData('carriedGemSprite', carriedGem);
+        bat.setData('carriedGemDropping', false);
+        bat.setData('carriedGemOffsetX', Phaser.Math.Between(-8, 8));
+        bat.setData('carriedGemOffsetY', Phaser.Math.Between(-18, -10));
+
+        const dropDelay = Phaser.Math.Between(1200, 2400);
+        const dropTimer = this.time.delayedCall(dropDelay, () => {
+            if (!bat || !bat.active) {
+                if (carriedGem && carriedGem.active) {
+                    carriedGem.destroy();
+                }
+                this.respawnStolenGemInMap(this.player?.x, this.player?.y);
+                return;
+            }
+
+            const rawTileX = Math.floor((bat.x - this.mapOffsetX) / CONFIG.tileSize);
+            const rawTileY = Math.floor((bat.y - this.mapOffsetY) / CONFIG.tileSize);
+            const tileX = Phaser.Math.Clamp(rawTileX, 0, this.mapCols - 1);
+            const tileY = Phaser.Math.Clamp(rawTileY, 0, this.mapRows - 1);
+            const tileType = this.tiles?.[tileY]?.[tileX]?.type;
+            const canDropHere = tileType === 'floor' || tileType === 'empty';
+
+            const dropPos = canDropHere
+                ? { x: bat.x, y: bat.y }
+                : null;
+
+            const fallbackTile = !dropPos ? this.getRandomWalkableTile() : null;
+            const dropX = dropPos
+                ? dropPos.x
+                : (fallbackTile
+                    ? this.mapOffsetX + fallbackTile.x * CONFIG.tileSize + CONFIG.tileSize / 2
+                    : bat.x);
+            const dropY = dropPos
+                ? dropPos.y
+                : (fallbackTile
+                    ? this.mapOffsetY + fallbackTile.y * CONFIG.tileSize + CONFIG.tileSize / 2
+                    : bat.y);
+
+            bat.setData('carriedGemDropping', true);
+            this.tweens.add({
+                targets: carriedGem,
+                x: dropX,
+                y: dropY,
+                scale: gemScaleFactor * 0.95,
+                alpha: 1,
+                duration: 260,
+                ease: 'Sine.easeInOut',
+                onComplete: () => {
+                    if (carriedGem && carriedGem.active) {
+                        carriedGem.destroy();
+                    }
+                    bat.setData('carriedGemSprite', null);
+                    bat.setData('carriedGemDropping', false);
+                    bat.setData('carriedGemDropTimer', null);
+                    this.createGemPickupAt(dropX, dropY);
+                }
+            });
+        });
+
+        bat.setData('carriedGemDropTimer', dropTimer);
+    }
+
+    releaseBatCarriedGem(bat, dropToMap = true) {
+        if (!bat) return;
+
+        const dropTimer = bat.getData('carriedGemDropTimer');
+        if (dropTimer && dropTimer.remove) {
+            dropTimer.remove(false);
+        }
+
+        const carriedGem = bat.getData('carriedGemSprite');
+        if (carriedGem && carriedGem.active) {
+            if (dropToMap) {
+                this.createGemPickupAt(bat.x, bat.y);
+            }
+            carriedGem.destroy();
+        }
+
+        bat.setData('carriedGemSprite', null);
+        bat.setData('carriedGemDropping', false);
+        bat.setData('carriedGemDropTimer', null);
+    }
+
     updateBatPerspective() {
         const bats = this.bats?.children?.entries || [];
         if (!bats.length) return;
@@ -2453,6 +2550,17 @@ class GameScene extends Phaser.Scene {
             const perspectiveScale = Phaser.Math.Linear(0.74, 1.22, yNorm);
             const flutterMul = 1 + Math.sin((timeNow / 230) + phase) * 0.04;
             bat.setScale(baseScale * perspectiveScale * flutterMul);
+
+            const carriedGem = bat.getData('carriedGemSprite');
+            const isDropping = !!bat.getData('carriedGemDropping');
+            if (carriedGem && carriedGem.active) {
+                if (!isDropping) {
+                    const offX = Number(bat.getData('carriedGemOffsetX')) || 0;
+                    const offY = Number(bat.getData('carriedGemOffsetY')) || -14;
+                    carriedGem.setPosition(bat.x + offX, bat.y + offY);
+                }
+                carriedGem.setDepth((bat.depth || 0) + 2);
+            }
         });
     }
 
@@ -4026,6 +4134,7 @@ class GameScene extends Phaser.Scene {
 
     dynamiteHitBat(dynamite, bat) {
         if (!bat || !bat.active) return;
+        this.releaseBatCarriedGem(bat, true);
         this.addScore(12, bat.x, bat.y);
         bat.destroy();
         this.explodeDynamite(dynamite);
@@ -4241,10 +4350,11 @@ class GameScene extends Phaser.Scene {
 
         this.createBloodSplatter(player?.x, player?.y, 1.9);
 
-        if ((Number(this.playerGemStock) || 0) > 0) {
+        const batAlreadyCarryingGem = !!bat.getData('carriedGemSprite');
+        if ((Number(this.playerGemStock) || 0) > 0 && !batAlreadyCarryingGem) {
             this.playerGemStock = Math.max(0, (Number(this.playerGemStock) || 0) - 1);
             this.gemsRemaining = (Number(this.gemsRemaining) || 0) + 1;
-            this.respawnStolenGemInMap(player?.x, player?.y);
+            this.startBatGemCarryAndDrop(bat);
             this.showScorePopup(-1, player?.x, player?.y);
             return;
         }
