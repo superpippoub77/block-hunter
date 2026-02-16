@@ -1364,6 +1364,16 @@ class GameScene extends Phaser.Scene {
         this.playerGemStock = 0;
         this.batDirectionTimer = null;
         this.batSpawnPositions = [];
+        this.spawnedFallingStoneCount = 0;
+        this.stoneShardBurstsRemaining = 0;
+        this.nextStoneShardBurstIndex = Number.POSITIVE_INFINITY;
+
+        const stoneShardBurstCount = Number(this.levelConfig?.staticRocks?.shardBurstCount);
+        if (Number.isFinite(stoneShardBurstCount) && stoneShardBurstCount > 0) {
+            this.stoneShardBurstsRemaining = Math.floor(stoneShardBurstCount);
+            this.nextStoneShardBurstIndex = Phaser.Math.Between(1, 3);
+        }
+
         this.createTilemap();
 
         // Create player
@@ -1875,6 +1885,117 @@ class GameScene extends Phaser.Scene {
         });
     }
 
+    shouldCurrentStoneBurstOnLanding() {
+        this.spawnedFallingStoneCount = (Number(this.spawnedFallingStoneCount) || 0) + 1;
+
+        if ((Number(this.stoneShardBurstsRemaining) || 0) <= 0) {
+            return false;
+        }
+
+        const nextIndex = Number(this.nextStoneShardBurstIndex);
+        if (!Number.isFinite(nextIndex) || this.spawnedFallingStoneCount < nextIndex) {
+            return false;
+        }
+
+        this.stoneShardBurstsRemaining = Math.max(0, this.stoneShardBurstsRemaining - 1);
+        if (this.stoneShardBurstsRemaining > 0) {
+            this.nextStoneShardBurstIndex = this.spawnedFallingStoneCount + Phaser.Math.Between(1, 3);
+        } else {
+            this.nextStoneShardBurstIndex = Number.POSITIVE_INFINITY;
+        }
+
+        return true;
+    }
+
+    emitStoneShardBurst(x, y, size = 'medium') {
+        const shardCount = this.getShardCount(size);
+        if (!this.shards || shardCount <= 0) return;
+
+        for (let i = 0; i < shardCount; i++) {
+            const angle = (Math.PI * 2 * i) / shardCount;
+            const speed = CONFIG.shardSpeed * Phaser.Math.FloatBetween(0.85, 1.2);
+            this.spawnStoneShardProjectile(x, y, angle, speed);
+        }
+    }
+
+    spawnStoneShardProjectile(x, y, angle, speed) {
+        if (!this.shards) return null;
+
+        const shard = this.shards.create(x, y, 'objects', OBJECT_FRAMES.stone);
+        const objectScaleFactor = CONFIG.objectSize / OBJECT_NATIVE_SIZE;
+        const shardScale = Math.max(0.14, objectScaleFactor * 0.22);
+        shard.setScale(shardScale);
+
+        const speedValue = Math.max(40, Number(speed) || CONFIG.shardSpeed || 120);
+        const vx = Math.cos(angle) * speedValue + Phaser.Math.Between(-24, 24);
+        const vy = Math.sin(angle) * speedValue + Phaser.Math.Between(-24, 24);
+        shard.setVelocity(vx, vy);
+        shard.setAngularVelocity(Phaser.Math.Between(-420, 420));
+
+        if (shard.body) {
+            shard.body.setSize(Math.max(2, Math.floor(shard.displayWidth || shard.width)), Math.max(2, Math.floor(shard.displayHeight || shard.height)));
+            shard.body.setAllowGravity(true);
+            shard.body.setGravity(0, Phaser.Math.Between(160, 280));
+            shard.body.setDrag(55, 18);
+            shard.body.setBounce(0.35, 0.2);
+            shard.body.setCollideWorldBounds(true);
+        }
+
+        this.attachShardSmokeTrail(shard);
+
+        this.time.delayedCall(CONFIG.shardLifetime, () => {
+            if (shard.active) shard.destroy();
+        });
+
+        return shard;
+    }
+
+    attachShardSmokeTrail(shard) {
+        if (!shard || !shard.active) return;
+
+        const smokeEvent = this.time.addEvent({
+            delay: 55,
+            loop: true,
+            callback: () => {
+                if (!shard || !shard.active) {
+                    if (smokeEvent && smokeEvent.remove) {
+                        smokeEvent.remove(false);
+                    }
+                    return;
+                }
+
+                const smoke = this.add.circle(
+                    shard.x + Phaser.Math.Between(-2, 2),
+                    shard.y + Phaser.Math.Between(-2, 2),
+                    Phaser.Math.Between(2, 3),
+                    0xb0b0b0,
+                    0.48
+                );
+                smoke.setDepth(860);
+
+                this.tweens.add({
+                    targets: smoke,
+                    y: smoke.y - Phaser.Math.Between(6, 12),
+                    x: smoke.x + Phaser.Math.Between(-5, 5),
+                    scale: 1.9,
+                    alpha: 0,
+                    duration: Phaser.Math.Between(230, 360),
+                    ease: 'Sine.easeOut',
+                    onComplete: () => smoke.destroy()
+                });
+            }
+        });
+
+        shard.setData('smokeTrailEvent', smokeEvent);
+        if (shard.once) {
+            shard.once('destroy', () => {
+                if (smokeEvent && smokeEvent.remove) {
+                    smokeEvent.remove(false);
+                }
+            });
+        }
+    }
+
     getRandomWalkableTile() {
         if (!this.tiles || !this.tiles.length) return null;
 
@@ -1957,6 +2078,7 @@ class GameScene extends Phaser.Scene {
         rock.setData('destructible', true);
         rock.setData('size', size);
         rock.setData('isFalling', true);
+        rock.setData('burstOnLanding', this.shouldCurrentStoneBurstOnLanding());
 
         // Rotazione casuale in partenza
         const startAngle = Phaser.Math.Between(0, 360);
@@ -2014,6 +2136,10 @@ class GameScene extends Phaser.Scene {
 
                 // Polvere che si alza
                 this.createDustPuff(rock.x, rock.y, scale);
+
+                if (rock.getData('burstOnLanding')) {
+                    this.emitStoneShardBurst(rock.x, rock.y, size);
+                }
             }
         });
 
@@ -2218,6 +2344,7 @@ class GameScene extends Phaser.Scene {
         this.physics.add.collider(this.dynamites, this.rocks, this.dynamiteHitRock, null, this);
         this.physics.add.overlap(this.dynamites, this.boulders, this.dynamiteHitBoulder, null, this);
         this.physics.add.overlap(this.dynamites, this.bats, this.dynamiteHitBat, null, this);
+        this.physics.add.overlap(this.dynamites, this.shards, this.dynamiteHitShard, null, this);
         if (this.walls) {
             this.physics.add.collider(this.dynamites, this.walls, (dynamite) => {
                 this.bounceAndExplode(dynamite);
@@ -3688,21 +3815,22 @@ class GameScene extends Phaser.Scene {
         this.explodeDynamite(dynamite);
     }
 
+    dynamiteHitShard(dynamite, shard) {
+        if (!shard || !shard.active) return;
+        this.addScore(3, shard.x, shard.y);
+        this.createExplosionAt(shard.x, shard.y);
+        shard.destroy();
+        this.explodeDynamite(dynamite);
+    }
+
     destroyBoulder(boulder) {
         const size = boulder.getData('size') || 'medium';
         const shardCount = this.getShardCount(size);
 
         for (let i = 0; i < shardCount; i++) {
             const angle = (Math.PI * 2 * i) / shardCount;
-            const shard = this.shards.create(boulder.x, boulder.y, 'shard');
-            shard.setVelocity(
-                Math.cos(angle) * CONFIG.shardSpeed,
-                Math.sin(angle) * CONFIG.shardSpeed
-            );
-
-            this.time.delayedCall(CONFIG.shardLifetime, () => {
-                if (shard.active) shard.destroy();
-            });
+            const speed = CONFIG.shardSpeed * Phaser.Math.FloatBetween(1.0, 1.35);
+            this.spawnStoneShardProjectile(boulder.x, boulder.y, angle, speed);
         }
 
         boulder.destroy();

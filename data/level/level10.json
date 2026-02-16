@@ -24,7 +24,8 @@
     "enabled": true,
     "dynamicSize": null,
     "rotation": null,
-    "chaotic": null
+    "chaotic": null,
+    "shardBurstCount": 50
   },
   "dynamicBoulders": {
     "enabled": true,
@@ -32,7 +33,7 @@
     "sizes": null
   },
   "speed": 1,
-  "escapeRoute": false,
+  "escapeRoute": true,
   "objectiveLabel": "objective_collect_gems_and_survive",
   "enemies": null,
   "collectibles": null,
@@ -40,7 +41,7 @@
   "spawnPoints": null,
   "timeLimit": null,
   "scoreRules": null,
-  "light": "flash",
+  "light": "piena",
   "ghost":2,
   "bat":2,
   "ghostSpeed": 80,
