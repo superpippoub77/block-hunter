@@ -2182,11 +2182,19 @@ class GameScene extends Phaser.Scene {
             worldY = this.mapOffsetY + y * CONFIG.tileSize + CONFIG.tileSize / 2;
         }
 
-    // Use gem sprite from objects.png (frame 6)
-    const gem = this.gems.create(worldX, worldY, 'objects', OBJECT_FRAMES.gem);
-    // Apply object size (pixels) converted to scale factor and update physics body
-    const gemScaleFactor = CONFIG.objectSize / OBJECT_NATIVE_SIZE;
-    gem.setScale(gemScaleFactor);
+        this.createGemPickupAt(worldX, worldY);
+
+        if (this.mapGemPositions && this.mapGemPositions.length > 0) {
+            this.mapGemIndex++;
+        }
+    }
+
+    createGemPickupAt(worldX, worldY) {
+        if (!this.gems) return null;
+
+        const gem = this.gems.create(worldX, worldY, 'objects', OBJECT_FRAMES.gem);
+        const gemScaleFactor = CONFIG.objectSize / OBJECT_NATIVE_SIZE;
+        gem.setScale(gemScaleFactor);
         if (gem.body) {
             gem.body.setSize(Math.floor(gem.displayWidth || gem.width), Math.floor(gem.displayHeight || gem.height));
         }
@@ -2199,9 +2207,23 @@ class GameScene extends Phaser.Scene {
             repeat: -1
         });
 
-        if (this.mapGemPositions && this.mapGemPositions.length > 0) {
-            this.mapGemIndex++;
+        return gem;
+    }
+
+    respawnStolenGemInMap(avoidX, avoidY) {
+        const tile = this.getRandomWalkableTile();
+        let worldX;
+        let worldY;
+
+        if (tile) {
+            worldX = this.mapOffsetX + tile.x * CONFIG.tileSize + CONFIG.tileSize / 2;
+            worldY = this.mapOffsetY + tile.y * CONFIG.tileSize + CONFIG.tileSize / 2;
+        } else {
+            worldX = Number.isFinite(Number(avoidX)) ? Number(avoidX) : (this.player?.x || 0);
+            worldY = Number.isFinite(Number(avoidY)) ? Number(avoidY) : (this.player?.y || 0);
         }
+
+        this.createGemPickupAt(worldX, worldY);
     }
 
     spawnKey() {
@@ -2373,6 +2395,8 @@ class GameScene extends Phaser.Scene {
         const bat = this.bats.create(worldX, worldY, 'bat', 0);
         const batScaleFactor = CONFIG.objectSize / OBJECT_NATIVE_SIZE;
         bat.setScale(batScaleFactor);
+        bat.setData('baseScale', batScaleFactor);
+        bat.setData('flutterPhase', Phaser.Math.FloatBetween(0, Math.PI * 2));
         if (bat.body) {
             bat.body.setSize(Math.floor(bat.displayWidth || bat.width), Math.floor(bat.displayHeight || bat.height));
             bat.body.setCollideWorldBounds(true);
@@ -2409,6 +2433,27 @@ class GameScene extends Phaser.Scene {
         const dy = Phaser.Math.FloatBetween(-1, 1);
         const len = Math.hypot(dx, dy) || 1;
         bat.setVelocity((dx / len) * speed, (dy / len) * speed);
+    }
+
+    updateBatPerspective() {
+        const bats = this.bats?.children?.entries || [];
+        if (!bats.length) return;
+
+        const worldTop = this.mapOffsetY;
+        const worldHeight = Math.max(1, this.mapRows * CONFIG.tileSize);
+        const timeNow = this.time?.now || 0;
+
+        bats.forEach((bat) => {
+            if (!bat || !bat.active) return;
+
+            const baseScale = Number(bat.getData('baseScale')) || (CONFIG.objectSize / OBJECT_NATIVE_SIZE);
+            const phase = Number(bat.getData('flutterPhase')) || 0;
+            const yNorm = Phaser.Math.Clamp((bat.y - worldTop) / worldHeight, 0, 1);
+
+            const perspectiveScale = Phaser.Math.Linear(0.74, 1.22, yNorm);
+            const flutterMul = 1 + Math.sin((timeNow / 230) + phase) * 0.04;
+            bat.setScale(baseScale * perspectiveScale * flutterMul);
+        });
     }
 
     getBatCountForLevel() {
@@ -2827,6 +2872,166 @@ class GameScene extends Phaser.Scene {
 
         this.topStatsObjects = [];
         this.refreshHudIcons();
+        this.createObjectivePointerUI();
+    }
+
+    createObjectivePointerUI() {
+        const camera = this.cameras?.main;
+        if (!camera) return;
+
+        const centerX = camera.width - 72;
+        const arrowY = camera.height - 54;
+
+        if (this.objectivePointerPulse && this.objectivePointerPulse.remove) {
+            this.objectivePointerPulse.remove();
+            this.objectivePointerPulse = null;
+        }
+
+        if (this.objectivePointerArrow && this.objectivePointerArrow.destroy) {
+            this.objectivePointerArrow.destroy();
+        }
+        if (this.objectivePointerArrowShadow && this.objectivePointerArrowShadow.destroy) {
+            this.objectivePointerArrowShadow.destroy();
+        }
+        if (this.objectivePointerHalo && this.objectivePointerHalo.destroy) {
+            this.objectivePointerHalo.destroy();
+        }
+        if (this.objectivePointerLabel && this.objectivePointerLabel.destroy) {
+            this.objectivePointerLabel.destroy();
+        }
+
+        this.objectivePointerHalo = this.add.circle(centerX, arrowY, 42, 0x000000, 0.18)
+            .setDepth(4998)
+            .setScrollFactor(0);
+
+        this.objectivePointerArrowShadow = this.add.triangle(
+            centerX + 2,
+            arrowY + 2,
+            0, 0,
+            54, 22,
+            0, 44,
+            0x000000,
+            0.38
+        ).setOrigin(0.5).setDepth(4999).setScrollFactor(0);
+
+        this.objectivePointerArrow = this.add.triangle(
+            centerX,
+            arrowY,
+            0, 0,
+            50, 20,
+            0, 40,
+            0xffe36b,
+            0.48
+        ).setOrigin(0.5).setDepth(5000).setScrollFactor(0);
+
+        this.objectivePointerLabel = this.add.text(centerX, arrowY - 24, 'GEM', {
+            fontSize: '13px',
+            fill: '#fff2b3',
+            fontFamily: GAME_FONT,
+            stroke: '#000000',
+            strokeThickness: 4
+        }).setOrigin(0.5).setDepth(5000).setScrollFactor(0).setAlpha(0.55);
+
+        this.objectivePointerPulse = this.tweens.add({
+            targets: [this.objectivePointerArrow, this.objectivePointerArrowShadow, this.objectivePointerHalo, this.objectivePointerLabel],
+            scaleX: { from: 0.98, to: 1.04 },
+            scaleY: { from: 0.98, to: 1.04 },
+            duration: 560,
+            yoyo: true,
+            repeat: -1,
+            ease: 'Sine.easeInOut',
+            onUpdate: () => {
+                if (this.objectivePointerHalo && this.objectivePointerHalo.active) {
+                    const alphaPulse = 0.12 + ((this.objectivePointerArrow.scaleX - 0.98) / 0.06) * 0.1;
+                    this.objectivePointerHalo.setAlpha(Phaser.Math.Clamp(alphaPulse, 0.1, 0.22));
+                }
+            }
+        });
+    }
+
+    getNearestPoint(originX, originY, points) {
+        if (!Array.isArray(points) || points.length === 0) return null;
+        let nearest = null;
+        let nearestDistSq = Number.POSITIVE_INFINITY;
+
+        for (const point of points) {
+            if (!point) continue;
+            const px = Number(point.x);
+            const py = Number(point.y);
+            if (!Number.isFinite(px) || !Number.isFinite(py)) continue;
+            const dx = px - originX;
+            const dy = py - originY;
+            const distSq = (dx * dx) + (dy * dy);
+            if (distSq < nearestDistSq) {
+                nearestDistSq = distSq;
+                nearest = { x: px, y: py };
+            }
+        }
+
+        return nearest;
+    }
+
+    getObjectivePointerTarget() {
+        const originX = Number(this.player?.x) || 0;
+        const originY = Number(this.player?.y) || 0;
+
+        if ((Number(this.gemsRemaining) || 0) > 0) {
+            const activeGems = (this.gems?.children?.entries || []).filter((gem) => gem && gem.active);
+            const gemTarget = this.getNearestPoint(originX, originY, activeGems);
+            if (gemTarget) {
+                return { type: 'gem', x: gemTarget.x, y: gemTarget.y };
+            }
+
+            if (Array.isArray(this.mapGemPositions) && this.mapGemPositions.length > 0) {
+                const index = Phaser.Math.Clamp(Number(this.mapGemIndex) || 0, 0, this.mapGemPositions.length - 1);
+                const nextGem = this.mapGemPositions[index];
+                if (nextGem && Number.isFinite(Number(nextGem.x)) && Number.isFinite(Number(nextGem.y))) {
+                    return { type: 'gem', x: Number(nextGem.x), y: Number(nextGem.y) };
+                }
+            }
+        }
+
+        if (this.hole2ExitsActive) {
+            const activeExits = (this.hole2Exits?.children?.entries || []).filter((exitObj) => exitObj && exitObj.active);
+            const exitTarget = this.getNearestPoint(originX, originY, activeExits);
+            if (exitTarget) {
+                return { type: 'exit', x: exitTarget.x, y: exitTarget.y };
+            }
+
+            const fallbackExit = this.getNearestPoint(originX, originY, this.hole2ExitPositions);
+            if (fallbackExit) {
+                return { type: 'exit', x: fallbackExit.x, y: fallbackExit.y };
+            }
+        }
+
+        return null;
+    }
+
+    updateObjectivePointerUI() {
+        if (!this.objectivePointerArrow || !this.objectivePointerLabel || !this.player) return;
+
+        const target = this.getObjectivePointerTarget();
+        if (!target) {
+            this.objectivePointerArrow.setVisible(false);
+            if (this.objectivePointerArrowShadow) this.objectivePointerArrowShadow.setVisible(false);
+            if (this.objectivePointerHalo) this.objectivePointerHalo.setVisible(false);
+            this.objectivePointerLabel.setVisible(false);
+            return;
+        }
+
+        this.objectivePointerArrow.setVisible(true);
+        if (this.objectivePointerArrowShadow) this.objectivePointerArrowShadow.setVisible(true);
+        if (this.objectivePointerHalo) this.objectivePointerHalo.setVisible(true);
+        this.objectivePointerLabel.setVisible(true);
+        this.objectivePointerLabel.setText(target.type === 'gem' ? 'GEM' : 'EXIT');
+
+        const dx = target.x - this.player.x;
+        const dy = target.y - this.player.y;
+        const angle = Math.atan2(dy, dx);
+        this.objectivePointerArrow.setRotation(angle);
+        if (this.objectivePointerArrowShadow) {
+            this.objectivePointerArrowShadow.setRotation(angle);
+        }
     }
 
     showLevelObjective() {
@@ -3254,9 +3459,11 @@ class GameScene extends Phaser.Scene {
 
         // Ghost visual perspective update (foreground ghosts look bigger)
         this.updateGhostPerspective();
+        this.updateBatPerspective();
 
         // Dynamic boulders roll and slow down over time
         this.updateRollingBoulders(delta);
+        this.updateObjectivePointerUI();
 
         // Update UI
         this.updateUITexts();
@@ -3636,10 +3843,11 @@ class GameScene extends Phaser.Scene {
         });
     }
 
-    createBloodSplatter(x, y) {
+    createBloodSplatter(x, y, intensity = 1) {
         const centerX = typeof x === 'number' ? x : (this.player?.x || 0);
         const centerY = typeof y === 'number' ? y : (this.player?.y || 0);
-        const particleCount = Phaser.Math.Between(20, 32);
+        const intensityMul = Phaser.Math.Clamp(Number(intensity) || 1, 0.5, 3);
+        const particleCount = Math.max(8, Math.floor(Phaser.Math.Between(20, 32) * intensityMul));
 
         for (let i = 0; i < particleCount; i++) {
             const droplet = this.add.circle(
@@ -4031,10 +4239,12 @@ class GameScene extends Phaser.Scene {
         if (now < nextStealAt) return;
         bat.setData('nextStealAt', now + 1000);
 
-        this.createBloodSplatter(player?.x, player?.y);
+        this.createBloodSplatter(player?.x, player?.y, 1.9);
 
         if ((Number(this.playerGemStock) || 0) > 0) {
             this.playerGemStock = Math.max(0, (Number(this.playerGemStock) || 0) - 1);
+            this.gemsRemaining = (Number(this.gemsRemaining) || 0) + 1;
+            this.respawnStolenGemInMap(player?.x, player?.y);
             this.showScorePopup(-1, player?.x, player?.y);
             return;
         }
