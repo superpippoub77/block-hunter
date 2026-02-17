@@ -25,7 +25,7 @@
     "dynamicSize": null,
     "rotation": null,
     "chaotic": null,
-    "shardBurstCount": 50
+    "shardBurstCount": 8
   },
   "dynamicBoulders": {
     "enabled": true,

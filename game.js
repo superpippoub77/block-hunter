@@ -93,6 +93,69 @@ function drawTextPanel(graphics, textObj, opts = {}) {
     }
 }
 
+function getTextureMaxNumericFrame(scene, textureKey, fallback = 0) {
+    try {
+        const texture = scene?.textures?.get(textureKey);
+        if (!texture) return fallback;
+
+        const names = texture.getFrameNames ? texture.getFrameNames() : [];
+        const numericFrames = names
+            .map((name) => Number(name))
+            .filter((value) => Number.isFinite(value));
+
+        if (numericFrames.length > 0) {
+            return Math.max(...numericFrames);
+        }
+
+        const frameTotal = Number(texture.frameTotal);
+        if (Number.isFinite(frameTotal) && frameTotal > 1) {
+            return Math.max(0, frameTotal - 1);
+        }
+    } catch (e) {
+        // ignore and use fallback
+    }
+
+    return fallback;
+}
+
+function playLoopAudioSafely(scene, key, volume = 0.3) {
+    const sound = scene?.sound;
+    if (!sound) return;
+
+    const playNow = () => {
+        const existing = sound.get(key);
+        if (existing) {
+            if (!existing.isPlaying) {
+                existing.play({ loop: true, volume });
+            }
+            return;
+        }
+        sound.play(key, { loop: true, volume });
+    };
+
+    if (sound.locked) {
+        sound.once('unlocked', () => {
+            try {
+                playNow();
+            } catch (e) {
+                // ignore autoplay race errors
+            }
+        });
+        return;
+    }
+
+    try {
+        const ctx = sound.context;
+        if (ctx && ctx.state === 'suspended' && ctx.resume) {
+            ctx.resume().catch(() => { });
+        }
+    } catch (e) {
+        // ignore
+    }
+
+    playNow();
+}
+
 // Level configurations
 const LEVEL_CONFIG = {
     globalRules: {
@@ -144,6 +207,10 @@ function getLevelFileName(levelIndex) {
     const majorLevel = Math.floor(levelIndex / 5) + 1;
     const minorLevel = levelIndex % 5;
     return `level${majorLevel}${minorLevel}`;
+}
+
+function getLevelMasterNumber(levelIndex) {
+    return Math.floor(levelIndex / 5) + 1;
 }
 
 
@@ -236,6 +303,11 @@ class PreloadScene extends Phaser.Scene {
                 const num = decade * 10 + sub;
                 this.load.json(`level${num}`, `data/level/level${num}.json`);
             }
+        }
+
+        // Load background images for each master level (level1.png, level2.png, ...)
+        for (let master = 1; master <= 5; master++) {
+            this.load.image(`game_bg_${master}`, `images/level${master}.png`);
         }
 
         // Create graphics for remaining assets
@@ -338,14 +410,7 @@ class AttractScene extends Phaser.Scene {
         GAME_STATE.language = this.languages[0];
 
         // Intro music before gameplay
-        const existingIntro = this.sound.get('intro_bgm');
-        if (existingIntro) {
-            if (!existingIntro.isPlaying) {
-                existingIntro.play({ loop: true, volume: 0.35 });
-            }
-        } else {
-            this.sound.play('intro_bgm', { loop: true, volume: 0.35 });
-        }
+        playLoopAudioSafely(this, 'intro_bgm', 0.35);
 
         // Background image
         this.add.image(400, 300, 'bg').setDisplaySize(800, 600);
@@ -1236,24 +1301,22 @@ class GameScene extends Phaser.Scene {
             intro.stop();
         }
 
-        const existingGame = this.sound.get('game_bgm');
-        if (existingGame) {
-            if (!existingGame.isPlaying) {
-                existingGame.play({ loop: true, volume: 0.28 });
-            }
-        } else {
-            this.sound.play('game_bgm', { loop: true, volume: 0.28 });
-        }
+        playLoopAudioSafely(this, 'game_bgm', 0.28);
     }
 
     initializeGame() {
         this.isLevelTransitioning = false;
 
+        const playerFrontMaxFrame = getTextureMaxNumericFrame(this, 'player_front', 5);
+        const playerBackMaxFrame = getTextureMaxNumericFrame(this, 'player_back', 5);
+        const playerRightMaxFrame = getTextureMaxNumericFrame(this, 'player_right', 5);
+        const playerBackRightMaxFrame = getTextureMaxNumericFrame(this, 'player_back_right', 5);
+
         // Player front walk animation (used for down direction)
         if (!this.anims.exists('player_front_walk')) {
             this.anims.create({
                 key: 'player_front_walk',
-                frames: this.anims.generateFrameNumbers('player_front', { start: 0, end: 6 }),
+                frames: this.anims.generateFrameNumbers('player_front', { start: 0, end: playerFrontMaxFrame }),
                 frameRate: 10,
                 repeat: -1
             });
@@ -1261,7 +1324,7 @@ class GameScene extends Phaser.Scene {
         if (!this.anims.exists('player_back_walk')) {
             this.anims.create({
                 key: 'player_back_walk',
-                frames: this.anims.generateFrameNumbers('player_back', { start: 0, end: 6 }),
+                frames: this.anims.generateFrameNumbers('player_back', { start: 0, end: playerBackMaxFrame }),
                 frameRate: 10,
                 repeat: -1
             });
@@ -1269,7 +1332,7 @@ class GameScene extends Phaser.Scene {
         if (!this.anims.exists('player_right_walk')) {
             this.anims.create({
                 key: 'player_right_walk',
-                frames: this.anims.generateFrameNumbers('player_right', { start: 0, end: 6 }),
+                frames: this.anims.generateFrameNumbers('player_right', { start: 0, end: playerRightMaxFrame }),
                 frameRate: 10,
                 repeat: -1
             });
@@ -1277,7 +1340,7 @@ class GameScene extends Phaser.Scene {
         if (!this.anims.exists('player_back_right_walk')) {
             this.anims.create({
                 key: 'player_back_right_walk',
-                frames: this.anims.generateFrameNumbers('player_back_right', { start: 0, end: 6 }),
+                frames: this.anims.generateFrameNumbers('player_back_right', { start: 0, end: playerBackRightMaxFrame }),
                 frameRate: 10,
                 repeat: -1
             });
@@ -1300,8 +1363,11 @@ class GameScene extends Phaser.Scene {
             });
         }
 
-        // Background for all levels
-        this.gameBg = this.add.image(CONFIG.width / 2, CONFIG.height / 2, 'game_bg')
+        // Background based on master level (1..5), fallback to default game_bg
+        const masterLevel = getLevelMasterNumber(GAME_STATE.currentLevel);
+        const masterLevelBgKey = `game_bg_${masterLevel}`;
+        const selectedBgKey = this.textures.exists(masterLevelBgKey) ? masterLevelBgKey : 'game_bg';
+        this.gameBg = this.add.image(CONFIG.width / 2, CONFIG.height / 2, selectedBgKey)
             .setDisplaySize(CONFIG.width, CONFIG.height)
             .setScrollFactor(1)
             .setDepth(-1000);
@@ -1363,14 +1429,16 @@ class GameScene extends Phaser.Scene {
         this.playerCollisionRefs = [];
         this.playerGemStock = 0;
         this.batDirectionTimer = null;
+        this.dynamicBouldersRuntimeDisabled = false;
         this.batSpawnPositions = [];
         this.spawnedFallingStoneCount = 0;
         this.stoneShardBurstsRemaining = 0;
         this.nextStoneShardBurstIndex = Number.POSITIVE_INFINITY;
 
         const stoneShardBurstCount = Number(this.levelConfig?.staticRocks?.shardBurstCount);
+        const maxStoneShardBursts = 12;
         if (Number.isFinite(stoneShardBurstCount) && stoneShardBurstCount > 0) {
-            this.stoneShardBurstsRemaining = Math.floor(stoneShardBurstCount);
+            this.stoneShardBurstsRemaining = Math.min(maxStoneShardBursts, Math.floor(stoneShardBurstCount));
             this.nextStoneShardBurstIndex = Phaser.Math.Between(1, 3);
         }
 
@@ -1527,6 +1595,23 @@ class GameScene extends Phaser.Scene {
                 };
             }
 
+            const normalizedValue = value.trim().toLowerCase();
+            if (normalizedValue === 'floor' || normalizedValue === 'f') {
+                return { type: 'floor', wallFrame: 0, wallRotation: 0 };
+            }
+            if (normalizedValue === 'empty') {
+                return { type: 'empty', wallFrame: 0, wallRotation: 0 };
+            }
+            if (normalizedValue === 'hole') {
+                return { type: 'hole', wallFrame: 0, wallRotation: 0 };
+            }
+            if (normalizedValue === 'hole2') {
+                return { type: 'hole2', wallFrame: 0, wallRotation: 0 };
+            }
+            if (normalizedValue === 'wall' || normalizedValue === 'w') {
+                return { type: 'wall', wallFrame: 0, wallRotation: 0 };
+            }
+
             const wallMatch = value.match(/^w(\d)(\d)$/i);
             if (wallMatch) {
                 const baseCol = Number(wallMatch[1]);
@@ -1543,14 +1628,17 @@ class GameScene extends Phaser.Scene {
                     };
                 }
 
-                // Legacy compatibility: wRC => R=row (0..2), C=column (0..6)
-                const legacyRow = baseCol;
-                const legacyCol = rotationCode;
-                const validLegacyRow = legacyRow >= 0 && legacyRow <= 2;
-                const validLegacyCol = legacyCol >= 0 && legacyCol <= 6;
+                if (validBaseCol) {
+                    return {
+                        type: 'wall',
+                        wallFrame: baseCol,
+                        wallRotation: ((rotationCode % 4) + 4) % 4
+                    };
+                }
+
                 return {
                     type: 'wall',
-                    wallFrame: (validLegacyRow && validLegacyCol) ? (legacyRow * 7 + legacyCol) : 0,
+                    wallFrame: 0,
                     wallRotation: 0
                 };
             }
@@ -1558,6 +1646,7 @@ class GameScene extends Phaser.Scene {
             if (value.length === 1) {
                 switch (value) {
                     case 'w': return { type: 'wall', wallFrame: 0, wallRotation: 0 };
+                    case 'f': return { type: 'floor', wallFrame: 0, wallRotation: 0 };
                     case 'm': return { type: 'skeleton', wallFrame: 0, wallRotation: 0 };
                     case 'h': return { type: 'hole', wallFrame: 0, wallRotation: 0 };
                     case 's': return { type: 'hole2', wallFrame: 0, wallRotation: 0 };
@@ -1578,6 +1667,8 @@ class GameScene extends Phaser.Scene {
                 wallRotation: 0
             };
         };
+
+        const wallMaxFrame = getTextureMaxNumericFrame(this, 'wall_tiles', 6);
 
         const mapSymbolToCell = (value) => {
             if (typeof value === 'string') {
@@ -1647,7 +1738,7 @@ class GameScene extends Phaser.Scene {
                 if (normalizedTileType !== 'empty') {
                     // Get frame index for this tile type
                     const frameIndex = normalizedTileType === 'wall'
-                        ? wallFrame
+                        ? Phaser.Math.Clamp(Number(wallFrame) || 0, 0, wallMaxFrame)
                         : (TILE_FRAMES[normalizedTileType] !== undefined ? TILE_FRAMES[normalizedTileType] : TILE_FRAMES.floor);
                     const tileTexture = normalizedTileType === 'wall' ? 'wall_tiles' : 'tiles';
 
@@ -2900,7 +2991,12 @@ class GameScene extends Phaser.Scene {
         console.log('Creating UI with language:', GAME_STATE.language);
         const t = TRANSLATIONS[GAME_STATE.language];
 
-        if (!this.hudContainer) {
+        if (this.hudContainer && this.hudContainer.destroy && this.hudContainer.active) {
+            this.hudContainer.destroy(true);
+        }
+        this.hudContainer = null;
+
+        if (!this.hudContainer || !this.hudContainer.active) {
             this.hudContainer = this.add.container(0, 0);
         }
         this.hudContainer.setScrollFactor(0);
@@ -2934,7 +3030,8 @@ class GameScene extends Phaser.Scene {
             fontFamily: GAME_FONT
         }).setOrigin(0, 0.5);
         this.hudContainer.add(this.timerLabel);
-        const pepitaStartX = this.timerLabel.getBounds().right + 8;
+        const timerLabelWidth = Number(this.timerLabel?.width) || 52;
+        const pepitaStartX = 10 + timerLabelWidth + 8;
         for (let i = 0; i < this.timerPepitasCount; i++) {
             // background full-color pepita
             const pepita = this.add.sprite(
@@ -2990,9 +3087,30 @@ class GameScene extends Phaser.Scene {
         const centerX = camera.width - 72;
         const arrowY = camera.height - 54;
 
-        if (this.objectivePointerPulse && this.objectivePointerPulse.remove) {
-            this.objectivePointerPulse.remove();
+        const previousTargets = [
+            this.objectivePointerArrow,
+            this.objectivePointerArrowShadow,
+            this.objectivePointerHalo,
+            this.objectivePointerLabel
+        ].filter(Boolean);
+
+        if (this.objectivePointerPulse) {
+            try {
+                if (this.objectivePointerPulse.stop) {
+                    this.objectivePointerPulse.stop();
+                }
+            } catch (e) {
+                // ignore stale tween state
+            }
             this.objectivePointerPulse = null;
+        }
+
+        if (previousTargets.length > 0 && this.tweens && this.tweens.killTweensOf) {
+            try {
+                this.tweens.killTweensOf(previousTargets);
+            } catch (e) {
+                // ignore if tween manager already disposed target internals
+            }
         }
 
         if (this.objectivePointerArrow && this.objectivePointerArrow.destroy) {
@@ -3049,7 +3167,7 @@ class GameScene extends Phaser.Scene {
             repeat: -1,
             ease: 'Sine.easeInOut',
             onUpdate: () => {
-                if (this.objectivePointerHalo && this.objectivePointerHalo.active) {
+                if (this.objectivePointerHalo && this.objectivePointerHalo.active && this.objectivePointerArrow && this.objectivePointerArrow.active) {
                     const alphaPulse = 0.12 + ((this.objectivePointerArrow.scaleX - 0.98) / 0.06) * 0.1;
                     this.objectivePointerHalo.setAlpha(Phaser.Math.Clamp(alphaPulse, 0.1, 0.22));
                 }
@@ -3116,7 +3234,9 @@ class GameScene extends Phaser.Scene {
     }
 
     updateObjectivePointerUI() {
-        if (!this.objectivePointerArrow || !this.objectivePointerLabel || !this.player) return;
+        if (!this.objectivePointerArrow || !this.objectivePointerArrow.active) return;
+        if (!this.objectivePointerLabel || !this.objectivePointerLabel.active) return;
+        if (!this.player || !this.player.active) return;
 
         const target = this.getObjectivePointerTarget();
         if (!target) {
@@ -3131,7 +3251,10 @@ class GameScene extends Phaser.Scene {
         if (this.objectivePointerArrowShadow) this.objectivePointerArrowShadow.setVisible(true);
         if (this.objectivePointerHalo) this.objectivePointerHalo.setVisible(true);
         this.objectivePointerLabel.setVisible(true);
-        this.objectivePointerLabel.setText(target.type === 'gem' ? 'GEM' : 'EXIT');
+        const targetLabel = target.type === 'gem' ? 'GEM' : 'EXIT';
+        if (this.objectivePointerLabel.text !== targetLabel) {
+            this.objectivePointerLabel.setText(targetLabel);
+        }
 
         const dx = target.x - this.player.x;
         const dy = target.y - this.player.y;
@@ -3570,7 +3693,18 @@ class GameScene extends Phaser.Scene {
         this.updateBatPerspective();
 
         // Dynamic boulders roll and slow down over time
-        this.updateRollingBoulders(delta);
+        if (!this.dynamicBouldersRuntimeDisabled) {
+            try {
+                this.updateRollingBoulders(delta);
+            } catch (error) {
+                console.error('Dynamic boulders runtime disabled due to update error:', error);
+                this.dynamicBouldersRuntimeDisabled = true;
+                if (this.boulderTimer) {
+                    this.boulderTimer.remove();
+                    this.boulderTimer = null;
+                }
+            }
+        }
         this.updateObjectivePointerUI();
 
         // Update UI
@@ -3689,7 +3823,9 @@ class GameScene extends Phaser.Scene {
         };
 
         if (revealType === 'wall') {
-            const wallSprite = this.add.sprite(worldX, worldY, 'wall_tiles', revealCell.wallFrame || 0);
+            const revealWallMaxFrame = getTextureMaxNumericFrame(this, 'wall_tiles', 6);
+            const clampedRevealWallFrame = Phaser.Math.Clamp(Number(revealCell.wallFrame) || 0, 0, revealWallMaxFrame);
+            const wallSprite = this.add.sprite(worldX, worldY, 'wall_tiles', clampedRevealWallFrame);
             wallSprite.setDisplaySize(CONFIG.tileSize, CONFIG.tileSize);
             if (revealCell.wallRotation) {
                 wallSprite.setAngle((revealCell.wallRotation || 0) * 90);
@@ -4478,14 +4614,10 @@ class GameScene extends Phaser.Scene {
             transitioned = true;
             if (completedLabel && completedLabel.destroy) completedLabel.destroy();
             if (completedOverlay && completedOverlay.destroy) completedOverlay.destroy();
-            this.scene.restart();
+            this.scene.start('GameScene');
         };
 
         this.time.delayedCall(1500, goToNextLevel);
-        setTimeout(() => {
-            if (!this || !this.scene || !this.scene.isActive()) return;
-            goToNextLevel();
-        }, 2600);
     }
 
     gameOver() {
@@ -4801,7 +4933,9 @@ class GameScene extends Phaser.Scene {
     }
 
     refreshHudIcons() {
-        if (!this.scoreText || !this.levelText || !this.hudContainer) return;
+        if (!this.scoreText || !this.scoreText.active) return;
+        if (!this.levelText || !this.levelText.active) return;
+        if (!this.hudContainer || !this.hudContainer.active) return;
 
         if (!this.topStatsObjects) {
             this.topStatsObjects = [];
@@ -4816,8 +4950,14 @@ class GameScene extends Phaser.Scene {
         const sectionGap = 14;
         const topY = 18;
 
-        const scoreBounds = this.scoreText.getBounds();
-        const levelBounds = this.levelText.getBounds();
+        let scoreBounds;
+        let levelBounds;
+        try {
+            scoreBounds = this.scoreText.getBounds();
+            levelBounds = this.levelText.getBounds();
+        } catch (e) {
+            return;
+        }
         const laneStart = scoreBounds.right + 14;
         const laneEnd = levelBounds.x - 14;
         let x = laneStart;

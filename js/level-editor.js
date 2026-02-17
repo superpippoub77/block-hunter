@@ -21,7 +21,7 @@ const OBJECT_FRAMES = {
 const STORAGE_KEY = 'blockHunterLevelEditorState';
 const WALL_TOKEN_REGEX = /^w(\d)(\d)$/i;
 
-const PALETTE_ITEMS = [
+const BASE_PALETTE_ITEMS = [
     { token: '-', label: 'vuoto' },
     { token: 'f', label: 'floor' },
     { token: 'h', label: 'hole1' },
@@ -34,15 +34,17 @@ const PALETTE_ITEMS = [
     { token: 'c', label: 'cart' },
     { token: 'm', label: 'skeleton' },
     { token: 'ghost', label: 'ghost spawn' },
-    { token: 'bat', label: 'bat spawn' },
-    { token: 'w00', label: 'wall 0' },
-    { token: 'w10', label: 'wall 1' },
-    { token: 'w20', label: 'wall 2' },
-    { token: 'w30', label: 'wall 3' },
-    { token: 'w40', label: 'wall 4' },
-    { token: 'w50', label: 'wall 5' },
-    { token: 'w60', label: 'wall 6' }
+    { token: 'bat', label: 'bat spawn' }
 ];
+
+const WALL_PALETTE_ITEMS = Array.from({ length: 7 }, (_unused, frame) => (
+    Array.from({ length: 4 }, (_unusedRot, rot) => ({
+        token: `w${frame}${rot}`,
+        label: `wall ${frame} r${rot}`
+    }))
+)).flat();
+
+const PALETTE_ITEMS = [...BASE_PALETTE_ITEMS, ...WALL_PALETTE_ITEMS];
 
 const DEFAULT_LEVEL = {
     id: '1.0',
@@ -266,6 +268,15 @@ class LevelEditorScene extends Phaser.Scene {
             this.rotateSelectedCell(1);
             this.renderGrid();
         });
+
+        this.input.keyboard.on('keydown-DELETE', () => {
+            this.clearSelectedCell();
+        });
+
+        this.input.keyboard.on('keydown-BACKSPACE', (event) => {
+            event?.preventDefault?.();
+            this.clearSelectedCell();
+        });
     }
 
     createPalette() {
@@ -274,9 +285,9 @@ class LevelEditorScene extends Phaser.Scene {
 
         const startX = 980;
         const startY = 34;
-        const colCount = 2;
-        const spacingX = 175;
-        const spacingY = 68;
+        const colCount = 3;
+        const spacingX = 126;
+        const spacingY = 56;
 
         this.add.text(startX, 8, 'PALETTE (DRAG & DROP)', {
             fontFamily: 'monospace',
@@ -290,27 +301,27 @@ class LevelEditorScene extends Phaser.Scene {
             const x = startX + col * spacingX;
             const y = startY + row * spacingY;
 
-            const box = this.add.rectangle(0, 0, 160, 58, 0x102449, 0.95).setStrokeStyle(1, 0x2b4f86, 1);
-            const iconContainer = this.add.container(-53, 0);
-            this.addTokenVisual(iconContainer, item.token, 0, 0, 34);
-            const label = this.add.text(-25, -8, `${item.token}`, {
+            const box = this.add.rectangle(0, 0, 116, 48, 0x102449, 0.95).setStrokeStyle(1, 0x2b4f86, 1);
+            const iconContainer = this.add.container(-38, 0);
+            this.addTokenVisual(iconContainer, item.token, 0, 0, 24);
+            const label = this.add.text(-17, -8, `${item.token}`, {
                 fontFamily: 'monospace',
-                fontSize: '12px',
+                fontSize: '11px',
                 color: '#ffffff'
             });
-            const subLabel = this.add.text(-25, 10, item.label, {
+            const subLabel = this.add.text(-17, 7, item.label, {
                 fontFamily: 'monospace',
-                fontSize: '10px',
+                fontSize: '9px',
                 color: '#98b6e8'
             });
 
             const container = this.add.container(x, y, [box, iconContainer, label, subLabel]);
-            container.setSize(160, 58);
+            container.setSize(116, 48);
             container.setData('token', normalizeToken(item.token));
             container.setData('originX', x);
             container.setData('originY', y);
 
-            container.setInteractive(new Phaser.Geom.Rectangle(-80, -29, 160, 58), Phaser.Geom.Rectangle.Contains);
+            container.setInteractive(new Phaser.Geom.Rectangle(-58, -24, 116, 48), Phaser.Geom.Rectangle.Contains);
             this.input.setDraggable(container);
 
             container.on('pointerdown', () => {
@@ -371,6 +382,17 @@ class LevelEditorScene extends Phaser.Scene {
         if (normalized === '-') {
             cell.reveal = null;
         }
+    }
+
+    clearSelectedCell() {
+        if (!this.selectedCell) return;
+        const { row, col } = this.selectedCell;
+        const cell = this.cells[row]?.[col];
+        if (!cell) return;
+        cell.base = '-';
+        cell.reveal = null;
+        this.updateSelectedCellInfo();
+        this.renderGrid();
     }
 
     rotateSelectedCell(delta) {
@@ -604,6 +626,104 @@ function setStatus(message, isError = false) {
     target.textContent = message;
 }
 
+function drawMiniMapFrame(scene, ctx, textureKey, frameIndex, x, y, size, opts = {}) {
+    const frame = scene?.textures?.getFrame(textureKey, frameIndex);
+    const sourceImage = frame?.source?.image;
+    if (!frame || !sourceImage) return false;
+
+    const alpha = Number.isFinite(opts.alpha) ? opts.alpha : 1;
+    const rotation = Number.isFinite(opts.rotation) ? opts.rotation : 0;
+
+    ctx.save();
+    ctx.globalAlpha = alpha;
+
+    if (rotation !== 0) {
+        ctx.translate(x + size / 2, y + size / 2);
+        ctx.rotate(rotation);
+        ctx.drawImage(
+            sourceImage,
+            frame.cutX,
+            frame.cutY,
+            frame.cutWidth,
+            frame.cutHeight,
+            -size / 2,
+            -size / 2,
+            size,
+            size
+        );
+    } else {
+        ctx.drawImage(
+            sourceImage,
+            frame.cutX,
+            frame.cutY,
+            frame.cutWidth,
+            frame.cutHeight,
+            x,
+            y,
+            size,
+            size
+        );
+    }
+
+    ctx.restore();
+    return true;
+}
+
+function drawMiniMapToken(scene, ctx, token, x, y, size, opts = {}) {
+    const normalized = normalizeToken(token);
+    const wallMatch = normalized.match(WALL_TOKEN_REGEX);
+    if (wallMatch) {
+        const wallFrame = clamp(Number(wallMatch[1]), 0, 6);
+        const wallRot = ((Number(wallMatch[2]) % 4) + 4) % 4;
+        return drawMiniMapFrame(scene, ctx, 'wall_tiles', wallFrame, x, y, size, {
+            alpha: opts.alpha,
+            rotation: wallRot * (Math.PI / 2)
+        });
+    }
+
+    const drawFloor = (alpha = 1) => drawMiniMapFrame(scene, ctx, 'tiles', 3, x, y, size, { alpha });
+
+    switch (normalized) {
+        case '-':
+            return false;
+        case 'f':
+            return drawMiniMapFrame(scene, ctx, 'tiles', 3, x, y, size, { alpha: opts.alpha });
+        case 'h':
+            return drawMiniMapFrame(scene, ctx, 'tiles', 1, x, y, size, { alpha: opts.alpha });
+        case 's':
+            return drawMiniMapFrame(scene, ctx, 'tiles', 5, x, y, size, { alpha: opts.alpha });
+        case 'g':
+            drawFloor(0.55);
+            return drawMiniMapFrame(scene, ctx, 'objects', OBJECT_FRAMES.gem, x, y, size, { alpha: opts.alpha });
+        case 'd':
+            drawFloor(0.55);
+            return drawMiniMapFrame(scene, ctx, 'objects', OBJECT_FRAMES.door, x, y, size, { alpha: opts.alpha });
+        case 'k':
+            drawFloor(0.55);
+            return drawMiniMapFrame(scene, ctx, 'objects', OBJECT_FRAMES.key, x, y, size, { alpha: opts.alpha });
+        case 'p':
+            drawFloor(0.55);
+            return drawMiniMapFrame(scene, ctx, 'objects', OBJECT_FRAMES.pepita, x, y, size, { alpha: opts.alpha });
+        case 'b':
+            drawFloor(0.55);
+            return drawMiniMapFrame(scene, ctx, 'objects', OBJECT_FRAMES.dynamite_chest, x, y, size, { alpha: opts.alpha });
+        case 'c':
+            drawFloor(0.55);
+            return drawMiniMapFrame(scene, ctx, 'objects', OBJECT_FRAMES.cart, x, y, size, { alpha: opts.alpha });
+        case 'm':
+            drawFloor(0.55);
+            return drawMiniMapFrame(scene, ctx, 'objects', OBJECT_FRAMES.wall, x, y, size, { alpha: opts.alpha });
+        case 'ghost':
+            drawFloor(0.55);
+            return drawMiniMapFrame(scene, ctx, 'ghost_anim', 0, x, y, size, { alpha: opts.alpha });
+        case 'bat':
+            drawFloor(0.55);
+            return drawMiniMapFrame(scene, ctx, 'bat_anim', 0, x, y, size, { alpha: opts.alpha });
+        default:
+            return false;
+    }
+}
+
 function drawMiniMapPreview(scene) {
     if (!scene) return;
     const canvas = el('miniMapPreview');
@@ -614,6 +734,7 @@ function drawMiniMapPreview(scene) {
 
     const width = canvas.width;
     const height = canvas.height;
+    ctx.imageSmoothingEnabled = false;
     ctx.clearRect(0, 0, width, height);
 
     const rows = scene.rows || 1;
@@ -633,14 +754,30 @@ function drawMiniMapPreview(scene) {
             const base = cellData?.base || '-';
             const reveal = cellData?.reveal;
 
-            ctx.fillStyle = tokenToMiniMapColor(base);
             const x = offX + col * cell;
             const y = offY + row * cell;
+            ctx.fillStyle = '#0f1f3e';
             ctx.fillRect(x, y, cell, cell);
 
+            const rendered = drawMiniMapToken(scene, ctx, base, x, y, cell);
+            if (!rendered) {
+                ctx.fillStyle = tokenToMiniMapColor(base);
+                ctx.fillRect(x, y, cell, cell);
+            }
+
             if (reveal) {
-                ctx.fillStyle = tokenToMiniMapColor(reveal);
-                ctx.fillRect(x + Math.floor(cell * 0.55), y + Math.floor(cell * 0.55), Math.ceil(cell * 0.4), Math.ceil(cell * 0.4));
+                const insetSize = Math.max(4, Math.floor(cell * 0.45));
+                const rx = x + cell - insetSize - 1;
+                const ry = y + cell - insetSize - 1;
+                ctx.fillStyle = '#0b152c';
+                ctx.fillRect(rx, ry, insetSize, insetSize);
+                const revealRendered = drawMiniMapToken(scene, ctx, reveal, rx, ry, insetSize);
+                if (!revealRendered) {
+                    ctx.fillStyle = tokenToMiniMapColor(reveal);
+                    ctx.fillRect(rx, ry, insetSize, insetSize);
+                }
+                ctx.strokeStyle = 'rgba(255, 215, 106, 0.85)';
+                ctx.strokeRect(rx + 0.5, ry + 0.5, insetSize - 1, insetSize - 1);
             }
 
             if (cell >= 6) {
@@ -652,13 +789,19 @@ function drawMiniMapPreview(scene) {
 
     const playerRow = clamp(Math.floor(parseNumber(el('playerRow')?.value, 1)), 0, Math.max(0, rows - 1));
     const playerCol = clamp(Math.floor(parseNumber(el('playerCol')?.value, 1)), 0, Math.max(0, cols - 1));
-    ctx.fillStyle = '#19ff7d';
     const px = offX + playerCol * cell + cell / 2;
     const py = offY + playerRow * cell + cell / 2;
-    const pr = Math.max(2, Math.floor(cell * 0.28));
-    ctx.beginPath();
-    ctx.arc(px, py, pr, 0, Math.PI * 2);
-    ctx.fill();
+    const markerSize = Math.max(6, Math.floor(cell * 0.75));
+    const markerX = Math.floor(px - markerSize / 2);
+    const markerY = Math.floor(py - markerSize / 2);
+    const playerDrawn = drawMiniMapFrame(scene, ctx, 'objects', OBJECT_FRAMES.player, markerX, markerY, markerSize, { alpha: 1 });
+    if (!playerDrawn) {
+        const pr = Math.max(2, Math.floor(cell * 0.28));
+        ctx.fillStyle = '#19ff7d';
+        ctx.beginPath();
+        ctx.arc(px, py, pr, 0, Math.PI * 2);
+        ctx.fill();
+    }
 
     ctx.strokeStyle = '#7cc7ff';
     ctx.lineWidth = 1.5;
