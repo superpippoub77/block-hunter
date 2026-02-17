@@ -48,5 +48,22 @@
   "ghost":2,
   "bat":2,
   "ghostSpeed": 80,
-  "batSpeed": 90
+  "batSpeed": 90,
+  "bonus": {
+    "enabled": false,
+    "name": "bonus1",
+    "label": "BONUS CARRELLO",
+    "criteria": {
+      "mode": "all",
+      "points": 120,
+      "keysCollected": 1
+    },
+    "rewardScore": 120,
+    "pepitaScore": 12,
+    "baseSpeed": 280,
+    "minSpeed": 180,
+    "maxSpeed": 520,
+    "speedStep": 340,
+    "jumpVelocity": 600
+  }
 }

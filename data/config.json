@@ -30,6 +30,11 @@
   "keysCount": 0,
   "disableStaticRocks": false,
   "debugTileGrid": false,
+  "bonusTestMode": {
+    "enabled": true,
+    "bonusLevel": "bonus1",
+    "returnLevel": 0
+  },
   "topScores": [
     {
       "name": "AAA",
