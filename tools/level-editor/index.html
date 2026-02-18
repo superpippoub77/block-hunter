@@ -1,0 +1,579 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Block Hunter - Level Editor</title>
+  <style>
+    :root{--bg:#111;--panel:#1b1b1b;--muted:#bbb;--accent:#5bd;}
+    body{margin:0;font-family:Arial,Helvetica,sans-serif;background:var(--bg);color:#eee}
+    .wrap{display:flex;height:100vh}
+    .left,.right{padding:12px;background:var(--panel)}
+    .left{width:320px;box-sizing:border-box;overflow:auto}
+    .center{flex:1;display:flex;align-items:center;justify-content:center}
+    canvas{background:#000;border:1px solid #333}
+    h2{margin:6px 0 8px 0;font-size:16px}
+    .palette{display:flex;flex-wrap:wrap;gap:8px}
+    .tile-btn{width:64px;height:48px;background:#222;border:1px solid #444;display:flex;align-items:center;justify-content:center;cursor:pointer}
+    .tile-btn.selected{outline:3px solid var(--accent)}
+    label{display:block;margin:8px 0 4px 0;color:var(--muted)}
+    input[type=number],select,input[type=text]{width:100%;padding:6px;background:#111;border:1px solid #333;color:#eee}
+    button{padding:8px 10px;margin-top:8px;background:#222;border:1px solid #444;color:#eee;cursor:pointer}
+    .row{display:flex;gap:8px}
+    .small{width:50%}
+    footer{color:#888;font-size:12px;margin-top:12px}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="left">
+      <h2>Palette</h2>
+      <div class="palette" id="palette"></div>
+
+      <h2>Tile / Object</h2>
+      <div>
+        <label>Current tool</label>
+        <select id="toolSelect">
+          <option value="tile">Place Tile</option>
+          <option value="object">Place Object</option>
+          <option value="erase">Erase</option>
+        </select>
+      </div>
+      <div class="row">
+        <div>
+          <label>Rotation</label>
+          <button id="rotLeft">⟲</button>
+          <button id="rotRight">⟳</button>
+          <span id="rotVal">0°</span>
+        </div>
+      </div>
+
+      <h2>Level Config</h2>
+      <label>Cols</label>
+      <input type="number" id="cols" value="25" min="4" max="80">
+      <label>Rows</label>
+      <input type="number" id="rows" value="18" min="4" max="80">
+      <div class="row">
+        <div class="small">
+          <label>Timer (s)</label>
+          <input type="number" id="timer" value="120">
+        </div>
+        <div class="small">
+          <label>Gems req</label>
+          <input type="number" id="gemsReq" value="10">
+        </div>
+      </div>
+      <label>Player start (row,col)</label>
+      <div class="row">
+        <input type="number" id="startRow" value="1" min="0">
+        <input type="number" id="startCol" value="1" min="0">
+      </div>
+
+      <div style="margin-top:8px">
+        <button id="newLevel">New Level</button>
+        <button id="download">Download JSON</button>
+        <button id="loadJson">Load JSON</button>
+        <input id="fileInput" type="file" accept="application/json" style="display:none">
+      </div>
+
+      <h2>Export</h2>
+      <button id="copyJson">Copy JSON</button>
+
+      <footer>
+        Controls: Left click to place, Right click to erase, R rotate (selected), Shift+click place multiple.
+      </footer>
+    </div>
+
+    <div class="center">
+      <canvas id="canvas"></canvas>
+    </div>
+
+    <div class="right">
+      <h2>Objects list</h2>
+      <div id="objectsList"></div>
+
+      <h2>Preview / Info</h2>
+      <div id="info">No level loaded.</div>
+    </div>
+  </div>
+
+<script>
+// Simple level editor for Block Hunter
+(() => {
+  const TILE_TYPES = [
+    { id: 'floor', label: 'Floor', color:'#444' },
+    { id: 'wall', label: 'Wall', color:'#6b6b6b' },
+    { id: 'sand', label: 'Sand', color:'#8b6b2f' },
+    { id: 'hole', label: 'Hole', color:'#000' },
+    { id: 'gem', label: 'Gem', color:'#0ff' , kind:'object'},
+    { id: 'door', label: 'Door', color:'#a52' , kind:'object'},
+    { id: 'key', label: 'Key', color:'#ff0' , kind:'object'},
+    { id: 'dynamite', label:'Dynamite', color:'#f55', kind:'object'}
+  ];
+
+  const canvas = document.getElementById('canvas');
+  const ctx = canvas.getContext('2d');
+  const paletteEl = document.getElementById('palette');
+  const toolSelect = document.getElementById('toolSelect');
+  const rotLeft = document.getElementById('rotLeft');
+  const rotRight = document.getElementById('rotRight');
+  const rotVal = document.getElementById('rotVal');
+  const colsInput = document.getElementById('cols');
+  const rowsInput = document.getElementById('rows');
+  const timerInput = document.getElementById('timer');
+  const gemsReq = document.getElementById('gemsReq');
+  const startRow = document.getElementById('startRow');
+  const startCol = document.getElementById('startCol');
+  const newLevelBtn = document.getElementById('newLevel');
+  const downloadBtn = document.getElementById('download');
+  const copyJsonBtn = document.getElementById('copyJson');
+  const fileInput = document.getElementById('fileInput');
+  const loadJsonBtn = document.getElementById('loadJson');
+  const info = document.getElementById('info');
+
+  let state = {
+    cols: parseInt(colsInput.value,10),
+    rows: parseInt(rowsInput.value,10),
+    tileSize: 32,
+    rotation: 0,
+    tool: 'tile',
+    selected: TILE_TYPES[0].id,
+    tiles: [], // rows x cols of tileType or 'empty'
+    objects: [] // {type,row,col,rot}
+  };
+
+  // Interaction state for drag & drop
+  let isMouseDown = false;
+  let draggingObject = null; // reference to object being dragged
+  let lastPaintKey = null;
+
+  // Preload game sprites for graphical preview
+  const IMG = {
+    tiles: { src: '../../images/tiles.png', img: new Image(), loaded: false, cols: 6, rows: 1 },
+    wall: { src: '../../images/wall.png', img: new Image(), loaded: false, cols: 7, rows: 1 },
+    objects: { src: '../../images/obj_game.png', img: new Image(), loaded: false, cols: 4, rows: 4 }
+  };
+  let imagesToLoad = 3;
+  Object.values(IMG).forEach(v=>{
+    v.img.onload = ()=>{ v.loaded = true; imagesToLoad--; if(imagesToLoad<=0) draw(); updatePaletteSelection(); };
+    v.img.onerror = ()=>{ v.loaded = false; imagesToLoad--; if(imagesToLoad<=0) draw(); };
+    v.img.src = v.src;
+  });
+
+  function makePalette(){
+    paletteEl.innerHTML='';
+    TILE_TYPES.forEach(t=>{
+      const b = document.createElement('div');
+      b.className='tile-btn';
+      b.title = t.label;
+      b.dataset.id = t.id;
+
+      // preview canvas
+      const pc = document.createElement('canvas'); pc.width = 64; pc.height = 48; pc.style.width='64px'; pc.style.height='48px';
+      const pctx = pc.getContext('2d');
+      pctx.fillStyle = '#111'; pctx.fillRect(0,0,pc.width,pc.height);
+
+      if (t.kind === 'object' && IMG.objects.loaded) {
+        const frameIndex = OBJECT_FRAME_INDEX(t.id);
+        if (frameIndex != null) {
+          const fx = (frameIndex % IMG.objects.cols) * 64;
+          const fy = Math.floor(frameIndex / IMG.objects.cols) * 64;
+          pctx.drawImage(IMG.objects.img, fx, fy, 64, 64, 0, 0, pc.width, pc.height);
+        } else {
+          pctx.fillStyle = t.color; pctx.fillRect(4,4,pc.width-8,pc.height-8);
+        }
+      } else if (t.id === 'wall' && IMG.wall.loaded) {
+        pctx.drawImage(IMG.wall.img, 0, 0, 64, 64, 0, 0, pc.width, pc.height);
+      } else if (IMG.tiles.loaded && ['floor','sand','hole','stone'].includes(t.id)) {
+        const idx = ({floor:3,sand:2,hole:1,stone:4})[t.id] || 0;
+        const fx = (idx % IMG.tiles.cols) * 64;
+        const fy = Math.floor(idx / IMG.tiles.cols) * 64;
+        pctx.drawImage(IMG.tiles.img, fx, fy, 64, 64, 0, 0, pc.width, pc.height);
+      } else {
+        pctx.fillStyle = t.color; pctx.fillRect(4,4,pc.width-8,pc.height-8);
+      }
+
+      b.appendChild(pc);
+      b.onclick = ()=>{ selectPalette(t.id); };
+      paletteEl.appendChild(b);
+    });
+
+    // wall code selectors
+    const wallWrap = document.createElement('div'); wallWrap.style.marginTop='8px';
+    const baseLbl = document.createElement('label'); baseLbl.textContent='Wall base'; baseLbl.style.display='block';
+    wallWrap.appendChild(baseLbl);
+    const wallBaseSel = document.createElement('select'); wallBaseSel.id = 'wallBase';
+    for(let i=0;i<IMG.wall.cols;i++){ const o=document.createElement('option'); o.value=i; o.textContent='w'+i; wallBaseSel.appendChild(o);} 
+    wallWrap.appendChild(wallBaseSel);
+    const rotLbl = document.createElement('label'); rotLbl.textContent='Rotation'; rotLbl.style.display='block';
+    wallWrap.appendChild(rotLbl);
+    const wallRotSel = document.createElement('select'); wallRotSel.id = 'wallRot';
+    for(let r=0;r<4;r++){ const o=document.createElement('option'); o.value=r; o.textContent=r; wallRotSel.appendChild(o);} 
+    wallWrap.appendChild(wallRotSel);
+    paletteEl.appendChild(wallWrap);
+
+    updatePaletteSelection();
+  }
+
+  function selectPalette(id){ state.selected = id; updatePaletteSelection(); }
+  function updatePaletteSelection(){
+    Array.from(paletteEl.children).forEach(ch=>{
+      ch.classList.toggle('selected', ch.dataset.id === state.selected);
+    });
+  }
+
+  function newLevel(){
+    state.cols = parseInt(colsInput.value,10)||25;
+    state.rows = parseInt(rowsInput.value,10)||18;
+    state.tileSize = 32;
+    state.tiles = new Array(state.rows).fill(0).map(()=>new Array(state.cols).fill('-'));
+    state.objects = [];
+    startRow.value = Math.max(0, Math.min(state.rows-1, parseInt(startRow.value)||1));
+    startCol.value = Math.max(0, Math.min(state.cols-1, parseInt(startCol.value)||1));
+    resizeCanvas();
+    draw();
+    updateInfo();
+  }
+
+  function resizeCanvas(){
+    canvas.width = state.cols * state.tileSize;
+    canvas.height = state.rows * state.tileSize;
+    canvas.style.width = canvas.width + 'px';
+    canvas.style.height = canvas.height + 'px';
+  }
+
+  function draw(){
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    // grid
+    for(let r=0;r<state.rows;r++){
+      for(let c=0;c<state.cols;c++){
+        const x = c*state.tileSize, y = r*state.tileSize;
+        const t = state.tiles[r][c];
+        // default background
+        ctx.fillStyle = '#0b0b0b'; ctx.fillRect(x,y,state.tileSize,state.tileSize);
+        if (t && t!=='-'){
+          // wall token like w26
+          if (typeof t === 'string' && t.match(/^w\d\d$/i) && IMG.wall.loaded) {
+            const base = Number(t[1]);
+            const sx = base * 64;
+            ctx.drawImage(IMG.wall.img, sx, 0, 64, 64, x, y, state.tileSize, state.tileSize);
+          } else if (IMG.tiles.loaded && (t === 'floor' || t === 'sand' || t === 'hole' || t === 'stone')){
+            const idx = ({floor:3,sand:2,hole:1,stone:4})[t] || 0;
+            const fx = (idx % IMG.tiles.cols) * 64;
+            const fy = Math.floor(idx / IMG.tiles.cols) * 64;
+            ctx.drawImage(IMG.tiles.img, fx, fy, 64, 64, x, y, state.tileSize, state.tileSize);
+          } else if (typeof t === 'string' && t.startsWith('w') && IMG.wall.loaded) {
+            const base = Number(t[1]);
+            const sx = base * 64;
+            ctx.drawImage(IMG.wall.img, sx, 0, 64, 64, x, y, state.tileSize, state.tileSize);
+          } else {
+            const def = TILE_TYPES.find(tt=>tt.id===t);
+            ctx.fillStyle = def ? def.color : '#333';
+            ctx.fillRect(x+2,y+2,state.tileSize-4,state.tileSize-4);
+          }
+        }
+        ctx.strokeStyle = '#222'; ctx.strokeRect(x+0.5,y+0.5,state.tileSize-1,state.tileSize-1);
+      }
+    }
+    // objects
+    state.objects.forEach(obj=>{
+      const ox = obj.col*state.tileSize + state.tileSize/2;
+      const oy = obj.row*state.tileSize + state.tileSize/2;
+      ctx.save();
+      ctx.translate(ox,oy);
+      ctx.rotate((obj.rot||0)*Math.PI/180);
+      const frameIdx = OBJECT_FRAME_INDEX(obj.type);
+      if (frameIdx != null && IMG.objects.loaded) {
+        const fx = (frameIdx % IMG.objects.cols) * 64;
+        const fy = Math.floor(frameIdx / IMG.objects.cols) * 64;
+        ctx.drawImage(IMG.objects.img, fx, fy, 64, 64, -state.tileSize*0.4, -state.tileSize*0.4, state.tileSize*0.8, state.tileSize*0.8);
+      } else {
+        ctx.fillStyle = TILE_TYPES.find(t=>t.id===obj.type)?.color || '#0ff';
+        ctx.fillRect(-state.tileSize*0.25,-state.tileSize*0.25,state.tileSize*0.5,state.tileSize*0.5);
+      }
+      ctx.restore();
+    });
+    // player start
+    const pr = parseInt(startRow.value)||0, pc = parseInt(startCol.value)||0;
+    ctx.fillStyle = '#0f0'; ctx.fillRect(pc*state.tileSize+4,pr*state.tileSize+4, state.tileSize-8, state.tileSize-8);
+  }
+
+  function placeAt(pixelX,pixelY,shift){
+    const col = Math.floor(pixelX/state.tileSize);
+    const row = Math.floor(pixelY/state.tileSize);
+    if (row<0||col<0||row>=state.rows||col>=state.cols) return;
+    const tool = toolSelect.value;
+    if (tool==='erase'){
+      state.tiles[row][col] = '-';
+      // remove any objects at this tile
+      state.objects = state.objects.filter(o=>!(o.row===row && o.col===col));
+    } else if (tool==='tile'){
+      const sel = state.selected;
+      const def = TILE_TYPES.find(t=>t.id===sel);
+      if (def && def.kind==='object'){
+        state.tiles[row][col] = '-';
+        state.objects.push({ type: sel, row, col, rot: state.rotation });
+      } else if (sel === 'wall'){
+        const baseSel = document.getElementById('wallBase');
+        const rotSel = document.getElementById('wallRot');
+        const base = baseSel ? Number(baseSel.value||0) : 0;
+        const rot = rotSel ? Number(rotSel.value||0) : 0;
+        state.tiles[row][col] = `w${base}${rot}`;
+      } else {
+        state.tiles[row][col] = sel;
+      }
+    } else if (tool==='object'){
+      state.objects.push({ type: state.selected, row, col, rot: state.rotation });
+    }
+    draw(); updateInfo();
+  }
+
+  canvas.addEventListener('contextmenu',e=>e.preventDefault());
+  canvas.addEventListener('mousedown',e=>{
+    const rect = canvas.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    const col = Math.floor(x / state.tileSize);
+    const row = Math.floor(y / state.tileSize);
+    isMouseDown = true;
+
+    if (e.button===2) {
+      // right click erase
+      placeAt(x,y);
+      isMouseDown = false;
+      return;
+    }
+
+    // If clicking an existing object, start dragging it instead of painting
+    const obj = state.objects.find(o => o.row === row && o.col === col);
+    if (obj) {
+      draggingObject = obj;
+      return;
+    }
+
+    placeAt(x,y,e.shiftKey);
+    lastPaintKey = `${row},${col}`;
+  });
+
+  canvas.addEventListener('mousemove', e => {
+    if (!isMouseDown) return;
+    const rect = canvas.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    const col = Math.floor(x / state.tileSize);
+    const row = Math.floor(y / state.tileSize);
+
+    if (draggingObject) {
+      // snap dragged object to grid
+      draggingObject.row = Math.max(0, Math.min(state.rows - 1, row));
+      draggingObject.col = Math.max(0, Math.min(state.cols - 1, col));
+      draw(); updateInfo();
+      return;
+    }
+
+    const key = `${row},${col}`;
+    if (key !== lastPaintKey) {
+      placeAt(x,y,e.shiftKey);
+      lastPaintKey = key;
+    }
+  });
+
+  window.addEventListener('mouseup', e => {
+    isMouseDown = false;
+    draggingObject = null;
+    lastPaintKey = null;
+  });
+
+  // Mouse wheel rotates current selection
+  canvas.addEventListener('wheel', e => {
+    e.preventDefault();
+    if (e.deltaY > 0) state.rotation = (state.rotation + 90) % 360;
+    else state.rotation = (state.rotation - 90 + 360) % 360;
+    rotVal.textContent = state.rotation + '°';
+  });
+
+  window.addEventListener('keydown',e=>{
+    // Rotate selection with R or ArrowLeft/ArrowRight
+    if (e.key.toLowerCase() === 'r' || e.key === 'ArrowLeft' || e.key === 'ArrowRight'){
+      if (e.key === 'ArrowLeft') state.rotation = (state.rotation - 90 + 360) % 360;
+      else if (e.key === 'ArrowRight') state.rotation = (state.rotation + 90) % 360;
+      else state.rotation = (state.rotation + 90) % 360;
+      rotVal.textContent = state.rotation + '°';
+      e.preventDefault();
+      return;
+    }
+
+    // If wall is selected, use ArrowUp/ArrowDown to change wall base index
+    if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && state.selected === 'wall') {
+      const baseSel = document.getElementById('wallBase');
+      if (baseSel) {
+        let cur = Number(baseSel.value||0);
+        if (e.key === 'ArrowUp') cur = Math.min(cur + 1, IMG.wall.cols - 1);
+        else cur = Math.max(cur - 1, 0);
+        baseSel.value = cur;
+      }
+      e.preventDefault();
+      return;
+    }
+  });
+
+  rotLeft.onclick = ()=>{ state.rotation = (state.rotation - 90 + 360) %360; rotVal.textContent = state.rotation + '°'; };
+  rotRight.onclick = ()=>{ state.rotation = (state.rotation + 90) %360; rotVal.textContent = state.rotation + '°'; };
+
+  newLevelBtn.onclick = ()=> newLevel();
+
+  function buildLevelJSON(){
+    // Map editor ids to game tile/object tokens
+    const TILE_TOKEN = {
+      '-': '-',
+      'floor': 'f',
+      'wall': 'w26',
+      'sand': 's',
+      'hole': 'h'
+    };
+    const OBJECT_TOKEN = {
+      'gem': 'g',
+      'bat': 'bat',
+      'ghost': 'ghost',
+      'key': 'k',
+      'door': 'd',
+      'dynamite': 'x'
+    };
+
+    // Build tiles array using tokens. If an object occupies a cell, write the object token there.
+    const tiles = [];
+    for (let r = 0; r < state.rows; r++) {
+      const row = [];
+      for (let c = 0; c < state.cols; c++) {
+        const objHere = state.objects.find(o => o.row === r && o.col === c);
+        if (objHere) {
+          row.push(OBJECT_TOKEN[objHere.type] || objHere.type);
+          continue;
+        }
+        const cell = state.tiles[r][c] || '-';
+        row.push(TILE_TOKEN[cell] || cell);
+      }
+      tiles.push(row);
+    }
+    const level = {
+      id: 'custom',
+      map: {
+        cols: state.cols,
+        rows: state.rows,
+        timer: parseInt(timerInput.value,10)||120,
+        tiles: tiles
+      },
+      staticRocks: { enabled: false },
+      dynamicBoulders: { enabled: false },
+      speed: 1,
+      escapeRoute: false,
+      enemies: null,
+      collectibles: null,
+      traps: null,
+      spawnPoints: null,
+      timeLimit: null,
+      scoreRules: null,
+      playerStart: { row: parseInt(startRow.value,10)||0, col: parseInt(startCol.value,10)||0 }
+    };
+    // include objects as map markers: mark tile as floor and keep map positions in map
+    // Keep a top-level objects array for convenience (optional)
+    if (state.objects && state.objects.length){
+      level.objects = JSON.parse(JSON.stringify(state.objects));
+    }
+    return level;
+  }
+
+  // helper to map object id to frame index in objects sprite (matches game OBJECT_FRAMES)
+  function OBJECT_FRAME_INDEX(id){
+    const map = {
+      dynamite:0, heart:1, stone:2, player:3,
+      dynamite_chest:4, door:5, gem:6, cart:7, stones:7,
+      key:8, sand_pile:9, ghost:10, pepita:11,
+      wall:12, hole1:13, hole2:14, explosion:15,
+      // synonyms
+      'gem':6, 'key':8, 'dynamite':0
+    };
+    return map[id] != null ? map[id] : null;
+  }
+
+  downloadBtn.onclick = ()=>{
+    const level = buildLevelJSON();
+    const blob = new Blob([JSON.stringify(level,null,2)],{type:'application/json'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = 'level.json'; a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  copyJsonBtn.onclick = ()=>{
+    const l = buildLevelJSON();
+    navigator.clipboard.writeText(JSON.stringify(l,null,2)).then(()=>alert('Copied to clipboard'));
+  };
+
+  loadJsonBtn.onclick = ()=> fileInput.click();
+  fileInput.onchange = ()=>{
+    const f = fileInput.files[0]; if(!f) return;
+    const reader = new FileReader();
+    reader.onload = ()=>{
+      try{
+        const obj = JSON.parse(reader.result);
+        // load map
+        const cols = obj.map?.cols || (obj.map?.tiles?.[0]?.length) || state.cols;
+        const rows = obj.map?.rows || obj.map?.tiles?.length || state.rows;
+        colsInput.value = cols; rowsInput.value = rows;
+        state.cols = cols; state.rows = rows; state.tileSize = 32;
+        state.tiles = new Array(rows).fill(0).map(()=>new Array(cols).fill('-'));
+        if (obj.map?.tiles){
+          // reverse maps to interpret tokenized level JSON into editor state
+          const TOKEN_TO_ID = {
+            '-': '-',
+            'f': 'floor',
+            'w26': 'wall',
+            's': 'sand',
+            'h': 'hole'
+          };
+          const TOKEN_TO_OBJECT = {
+            'g': 'gem',
+            'bat': 'bat',
+            'ghost': 'ghost',
+            'k': 'key',
+            'd': 'door',
+            'x': 'dynamite'
+          };
+
+          state.objects = [];
+          for(let r=0;r<obj.map.tiles.length;r++){
+            for(let c=0;c<obj.map.tiles[r].length;c++){
+              const val = obj.map.tiles[r][c];
+              if (val == null) { state.tiles[r][c] = '-'; continue; }
+              // if token corresponds to an object, add to objects and set tile to '-'
+              if (TOKEN_TO_OBJECT[val]){
+                state.objects.push({ type: TOKEN_TO_OBJECT[val], row: r, col: c, rot: 0 });
+                state.tiles[r][c] = '-';
+              } else {
+                state.tiles[r][c] = TOKEN_TO_ID[val] || (typeof val === 'string' ? val : '-');
+              }
+            }
+          }
+        }
+        // If file also contains a top-level objects array, merge them
+        if (Array.isArray(obj.objects) && obj.objects.length){
+          state.objects = state.objects.concat(obj.objects.map(o=>({type:o.type,row:o.row,col:o.col,rot:o.rot||0})));
+        }
+        startRow.value = obj.playerStart?.row ?? 0;
+        startCol.value = obj.playerStart?.col ?? 0;
+        resizeCanvas(); draw(); updateInfo();
+      }catch(err){ alert('Error parsing JSON: '+err.message); }
+    };
+    reader.readAsText(f);
+  };
+
+  function updateInfo(){
+    info.textContent = `Size: ${state.cols} x ${state.rows}. Objects: ${state.objects.length}`;
+  }
+
+  // init
+  makePalette(); newLevel();
+})();
+</script>
+</body>
+</html>
