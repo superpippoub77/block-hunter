@@ -72,26 +72,28 @@
         }
     </style>
     <style>
-        /* Touch controls layout */
-        #touch-controls { position: fixed; left: 0; right: 0; bottom: 8px; pointer-events: none; z-index: 9999; }
+        /* Touch controls layout - hidden by default on non-touch/desktop */
+        #touch-controls { position: fixed; left: 0; right: 0; bottom: 8px; pointer-events: none; z-index: 9999; display: none; }
         #joystick { position: absolute; left: 16px; bottom: 12px; width: 120px; height: 120px; pointer-events: auto; }
         #joystick-base { position: absolute; left: 0; top: 0; width: 100%; height: 100%; border-radius: 50%; background: rgba(10,20,40,0.48); border: 2px solid rgba(120,160,220,0.12); }
         #joystick-thumb { position: absolute; left: 50%; top: 50%; width: 44px; height: 44px; margin-left: -22px; margin-top: -22px; border-radius: 50%; background: rgba(140,200,255,0.95); box-shadow: 0 6px 18px rgba(0,0,0,0.45); }
         #actionBtn { position: absolute; right: 16px; bottom: 18px; width: 86px; height: 86px; border-radius: 50%; background: rgba(255,150,80,0.92); color: #111; font-weight: bold; font-size: 24px; border: none; pointer-events: auto; }
         @media (pointer: coarse) {
+            /* Show touch controls on coarse-pointer devices (touchscreens) */
+            #touch-controls { display: block; }
             #joystick { width: 140px; height: 140px; }
             #joystick-thumb { width: 56px; height: 56px; margin-left: -28px; margin-top: -28px; }
             #actionBtn { width: 100px; height: 100px; font-size: 28px; }
         }
     </style>
     <style>
-        /* DOM HUD styling */
+        /* DOM HUD styling - hidden by default until game UI shows it */
         #dom-hud {
             position: fixed;
             top: 8px;
             left: 8px;
             right: 8px;
-            display: flex;
+            display: none;
             justify-content: space-between;
             align-items: center;
             pointer-events: none; /* allow clicks to pass through by default */

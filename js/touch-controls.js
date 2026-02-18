@@ -117,6 +117,17 @@
     }
 
     document.addEventListener('DOMContentLoaded', () => {
+        const isTouchDevice = () => {
+            try {
+                return ('ontouchstart' in window) || (navigator.maxTouchPoints && navigator.maxTouchPoints > 0) || /Mobi|Android|iPhone|iPad|iPod|Touch/i.test(navigator.userAgent);
+            } catch (e) { return false; }
+        };
+
+        if (!isTouchDevice()) {
+            // Do not initialize touch UI on non-touch/desktop devices
+            return;
+        }
+
         initJoystick();
         initActionButton();
         initKeyboardFallback();

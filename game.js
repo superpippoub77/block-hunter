@@ -497,6 +497,33 @@ class AttractScene extends Phaser.Scene {
                     this.titleImage.alpha = 1;
                     this.titleImage.setScale(1);
 
+                    // Create subtitle sign positioned over the title (small, slightly tilted)
+                    try {
+                        if (!this.subtitleSign) {
+                            const signY = 150 - 36; // a bit above the title center to appear 'hung' on it
+                            this.subtitleSign = this.add.image(400, signY, 'subtitle').setOrigin(0.5);
+                            try {
+                                const canvasW = (this.scale && this.scale.width) ? this.scale.width : CONFIG.width || 800;
+                                const margin = 40;
+                                const maxWidth = 320;
+                                const targetWidth = Math.min(maxWidth, Math.max(80, Math.floor((canvasW - margin) * 0.35)));
+                                const tex = this.subtitleSign.texture && this.subtitleSign.frame ? this.subtitleSign.frame : null;
+                                const srcW = tex ? (tex.width || this.subtitleSign.width) : this.subtitleSign.width;
+                                const srcH = tex ? (tex.height || this.subtitleSign.height) : this.subtitleSign.height;
+                                if (srcW && srcH) {
+                                    const targetHeight = Math.round((targetWidth / srcW) * srcH);
+                                    this.subtitleSign.setDisplaySize(targetWidth, targetHeight);
+                                } else {
+                                    this.subtitleSign.setDisplaySize(targetWidth, Math.round(targetWidth * 0.25));
+                                }
+                            } catch (e) { }
+                            this.subtitleSign.setScale(0.78);
+                            this.subtitleSign.setAngle(-6);
+                            this.subtitleSign.setDepth(19);
+                            try { this.tweens.add({ targets: this.subtitleSign, angle: '-=1.5', duration: 1400, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' }); } catch (e) {}
+                        }
+                    } catch (e) { /* ignore subtitle creation errors */ }
+
                     const explorerImage = this.add.image(-220, 430, 'explorer').setOrigin(0.5);
                     explorerImage.setDepth(20);
                     this.tweens.add({
@@ -544,6 +571,22 @@ class AttractScene extends Phaser.Scene {
                                                     }
                                                 } catch (e) {
                                                     // ignore sizing errors and proceed with default size
+                                                }
+                                                // Position subtitle under the story/instructions text when possible
+                                                try {
+                                                    const instr = this.instructionsText;
+                                                    const margin = 8; // spacing between story and subtitle
+                                                    let instrCenterY = 280;
+                                                    let instrHalfH = 0;
+                                                    if (instr) {
+                                                        instrCenterY = (typeof instr.y === 'number') ? instr.y : instrCenterY;
+                                                        instrHalfH = (typeof instr.height === 'number') ? (instr.height / 2) : 0;
+                                                    }
+                                                    const subH = (typeof subtitleImg.displayHeight === 'number' && subtitleImg.displayHeight > 0) ? subtitleImg.displayHeight : ((subtitleImg.frame && subtitleImg.frame.height) || 0);
+                                                    const targetY = instrCenterY + instrHalfH + (subH / 2) + margin;
+                                                    subtitleImg.y = Math.round(targetY);
+                                                } catch (e) {
+                                                    // fallback: keep default y
                                                 }
                                                 subtitleImg.setAlpha(0);
                                                 subtitleImg.setDepth(22);
@@ -631,7 +674,7 @@ class AttractScene extends Phaser.Scene {
         });
 
         // Panels and UI elements
-        this.coinText = this.add.text(400, 480, '', {
+        this.coinText = this.add.text(400, 520, '', {
             fontSize: '24px',
             fill: '#ffee00ff',
             fontFamily: GAME_FONT
@@ -651,7 +694,7 @@ class AttractScene extends Phaser.Scene {
         this.player2Panel = this.add.graphics();
 
         // Language selector with flags
-        this.flagSprite = this.add.sprite(400, 400, 'flags', this.currentLangIndex).setOrigin(0.5);
+        this.flagSprite = this.add.sprite(400, 560, 'flags', this.currentLangIndex).setOrigin(0.5);
         this.tweens.add({
             targets: this.flagSprite,
             scaleX: 1.05,
@@ -664,19 +707,19 @@ class AttractScene extends Phaser.Scene {
         });
         this.tweens.add({
             targets: this.flagSprite,
-            y: 398,
+            y: 558,
             duration: 600,
             yoyo: true,
             repeat: -1,
             ease: 'Sine.easeInOut',
             delay: 200
         });
-        this.add.text(320, 400, '◄', {
+        this.add.text(320, 560, '◄', {
             fontSize: '24px',
             fill: '#ffffff',
             fontFamily: GAME_FONT
         }).setOrigin(0.5).setInteractive().on('pointerdown', () => this.changeLanguage(-1));
-        this.add.text(480, 400, '►', {
+        this.add.text(480, 560, '►', {
             fontSize: '24px',
             fill: '#ffffff',
             fontFamily: GAME_FONT
@@ -967,7 +1010,7 @@ class TopTenScene extends Phaser.Scene {
         if (!GAME_STATE.language) GAME_STATE.language = this.languages[this.currentLangIndex];
 
         // Coin/credits
-        this.coinText = this.add.text(400, 480, '', {
+        this.coinText = this.add.text(400, 520, '', {
             fontSize: '24px',
             fill: '#ffee00ff',
             fontFamily: GAME_FONT
@@ -989,7 +1032,7 @@ class TopTenScene extends Phaser.Scene {
         this.player2Panel = this.add.graphics();
 
         // Flags (language selector display)
-        this.flagSprite = this.add.sprite(400, 400, 'flags', this.currentLangIndex).setOrigin(0.5);
+        this.flagSprite = this.add.sprite(400, 560, 'flags', this.currentLangIndex).setOrigin(0.5);
         this.tweens.add({
             targets: this.flagSprite,
             scaleX: 1.05,
@@ -1895,13 +1938,13 @@ class GameScene extends Phaser.Scene {
                 };
             }
 
-            if (value.length === 1) {
+                if (value.length === 1) {
                 switch (value) {
                     case 'w': return { type: 'wall', wallFrame: 0, wallRotation: 0 };
                     case 'f': return { type: 'floor', wallFrame: 0, wallRotation: 0 };
                     case 'm': return { type: 'skeleton', wallFrame: 0, wallRotation: 0 };
                     case 'h': return { type: 'hole', wallFrame: 0, wallRotation: 0 };
-                    case 's': return { type: 'hole2', wallFrame: 0, wallRotation: 0 };
+                    case 's': return { type: 'sand', wallFrame: 0, wallRotation: 0 };
                     case 'g': return { type: 'gem', wallFrame: 0, wallRotation: 0 };
                     case '-': return { type: 'empty', wallFrame: 0, wallRotation: 0 };
                     case 'd': return { type: 'door', wallFrame: 0, wallRotation: 0 };
@@ -2462,7 +2505,7 @@ class GameScene extends Phaser.Scene {
                 const impactIntensity = size === 'large' ? 0.008 : (size === 'medium' ? 0.005 : 0.003);
                 const impactDuration = size === 'large' ? 180 : (size === 'medium' ? 130 : 90);
                 const impactVolume = size === 'large' ? 0.65 : (size === 'medium' ? 0.5 : 0.35);
-                if (this.cameras && this.cameras.main) {
+                if (CONFIG.enableImpactShake !== false && this.cameras && this.cameras.main) {
                     this.cameras.main.shake(impactDuration, impactIntensity, false);
                 }
                 if (this.sound) {
@@ -3392,6 +3435,22 @@ class GameScene extends Phaser.Scene {
             }
             scoreEl.textContent = `${t.score_label}: ${GAME_STATE.score}`;
             levelEl.textContent = `${t.level_label}: ${GAME_STATE.currentLevel + 1}`;
+            // Ensure DOM HUD is visible now that the in-game HUD has been created
+            try {
+                const domHudRoot = document.getElementById('dom-hud');
+                if (domHudRoot) {
+                    domHudRoot.style.display = 'flex';
+                    domHudRoot.removeAttribute('aria-hidden');
+                }
+            } catch (e) { /* noop */ }
+            // Remove legacy global Phaser text objects to avoid duplicate HUD elements
+            try {
+                if (window.scoreText1 && typeof window.scoreText1.destroy === 'function') { window.scoreText1.destroy(); window.scoreText1 = null; }
+                if (window.scoreText2 && typeof window.scoreText2.destroy === 'function') { window.scoreText2.destroy(); window.scoreText2 = null; }
+                if (window.levelText && typeof window.levelText.destroy === 'function') { window.levelText.destroy(); window.levelText = null; }
+                if (window.livesText1 && typeof window.livesText1.destroy === 'function') { window.livesText1.destroy(); window.livesText1 = null; }
+                if (window.livesText2 && typeof window.livesText2.destroy === 'function') { window.livesText2.destroy(); window.livesText2 = null; }
+            } catch (e) { /* noop */ }
         } catch (e) {
             // noop
         }
@@ -3950,13 +4009,40 @@ class GameScene extends Phaser.Scene {
             speed *= 2;
         }
 
-        // Check if on sand
+        // Check tile under player and trigger sand slow effect when stepping on sand
         const tile = this.getTileAt(this.player.x, this.player.y);
         if (tile && tile.type === 'sand') {
-            speed *= 0.6;
+            try {
+                if (!this.playerSandActive) {
+                    this.playerSandActive = true;
+                    this.playerSlowFactor = Number(CONFIG.sandSlowFactor) || 0.5;
+                    // create halo effect around player
+                    try {
+                        if (!this.playerSandHalo) {
+                            const radius = Math.max((this.player.displayWidth || 16), (this.player.displayHeight || 16)) * 0.9;
+                            this.playerSandHalo = this.add.circle(this.player.x, this.player.y, radius, 0xffeaa7, 0.32).setDepth(900);
+                            try { this.playerSandHalo.setBlendMode(Phaser.BlendModes.ADD); } catch (e) { }
+                        }
+                    } catch (e) { }
+
+                    // schedule timer to remove slow after configured duration
+                    if (this.playerSandTimer) { try { this.playerSandTimer.remove(false); } catch (e) {} }
+                    this.playerSandTimer = this.time.delayedCall(Number(CONFIG.sandSlowDuration) || 20000, () => {
+                        this.playerSlowFactor = 1;
+                        this.playerSandActive = false;
+                        try { if (this.playerSandHalo) { this.playerSandHalo.destroy(); this.playerSandHalo = null; } } catch (e) {}
+                        this.playerSandTimer = null;
+                    }, [], this);
+                }
+            } catch (e) { /* ignore sand effect errors */ }
         }
 
         this.player.setVelocity(velocityX * speed, velocityY * speed);
+
+        // Keep sand halo positioned on the player while effect active
+        if (this.playerSandHalo && this.player && this.player.active) {
+            try { this.playerSandHalo.setPosition(this.player.x, this.player.y); } catch (e) { }
+        }
 
         // Directional walk animations: down/front, up/back, right/right, left/right+flipX
         const isMoving = velocityX !== 0 || velocityY !== 0;
@@ -5948,7 +6034,9 @@ class BonusScene extends Phaser.Scene {
             });
         });
 
-        this.cameras.main.shake(90, 0.0035);
+        if (CONFIG.enableImpactShake !== false && this.cameras && this.cameras.main) {
+            this.cameras.main.shake(90, 0.0035);
+        }
     }
 
     onBonusRockLanded(rock) {

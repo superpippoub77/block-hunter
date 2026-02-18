@@ -14,6 +14,9 @@
   "dynamiteSize": 40,
   "shardSpeed": 150,
   "dynamiteLifetime": 5000,
+  "enableImpactShake": false,
+  "sandSlowFactor": 0.5,
+  "sandSlowDuration": 20000,
   "shardLifetime": 2000,
   "doorCloseTime": 30000,
   "attractTimeout": 10000,
@@ -78,6 +81,6 @@
     }
   ]
   ,
-  "scaleMode": "RESIZE",
+  "scaleMode": "FIT",
   "enableFullscreen": true
 }
