@@ -242,6 +242,7 @@ class PreloadScene extends Phaser.Scene {
 
         this.load
             .image('title', 'images/title.png')
+            .image('subtitle', 'images/subtitle.png')
             .image('explorer', 'images/explorer.png')
             .image('title_explosion', 'images/title_explosion.png')
             .audio('intro_bgm', 'data/music/intro.mp3')
@@ -526,43 +527,74 @@ class AttractScene extends Phaser.Scene {
                                             // and only after subtitle finished we move the explosion away and restore the title.
                                             this.time.delayedCall(120, () => {
                                                 const subtitleImg = this.add.image(400, 210, 'subtitle').setOrigin(0.5);
+                                                // Responsive resize: choose target width based on canvas width, max 400px
+                                                try {
+                                                    const canvasW = (this.scale && this.scale.width) ? this.scale.width : CONFIG.width || 800;
+                                                    const margin = 40; // leave some horizontal margin
+                                                    const maxWidth = 400;
+                                                    const targetWidth = Math.min(maxWidth, Math.max(120, Math.floor((canvasW - margin) * 0.6)));
+                                                    const tex = subtitleImg.texture && subtitleImg.frame ? subtitleImg.frame : null;
+                                                    const srcW = tex ? (tex.width || subtitleImg.width) : subtitleImg.width;
+                                                    const srcH = tex ? (tex.height || subtitleImg.height) : subtitleImg.height;
+                                                    if (srcW && srcH) {
+                                                        const targetHeight = Math.round((targetWidth / srcW) * srcH);
+                                                        subtitleImg.setDisplaySize(targetWidth, targetHeight);
+                                                    } else {
+                                                        subtitleImg.setDisplaySize(targetWidth, Math.round(targetWidth * 0.25));
+                                                    }
+                                                } catch (e) {
+                                                    // ignore sizing errors and proceed with default size
+                                                }
                                                 subtitleImg.setAlpha(0);
                                                 subtitleImg.setDepth(22);
 
-                                                // Timeline: fade in -> hold -> fade out -> destroy -> continue
-                                                this.tweens.timeline({
-                                                    tweens: [
-                                                        { targets: subtitleImg, alpha: 1, duration: 300, ease: 'Quad.easeOut' },
-                                                        { targets: subtitleImg, alpha: 1, duration: 800 },
-                                                        { targets: subtitleImg, alpha: 0, duration: 350, ease: 'Quad.easeIn',
-                                                            onComplete: () => {
-                                                                try { subtitleImg.destroy(); } catch (e) {}
-                                                                // now move the explosion out and bring back the title
-                                                                this.tweens.add({
-                                                                    targets: explosionTitle,
-                                                                    y: -180,
-                                                                    alpha: 0,
-                                                                    duration: 420,
-                                                                    ease: 'Cubic.easeIn',
-                                                                    onComplete: () => {
-                                                                        try { explosionTitle.destroy(); } catch (e) {}
-                                                                        this.titleImage.setVisible(true);
-                                                                        this.titleImage.x = 400;
-                                                                        this.titleImage.y = -120;
-                                                                        this.titleImage.angle = 0;
-                                                                        this.titleImage.alpha = 1;
-                                                                        this.titleImage.setScale(1);
-                                                                        this.tweens.add({
-                                                                            targets: this.titleImage,
-                                                                            y: 150,
-                                                                            duration: 800,
-                                                                            ease: 'Bounce.easeOut'
-                                                                        });
-                                                                    }
-                                                                });
-                                                            }
-                                                        }
-                                                    ]
+                                                // Sequence: fade in -> hold -> fade out -> destroy -> continue
+                                                // Pop-in scale + fade-in
+                                                subtitleImg.setScale(0.85);
+                                                this.tweens.add({
+                                                    targets: subtitleImg,
+                                                    alpha: 1,
+                                                    scale: 1,
+                                                    duration: 360,
+                                                    ease: 'Back.easeOut',
+                                                    onComplete: () => {
+                                                        // hold for 800ms, then fade-out with slight scale down
+                                                        this.time.delayedCall(800, () => {
+                                                            this.tweens.add({
+                                                                targets: subtitleImg,
+                                                                alpha: 0,
+                                                                scale: 0.95,
+                                                                duration: 350,
+                                                                ease: 'Quad.easeIn',
+                                                                onComplete: () => {
+                                                                    try { subtitleImg.destroy(); } catch (e) {}
+                                                                    // now move the explosion out and bring back the title
+                                                                    this.tweens.add({
+                                                                        targets: explosionTitle,
+                                                                        y: -180,
+                                                                        alpha: 0,
+                                                                        duration: 420,
+                                                                        ease: 'Cubic.easeIn',
+                                                                        onComplete: () => {
+                                                                            try { explosionTitle.destroy(); } catch (e) {}
+                                                                            this.titleImage.setVisible(true);
+                                                                            this.titleImage.x = 400;
+                                                                            this.titleImage.y = -120;
+                                                                            this.titleImage.angle = 0;
+                                                                            this.titleImage.alpha = 1;
+                                                                            this.titleImage.setScale(1);
+                                                                            this.tweens.add({
+                                                                                targets: this.titleImage,
+                                                                                y: 150,
+                                                                                duration: 800,
+                                                                                ease: 'Bounce.easeOut'
+                                                                            });
+                                                                        }
+                                                                    });
+                                                                }
+                                                            });
+                                                        });
+                                                    }
                                                 });
                                             });
                                         }
