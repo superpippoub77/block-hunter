@@ -118,6 +118,7 @@ function parseNullableInput(text) {
             return raw;
         }
     }
+
     return raw;
 }
 
@@ -188,8 +189,9 @@ class LevelEditorScene extends Phaser.Scene {
         this.cellSize = 48;
         this.gridOffsetX = 18;
         this.gridOffsetY = 18;
-        this.gridAreaWidth = 920;
-        this.gridAreaHeight = 820;
+        // these will be computed from the actual canvas size on create / resize
+        this.gridAreaWidth = 0;
+        this.gridAreaHeight = 0;
         this.cells = [];
         this.selectedCell = null;
         this.paletteItems = [];
@@ -218,6 +220,16 @@ class LevelEditorScene extends Phaser.Scene {
         this.setupInputHandlers();
         this.renderGrid();
 
+        // Recompute layout on resize (Phaser RESIZE mode will update this.scale)
+        this.scale.on('resize', (gameSize) => {
+            const w = (gameSize && gameSize.width) ? gameSize.width : this.scale.width;
+            const h = (gameSize && gameSize.height) ? gameSize.height : this.scale.height;
+            this.onResize(w, h);
+        }, this);
+
+        // Fallback window resize
+        window.addEventListener('resize', () => this.onResize(this.scale.width, this.scale.height));
+
         window.__levelEditorScene = this;
         window.dispatchEvent(new CustomEvent('level-editor-ready'));
     }
@@ -225,7 +237,36 @@ class LevelEditorScene extends Phaser.Scene {
     resetGrid(cols, rows) {
         this.cols = clamp(Math.floor(cols), 4, 40);
         this.rows = clamp(Math.floor(rows), 4, 40);
+
+        // Compute available area from actual canvas size. Reserve a palette column on the right.
+        const totalW = Math.max(200, Math.floor(this.scale.width || this.sys.game.config.width || 1000));
+        const totalH = Math.max(100, Math.floor(this.scale.height || this.sys.game.config.height || 700));
+
+        // Candidate palette width: clamp between 180 and 440 or 28% of width
+        const paletteWidth = Math.floor(Math.min(440, Math.max(180, totalW * 0.28)));
+        const padding = 18;
+        const availW = Math.max(64, totalW - paletteWidth - padding * 3);
+        const availH = Math.max(64, totalH - padding * 2);
+
+        this.gridAreaWidth = availW;
+        this.gridAreaHeight = availH;
+
         this.cellSize = clamp(Math.floor(Math.min(this.gridAreaWidth / this.cols, this.gridAreaHeight / this.rows)), 20, 64);
+
+        // compute actual grid pixel dimensions
+        const gridW = this.cellSize * this.cols;
+        const gridH = this.cellSize * this.rows;
+
+        // center grid vertically and keep some left padding horizontally
+        this.gridOffsetX = Math.max(padding, Math.floor((availW - gridW) / 2) + padding);
+        this.gridOffsetY = Math.max(padding, Math.floor((totalH - gridH) / 2));
+
+        // store palette area start X so createPalette can position items
+        this.paletteArea = {
+            width: paletteWidth,
+            startX: Math.floor(totalW - paletteWidth + 12),
+            startY: 24
+        };
 
         this.cells = Array.from({ length: this.rows }, () => Array.from({ length: this.cols }, () => ({
             base: '-',
@@ -233,6 +274,17 @@ class LevelEditorScene extends Phaser.Scene {
         })));
         this.selectedCell = null;
         this.renderGrid();
+    }
+
+    onResize(width, height) {
+        // Called when the canvas / container is resized. Recompute layout and redraw.
+        try {
+            this.resetGrid(this.cols, this.rows);
+            this.createPalette();
+            this.renderGrid();
+        } catch (e) {
+            // ignore during early initialization
+        }
     }
 
     setupInputHandlers() {
@@ -283,8 +335,8 @@ class LevelEditorScene extends Phaser.Scene {
         this.paletteLayer.removeAll(true);
         this.paletteItems = [];
 
-        const startX = 980;
-        const startY = 34;
+    const startX = (this.paletteArea && Number.isFinite(this.paletteArea.startX)) ? this.paletteArea.startX : Math.max(980, Math.floor(this.scale.width - 380));
+    const startY = (this.paletteArea && Number.isFinite(this.paletteArea.startY)) ? this.paletteArea.startY : 34;
         const colCount = 3;
         const spacingX = 126;
         const spacingY = 56;
@@ -606,10 +658,11 @@ class LevelEditorScene extends Phaser.Scene {
 
 const phaserConfig = {
     type: Phaser.AUTO,
-    width: 1360,
-    height: 860,
     parent: 'editor-game',
     backgroundColor: '#091022',
+    scale: {
+        mode: Phaser.Scale.RESIZE
+    },
     scene: [LevelEditorScene]
 };
 
