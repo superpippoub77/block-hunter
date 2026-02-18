@@ -522,28 +522,47 @@ class AttractScene extends Phaser.Scene {
                                         alpha: 1,
                                         duration: 180,
                                         onComplete: () => {
-                                            this.time.delayedCall(1200, () => {
-                                                this.tweens.add({
-                                                    targets: explosionTitle,
-                                                    y: -180,
-                                                    alpha: 0,
-                                                    duration: 420,
-                                                    ease: 'Cubic.easeIn',
-                                                    onComplete: () => {
-                                                        explosionTitle.destroy();
-                                                        this.titleImage.setVisible(true);
-                                                        this.titleImage.x = 400;
-                                                        this.titleImage.y = -120;
-                                                        this.titleImage.angle = 0;
-                                                        this.titleImage.alpha = 1;
-                                                        this.titleImage.setScale(1);
-                                                        this.tweens.add({
-                                                            targets: this.titleImage,
-                                                            y: 150,
-                                                            duration: 800,
-                                                            ease: 'Bounce.easeOut'
-                                                        });
-                                                    }
+                                            // After the explosion appears, show subtitle.png as a fade-in, hold, fade-out
+                                            // and only after subtitle finished we move the explosion away and restore the title.
+                                            this.time.delayedCall(120, () => {
+                                                const subtitleImg = this.add.image(400, 210, 'subtitle').setOrigin(0.5);
+                                                subtitleImg.setAlpha(0);
+                                                subtitleImg.setDepth(22);
+
+                                                // Timeline: fade in -> hold -> fade out -> destroy -> continue
+                                                this.tweens.timeline({
+                                                    tweens: [
+                                                        { targets: subtitleImg, alpha: 1, duration: 300, ease: 'Quad.easeOut' },
+                                                        { targets: subtitleImg, alpha: 1, duration: 800 },
+                                                        { targets: subtitleImg, alpha: 0, duration: 350, ease: 'Quad.easeIn',
+                                                            onComplete: () => {
+                                                                try { subtitleImg.destroy(); } catch (e) {}
+                                                                // now move the explosion out and bring back the title
+                                                                this.tweens.add({
+                                                                    targets: explosionTitle,
+                                                                    y: -180,
+                                                                    alpha: 0,
+                                                                    duration: 420,
+                                                                    ease: 'Cubic.easeIn',
+                                                                    onComplete: () => {
+                                                                        try { explosionTitle.destroy(); } catch (e) {}
+                                                                        this.titleImage.setVisible(true);
+                                                                        this.titleImage.x = 400;
+                                                                        this.titleImage.y = -120;
+                                                                        this.titleImage.angle = 0;
+                                                                        this.titleImage.alpha = 1;
+                                                                        this.titleImage.setScale(1);
+                                                                        this.tweens.add({
+                                                                            targets: this.titleImage,
+                                                                            y: 150,
+                                                                            duration: 800,
+                                                                            ease: 'Bounce.easeOut'
+                                                                        });
+                                                                    }
+                                                                });
+                                                            }
+                                                        }
+                                                    ]
                                                 });
                                             });
                                         }
@@ -908,6 +927,141 @@ class TopTenScene extends Phaser.Scene {
         this.time.delayedCall(CONFIG.topTenTimeout, () => {
             this.scene.start('AttractScene');
         });
+
+        // --- Add attract-style UI (credits, player panels, language flag)
+        // Keep selections visible while Top Ten is displayed
+        this.languages = ['it', 'fr', 'de', 'en', 'us', 'ja', 'es', 'zh'];
+        this.currentLangIndex = Math.max(0, this.languages.indexOf(GAME_STATE.language));
+        if (!GAME_STATE.language) GAME_STATE.language = this.languages[this.currentLangIndex];
+
+        // Coin/credits
+        this.coinText = this.add.text(400, 480, '', {
+            fontSize: '24px',
+            fill: '#ffee00ff',
+            fontFamily: GAME_FONT
+        }).setOrigin(0.5);
+        this.coinPanel = this.add.graphics();
+
+        // Player labels
+        this.player1Text = this.add.text(150, 550, '', {
+            fontSize: '18px',
+            fill: '#666666',
+            fontFamily: GAME_FONT
+        }).setOrigin(0.5);
+        this.player1Panel = this.add.graphics();
+        this.player2Text = this.add.text(650, 550, '', {
+            fontSize: '18px',
+            fill: '#666666',
+            fontFamily: GAME_FONT
+        }).setOrigin(0.5);
+        this.player2Panel = this.add.graphics();
+
+        // Flags (language selector display)
+        this.flagSprite = this.add.sprite(400, 400, 'flags', this.currentLangIndex).setOrigin(0.5);
+        this.tweens.add({
+            targets: this.flagSprite,
+            scaleX: 1.05,
+            scaleY: 0.98,
+            angle: -2,
+            duration: 400,
+            yoyo: true,
+            repeat: -1,
+            ease: 'Sine.easeInOut'
+        });
+
+        // Input handlers for coin insert / language change
+        this.setupInput();
+
+        // Load translations then update UI
+        loadTranslations(GAME_STATE.language, () => {
+            this.updateUI();
+        });
+    }
+
+    setupInput() {
+        // Coin insert (NUM 5/6)
+        this.input.keyboard.on('keydown-FIVE', () => this.insertCoin());
+        this.input.keyboard.on('keydown-SIX', () => this.insertCoin());
+
+        // Start game (allow starting from TopTen via 1/2)
+        this.input.keyboard.on('keydown-ONE', () => this.scene.start('LevelSelectScene'));
+        this.input.keyboard.on('keydown-TWO', () => this.scene.start('LevelSelectScene'));
+
+        // Language change while on Top Ten
+        this.input.keyboard.on('keydown-LEFT', () => this.changeLanguage(-1));
+        this.input.keyboard.on('keydown-RIGHT', () => this.changeLanguage(1));
+
+        // Any key may return to attract (reset timer handled in AttractScene)
+        this.input.keyboard.on('keydown', () => {
+            // immediate return to attract so players can interact normally
+            this.scene.start('AttractScene');
+        });
+    }
+
+    changeLanguage(dir) {
+        this.currentLangIndex = (this.currentLangIndex + dir + this.languages.length) % this.languages.length;
+        GAME_STATE.language = this.languages[this.currentLangIndex];
+        if (this.flagSprite) this.flagSprite.setFrame(this.currentLangIndex);
+        loadTranslations(GAME_STATE.language, () => {
+            // Refresh texts that depend on translations
+            // Update top title
+            const t = TRANSLATIONS[GAME_STATE.language] || {};
+            const topTenTitle = t.topTen || 'CLASSIFICA';
+            // find the top title text node and update if present
+            try {
+                if (this.children) {
+                    this.children.list.forEach(ch => {
+                        if (ch && ch.text && (ch.text === 'CLASSIFICA' || ch.text === TRANSLATIONS[this.previousLang]?.topTen || false)) {
+                            ch.setText(topTenTitle);
+                        }
+                    });
+                }
+            } catch (e) {}
+            this.updateUI();
+        });
+    }
+
+    insertCoin() {
+        if (this.sound) this.sound.play('coin_sfx', { volume: 0.45 });
+        GAME_STATE.credits++;
+        this.updateUI();
+    }
+
+    updateUI() {
+        const t = TRANSLATIONS[GAME_STATE.language] || {};
+        const insertCoin = t.insert_coin || 'INSERT COIN';
+        const credit = t.credit || 'CREDIT';
+        const player1 = t.player1 || 'PLAYER 1';
+        const player2 = t.player2 || 'PLAYER 2';
+
+        if (GAME_STATE.credits === 0) {
+            this.coinText.setText(insertCoin);
+        } else {
+            this.coinText.setText(credit + ' ' + GAME_STATE.credits);
+        }
+
+        if (GAME_STATE.credits >= 1) {
+            this.player1Text.setText(player1).setStyle({ fill: '#00ff00' });
+        } else {
+            this.player1Text.setText(player1).setStyle({ fill: '#666666' });
+        }
+
+        if (GAME_STATE.credits >= 2) {
+            this.player2Text.setText(player2).setStyle({ fill: '#00ff00' });
+        } else {
+            this.player2Text.setText(player2).setStyle({ fill: '#666666' });
+        }
+
+        // Draw panels
+        if (this.coinPanel) drawTextPanel(this.coinPanel, this.coinText, { paddingX: 14, paddingY: 8 });
+        if (this.player1Panel) {
+            if (GAME_STATE.credits >= 1) drawTextPanel(this.player1Panel, this.player1Text, { paddingX: 10, paddingY: 6 });
+            else this.player1Panel.clear();
+        }
+        if (this.player2Panel) {
+            if (GAME_STATE.credits >= 2) drawTextPanel(this.player2Panel, this.player2Text, { paddingX: 10, paddingY: 6 });
+            else this.player2Panel.clear();
+        }
     }
 }
 
