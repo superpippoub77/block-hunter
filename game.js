@@ -1512,7 +1512,7 @@ class GameScene extends Phaser.Scene {
         const camera = this.cameras.main;
         camera.setBounds(worldX, worldY, worldWidth, worldHeight);
         camera.startFollow(this.player, true, 0.12, 0.12);
-        camera.setDeadzone(CONFIG.width * 0.3, CONFIG.height * 0.3);
+    camera.setDeadzone((this.scale.width || CONFIG.width) * 0.3, (this.scale.height || CONFIG.height) * 0.3);
         camera.roundPixels = true;
 
         // Gems per level
@@ -1556,6 +1556,30 @@ class GameScene extends Phaser.Scene {
         // Setup UI
         this.createUI();
         this.showLevelObjective();
+
+        // Recompute layout when the canvas/container is resized (for responsive/mobile)
+        this.scale.on('resize', (gameSize) => {
+            const w = (gameSize && gameSize.width) ? gameSize.width : (this.scale.width || CONFIG.width);
+            const h = (gameSize && gameSize.height) ? gameSize.height : (this.scale.height || CONFIG.height);
+            try {
+                camera.setDeadzone(w * 0.3, h * 0.3);
+
+                // Adjust background display to cover world or new viewport
+                if (this.gameBg) {
+                    const bgW = Math.max(worldWidth, w);
+                    const bgH = Math.max(worldHeight, h);
+                    this.gameBg.setDisplaySize(bgW, bgH);
+                    this.gameBg.setPosition(worldX + bgW / 2, worldY + bgH / 2);
+                }
+
+                // Reposition HUD elements
+                if (this.updateHudLayout) this.updateHudLayout();
+                // Recreate objective pointer to use new camera dimensions
+                if (this.createObjectivePointerUI) this.createObjectivePointerUI();
+            } catch (e) {
+                console.warn('Resize handler error', e);
+            }
+        }, this);
 
         // Setup level timer (if provided in level data)
         this.setupLevelTimer();
@@ -3073,14 +3097,17 @@ class GameScene extends Phaser.Scene {
         this.hudContainer.setScrollFactor(0);
 
         // Create HUD text objects and add them to the HUD container.
+        const cam = this.cameras?.main;
+        const camW = (cam && cam.width) ? cam.width : (this.scale.width || CONFIG.width);
+        const camH = (cam && cam.height) ? cam.height : (this.scale.height || CONFIG.height);
+
         this.scoreText = this.add.text(10, 10, `${t.score_label}: ${GAME_STATE.score}`, {
             fontSize: '16px',
             fill: '#ffffff',
             fontFamily: GAME_FONT
         });
         this.hudContainer.add(this.scoreText);
-
-        this.levelText = this.add.text(790, 10, `${t.level_label}: ${GAME_STATE.currentLevel + 1}`, {
+        this.levelText = this.add.text(camW - 10, 10, `${t.level_label}: ${GAME_STATE.currentLevel + 1}`, {
             fontSize: '16px',
             fill: '#00ff00',
             fontFamily: GAME_FONT
@@ -3094,7 +3121,7 @@ class GameScene extends Phaser.Scene {
         this.timerPepitasCount = 20;
         const pepitaSize = 12;
         const pepitaGap = 1;
-        const pepitaY = CONFIG.height - 16;
+        const pepitaY = camH - 16;
         this.timerLabel = this.add.text(10, pepitaY, 'TIMER', {
             fontSize: '16px',
             fill: '#ffffff',
@@ -3149,6 +3176,67 @@ class GameScene extends Phaser.Scene {
         this.topStatsObjects = [];
         this.refreshHudIcons();
         this.createObjectivePointerUI();
+        // Ensure HUD elements are laid out according to current camera size
+        if (this.updateHudLayout) this.updateHudLayout();
+
+        // --- DOM HUD: create or update overlay elements for responsive UI ---
+        try {
+            const scoreElId = 'scoreDisplay';
+            const levelElId = 'levelDisplay';
+            let scoreEl = document.getElementById(scoreElId);
+            let levelEl = document.getElementById(levelElId);
+            if (!scoreEl) {
+                // fallback: create minimal DOM HUD if index.html not updated
+                const domHud = document.getElementById('dom-hud') || document.createElement('div');
+                domHud.id = 'dom-hud';
+                document.body.appendChild(domHud);
+                scoreEl = document.createElement('div');
+                scoreEl.id = scoreElId;
+                scoreEl.className = 'dom-hud-item';
+                domHud.appendChild(scoreEl);
+            }
+            if (!levelEl) {
+                const domHud = document.getElementById('dom-hud') || document.createElement('div');
+                domHud.id = 'dom-hud';
+                document.body.appendChild(domHud);
+                levelEl = document.createElement('div');
+                levelEl.id = levelElId;
+                levelEl.className = 'dom-hud-item';
+                domHud.appendChild(levelEl);
+            }
+            scoreEl.textContent = `${t.score_label}: ${GAME_STATE.score}`;
+            levelEl.textContent = `${t.level_label}: ${GAME_STATE.currentLevel + 1}`;
+        } catch (e) {
+            // noop
+        }
+    }
+
+    updateHudLayout() {
+        const cam = this.cameras?.main;
+        const camW = (cam && cam.width) ? cam.width : (this.scale.width || CONFIG.width);
+        const camH = (cam && cam.height) ? cam.height : (this.scale.height || CONFIG.height);
+
+        if (this.levelText) {
+            this.levelText.setX(camW - 10);
+        }
+        if (this.timerLabel) {
+            this.timerLabel.setY(camH - 16);
+        }
+        // reposition pepitas and disabled overlays
+        if (this.timerPepitas && this.timerPepitas.length > 0) {
+            const timerLabelWidth = Number(this.timerLabel?.width) || 52;
+            const pepitaStartX = 10 + timerLabelWidth + 8;
+            const pepitaSize = 12;
+            const pepitaGap = 1;
+            for (let i = 0; i < this.timerPepitas.length; i++) {
+                const px = pepitaStartX + i * (pepitaSize + pepitaGap);
+                const py = camH - 16;
+                const p = this.timerPepitas[i];
+                const d = this.timerPepitasDisabled[i];
+                if (p) { p.setPosition(px, py); }
+                if (d) { d.setPosition(px, py); }
+            }
+        }
     }
 
     createObjectivePointerUI() {
@@ -3639,6 +3727,17 @@ class GameScene extends Phaser.Scene {
         let velocityX = 0;
         let velocityY = 0;
 
+        // Touch input support: if TOUCH_INPUT is present, prefer it when non-zero
+        try {
+            const t = window.TOUCH_INPUT;
+            if (t) {
+                // t.x right positive, t.y down positive (joystick uses screen coords)
+                // our game uses up = -1, down = +1; TOUCH_INPUT.y already maps that way
+                if (Math.abs(Number(t.x) || 0) > 0.05) velocityX = Number(t.x);
+                if (Math.abs(Number(t.y) || 0) > 0.05) velocityY = Number(t.y);
+            }
+        } catch (e) {}
+
         if (this.cursors.left.isDown || this.keys.a.isDown) velocityX = -1;
         if (this.cursors.right.isDown || this.keys.d.isDown) velocityX = 1;
         if (this.cursors.up.isDown || this.keys.w.isDown) velocityY = -1;
@@ -3734,9 +3833,20 @@ class GameScene extends Phaser.Scene {
             }
         }
 
-        // Shoot dynamite
-        if (Phaser.Input.Keyboard.JustDown(this.keys.space)) {
-            this.shootDynamite();
+        // Shoot dynamite (keyboard space OR touch action button)
+        try {
+            const touch = (window && window.TOUCH_INPUT) ? window.TOUCH_INPUT : null;
+            const touchAction = !!(touch && touch.action);
+            if (Phaser.Input.Keyboard.JustDown(this.keys.space) || (touchAction && !this._lastTouchAction)) {
+                this.shootDynamite();
+            }
+            // remember last touch action state for edge detection
+            this._lastTouchAction = touchAction;
+        } catch (e) {
+            // If anything goes wrong reading touch input, fall back to keyboard only
+            if (Phaser.Input.Keyboard.JustDown(this.keys.space)) {
+                this.shootDynamite();
+            }
         }
 
         this.updateCompanionPosition();
@@ -5106,6 +5216,14 @@ class GameScene extends Phaser.Scene {
         this.scoreText.setText(`${t.score_label}: ${GAME_STATE.score}`);
         this.levelText.setText(`${t.level_label}: ${GAME_STATE.currentLevel + 1}`);
 
+        // Update DOM HUD if present (keeps mobile HUD crisp and readable)
+        try {
+            const scoreEl = document.getElementById('scoreDisplay');
+            const levelEl = document.getElementById('levelDisplay');
+            if (scoreEl) scoreEl.textContent = `${t.score_label}: ${GAME_STATE.score}`;
+            if (levelEl) levelEl.textContent = `${t.level_label}: ${GAME_STATE.currentLevel + 1}`;
+        } catch (e) {}
+
         this.refreshHudIcons();
     }
 
@@ -5932,11 +6050,24 @@ async function inizialization() {
             CONFIG.dynamiteSize = Math.max(8, Math.round((Number(CONFIG.objectSize) || OBJECT_NATIVE_SIZE) * 0.6));
         }
 
+        // Resolve Phaser scale mode from config (defaults to FIT)
+        const requestedScaleMode = String(CONFIG.scaleMode || 'FIT').toUpperCase();
+    let phaserScaleMode = Phaser.Scale.FIT;
+    if (requestedScaleMode === 'ENVELOP' || requestedScaleMode === 'ENVELOPE') phaserScaleMode = Phaser.Scale.ENVELOP;
+    else if (requestedScaleMode === 'NONE') phaserScaleMode = Phaser.Scale.NONE;
+    else if (requestedScaleMode === 'RESIZE') phaserScaleMode = Phaser.Scale.RESIZE;
+
         const config = {
             type: Phaser.AUTO,
-            width: CONFIG.width,
-            height: CONFIG.height,
-            parent: 'game-container',
+            // Use Phaser Scale manager to display the original 800x600 game in the
+            // available viewport according to the requested scale mode.
+            scale: {
+                mode: phaserScaleMode,
+                autoCenter: Phaser.Scale.CENTER_BOTH,
+                parent: 'game-container',
+                width: Number(CONFIG.width) || 800,
+                height: Number(CONFIG.height) || 600
+            },
             backgroundColor: '#000000',
             physics: {
                 default: 'arcade',
@@ -5957,6 +6088,64 @@ async function inizialization() {
         });
 
         new Phaser.Game(config);
+
+        // If the configuration asks for a fullscreen toggle, add a small DOM button.
+        try {
+            if (CONFIG.enableFullscreen) {
+                const existing = document.getElementById('fullscreenBtn');
+                if (!existing) {
+                    const btn = document.createElement('button');
+                    btn.id = 'fullscreenBtn';
+                    btn.title = 'Toggle Fullscreen';
+                    btn.innerText = '⤢';
+                    Object.assign(btn.style, {
+                        position: 'fixed',
+                        right: '12px',
+                        top: '12px',
+                        zIndex: 9999,
+                        padding: '6px 8px',
+                        fontSize: '16px',
+                        borderRadius: '6px',
+                        border: 'none',
+                        background: 'rgba(12,18,32,0.8)',
+                        color: '#dbeeff',
+                        cursor: 'pointer',
+                        boxShadow: '0 2px 8px rgba(0,0,0,0.4)'
+                    });
+                    btn.addEventListener('click', async () => {
+                        try {
+                            const container = document.getElementById('game-container') || document.documentElement;
+                            if (document.fullscreenElement) {
+                                await document.exitFullscreen();
+                            } else if (container.requestFullscreen) {
+                                await container.requestFullscreen();
+                            } else if (container.webkitRequestFullscreen) {
+                                // Safari
+                                container.webkitRequestFullscreen();
+                            }
+                        } catch (e) {
+                            console.warn('Fullscreen toggle failed', e);
+                        }
+                    });
+                        // Keyboard shortcut: F toggles fullscreen
+                        document.addEventListener('keydown', (ev) => {
+                            if (ev && (ev.key === 'f' || ev.key === 'F')) {
+                                ev.preventDefault?.();
+                                btn.click();
+                            }
+                        });
+                        // If device is touch-capable, make the button more prominent
+                        if ('ontouchstart' in window || navigator.maxTouchPoints > 0) {
+                            btn.style.padding = '10px 12px';
+                            btn.style.fontSize = '20px';
+                        }
+                    document.body.appendChild(btn);
+                }
+            }
+        } catch (e) {
+            console.warn('Error creating fullscreen button', e);
+        }
+
         return true;
     } catch (err) {
         console.error('Errore caricamento config.json:', err);

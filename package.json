@@ -1,0 +1,19 @@
+{
+  "name": "block-hunter",
+  "version": "1.0.0",
+  "description": "Block Hunter - Arcade game",
+  "scripts": {
+    "start": "npx serve -p 8000",
+    "cap:init": "npx cap init block-hunter com.example.blockhunter --web-dir=www",
+    "cap:add:android": "npx cap add android",
+    "cap:copy": "npx cap copy",
+    "cap:open:android": "npx cap open android",
+    "prepare:www": "rm -rf www && mkdir www && cp -r ./* www && rm -rf www/node_modules || true",
+    "generate:icons": "node tools/generate-icons.js"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^5.0.0",
+    "@capacitor/core": "^5.0.0",
+    "sharp": "^0.32.0"
+  }
+}

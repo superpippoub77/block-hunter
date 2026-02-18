@@ -31,33 +31,114 @@
             box-sizing: border-box;
         }
 
+        html, body {
+            height: 100%;
+            margin: 0;
+            padding: 0;
+        }
+
         body {
             background: #000;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            min-height: 100vh;
             font-family: 'Courier New', monospace;
             overflow: hidden;
         }
 
+        /* Make the game container occupy the full viewport so Phaser can scale the
+           internal 800x600 canvas to fill available space while preserving aspect. */
         #game-container {
-            box-shadow: 0 0 40px rgba(255, 255, 0, 0.3);
-            border: 4px solid #333;
+            width: 100vw;
+            height: 100vh;
+            box-shadow: 0 0 40px rgba(255, 255, 0, 0.08);
+            border: 0; /* optional: remove border so the game visually fills the screen */
         }
 
         canvas {
             display: block;
+            width: 100%;
+            height: 100%;
             image-rendering: pixelated;
             image-rendering: crisp-edges;
         }
+
+        /* Touch-friendly fullscreen button adjustments (coarse pointers) */
+        @media (pointer: coarse) {
+            #fullscreenBtn {
+                right: 10px;
+                top: 10px;
+                padding: 12px 14px !important;
+                font-size: 20px !important;
+                border-radius: 8px !important;
+            }
+        }
     </style>
+    <style>
+        /* Touch controls layout */
+        #touch-controls { position: fixed; left: 0; right: 0; bottom: 8px; pointer-events: none; z-index: 9999; }
+        #joystick { position: absolute; left: 16px; bottom: 12px; width: 120px; height: 120px; pointer-events: auto; }
+        #joystick-base { position: absolute; left: 0; top: 0; width: 100%; height: 100%; border-radius: 50%; background: rgba(10,20,40,0.48); border: 2px solid rgba(120,160,220,0.12); }
+        #joystick-thumb { position: absolute; left: 50%; top: 50%; width: 44px; height: 44px; margin-left: -22px; margin-top: -22px; border-radius: 50%; background: rgba(140,200,255,0.95); box-shadow: 0 6px 18px rgba(0,0,0,0.45); }
+        #actionBtn { position: absolute; right: 16px; bottom: 18px; width: 86px; height: 86px; border-radius: 50%; background: rgba(255,150,80,0.92); color: #111; font-weight: bold; font-size: 24px; border: none; pointer-events: auto; }
+        @media (pointer: coarse) {
+            #joystick { width: 140px; height: 140px; }
+            #joystick-thumb { width: 56px; height: 56px; margin-left: -28px; margin-top: -28px; }
+            #actionBtn { width: 100px; height: 100px; font-size: 28px; }
+        }
+    </style>
+    <style>
+        /* DOM HUD styling */
+        #dom-hud {
+            position: fixed;
+            top: 8px;
+            left: 8px;
+            right: 8px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            pointer-events: none; /* allow clicks to pass through by default */
+            z-index: 9998;
+            font-family: 'Press Start 2P', monospace;
+            color: #e8f6ff;
+            text-shadow: 0 1px 0 rgba(0,0,0,0.6);
+        }
+        #dom-hud .dom-hud-item {
+            background: rgba(6,12,28,0.6);
+            padding: 8px 10px;
+            border-radius: 6px;
+            font-size: 14px;
+            pointer-events: auto; /* individual items can be interactive if needed */
+        }
+        /* Larger HUD items on touch devices */
+        @media (pointer: coarse) {
+            #dom-hud .dom-hud-item { font-size: 18px; padding: 10px 12px; }
+        }
+    </style>
+    <link rel="manifest" href="/manifest.json">
+    <meta name="theme-color" content="#000000">
 </head>
 
 <body>
     <div id="game-container"></div>
+    <!-- DOM HUD overlay for responsive/mobile UI (keeps HUD readable and touch-friendly) -->
+    <div id="dom-hud" aria-hidden="false">
+        <div id="dom-hud-left">
+            <div id="scoreDisplay" class="dom-hud-item">Score: 0</div>
+        </div>
+        <div id="dom-hud-center"></div>
+        <div id="dom-hud-right">
+            <div id="levelDisplay" class="dom-hud-item">Level: 1</div>
+        </div>
+    </div>
+    <!-- Touch controls (virtual joystick + action) -->
+    <div id="touch-controls" aria-hidden="false">
+        <div id="joystick" class="touch-control">
+            <div id="joystick-base"></div>
+            <div id="joystick-thumb"></div>
+        </div>
+        <button id="actionBtn" class="touch-control">A</button>
+    </div>
     <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
     <script type="module" src="game.js"></script>
+        <script src="js/touch-controls.js"></script>
     <script>
         window.onload = async function () {
             // Carica il font prima di inizializzare il gioco
