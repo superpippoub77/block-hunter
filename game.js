@@ -22,6 +22,9 @@ const TILE_NATIVE_WIDTH = 64; // tiles spritesheet native width per tile frame
 const TILE_NATIVE_HEIGHT = 48;
 const OBJECT_NATIVE_SIZE = 64; // objects.png frames are 64x64
 
+//Default frame dimension
+const defaultFrame = { frameWidth: 64, frameHeight: 64 };
+
 // Load persistent config if present (optional: can be merged after loadConfig)
 function mergeLocalConfig() {
     try {
@@ -245,43 +248,25 @@ class PreloadScene extends Phaser.Scene {
             .image('subtitle', 'images/subtitle.png')
             .image('explorer', 'images/explorer.png')
             .image('title_explosion', 'images/title_explosion.png')
-            .audio('intro_bgm', 'data/music/intro.mp3')
-            .audio('game_bgm', 'data/music/game.mp3')
-            .audio('step_sfx', 'data/music/step.mp3')
-            .audio('stone_sfx', 'data/music/stone.mp3')
-            .audio('explosion_sfx', 'data/music/explosion.mp3')
-            .audio('gem_sfx', 'data/music/gem.mp3')
-            .audio('level_completed_sfx', 'data/music/level_completed.mp3')
-            .audio('coin_sfx', 'data/music/coin.mp3')
-            .audio('select_sfx', 'data/music/select.mp3')
-            .audio('ghost_sfx', 'data/music/ghost.mp3')
             .image('bg', 'images/attract_bg.png')
             .image('game_bg', 'images/game_bg.png')
-            // Load flags sprite (8 flags: it, fr, de, en, us, ja, es, zh - 64x32 each)
-            .spritesheet('flags', 'images/flags.png', {
-                frameWidth: 64,
-                frameHeight: 32
-            })
+            // Load flags sprite (8 flags: it, fr, de, en, us, ja, es, zh - 64x64 each)
+            .spritesheet('flags', 'images/flags.png', defaultFrame)
             // Load tiles sprite (6 tiles: wall, hole, sand, floor, stone, hole2 - 64x48 each)
-            .spritesheet('tiles', 'images/tiles.png', {
-                frameWidth: 64,
-                frameHeight: 64
-            })
+            .spritesheet('tiles', 'images/tiles.png', defaultFrame)
             // Load wall sprite sheet (1 row x 7 columns, 64x64 each frame)
-            .spritesheet('wall_tiles', 'images/wall.png', {
-                frameWidth: 64,
-                frameHeight: 64
-            })
+            .spritesheet('wall_tiles', 'images/wall.png', defaultFrame)
             // Load objects sprite (4x4 matrix = 16 objects)
             // Row 1: dynamite, heart, stone, player
             // Row 2: dynamite_chest, door, gem, stones
             // Row 3: key, sand_pile, ghost, pepita
             // Row 4: skull...wall, hole1, hole2, explosion
-            .spritesheet('objects', 'images/obj_game.png', {
-                frameWidth: 64,
-                frameHeight: 64
-            })
+            .spritesheet('objects', 'images/obj_game.png', defaultFrame)
             // Front walking animation spritesheet (1 row, 7 frames, 172x135 each)
+            // Bat flying animation spritesheet (1 row, 6 frames)
+            .spritesheet('bat', 'images/batpng.png', defaultFrame)
+            // Ghost animation spritesheet (1 row, 5 frames)
+            .spritesheet('ghost', 'images/ghost.png', defaultFrame)
             .spritesheet('player_front', 'images/player_front.png', {
                 frameWidth: 139,
                 frameHeight: 135
@@ -301,16 +286,16 @@ class PreloadScene extends Phaser.Scene {
                 frameWidth: 139,
                 frameHeight: 135
             })
-            // Bat flying animation spritesheet (1 row, 6 frames)
-            .spritesheet('bat', 'images/batpng.png', {
-                frameWidth: 64,
-                frameHeight: 64
-            })
-            // Ghost animation spritesheet (1 row, 5 frames)
-            .spritesheet('ghost', 'images/ghost.png', {
-                frameWidth: 64,
-                frameHeight: 64
-            });
+            .audio('intro_bgm', 'data/music/intro.mp3')
+            .audio('game_bgm', 'data/music/game.mp3')
+            .audio('step_sfx', 'data/music/step.mp3')
+            .audio('stone_sfx', 'data/music/stone.mp3')
+            .audio('explosion_sfx', 'data/music/explosion.mp3')
+            .audio('gem_sfx', 'data/music/gem.mp3')
+            .audio('level_completed_sfx', 'data/music/level_completed.mp3')
+            .audio('coin_sfx', 'data/music/coin.mp3')
+            .audio('select_sfx', 'data/music/select.mp3')
+            .audio('ghost_sfx', 'data/music/ghost.mp3');
 
         // Load all level JSON files (50 levels)
         // Carica solo i livelli con sottolivello 0-4 per ogni decade
@@ -520,7 +505,7 @@ class AttractScene extends Phaser.Scene {
                             this.subtitleSign.setScale(0.78);
                             this.subtitleSign.setAngle(-6);
                             this.subtitleSign.setDepth(19);
-                            try { this.tweens.add({ targets: this.subtitleSign, angle: '-=1.5', duration: 1400, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' }); } catch (e) {}
+                            try { this.tweens.add({ targets: this.subtitleSign, angle: '-=1.5', duration: 1400, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' }); } catch (e) { }
                         }
                     } catch (e) { /* ignore subtitle creation errors */ }
 
@@ -610,7 +595,7 @@ class AttractScene extends Phaser.Scene {
                                                                 duration: 350,
                                                                 ease: 'Quad.easeIn',
                                                                 onComplete: () => {
-                                                                    try { subtitleImg.destroy(); } catch (e) {}
+                                                                    try { subtitleImg.destroy(); } catch (e) { }
                                                                     // now move the explosion out and bring back the title
                                                                     this.tweens.add({
                                                                         targets: explosionTitle,
@@ -619,7 +604,7 @@ class AttractScene extends Phaser.Scene {
                                                                         duration: 420,
                                                                         ease: 'Cubic.easeIn',
                                                                         onComplete: () => {
-                                                                            try { explosionTitle.destroy(); } catch (e) {}
+                                                                            try { explosionTitle.destroy(); } catch (e) { }
                                                                             this.titleImage.setVisible(true);
                                                                             this.titleImage.x = 400;
                                                                             this.titleImage.y = -120;
@@ -1091,7 +1076,7 @@ class TopTenScene extends Phaser.Scene {
                         }
                     });
                 }
-            } catch (e) {}
+            } catch (e) { }
             this.updateUI();
         });
     }
@@ -1741,7 +1726,7 @@ class GameScene extends Phaser.Scene {
         const camera = this.cameras.main;
         camera.setBounds(worldX, worldY, worldWidth, worldHeight);
         camera.startFollow(this.player, true, 0.12, 0.12);
-    camera.setDeadzone((this.scale.width || CONFIG.width) * 0.3, (this.scale.height || CONFIG.height) * 0.3);
+        camera.setDeadzone((this.scale.width || CONFIG.width) * 0.3, (this.scale.height || CONFIG.height) * 0.3);
         camera.roundPixels = true;
 
         // Gems per level
@@ -1938,7 +1923,7 @@ class GameScene extends Phaser.Scene {
                 };
             }
 
-                if (value.length === 1) {
+            if (value.length === 1) {
                 switch (value) {
                     case 'w': return { type: 'wall', wallFrame: 0, wallRotation: 0 };
                     case 'f': return { type: 'floor', wallFrame: 0, wallRotation: 0 };
@@ -3395,12 +3380,12 @@ class GameScene extends Phaser.Scene {
             this.timerPepitasDisabled.push(disabled);
         }
 
-    this.hudContainer.setDepth(2000);
-    // Hide timer label initially
-    this.timerLabel.setVisible(false);
+        this.hudContainer.setDepth(2000);
+        // Hide timer label initially
+        this.timerLabel.setVisible(false);
         // Hide both layers initially
-    this.timerPepitas.forEach((p) => p.setVisible(false));
-    if (this.timerPepitasDisabled) this.timerPepitasDisabled.forEach((d) => d.setVisible(false));
+        this.timerPepitas.forEach((p) => p.setVisible(false));
+        if (this.timerPepitasDisabled) this.timerPepitasDisabled.forEach((d) => d.setVisible(false));
 
         this.topStatsObjects = [];
         this.refreshHudIcons();
@@ -3981,7 +3966,7 @@ class GameScene extends Phaser.Scene {
                 if (Math.abs(Number(t.x) || 0) > 0.05) velocityX = Number(t.x);
                 if (Math.abs(Number(t.y) || 0) > 0.05) velocityY = Number(t.y);
             }
-        } catch (e) {}
+        } catch (e) { }
 
         if (this.cursors.left.isDown || this.keys.a.isDown) velocityX = -1;
         if (this.cursors.right.isDown || this.keys.d.isDown) velocityX = 1;
@@ -4026,11 +4011,11 @@ class GameScene extends Phaser.Scene {
                     } catch (e) { }
 
                     // schedule timer to remove slow after configured duration
-                    if (this.playerSandTimer) { try { this.playerSandTimer.remove(false); } catch (e) {} }
+                    if (this.playerSandTimer) { try { this.playerSandTimer.remove(false); } catch (e) { } }
                     this.playerSandTimer = this.time.delayedCall(Number(CONFIG.sandSlowDuration) || 20000, () => {
                         this.playerSlowFactor = 1;
                         this.playerSandActive = false;
-                        try { if (this.playerSandHalo) { this.playerSandHalo.destroy(); this.playerSandHalo = null; } } catch (e) {}
+                        try { if (this.playerSandHalo) { this.playerSandHalo.destroy(); this.playerSandHalo = null; } } catch (e) { }
                         this.playerSandTimer = null;
                     }, [], this);
                 }
@@ -5494,7 +5479,7 @@ class GameScene extends Phaser.Scene {
             const levelEl = document.getElementById('levelDisplay');
             if (scoreEl) scoreEl.textContent = `${t.score_label}: ${GAME_STATE.score}`;
             if (levelEl) levelEl.textContent = `${t.level_label}: ${GAME_STATE.currentLevel + 1}`;
-        } catch (e) {}
+        } catch (e) { }
 
         this.refreshHudIcons();
     }
@@ -6326,10 +6311,10 @@ async function inizialization() {
 
         // Resolve Phaser scale mode from config (defaults to FIT)
         const requestedScaleMode = String(CONFIG.scaleMode || 'FIT').toUpperCase();
-    let phaserScaleMode = Phaser.Scale.FIT;
-    if (requestedScaleMode === 'ENVELOP' || requestedScaleMode === 'ENVELOPE') phaserScaleMode = Phaser.Scale.ENVELOP;
-    else if (requestedScaleMode === 'NONE') phaserScaleMode = Phaser.Scale.NONE;
-    else if (requestedScaleMode === 'RESIZE') phaserScaleMode = Phaser.Scale.RESIZE;
+        let phaserScaleMode = Phaser.Scale.FIT;
+        if (requestedScaleMode === 'ENVELOP' || requestedScaleMode === 'ENVELOPE') phaserScaleMode = Phaser.Scale.ENVELOP;
+        else if (requestedScaleMode === 'NONE') phaserScaleMode = Phaser.Scale.NONE;
+        else if (requestedScaleMode === 'RESIZE') phaserScaleMode = Phaser.Scale.RESIZE;
 
         const config = {
             type: Phaser.AUTO,
@@ -6401,18 +6386,18 @@ async function inizialization() {
                             console.warn('Fullscreen toggle failed', e);
                         }
                     });
-                        // Keyboard shortcut: F toggles fullscreen
-                        document.addEventListener('keydown', (ev) => {
-                            if (ev && (ev.key === 'f' || ev.key === 'F')) {
-                                ev.preventDefault?.();
-                                btn.click();
-                            }
-                        });
-                        // If device is touch-capable, make the button more prominent
-                        if ('ontouchstart' in window || navigator.maxTouchPoints > 0) {
-                            btn.style.padding = '10px 12px';
-                            btn.style.fontSize = '20px';
+                    // Keyboard shortcut: F toggles fullscreen
+                    document.addEventListener('keydown', (ev) => {
+                        if (ev && (ev.key === 'f' || ev.key === 'F')) {
+                            ev.preventDefault?.();
+                            btn.click();
                         }
+                    });
+                    // If device is touch-capable, make the button more prominent
+                    if ('ontouchstart' in window || navigator.maxTouchPoints > 0) {
+                        btn.style.padding = '10px 12px';
+                        btn.style.fontSize = '20px';
+                    }
                     document.body.appendChild(btn);
                 }
             }
