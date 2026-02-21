@@ -19,7 +19,7 @@ const OBJECT_FRAMES = {
 };
 
 const STORAGE_KEY = 'blockHunterLevelEditorState';
-const WALL_TOKEN_REGEX = /^w(\d)(\d)$/i;
+const WALL_TOKEN_REGEX = /^w(\d)(\d)(\d)([hv0])$/i;
 
 const BASE_PALETTE_ITEMS = [
     { token: '-', label: 'vuoto' },
@@ -37,12 +37,8 @@ const BASE_PALETTE_ITEMS = [
     { token: 'bat', label: 'bat spawn' }
 ];
 
-const WALL_PALETTE_ITEMS = Array.from({ length: 7 }, (_unused, frame) => (
-    Array.from({ length: 4 }, (_unusedRot, rot) => ({
-        token: `w${frame}${rot}`,
-        label: `wall ${frame} r${rot}`
-    }))
-)).flat();
+// Palette only shows base wall token; rotation/mirroring applied after placement
+const WALL_PALETTE_ITEMS = [ { token: 'w', label: 'wall' } ];
 
 const PALETTE_ITEMS = [...BASE_PALETTE_ITEMS, ...WALL_PALETTE_ITEMS];
 
@@ -144,12 +140,35 @@ function tokenToMiniMapColor(token) {
 function normalizeToken(token) {
     const raw = String(token ?? '-').trim();
     if (!raw) return '-';
-    if (raw === 'w') return 'w00';
-    const wallMatch = raw.match(WALL_TOKEN_REGEX);
-    if (wallMatch) {
-        const frame = clamp(Number(wallMatch[1]), 0, 6);
-        const rot = ((Number(wallMatch[2]) % 4) + 4) % 4;
-        return `w${frame}${rot}`;
+    if (raw === 'w') return 'w0000';
+    // accept full tokens wRCRF (row, col, rot, flip)
+    const wallMatch4 = raw.match(/^w(\d)(\d)(\d)([hv0])$/i);
+    if (wallMatch4) {
+        const row = clamp(Number(wallMatch4[1]), 0, 3);
+        const col = clamp(Number(wallMatch4[2]), 0, 5);
+        const rot = ((Number(wallMatch4[3]) % 4) + 4) % 4;
+        const flip = String(wallMatch4[4]).toLowerCase() === 'h' ? 'h' : (String(wallMatch4[4]).toLowerCase() === 'v' ? 'v' : '0');
+        return `w${row}${col}${rot}${flip}`;
+    }
+    // accept legacy 3-digit tokens wRCR (row, col, rot)
+    const wallMatch3 = raw.match(/^w(\d)(\d)(\d)$/i);
+    if (wallMatch3) {
+        const row = clamp(Number(wallMatch3[1]), 0, 3);
+        const col = clamp(Number(wallMatch3[2]), 0, 5);
+        const rot = ((Number(wallMatch3[3]) % 4) + 4) % 4;
+        return `w${row}${col}${rot}0`;
+    }
+    // fallback: accept legacy 2-digit tokens wFR (frame, rot) and convert to new scheme
+    const wallMatch2 = raw.match(/^w(\d)(\d)$/i);
+    if (wallMatch2) {
+        const frame = clamp(Number(wallMatch2[1]), 0, 6);
+        const rot = ((Number(wallMatch2[2]) % 4) + 4) % 4;
+        // map legacy frame -> row/col. Prefer row 0 for frames 0..5, frame 6 -> row1 col0
+        let row = 0;
+        let col = frame;
+        if (col > 5) { row = 1; col = Math.max(0, frame - 6); }
+        col = clamp(col, 0, 5);
+        return `w${row}${col}${rot}0`;
     }
     return raw;
 }
@@ -158,9 +177,11 @@ function rotateWallToken(token, delta) {
     const normalized = normalizeToken(token);
     const match = normalized.match(WALL_TOKEN_REGEX);
     if (!match) return normalized;
-    const frame = Number(match[1]);
-    const rot = ((Number(match[2]) + delta) % 4 + 4) % 4;
-    return `w${frame}${rot}`;
+    const row = Number(match[1]);
+    const col = Number(match[2]);
+    const rot = ((Number(match[3]) + delta) % 4 + 4) % 4; // only cycle 0..3 for rotation
+    const flip = match[4] ? String(match[4]).toLowerCase() : '0';
+    return `w${row}${col}${rot}${flip}`;
 }
 
 function splitToken(tokenString) {
@@ -195,13 +216,13 @@ class LevelEditorScene extends Phaser.Scene {
         this.cells = [];
         this.selectedCell = null;
         this.paletteItems = [];
-        this.lastBrushToken = 'w00';
+        this.lastBrushToken = 'w0000';
     }
 
     preload() {
         this.load
             .spritesheet('tiles', 'images/tiles.png', { frameWidth: 64, frameHeight: 64 })
-            .spritesheet('wall_tiles', 'images/wall.png', { frameWidth: 64, frameHeight: 64 })
+            .spritesheet('wall_tiles', 'images/wall_completed.png', { frameWidth: 64, frameHeight: 64 })
             .spritesheet('objects', 'images/obj_game.png', { frameWidth: 64, frameHeight: 64 })
             .spritesheet('ghost_anim', 'images/ghost.png', { frameWidth: 64, frameHeight: 64 })
             .spritesheet('bat_anim', 'images/batpng.png', { frameWidth: 64, frameHeight: 64 });
@@ -319,6 +340,22 @@ class LevelEditorScene extends Phaser.Scene {
         this.input.keyboard.on('keydown-RIGHT', () => {
             this.rotateSelectedCell(1);
             this.renderGrid();
+        });
+
+        // Mirror: up = horizontal flip (flipX), down = vertical flip (flipY)
+        this.input.keyboard.on('keydown-UP', () => {
+            this.mirrorSelectedCell('h');
+            this.renderGrid();
+        });
+
+        this.input.keyboard.on('keydown-DOWN', () => {
+            this.mirrorSelectedCell('v');
+            this.renderGrid();
+        });
+
+        // Open wall variant picker with 'V'
+        this.input.keyboard.on('keydown-V', () => {
+            this.toggleWallVariantPicker();
         });
 
         this.input.keyboard.on('keydown-DELETE', () => {
@@ -462,16 +499,122 @@ class LevelEditorScene extends Phaser.Scene {
         cell.base = rotateWallToken(cell.base, delta);
     }
 
+    mirrorSelectedCell(axis) {
+        if (!this.selectedCell) return;
+        const { row, col } = this.selectedCell;
+        const cell = this.cells[row]?.[col];
+        if (!cell) return;
+
+        const useReveal = !!el('revealMode')?.checked;
+        const targetKey = useReveal && cell.reveal ? 'reveal' : 'base';
+        const token = normalizeToken(cell[targetKey] || '-');
+        const match = token.match(WALL_TOKEN_REGEX);
+        if (!match) return;
+        const r = Number(match[1]);
+        const c = Number(match[2]);
+        const currentRot = Number(match[3]);
+        const newFlip = axis === 'h' ? 'h' : 'v';
+        cell[targetKey] = `w${r}${c}${currentRot}${newFlip}`;
+    }
+
+    toggleWallVariantPicker() {
+        if (this.variantPickerContainer) {
+            this.closeWallVariantPicker();
+            return;
+        }
+        this.showWallVariantPicker();
+    }
+
+    showWallVariantPicker() {
+        if (!this.selectedCell) return;
+        const { row: selRow, col: selCol } = this.selectedCell;
+        const cell = this.cells[selRow]?.[selCol];
+        if (!cell) return;
+
+        // only for wall tokens
+        const baseToken = normalizeToken(cell.base || '-');
+        if (!WALL_TOKEN_REGEX.test(baseToken)) return;
+
+        const startX = (this.paletteArea && Number.isFinite(this.paletteArea.startX)) ? this.paletteArea.startX : 880;
+        const startY = (this.paletteArea && Number.isFinite(this.paletteArea.startY)) ? this.paletteArea.startY + 280 : 120;
+
+        const picker = this.add.container(startX, startY);
+        picker.setDepth(2000);
+
+        const cols = 6;
+        const rows = 4;
+        const iconSize = 40;
+        const padding = 6;
+
+        const bgW = cols * (iconSize + padding) + padding;
+        const bgH = rows * (iconSize + padding) + padding;
+        const bg = this.add.rectangle(0, 0, bgW, bgH, 0x061025, 0.95).setOrigin(0);
+        bg.setStrokeStyle(2, 0x2b4f86, 1);
+        picker.add(bg);
+
+        for (let r = 0; r < rows; r++) {
+            for (let c = 0; c < cols; c++) {
+                const px = padding + c * (iconSize + padding);
+                const py = padding + r * (iconSize + padding);
+                const token = `w${r}${c}00`;
+                const cellBox = this.add.container(px + iconSize / 2, py + iconSize / 2);
+                const box = this.add.rectangle(0, 0, iconSize, iconSize, 0x102449, 0.95).setStrokeStyle(1, 0x2b4f86, 1);
+                cellBox.add(box);
+                // draw variant visual (no rotation)
+                this.addTokenVisual(cellBox, token, 0, 0, iconSize - 8);
+                cellBox.setSize(iconSize, iconSize);
+                cellBox.setInteractive(new Phaser.Geom.Rectangle(-iconSize/2, -iconSize/2, iconSize, iconSize), Phaser.Geom.Rectangle.Contains);
+                cellBox.on('pointerdown', () => {
+                    // preserve existing rotation if any
+                    const current = normalizeToken(cell.base || '-');
+                    const m = current.match(WALL_TOKEN_REGEX);
+                    const currentRot = m ? Number(m[3]) : 0;
+                    const currentFlip = m ? String(m[4]).toLowerCase() : '0';
+                    cell.base = `w${r}${c}${currentRot}${currentFlip}`;
+                    this.closeWallVariantPicker();
+                    this.renderGrid();
+                });
+                picker.add(cellBox);
+            }
+        }
+
+        // close on outside click
+        const outsideHandler = (pointer) => {
+            const worldX = pointer.worldX;
+            const worldY = pointer.worldY;
+            const localX = worldX - picker.x;
+            const localY = worldY - picker.y;
+            if (localX < 0 || localY < 0 || localX > bgW || localY > bgH) {
+                this.input.off('pointerdown', outsideHandler);
+                this.closeWallVariantPicker();
+            }
+        };
+        this.input.on('pointerdown', outsideHandler);
+
+        this.variantPickerContainer = picker;
+    }
+
+    closeWallVariantPicker() {
+        if (!this.variantPickerContainer) return;
+        try { this.variantPickerContainer.destroy(true); } catch (e) { /* ignore */ }
+        this.variantPickerContainer = null;
+    }
+
     tokenToRenderInfo(token) {
         const normalized = normalizeToken(token);
         const wallMatch = normalized.match(WALL_TOKEN_REGEX);
         if (wallMatch) {
-            return {
-                kind: 'wall',
-                frame: Number(wallMatch[1]),
-                rot: Number(wallMatch[2])
-            };
-        }
+                const row = Number(wallMatch[1]);
+                const col = Number(wallMatch[2]);
+                const rot = Number(wallMatch[3]);
+                const flip = String(wallMatch[4] ?? '0').toLowerCase();
+                return {
+                    kind: 'wall',
+                    frame: row * 6 + col,
+                    rot,
+                    flip
+                };
+            }
 
         switch (normalized) {
             case '-': return { kind: 'empty' };
@@ -511,7 +654,9 @@ class LevelEditorScene extends Phaser.Scene {
         if (info.kind === 'wall') {
             const wall = this.add.sprite(x, y, 'wall_tiles', info.frame);
             wall.setScale(scale);
-            wall.setAngle(info.rot * 90);
+            if (info.flip === 'h') wall.setFlipX(true);
+            else if (info.flip === 'v') wall.setFlipY(true);
+            else wall.setAngle((info.rot || 0) * 90);
             container.add(wall);
             return;
         }
@@ -686,37 +831,30 @@ function drawMiniMapFrame(scene, ctx, textureKey, frameIndex, x, y, size, opts =
 
     const alpha = Number.isFinite(opts.alpha) ? opts.alpha : 1;
     const rotation = Number.isFinite(opts.rotation) ? opts.rotation : 0;
+    const flipX = !!opts.flipX;
+    const flipY = !!opts.flipY;
 
     ctx.save();
     ctx.globalAlpha = alpha;
 
-    if (rotation !== 0) {
-        ctx.translate(x + size / 2, y + size / 2);
-        ctx.rotate(rotation);
-        ctx.drawImage(
-            sourceImage,
-            frame.cutX,
-            frame.cutY,
-            frame.cutWidth,
-            frame.cutHeight,
-            -size / 2,
-            -size / 2,
-            size,
-            size
-        );
-    } else {
-        ctx.drawImage(
-            sourceImage,
-            frame.cutX,
-            frame.cutY,
-            frame.cutWidth,
-            frame.cutHeight,
-            x,
-            y,
-            size,
-            size
-        );
+    // apply flips and rotation, keeping drawing centered
+    ctx.translate(x + size / 2, y + size / 2);
+    if (flipX || flipY) {
+        ctx.scale(flipX ? -1 : 1, flipY ? -1 : 1);
     }
+    if (rotation !== 0) ctx.rotate(rotation);
+
+    ctx.drawImage(
+        sourceImage,
+        frame.cutX,
+        frame.cutY,
+        frame.cutWidth,
+        frame.cutHeight,
+        -size / 2,
+        -size / 2,
+        size,
+        size
+    );
 
     ctx.restore();
     return true;
@@ -726,11 +864,20 @@ function drawMiniMapToken(scene, ctx, token, x, y, size, opts = {}) {
     const normalized = normalizeToken(token);
     const wallMatch = normalized.match(WALL_TOKEN_REGEX);
     if (wallMatch) {
-        const wallFrame = clamp(Number(wallMatch[1]), 0, 6);
-        const wallRot = ((Number(wallMatch[2]) % 4) + 4) % 4;
+        const row = clamp(Number(wallMatch[1]), 0, 3);
+        const col = clamp(Number(wallMatch[2]), 0, 5);
+        const rot = ((Number(wallMatch[3]) % 4) + 4) % 4;
+        const flip = String(wallMatch[4] ?? '0').toLowerCase();
+        const wallFrame = row * 6 + col;
+        if (flip === 'h') {
+            return drawMiniMapFrame(scene, ctx, 'wall_tiles', wallFrame, x, y, size, { alpha: opts.alpha, flipX: true });
+        }
+        if (flip === 'v') {
+            return drawMiniMapFrame(scene, ctx, 'wall_tiles', wallFrame, x, y, size, { alpha: opts.alpha, flipY: true });
+        }
         return drawMiniMapFrame(scene, ctx, 'wall_tiles', wallFrame, x, y, size, {
             alpha: opts.alpha,
-            rotation: wallRot * (Math.PI / 2)
+            rotation: rot * (Math.PI / 2)
         });
     }
 

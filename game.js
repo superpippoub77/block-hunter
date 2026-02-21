@@ -251,11 +251,11 @@ class PreloadScene extends Phaser.Scene {
             .image('bg', 'images/attract_bg.png')
             .image('game_bg', 'images/game_bg.png')
             // Load flags sprite (8 flags: it, fr, de, en, us, ja, es, zh - 64x64 each)
-            .spritesheet('flags', 'images/flags.png', defaultFrame)
+            .spritesheet('flags', 'images/flags.png', { frameWidth: 64, frameHeight: 32 })
             // Load tiles sprite (6 tiles: wall, hole, sand, floor, stone, hole2 - 64x48 each)
             .spritesheet('tiles', 'images/tiles.png', defaultFrame)
             // Load wall sprite sheet (1 row x 7 columns, 64x64 each frame)
-            .spritesheet('wall_tiles', 'images/wall.png', defaultFrame)
+            .spritesheet('wall_tiles', 'images/wall_completed.png', defaultFrame)
             // Load objects sprite (4x4 matrix = 16 objects)
             // Row 1: dynamite, heart, stone, player
             // Row 2: dynamite_chest, door, gem, stones
@@ -1892,35 +1892,71 @@ class GameScene extends Phaser.Scene {
                 return { type: 'wall', wallFrame: 0, wallRotation: 0 };
             }
 
-            const wallMatch = value.match(/^w(\d)(\d)$/i);
-            if (wallMatch) {
-                const baseCol = Number(wallMatch[1]);
-                const rotationCode = Number(wallMatch[2]);
+            // Support full token wR C R F (row,col,rot,flip) where flip is h/v/0
+            const wallMatch4 = value.match(/^w(\d)(\d)(\d)([hv0])$/i);
+            if (wallMatch4) {
+                const row = Number(wallMatch4[1]);
+                const col = Number(wallMatch4[2]);
+                const rotationCode = Number(wallMatch4[3]);
+                const flipChar = String(wallMatch4[4]).toLowerCase();
+                const validRow = row >= 0 && row <= 3;
+                const validCol = col >= 0 && col <= 5;
+                const validRotation = rotationCode >= 0 && rotationCode <= 3;
+                const validFlip = flipChar === 'h' || flipChar === 'v' || flipChar === '0';
+                if (validRow && validCol && validRotation && validFlip) {
+                    return {
+                        type: 'wall',
+                        wallFrame: row * 6 + col,
+                        wallRotation: rotationCode,
+                        wallFlip: flipChar
+                    };
+                }
+            }
+
+            // Support old "wCR" (three digits without flip) -> treat as no flip
+            const wallMatch3 = value.match(/^w(\d)(\d)(\d)$/i);
+            if (wallMatch3) {
+                const row = Number(wallMatch3[1]);
+                const col = Number(wallMatch3[2]);
+                const rotationCode = Number(wallMatch3[3]);
+                const validRow = row >= 0 && row <= 3;
+                const validCol = col >= 0 && col <= 5;
+                const validRotation = rotationCode >= 0 && rotationCode <= 3;
+                if (validRow && validCol && validRotation) {
+                    return {
+                        type: 'wall',
+                        wallFrame: row * 6 + col,
+                        wallRotation: rotationCode,
+                        wallFlip: '0'
+                    };
+                }
+            }
+
+            const wallMatch2 = value.match(/^w(\d)(\d)$/i);
+            if (wallMatch2) {
+                // Legacy two-digit token: first digit was frame, second was rotation
+                const legacyFrame = Number(wallMatch2[1]);
+                const rotationCode = Number(wallMatch2[2]);
+                const baseCol = legacyFrame;
                 const validBaseCol = baseCol >= 0 && baseCol <= 6;
                 const validRotation = rotationCode >= 0 && rotationCode <= 3;
-
-                // New format: wCR => C=column (0..6), R=rotation (0..3, clockwise 90° steps)
                 if (validBaseCol && validRotation) {
                     return {
                         type: 'wall',
                         wallFrame: baseCol,
-                        wallRotation: rotationCode
+                        wallRotation: rotationCode,
+                        wallFlip: '0'
                     };
                 }
-
                 if (validBaseCol) {
                     return {
                         type: 'wall',
                         wallFrame: baseCol,
-                        wallRotation: ((rotationCode % 4) + 4) % 4
+                        wallRotation: ((rotationCode % 4) + 4) % 4,
+                        wallFlip: '0'
                     };
                 }
-
-                return {
-                    type: 'wall',
-                    wallFrame: 0,
-                    wallRotation: 0
-                };
+                return { type: 'wall', wallFrame: 0, wallRotation: 0, wallFlip: '0' };
             }
 
             if (value.length === 1) {
@@ -1980,6 +2016,7 @@ class GameScene extends Phaser.Scene {
                 let type = 'floor';
                 let wallFrame = 0;
                 let wallRotation = 0;
+                let wallFlip = '0';
                 let hiddenReveal = null;
 
                 // If we have map data from JSON, use it
@@ -1988,6 +2025,7 @@ class GameScene extends Phaser.Scene {
                     type = cell.type;
                     wallFrame = cell.wallFrame;
                     wallRotation = cell.wallRotation || 0;
+                    wallFlip = cell.wallFlip || '0';
                     hiddenReveal = cell.hiddenReveal || null;
                 } else {
                     // Fallback to old random generation
@@ -2037,8 +2075,15 @@ class GameScene extends Phaser.Scene {
                     // (avoids gaps when native tile frame height differs from width)
                     tileSprite.setDisplaySize(CONFIG.tileSize, CONFIG.tileSize);
 
-                    if (type === 'wall' && wallRotation) {
-                        tileSprite.setAngle(wallRotation * 90);
+                    if (type === 'wall') {
+                        if (wallFlip === 'h') {
+                            tileSprite.setFlipX(true);
+                        } else if (wallFlip === 'v') {
+                            tileSprite.setFlipY(true);
+                        } else {
+                            // 0..3 -> 0,90,180,270
+                            tileSprite.setAngle((Number(wallRotation) || 0) * 90);
+                        }
                     }
 
                     if (type === 'wall' && this.walls) {
@@ -4268,8 +4313,12 @@ class GameScene extends Phaser.Scene {
             const clampedRevealWallFrame = Phaser.Math.Clamp(Number(revealCell.wallFrame) || 0, 0, revealWallMaxFrame);
             const wallSprite = this.add.sprite(worldX, worldY, 'wall_tiles', clampedRevealWallFrame);
             wallSprite.setDisplaySize(CONFIG.tileSize, CONFIG.tileSize);
-            if (revealCell.wallRotation) {
-                wallSprite.setAngle((revealCell.wallRotation || 0) * 90);
+            if ((revealCell.wallRotation !== undefined && revealCell.wallRotation !== null) || revealCell.wallFlip) {
+                const rr = Number(revealCell.wallRotation) || 0;
+                const flip = String(revealCell.wallFlip ?? '0').toLowerCase();
+                if (flip === 'h') wallSprite.setFlipX(true);
+                else if (flip === 'v') wallSprite.setFlipY(true);
+                else wallSprite.setAngle(rr * 90);
             }
             if (this.walls) {
                 this.walls.add(wallSprite);
@@ -5645,13 +5694,36 @@ class BonusScene extends Phaser.Scene {
 
         const parseWallToken = (token) => {
             const tokenStr = String(token || '').trim().toLowerCase();
-            const wallMatch = tokenStr.match(/^w(\d)(\d)$/i);
-            if (!wallMatch) {
-                return { isWall: false, frame: 0, rotation: 0 };
+            // Accept new wRCRF (row,col,rot,flip) or legacy forms
+            const wallMatch4 = tokenStr.match(/^w(\d)(\d)(\d)([hv0])$/i);
+            if (wallMatch4) {
+                const row = Number(wallMatch4[1]);
+                const col = Number(wallMatch4[2]);
+                const rot = Number(wallMatch4[3]);
+                const flip = String(wallMatch4[4]).toLowerCase();
+                if (row >= 0 && row <= 3 && col >= 0 && col <= 5 && rot >= 0 && rot <= 3) {
+                    const frame = Phaser.Math.Clamp(row * 6 + col, 0, wallMaxFrame);
+                    return { isWall: true, frame, rotation: rot, flip };
+                }
             }
-            const frame = Phaser.Math.Clamp(Number(wallMatch[1]) || 0, 0, wallMaxFrame);
-            const rotation = ((Number(wallMatch[2]) || 0) % 4 + 4) % 4;
-            return { isWall: true, frame, rotation };
+            const wallMatch3 = tokenStr.match(/^w(\d)(\d)(\d)$/i);
+            if (wallMatch3) {
+                const row = Number(wallMatch3[1]);
+                const col = Number(wallMatch3[2]);
+                const rot = Number(wallMatch3[3]);
+                if (row >= 0 && row <= 3 && col >= 0 && col <= 5 && rot >= 0 && rot <= 3) {
+                    const frame = Phaser.Math.Clamp(row * 6 + col, 0, wallMaxFrame);
+                    return { isWall: true, frame, rotation: rot, flip: '0' };
+                }
+            }
+            const wallMatch2 = tokenStr.match(/^w(\d)(\d)$/i);
+            if (wallMatch2) {
+                const legacyFrame = Number(wallMatch2[1]) || 0;
+                const rot = ((Number(wallMatch2[2]) || 0) % 4 + 4) % 4;
+                const frame = Phaser.Math.Clamp(legacyFrame, 0, wallMaxFrame);
+                return { isWall: true, frame, rotation: rot, flip: '0' };
+            }
+            return { isWall: false, frame: 0, rotation: 0, flip: '0' };
         };
 
         const isSolidRailToken = (token) => {
@@ -5659,7 +5731,8 @@ class BonusScene extends Phaser.Scene {
             if (!tokenStr || tokenStr === '-') return false;
             if (tokenStr === 'h' || tokenStr === 'hole' || tokenStr === 'hole1' || tokenStr === 'hole2') return false;
             if (tokenStr === '=' || tokenStr === 't' || tokenStr === 's' || tokenStr === 'e' || tokenStr === 'rail' || tokenStr === 'floor' || tokenStr === 'f') return true;
-            if (/^w\d\d$/i.test(tokenStr)) return true;
+            // accept legacy wXX and new wRCRF (optionally ending with h/v/0)
+            if (/^w\d{2,3}[hv0]?$/i.test(tokenStr)) return true;
             return false;
         };
 
@@ -5669,8 +5742,12 @@ class BonusScene extends Phaser.Scene {
                 ? this.add.sprite(wx, wy, 'wall_tiles', wallInfo.frame)
                 : this.add.sprite(wx, wy, 'tiles', 3);
             visual.setDisplaySize(tileSize, tileSize);
-            if (wallInfo.isWall && wallInfo.rotation) {
-                visual.setAngle(wallInfo.rotation * 90);
+            if (wallInfo.isWall) {
+                const rr = Number(wallInfo.rotation) || 0;
+                const flip = String(wallInfo.flip ?? '0').toLowerCase();
+                if (flip === 'h') visual.setFlipX(true);
+                else if (flip === 'v') visual.setFlipY(true);
+                else visual.setAngle(rr * 90);
             }
             visual.setDepth(500);
             this.bonusRailVisuals.push(visual);
