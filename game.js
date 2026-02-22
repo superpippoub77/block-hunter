@@ -4713,6 +4713,38 @@ class GameScene extends Phaser.Scene {
             duration: 250,
             onComplete: () => explosion.destroy()
         });
+        // Make foreground 'shake' briefly to emphasize impact
+        try {
+            const shakeEnabled = (CONFIG.fgShakeEnabled === undefined) ? true : !!CONFIG.fgShakeEnabled;
+            if (shakeEnabled && this.gameFg) {
+                const mag = Number(CONFIG.fgShakeMagnitude) || 6;
+                const dx = Phaser.Math.Between(-mag, mag);
+                const dy = Phaser.Math.Between(-Math.max(1, Math.round(mag / 2)), Math.max(1, Math.round(mag / 2)));
+                const origX = this.gameFg.x;
+                const origY = this.gameFg.y;
+                this.tweens.add({
+                    targets: this.gameFg,
+                    x: origX + dx,
+                    y: origY + dy,
+                    duration: 120,
+                    yoyo: true,
+                    repeat: 2,
+                    ease: 'Sine.easeInOut',
+                    onComplete: () => {
+                        try {
+                            if (this.cameras && this.cameras.main) {
+                                this.gameFg.setPosition(this.cameras.main.centerX, this.cameras.main.centerY);
+                            } else {
+                                this.gameFg.setPosition((CONFIG.width || 800) / 2, (CONFIG.height || 600) / 2);
+                            }
+                        } catch (e) { }
+                    }
+                });
+            }
+            if (this.cameras && this.cameras.main && CONFIG.fgShakeCamera) {
+                try { this.cameras.main.shake(160, Number(CONFIG.fgShakeCameraIntensity) || 0.003); } catch (e) { }
+            }
+        } catch (e) { }
     }
 
     createDustPuff(x, y, scale) {
