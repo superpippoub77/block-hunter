@@ -269,6 +269,7 @@ class PreloadScene extends Phaser.Scene {
             .image('title_explosion', 'images/title_explosion.png')
             .image('bg', 'images/attract_bg.png')
             .image('game_bg', 'images/game_bg.png')
+            .image('fg_parallax', 'images/foreground.png')
             // Load flags sprite (8 flags: it, fr, de, en, us, ja, es, zh - 64x64 each)
             .spritesheet('flags', 'images/flags.png', { frameWidth: 64, frameHeight: 32 })
             // Load tiles sprite (6 tiles: wall, hole, sand, floor, stone, hole2 - 64x48 each)
@@ -453,6 +454,22 @@ class AttractScene extends Phaser.Scene {
 
         // Background image
         this.add.image(400, 300, 'bg').setDisplaySize(800, 600);
+        // Foreground parallax image (subtle 3D effect)
+        if (this.textures.exists('fg_parallax')) {
+            this.attractFg = this.add.image(400, 300, 'fg_parallax').setDisplaySize(800, 600).setScrollFactor(1.04).setDepth(0);
+            try {
+                this.tweens.add({
+                    targets: this.attractFg,
+                    x: '+=8',
+                    duration: 4000,
+                    yoyo: true,
+                    repeat: -1,
+                    ease: 'Sine.easeInOut'
+                });
+            } catch (e) { }
+        } else {
+            console.warn('fg_parallax texture not found in AttractScene');
+        }
         // Configurable dark overlay to dim the background while UI is visible
         const overlayAlpha = (typeof CONFIG.attractOverlayAlpha === 'number') ? CONFIG.attractOverlayAlpha : 0.35;
         this.attractOverlay = this.add.rectangle(400, 300, 800, 600, 0x000000, overlayAlpha).setDepth(0.1);
@@ -1667,8 +1684,20 @@ class GameScene extends Phaser.Scene {
 
         this.gameBg = this.add.image(CONFIG.width / 2, CONFIG.height / 2, selectedBgKey)
             .setDisplaySize(CONFIG.width, CONFIG.height)
-            .setScrollFactor(1)
+            .setScrollFactor(0.96)
             .setDepth(-1000);
+
+        // foreground overlay (fixed frame in front of gameplay)
+        if (this.textures.exists('fg_parallax')) {
+            const cx = (this.cameras && this.cameras.main) ? this.cameras.main.centerX : (CONFIG.width || 800) / 2;
+            const cy = (this.cameras && this.cameras.main) ? this.cameras.main.centerY : (CONFIG.height || 600) / 2;
+            this.gameFg = this.add.image(cx, cy, 'fg_parallax')
+                .setDisplaySize(CONFIG.width, CONFIG.height)
+                .setScrollFactor(0)
+                .setDepth(2000);
+        } else {
+            console.warn('fg_parallax texture not found in GameScene');
+        }
 
         // Get level data from JSON
         const levelFileName = getLevelFileName(GAME_STATE.currentLevel);
@@ -4296,6 +4325,23 @@ class GameScene extends Phaser.Scene {
             }
         }
         this.updateObjectivePointerUI();
+
+        // Foreground parallax positioning: nudge fg to follow camera for subtle depth
+        try {
+            if (this.gameFg && this.cameras && this.cameras.main) {
+                // If foreground is fixed (scrollFactor 0) keep it centered on camera
+                const cam = this.cameras.main;
+                const fgFactorX = (typeof this.gameFg.scrollFactorX === 'number') ? this.gameFg.scrollFactorX : 1.04;
+                const fgFactorY = (typeof this.gameFg.scrollFactorY === 'number') ? this.gameFg.scrollFactorY : 1.04;
+                if (fgFactorX === 0 && fgFactorY === 0) {
+                    this.gameFg.setPosition(cam.centerX, cam.centerY);
+                } else {
+                    const offsetX = Math.round(cam.scrollX * (1 - fgFactorX));
+                    const offsetY = Math.round(cam.scrollY * (1 - fgFactorY));
+                    this.gameFg.setPosition((CONFIG.width || 800) / 2 + offsetX, (CONFIG.height || 600) / 2 + offsetY);
+                }
+            }
+        } catch (e) { }
 
         // Update UI
         this.updateUITexts();
