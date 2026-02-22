@@ -15,7 +15,8 @@ const OBJECT_FRAMES = {
     hole1: 13,
     hole2: 14,
     explosion: 15,
-    cart: 7
+    cart: 7,
+    helmet: 3
 };
 
 const STORAGE_KEY = 'blockHunterLevelEditorState';
@@ -30,6 +31,8 @@ const BASE_PALETTE_ITEMS = [
     { token: 'd', label: 'door' },
     { token: 'k', label: 'key' },
     { token: 'p', label: 'pepita' },
+    { token: 'l', label: 'cuore' },
+    { token: 'helmet', label: 'helmet' },
     { token: 'b', label: 'dyn chest' },
     { token: 'c', label: 'cart' },
     { token: 'm', label: 'skeleton' },
@@ -37,8 +40,16 @@ const BASE_PALETTE_ITEMS = [
     { token: 'bat', label: 'bat spawn' }
 ];
 
-// Palette only shows base wall token; rotation/mirroring applied after placement
-const WALL_PALETTE_ITEMS = [ { token: 'w', label: 'wall' } ];
+// Palette shows all 24 wall variants (4 rows x 6 cols); rotation/mirroring applied after placement
+const WALL_PALETTE_ITEMS = (() => {
+    const arr = [];
+    for (let r = 0; r < 4; r++) {
+        for (let c = 0; c < 6; c++) {
+            arr.push({ token: `w${r}${c}00`, label: `wall ${r}${c}` });
+        }
+    }
+    return arr;
+})();
 
 const PALETTE_ITEMS = [...BASE_PALETTE_ITEMS, ...WALL_PALETTE_ITEMS];
 
@@ -80,6 +91,9 @@ const DEFAULT_LEVEL = {
     bat: 2,
     ghostSpeed: 80,
     batSpeed: 90
+    ,
+    background: 1,
+    backgroundEnabled: true
 };
 
 function el(id) {
@@ -127,7 +141,7 @@ function tokenToMiniMapColor(token) {
     if (normalized === 'g') return '#1f3f88';
     if (normalized === 'd') return '#7f5a22';
     if (normalized === 'k') return '#8f7918';
-    if (normalized === 'p') return '#a05e1e';
+    if (normalized === 'p' || normalized === 'l' || normalized === 'heart') return '#a05e1e';
     if (normalized === 'b') return '#8e2d2d';
     if (normalized === 'c') return '#2b8a8a';
     if (normalized === 'm') return '#6a6a6a';
@@ -140,6 +154,19 @@ function tokenToMiniMapColor(token) {
 function normalizeToken(token) {
     const raw = String(token ?? '-').trim();
     if (!raw) return '-';
+    // Allow token mapping via global CONFIG.tokenMap (loaded from data/config.json)
+    try {
+        const cfgMap = (typeof window !== 'undefined' && window.CONFIG && window.CONFIG.tokenMap) ? window.CONFIG.tokenMap : null;
+        if (cfgMap && typeof cfgMap === 'object') {
+            // try exact, lower and upper keys; avoid infinite recursion if mapping equals raw
+            const tryKeys = [raw, raw.toLowerCase(), raw.toUpperCase()];
+            for (let k of tryKeys) {
+                if (k && cfgMap[k] && String(cfgMap[k]).trim() !== raw) {
+                    return normalizeToken(String(cfgMap[k]));
+                }
+            }
+        }
+    } catch (e) { /* ignore */ }
     if (raw === 'w') return 'w0000';
     // accept full tokens wRCRF (row, col, rot, flip)
     const wallMatch4 = raw.match(/^w(\d)(\d)(\d)([hv0])$/i);
@@ -226,6 +253,12 @@ class LevelEditorScene extends Phaser.Scene {
             .spritesheet('objects', 'images/obj_game.png', { frameWidth: 64, frameHeight: 64 })
             .spritesheet('ghost_anim', 'images/ghost.png', { frameWidth: 64, frameHeight: 64 })
             .spritesheet('bat_anim', 'images/batpng.png', { frameWidth: 64, frameHeight: 64 });
+
+        // preload possible game backgrounds so the editor can offer them
+        this.load.image('game_bg', 'images/game_bg.png');
+        for (let i = 1; i <= 5; i++) {
+            this.load.image(`game_bg_${i}`, `images/level${i}.png`);
+        }
     }
 
     create() {
@@ -241,6 +274,15 @@ class LevelEditorScene extends Phaser.Scene {
         this.setupInputHandlers();
         this.renderGrid();
 
+        // populate background select with available backgrounds
+        try {
+            this.populateBackgroundOptions();
+        } catch (e) {
+            // ignore
+        }
+        // ensure editor background image is created/updated
+        try { this.updateEditorBackgroundImage(); } catch (e) { /* ignore */ }
+
         // Recompute layout on resize (Phaser RESIZE mode will update this.scale)
         this.scale.on('resize', (gameSize) => {
             const w = (gameSize && gameSize.width) ? gameSize.width : this.scale.width;
@@ -253,6 +295,73 @@ class LevelEditorScene extends Phaser.Scene {
 
         window.__levelEditorScene = this;
         window.dispatchEvent(new CustomEvent('level-editor-ready'));
+    }
+
+    populateBackgroundOptions() {
+        const sel = el('levelBackground');
+        if (!sel) return;
+        // clear existing options
+        sel.innerHTML = '';
+        const addOption = (value, label) => {
+            const o = document.createElement('option');
+            o.value = value;
+            o.textContent = label;
+            sel.appendChild(o);
+        };
+
+        addOption('', '(default)');
+        // prefer numbered level backgrounds if textures exist
+        for (let i = 1; i <= 5; i++) {
+            const key = `game_bg_${i}`;
+            if (this.textures.exists(key)) {
+                addOption(String(i), `level${i}`);
+            }
+        }
+        // add generic game_bg if present and not already represented
+        if (this.textures.exists('game_bg')) {
+            addOption('game_bg', 'game_bg');
+        }
+    }
+
+    getBackgroundKeyFromValue(val) {
+        if (!val) return null;
+        if (/^\d+$/.test(String(val))) {
+            const k = `game_bg_${String(val)}`;
+            return this.textures.exists(k) ? k : null;
+        }
+        if (this.textures.exists(val)) return val;
+        // fallback: try game_bg
+        return this.textures.exists('game_bg') ? 'game_bg' : null;
+    }
+
+    updateEditorBackgroundImage() {
+        const show = !!el('showBackground')?.checked;
+        const val = String(el('levelBackground')?.value ?? '').trim();
+        const key = this.getBackgroundKeyFromValue(val);
+
+        if (!show || !key) {
+            if (this.editorBgImage) {
+                try { this.editorBgImage.setVisible(false); } catch (e) {}
+            }
+            return;
+        }
+
+        const gridW = this.cellSize * this.cols;
+        const gridH = this.cellSize * this.rows;
+        const cx = this.gridOffsetX + gridW / 2;
+        const cy = this.gridOffsetY + gridH / 2;
+
+        if (!this.editorBgImage) {
+            this.editorBgImage = this.add.image(cx, cy, key).setDepth(-500);
+        }
+        try {
+            this.editorBgImage.setTexture(key);
+            this.editorBgImage.setDisplaySize(gridW, gridH);
+            this.editorBgImage.setPosition(cx, cy);
+            this.editorBgImage.setVisible(true);
+        } catch (e) {
+            // ignore
+        }
     }
 
     resetGrid(cols, rows) {
@@ -295,6 +404,8 @@ class LevelEditorScene extends Phaser.Scene {
         })));
         this.selectedCell = null;
         this.renderGrid();
+        // update background image after layout changes
+        try { this.updateEditorBackgroundImage(); } catch (e) { /* ignore */ }
     }
 
     onResize(width, height) {
@@ -303,6 +414,7 @@ class LevelEditorScene extends Phaser.Scene {
             this.resetGrid(this.cols, this.rows);
             this.createPalette();
             this.renderGrid();
+            try { this.updateEditorBackgroundImage(); } catch (e) { /* ignore */ }
         } catch (e) {
             // ignore during early initialization
         }
@@ -342,19 +454,19 @@ class LevelEditorScene extends Phaser.Scene {
             this.renderGrid();
         });
 
-        // Mirror: up = horizontal flip (flipX), down = vertical flip (flipY)
-        this.input.keyboard.on('keydown-UP', () => {
+        // Mirror: 'H' = horizontal flip (flipX), 'V' = vertical flip (flipY)
+        this.input.keyboard.on('keydown-H', () => {
             this.mirrorSelectedCell('h');
             this.renderGrid();
         });
 
-        this.input.keyboard.on('keydown-DOWN', () => {
+        this.input.keyboard.on('keydown-V', () => {
             this.mirrorSelectedCell('v');
             this.renderGrid();
         });
 
-        // Open wall variant picker with 'V'
-        this.input.keyboard.on('keydown-V', () => {
+        // Open wall variant picker with 'W' (was 'V' before; 'V' now flips vertical)
+        this.input.keyboard.on('keydown-W', () => {
             this.toggleWallVariantPicker();
         });
 
@@ -513,7 +625,10 @@ class LevelEditorScene extends Phaser.Scene {
         const r = Number(match[1]);
         const c = Number(match[2]);
         const currentRot = Number(match[3]);
-        const newFlip = axis === 'h' ? 'h' : 'v';
+        const currentFlip = String(match[4] ?? '0').toLowerCase();
+        const desired = axis === 'h' ? 'h' : 'v';
+        // Toggle: if already flipped on the same axis, remove flip (0); otherwise set to desired
+        const newFlip = currentFlip === desired ? '0' : desired;
         cell[targetKey] = `w${r}${c}${currentRot}${newFlip}`;
     }
 
@@ -627,6 +742,7 @@ class LevelEditorScene extends Phaser.Scene {
             case 'p': return { kind: 'obj', frame: OBJECT_FRAMES.pepita };
             case 'b': return { kind: 'obj', frame: OBJECT_FRAMES.dynamite_chest };
             case 'c': return { kind: 'obj', frame: OBJECT_FRAMES.cart };
+            case 'helmet': return { kind: 'obj', frame: OBJECT_FRAMES.helmet };
             case 'm': return { kind: 'obj', frame: OBJECT_FRAMES.wall };
             case 'ghost': return { kind: 'ghost' };
             case 'bat': return { kind: 'bat' };
@@ -662,34 +778,22 @@ class LevelEditorScene extends Phaser.Scene {
         }
 
         if (info.kind === 'obj') {
-            const floor = this.add.sprite(x, y, 'tiles', 3);
-            floor.setScale(scale);
-            floor.setAlpha(0.45);
             const obj = this.add.sprite(x, y, 'objects', info.frame);
             obj.setScale(scale * 0.9);
-            container.add(floor);
             container.add(obj);
             return;
         }
 
         if (info.kind === 'ghost') {
-            const floor = this.add.sprite(x, y, 'tiles', 3);
-            floor.setScale(scale);
-            floor.setAlpha(0.45);
             const ghost = this.add.sprite(x, y, 'ghost_anim', 0);
             ghost.setScale(scale * 0.9);
-            container.add(floor);
             container.add(ghost);
             return;
         }
 
         if (info.kind === 'bat') {
-            const floor = this.add.sprite(x, y, 'tiles', 3);
-            floor.setScale(scale);
-            floor.setAlpha(0.45);
             const bat = this.add.sprite(x, y, 'bat_anim', 0);
             bat.setScale(scale * 0.9);
-            container.add(floor);
             container.add(bat);
             return;
         }
@@ -893,31 +997,24 @@ function drawMiniMapToken(scene, ctx, token, x, y, size, opts = {}) {
         case 's':
             return drawMiniMapFrame(scene, ctx, 'tiles', 5, x, y, size, { alpha: opts.alpha });
         case 'g':
-            drawFloor(0.55);
             return drawMiniMapFrame(scene, ctx, 'objects', OBJECT_FRAMES.gem, x, y, size, { alpha: opts.alpha });
         case 'd':
-            drawFloor(0.55);
             return drawMiniMapFrame(scene, ctx, 'objects', OBJECT_FRAMES.door, x, y, size, { alpha: opts.alpha });
         case 'k':
-            drawFloor(0.55);
             return drawMiniMapFrame(scene, ctx, 'objects', OBJECT_FRAMES.key, x, y, size, { alpha: opts.alpha });
         case 'p':
-            drawFloor(0.55);
             return drawMiniMapFrame(scene, ctx, 'objects', OBJECT_FRAMES.pepita, x, y, size, { alpha: opts.alpha });
         case 'b':
-            drawFloor(0.55);
             return drawMiniMapFrame(scene, ctx, 'objects', OBJECT_FRAMES.dynamite_chest, x, y, size, { alpha: opts.alpha });
         case 'c':
-            drawFloor(0.55);
             return drawMiniMapFrame(scene, ctx, 'objects', OBJECT_FRAMES.cart, x, y, size, { alpha: opts.alpha });
         case 'm':
-            drawFloor(0.55);
             return drawMiniMapFrame(scene, ctx, 'objects', OBJECT_FRAMES.wall, x, y, size, { alpha: opts.alpha });
+        case 'helmet':
+            return drawMiniMapFrame(scene, ctx, 'objects', OBJECT_FRAMES.helmet, x, y, size, { alpha: opts.alpha });
         case 'ghost':
-            drawFloor(0.55);
             return drawMiniMapFrame(scene, ctx, 'ghost_anim', 0, x, y, size, { alpha: opts.alpha });
         case 'bat':
-            drawFloor(0.55);
             return drawMiniMapFrame(scene, ctx, 'bat_anim', 0, x, y, size, { alpha: opts.alpha });
         default:
             return false;
@@ -936,6 +1033,30 @@ function drawMiniMapPreview(scene) {
     const height = canvas.height;
     ctx.imageSmoothingEnabled = false;
     ctx.clearRect(0, 0, width, height);
+
+    // draw background image in preview if enabled
+    const showBg = !!el('showBackground')?.checked;
+    const bgVal = String(el('levelBackground')?.value ?? '').trim();
+    if (showBg && bgVal) {
+        // map bgVal to texture key like in editor
+        let bgKey = null;
+        if (/^\d+$/.test(bgVal)) {
+            const k = `game_bg_${bgVal}`;
+            bgKey = scene.textures.exists(k) ? k : null;
+        } else if (scene.textures.exists(bgVal)) {
+            bgKey = bgVal;
+        } else if (scene.textures.exists('game_bg')) {
+            bgKey = 'game_bg';
+        }
+        if (bgKey) {
+            // attempt to draw the full background covering the preview area
+            const frame = scene?.textures?.getFrame(bgKey, 0);
+            const sourceImage = frame?.source?.image;
+            if (frame && sourceImage) {
+                ctx.drawImage(sourceImage, 0, 0, width, height);
+            }
+        }
+    }
 
     const rows = scene.rows || 1;
     const cols = scene.cols || 1;
@@ -1078,6 +1199,18 @@ function readLevelFromForm() {
         batSpeed: parseNumber(el('batSpeed')?.value, 90)
     };
 
+    // include background enabled flag
+    level.backgroundEnabled = !!el('showBackground')?.checked;
+
+    const bgRaw = String(el('levelBackground')?.value ?? '').trim();
+    if (bgRaw) {
+        if (/^\d+$/.test(bgRaw)) {
+            level.background = Number(bgRaw);
+        } else {
+            level.background = bgRaw;
+        }
+    }
+
     return { ...level, ...extra, map: level.map, playerStart: level.playerStart };
 }
 
@@ -1099,9 +1232,14 @@ function applyLevelToForm(levelData) {
     el('objectiveLabel').value = data.objectiveLabel ?? DEFAULT_LEVEL.objectiveLabel;
     el('lightMode').value = data.light ?? DEFAULT_LEVEL.light;
     el('escapeRoute').value = String(!!data.escapeRoute);
+    el('levelBackground').value = data.background ? String(data.background) : '';
 
     el('playerRow').value = data.playerStart?.row ?? DEFAULT_LEVEL.playerStart.row;
     el('playerCol').value = data.playerStart?.col ?? DEFAULT_LEVEL.playerStart.col;
+
+    // background select + enabled
+    el('levelBackground').value = data.background ? String(data.background) : '';
+    if (el('showBackground')) el('showBackground').checked = data.backgroundEnabled !== undefined ? !!data.backgroundEnabled : true;
 
     el('srEnabled').value = String(!!staticRocks.enabled);
     el('srDynamicSize').value = staticRocks.dynamicSize === null ? 'null' : JSON.stringify(staticRocks.dynamicSize);
@@ -1227,6 +1365,7 @@ function bindUI() {
             applyLevelToForm(parsed);
             const scene = getScene();
             scene?.loadFromJson(parsed);
+            scene?.updateEditorBackgroundImage?.();
             setStatus(`Import completato: ${file.name}`);
         } catch (error) {
             setStatus(`Errore import: ${error.message}`, true);
@@ -1249,6 +1388,24 @@ function bindUI() {
         input.addEventListener('input', () => drawMiniMapPreview(getScene()));
         input.addEventListener('change', () => drawMiniMapPreview(getScene()));
     });
+
+    // background select and toggle
+    const bgSelect = el('levelBackground');
+    if (bgSelect) {
+        bgSelect.addEventListener('change', () => {
+            const scene = getScene();
+            scene?.updateEditorBackgroundImage?.();
+            drawMiniMapPreview(scene);
+        });
+    }
+    const showBg = el('showBackground');
+    if (showBg) {
+        showBg.addEventListener('change', () => {
+            const scene = getScene();
+            scene?.updateEditorBackgroundImage?.();
+            drawMiniMapPreview(scene);
+        });
+    }
 }
 
 window.addEventListener('level-editor-ready', () => {

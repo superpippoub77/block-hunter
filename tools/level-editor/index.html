@@ -160,6 +160,18 @@
     v.img.src = v.src;
   });
 
+  // Load editor config (tokenMap) from game's data/config.json if available
+  (async function loadEditorConfig(){
+    try {
+      const res = await fetch('../../data/config.json');
+      if (!res.ok) return;
+      const cfg = await res.json();
+      window.EDITOR_TOKEN_MAP = cfg.tokenMap || {};
+    } catch (e) {
+      window.EDITOR_TOKEN_MAP = window.EDITOR_TOKEN_MAP || {};
+    }
+  })();
+
   function makePalette(){
     paletteEl.innerHTML='';
     TILE_TYPES.forEach(t=>{
@@ -320,8 +332,16 @@
         const rot = rotSel ? Number(rotSel.value||0) : 0;
         state.tiles[row][col] = `w${base}${rot}`;
       } else {
-        state.tiles[row][col] = sel;
-      }
+        // apply tokenMap if user selected a single-letter token that maps to a full token
+        let finalToken = sel;
+        try {
+          const map = (window.EDITOR_TOKEN_MAP && typeof window.EDITOR_TOKEN_MAP === 'object') ? window.EDITOR_TOKEN_MAP : null;
+          if (map && typeof sel === 'string' && sel.length === 1 && map[sel]) {
+            finalToken = String(map[sel]);
+          }
+        } catch (e) { /* ignore */ }
+        state.tiles[row][col] = finalToken;
+        }
     } else if (tool==='object'){
       state.objects.push({ type: state.selected, row, col, rot: state.rotation });
     }

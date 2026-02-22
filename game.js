@@ -34,6 +34,7 @@ function mergeLocalConfig() {
             if (parsed.tileSize) CONFIG.tileSize = parsed.tileSize;
             if (parsed.objectSize) CONFIG.objectSize = parsed.objectSize;
             if (parsed.playerSize) CONFIG.playerSize = parsed.playerSize;
+            if (parsed.helmetRadiusTiles) CONFIG.helmetRadiusTiles = parsed.helmetRadiusTiles;
             // Backwards compatibility: support old 'objectScale' saved values
             else if (parsed.objectScale) CONFIG.objectSize = Math.round(parsed.objectScale * OBJECT_NATIVE_SIZE);
         }
@@ -229,7 +230,7 @@ class PreloadScene extends Phaser.Scene {
     // Load title, background, tiles, objects, and all level JSON files
     preload() {
         this.add.rectangle(400, 300, 800, 600, 0x000000, 1).setDepth(0);
-        const loadingText = this.add.text(400, 300, 'loading...', {
+        const loadingText = this.add.text(400, 300, 'loading', {
             fontSize: '28px',
             fill: '#ffffff',
             fontFamily: GAME_FONT,
@@ -237,7 +238,25 @@ class PreloadScene extends Phaser.Scene {
             strokeThickness: 4
         }).setOrigin(0.5).setDepth(10);
 
+        // animate loading dots in sequence: ., .., ...
+        try {
+            let dotCount = 0;
+            this._loadingDotEvent = this.time.addEvent({
+                delay: 400,
+                loop: true,
+                callback: () => {
+                    try {
+                        dotCount = (dotCount % 3) + 1;
+                        loadingText.setText('loading' + '.'.repeat(dotCount));
+                    } catch (e) { }
+                }
+            });
+        } catch (e) { }
+
         this.load.on('complete', () => {
+            try {
+                if (this._loadingDotEvent) this._loadingDotEvent.remove(false);
+            } catch (e) { }
             if (loadingText && loadingText.destroy) {
                 loadingText.destroy();
             }
@@ -434,7 +453,9 @@ class AttractScene extends Phaser.Scene {
 
         // Background image
         this.add.image(400, 300, 'bg').setDisplaySize(800, 600);
-        this.add.rectangle(400, 300, 800, 600, 0x000000, 0.35).setDepth(0.1);
+        // Configurable dark overlay to dim the background while UI is visible
+        const overlayAlpha = (typeof CONFIG.attractOverlayAlpha === 'number') ? CONFIG.attractOverlayAlpha : 0.35;
+        this.attractOverlay = this.add.rectangle(400, 300, 800, 600, 0x000000, overlayAlpha).setDepth(0.1);
 
         // Title image (loaded from images/title.png)
         this.titleImage = this.add.image(400, -120, 'title').setOrigin(0.5);
@@ -558,14 +579,14 @@ class AttractScene extends Phaser.Scene {
                                                     // ignore sizing errors and proceed with default size
                                                 }
                                                 // Position subtitle under the story/instructions text when possible
-                                                try {
+                                                    try {
                                                     const instr = this.instructionsText;
                                                     const margin = 8; // spacing between story and subtitle
                                                     let instrCenterY = 280;
                                                     let instrHalfH = 0;
                                                     if (instr) {
+                                                        instrHalfH = (instr.height || 0) / 2;
                                                         instrCenterY = (typeof instr.y === 'number') ? instr.y : instrCenterY;
-                                                        instrHalfH = (typeof instr.height === 'number') ? (instr.height / 2) : 0;
                                                     }
                                                     const subH = (typeof subtitleImg.displayHeight === 'number' && subtitleImg.displayHeight > 0) ? subtitleImg.displayHeight : ((subtitleImg.frame && subtitleImg.frame.height) || 0);
                                                     const targetY = instrCenterY + instrHalfH + (subH / 2) + margin;
@@ -1252,7 +1273,8 @@ class ConfigScene extends Phaser.Scene {
                 localStorage.setItem('blockHunterConfig', JSON.stringify({
                     tileSize: CONFIG.tileSize,
                     objectSize: CONFIG.objectSize,
-                    playerSize: CONFIG.playerSize
+                    playerSize: CONFIG.playerSize,
+                    helmetRadiusTiles: CONFIG.helmetRadiusTiles
                 }));
             } catch (e) { }
             // show small confirmation
@@ -1265,6 +1287,7 @@ class ConfigScene extends Phaser.Scene {
             CONFIG.tileSize = 32;
             CONFIG.objectSize = OBJECT_NATIVE_SIZE;
             CONFIG.playerSize = OBJECT_NATIVE_SIZE;
+            CONFIG.helmetRadiusTiles = 1.6;
             this.tileSizeText.setText(String(CONFIG.tileSize));
             this.objectSizeText.setText(String(CONFIG.objectSize));
             this.playerSizeText.setText(String(CONFIG.playerSize));
@@ -1619,10 +1642,29 @@ class GameScene extends Phaser.Scene {
             });
         }
 
-        // Background based on master level (1..5), fallback to default game_bg
+        // Background selection: prefer level-specific `background` if provided in JSON,
+        // otherwise fallback to master-level image (game_bg_1..game_bg_5) or default 'game_bg'.
         const masterLevel = getLevelMasterNumber(GAME_STATE.currentLevel);
         const masterLevelBgKey = `game_bg_${masterLevel}`;
-        const selectedBgKey = this.textures.exists(masterLevelBgKey) ? masterLevelBgKey : 'game_bg';
+        let selectedBgKey = 'game_bg';
+        // prefer explicit background set in level JSON
+        if (this.levelData && this.levelData.background != null) {
+            const b = this.levelData.background;
+            if (typeof b === 'number') {
+                const k = `game_bg_${b}`;
+                if (this.textures.exists(k)) selectedBgKey = k;
+            } else if (typeof b === 'string') {
+                if (/^\d+$/.test(b)) {
+                    const k = `game_bg_${b}`;
+                    if (this.textures.exists(k)) selectedBgKey = k;
+                } else if (this.textures.exists(b)) {
+                    selectedBgKey = b;
+                }
+            }
+        } else {
+            selectedBgKey = this.textures.exists(masterLevelBgKey) ? masterLevelBgKey : 'game_bg';
+        }
+
         this.gameBg = this.add.image(CONFIG.width / 2, CONFIG.height / 2, selectedBgKey)
             .setDisplaySize(CONFIG.width, CONFIG.height)
             .setScrollFactor(1)
@@ -1866,16 +1908,39 @@ class GameScene extends Phaser.Scene {
             sandPile: 4  // sandPile uses stone texture
         };
 
+        const resolveTokenMap = (val) => {
+            try {
+                if (val == null) return val;
+                if (typeof val !== 'string') return val;
+                const map = CONFIG.tokenMap || {};
+                const tryKeys = [val, val.toLowerCase(), val.toUpperCase()];
+                for (let k of tryKeys) {
+                    if (k && map[k] && String(map[k]).trim() !== String(val)) {
+                        return resolveTokenMap(String(map[k]));
+                    }
+                }
+            } catch (e) { /* ignore */ }
+            return val;
+        };
+
         const parseSingleMapSymbol = (value) => {
+            // apply tokenMap mappings first
+            value = resolveTokenMap(value);
+            // Treat null/undefined/empty-string as explicit empty tile
+            if (value == null) {
+                return { type: 'empty', wallFrame: 0, wallRotation: 0 };
+            }
+
             if (typeof value !== 'string') {
-                return {
-                    type: value,
-                    wallFrame: 0,
-                    wallRotation: 0
-                };
+                // convert non-string values to string for parsing (numbers, etc.)
+                try { value = String(value); } catch (e) { return { type: 'empty', wallFrame: 0, wallRotation: 0 }; }
             }
 
             const normalizedValue = value.trim().toLowerCase();
+            if (normalizedValue === '') {
+                return { type: 'empty', wallFrame: 0, wallRotation: 0 };
+            }
+
             if (normalizedValue === 'floor' || normalizedValue === 'f') {
                 return { type: 'floor', wallFrame: 0, wallRotation: 0 };
             }
@@ -1968,6 +2033,7 @@ class GameScene extends Phaser.Scene {
                     case 's': return { type: 'sand', wallFrame: 0, wallRotation: 0 };
                     case 'g': return { type: 'gem', wallFrame: 0, wallRotation: 0 };
                     case '-': return { type: 'empty', wallFrame: 0, wallRotation: 0 };
+                    case 'l': return { type: 'heart', wallFrame: 0, wallRotation: 0 };
                     case 'd': return { type: 'door', wallFrame: 0, wallRotation: 0 };
                     case 'k': return { type: 'key', wallFrame: 0, wallRotation: 0 };
                     case 'p': return { type: 'pepita', wallFrame: 0, wallRotation: 0 };
@@ -2108,14 +2174,16 @@ class GameScene extends Phaser.Scene {
                     coverSprite = door;
                 }
 
-                if ((type === 'key' || type === 'pepita' || type === 'dynamite' || type === 'skeleton' || type === 'cart') && this.items) {
+                if ((type === 'key' || type === 'pepita' || type === 'heart' || type === 'dynamite' || type === 'skeleton' || type === 'cart' || type === 'helmet') && this.items) {
                     const frame = type === 'key'
                         ? OBJECT_FRAMES.key
                         : (type === 'pepita'
                             ? OBJECT_FRAMES.pepita
-                            : (type === 'dynamite'
-                                ? OBJECT_FRAMES.dynamite_chest
-                                : (type === 'cart' ? OBJECT_FRAMES.cart : OBJECT_FRAMES.wall)));
+                            : (type === 'heart'
+                                ? OBJECT_FRAMES.heart
+                                : (type === 'dynamite'
+                                    ? OBJECT_FRAMES.dynamite_chest
+                                    : (type === 'cart' ? OBJECT_FRAMES.cart : (type === 'helmet' ? OBJECT_FRAMES.helmet : OBJECT_FRAMES.wall)))));
                     const itemSprite = this.items.create(
                         offsetX + x * CONFIG.tileSize + CONFIG.tileSize / 2,
                         offsetY + y * CONFIG.tileSize + CONFIG.tileSize / 2,
@@ -2259,7 +2327,7 @@ class GameScene extends Phaser.Scene {
     }
 
     createPlayer() {
-        // Determine initial player position. Support per-level `playerStart`
+        if (this.nameText) this.nameText.setText(this._formatNameDisplay());
         // inside level data. `playerStart` may be specified as pixel coords
         // { x: 123, y: 456 } or as tile indices { row: r, col: c }.
         let px = CONFIG.width / 2;
@@ -2785,11 +2853,10 @@ class GameScene extends Phaser.Scene {
         this.physics.add.overlap(this.player, this.gems, this.collectGem, null, this);
         this.physics.add.overlap(this.player, this.items, this.collectItem, null, this);
         this.physics.add.overlap(this.player, this.bats, this.hitByBat, null, this);
-        const playerRockCollider = this.physics.add.collider(this.player, this.rocks);
+        const playerRockCollider = this.physics.add.collider(this.player, this.rocks, this.hitByRock, null, this);
         if (playerRockCollider) {
             this.playerCollisionRefs.push(playerRockCollider);
         }
-        this.physics.add.overlap(this.player, this.rocks, this.hitByRock, null, this);
         this.physics.add.overlap(this.player, this.boulders, this.hitByBoulder, null, this);
         this.physics.add.overlap(this.player, this.ghosts, this.hitByGhost, null, this);
         this.physics.add.overlap(this.player, this.shards, this.hitByShard, null, this);
@@ -4074,6 +4141,46 @@ class GameScene extends Phaser.Scene {
             try { this.playerSandHalo.setPosition(this.player.x, this.player.y); } catch (e) { }
         }
 
+        // Keep helmet aura positioned on the player while effect active
+        if (this.helmetAura && this.player && this.player.active) {
+            try { this.helmetAura.setPosition(this.player.x, this.player.y); } catch (e) { }
+        }
+
+        // While helmet active, proactively destroy falling rocks within helmet radius
+        if (this.helmetActive && this.player && this.player.active && this.rocks) {
+            try {
+                const tiles = Number(CONFIG.helmetRadiusTiles) || 1.6;
+                const radius = tiles * (Number(CONFIG.tileSize) || 64);
+                const rocks = (this.rocks && this.rocks.children && this.rocks.children.entries) ? this.rocks.children.entries.slice() : [];
+                let destroyedAny = false;
+                for (let i = 0; i < rocks.length; i++) {
+                    const rk = rocks[i];
+                    if (!rk || !rk.active) continue;
+                    // target falling or destructible rocks
+                    if (!rk.getData) continue;
+                    const isFallingRk = !!rk.getData('isFalling');
+                    const destructible = !!rk.getData('destructible');
+                    if (!isFallingRk && !destructible) continue;
+                    const dx = (rk.x || 0) - (this.player.x || 0);
+                    const dy = (rk.y || 0) - (this.player.y || 0);
+                    if (Math.hypot(dx, dy) <= radius) {
+                        destroyedAny = true;
+                        try { this.addScore(5, rk.x, rk.y); } catch (e) { }
+                        try {
+                            const size = rk.getData && rk.getData('size') ? rk.getData('size') : 'medium';
+                            try { this.createDustPuff(rk.x, rk.y, (size === 'small' ? 0.8 : (size === 'large' ? 1.4 : 1))); } catch (e) { }
+                            try { this.emitStoneShardBurst(rk.x, rk.y, size); } catch (e) { }
+                        } catch (e) { }
+                        try { rk.destroy(); } catch (e) { }
+                    }
+                }
+                if (destroyedAny) {
+                    try { if (this.sound) this.sound.play('explosion_sfx', { volume: 0.45 }); } catch (e) { }
+                    try { this.createExplosionAt(this.player.x, this.player.y); } catch (e) { }
+                }
+            } catch (e) { /* ignore runtime errors in helmet scan */ }
+        }
+
         // Directional walk animations: down/front, up/back, right/right, left/right+flipX
         const isMoving = velocityX !== 0 || velocityY !== 0;
         if (isMoving) {
@@ -4289,7 +4396,7 @@ class GameScene extends Phaser.Scene {
                     ? OBJECT_FRAMES.pepita
                     : (itemType === 'dynamite'
                         ? OBJECT_FRAMES.dynamite_chest
-                        : (itemType === 'cart' ? OBJECT_FRAMES.cart : OBJECT_FRAMES.wall)));
+                        : (itemType === 'cart' ? OBJECT_FRAMES.cart : (itemType === 'helmet' ? OBJECT_FRAMES.helmet : OBJECT_FRAMES.wall))));
             const itemSprite = this.items.create(worldX, worldY, 'objects', frame);
             const objectScaleFactor = CONFIG.objectSize / OBJECT_NATIVE_SIZE;
             itemSprite.setScale(objectScaleFactor);
@@ -4837,7 +4944,10 @@ class GameScene extends Phaser.Scene {
             }
         } else if (type === 'dynamite') {
             GAME_STATE.dynamiteCount += 5;
-        } else if (type === 'pepita') {
+        } else if (type === 'helmet') {
+            this.addScore(10, item.x, item.y);
+            this.activateHelmet(10000);
+        } else if (type === 'pepita' || type === 'heart') {
             GAME_STATE.lives++;
             if (this.levelStats) {
                 this.levelStats.pepitasCollected = (Number(this.levelStats.pepitasCollected) || 0) + 1;
@@ -4876,6 +4986,38 @@ class GameScene extends Phaser.Scene {
         this.cartPowerTimer = this.time.delayedCall(Math.max(0, Number(durationMs) || 0), () => {
             this.deactivateCartPowerup();
         });
+    }
+
+    activateHelmet(durationMs = 10000) {
+        this.helmetActive = true;
+        this.helmetUntil = this.time.now + Math.max(0, Number(durationMs) || 0);
+
+        if (this.helmetTimer) {
+            this.helmetTimer.remove(false);
+        }
+
+        // create blue aura around player
+        try {
+            if (!this.helmetAura && this.player) {
+                const radius = Math.max((this.player.displayWidth || 16), (this.player.displayHeight || 16)) * 1.4;
+                this.helmetAura = this.add.circle(this.player.x, this.player.y, radius, 0x4db6ff, 0.28).setDepth(900);
+                try { this.helmetAura.setBlendMode(Phaser.BlendModes.ADD); } catch (e) { }
+            }
+        } catch (e) { /* ignore */ }
+
+        this.helmetTimer = this.time.delayedCall(Math.max(0, Number(durationMs) || 0), () => {
+            this.deactivateHelmet();
+        }, [], this);
+    }
+
+    deactivateHelmet() {
+        this.helmetActive = false;
+        this.helmetUntil = 0;
+        if (this.helmetTimer) {
+            try { this.helmetTimer.remove(false); } catch (e) {}
+            this.helmetTimer = null;
+        }
+        try { if (this.helmetAura) { this.helmetAura.destroy(); this.helmetAura = null; } } catch (e) { }
     }
 
     deactivateCartPowerup() {
@@ -4968,9 +5110,44 @@ class GameScene extends Phaser.Scene {
     }
 
     hitByRock(player, rock) {
-        if (!rock.getData('isFalling')) return;
+        const isFalling = !!(rock && rock.getData && rock.getData('isFalling'));
+        // If helmet active, destroy the rock and surrounding rocks (regardless of falling state)
+        if (this.helmetActive) {
+            const tiles = Number(CONFIG.helmetRadiusTiles) || 1.6;
+            const radius = tiles * (Number(CONFIG.tileSize) || 64);
+            // destroy rocks within radius (including the one that hit)
+            const rocks = (this.rocks && this.rocks.children && this.rocks.children.entries) ? this.rocks.children.entries.slice() : [];
+            let destroyedCount = 0;
+            for (let i = 0; i < rocks.length; i++) {
+                const rk = rocks[i];
+                if (!rk || !rk.active) continue;
+                const dx = (rk.x || 0) - (player.x || 0);
+                const dy = (rk.y || 0) - (player.y || 0);
+                if (Math.hypot(dx, dy) <= radius) {
+                    destroyedCount++;
+                    try { this.addScore(5, rk.x, rk.y); } catch (e) { }
+                    try {
+                        const size = rk.getData && rk.getData('size') ? rk.getData('size') : 'medium';
+                        // visual effects: dust + shards
+                        try { this.createDustPuff(rk.x, rk.y, (size === 'small' ? 0.8 : (size === 'large' ? 1.4 : 1))); } catch (e) { }
+                        try { this.emitStoneShardBurst(rk.x, rk.y, size); } catch (e) { }
+                    } catch (e) { }
+                    try { rk.destroy(); } catch (e) { }
+                }
+            }
+            if (destroyedCount > 0) {
+                try { if (this.sound) this.sound.play('explosion_sfx', { volume: 0.45 }); } catch (e) { }
+                try { this.createExplosionAt(player.x, player.y); } catch (e) { }
+            }
+            return;
+        }
+
+        // If not falling and helmet not active, ignore non-falling rocks (player walks into them)
+        if (!isFalling) return;
+
+        // Normal hit by falling rock
         this.loseLife();
-        rock.destroy();
+        try { rock.destroy(); } catch (e) { }
     }
 
     hitByShard(player, shard) {
@@ -6296,17 +6473,20 @@ class GameOverScene extends Phaser.Scene {
     }
 
     create() {
-        const t = TRANSLATIONS[GAME_STATE.language];
+        const t = TRANSLATIONS[GAME_STATE.language] || {};
+
+        const gameOverText = t.game_over || t.gameOver || t.gameOverText || 'GAME OVER';
+        const scoreLabel = t.score_label || t.score || 'SCORE';
 
         this.add.rectangle(400, 300, 800, 600, 0x220000);
 
-        this.add.text(400, 200, t.gameOver, {
+        this.add.text(400, 200, gameOverText, {
             fontSize: '64px',
             fill: '#ff0000',
             fontFamily: GAME_FONT
         }).setOrigin(0.5);
 
-        this.add.text(400, 280, `${t.score}: ${GAME_STATE.score}`, {
+        this.add.text(400, 280, `${scoreLabel}: ${GAME_STATE.score}`, {
             fontSize: '32px',
             fill: '#ffffff',
             fontFamily: GAME_FONT
@@ -6315,29 +6495,45 @@ class GameOverScene extends Phaser.Scene {
         // Check if high score
         const lowestScore = GAME_STATE.topScores[GAME_STATE.topScores.length - 1].score;
         if (GAME_STATE.score > lowestScore) {
-            this.add.text(400, 350, t.enterName, {
+            this.add.text(400, 350, t.enterName || 'ENTER YOUR NAME', {
                 fontSize: '24px',
                 fill: '#00ff00',
                 fontFamily: GAME_FONT
             }).setOrigin(0.5);
 
-            this.nameInput = '';
-            this.nameText = this.add.text(400, 400, '___', {
+            // Letter picker: 3 letters, cycle with UP/DOWN, confirm letter with SPACE, 20s timeout
+            this.nameChars = ['A', 'A', 'A'];
+            this.currentCharIndex = 0;
+            this.confirmed = [false, false, false];
+            this.nameText = this.add.text(400, 400, this._formatNameDisplay(), {
                 fontSize: '32px',
                 fill: '#ffff00',
                 fontFamily: GAME_FONT
             }).setOrigin(0.5);
 
-            this.input.keyboard.on('keydown', (event) => {
-                if (event.key.length === 1 && this.nameInput.length < 3) {
-                    this.nameInput += event.key.toUpperCase();
-                    this.updateNameDisplay();
-                } else if (event.key === 'Backspace' && this.nameInput.length > 0) {
-                    this.nameInput = this.nameInput.slice(0, -1);
-                    this.updateNameDisplay();
-                } else if (event.key === 'Enter' && this.nameInput.length === 3) {
-                    this.saveScore();
+            // Keyboard handlers
+            this._onKeyDown = (event) => {
+                const key = event.key;
+                if (key === 'ArrowUp') {
+                    this._cycleLetter(1);
+                } else if (key === 'ArrowDown') {
+                    this._cycleLetter(-1);
+                } else if (key === ' ') {
+                    // confirm current letter
+                    this._confirmLetter();
+                } else if (key === 'Backspace') {
+                    // go back to previous letter
+                    this._goBackLetter();
+                } else if (key === 'Enter') {
+                    // if all confirmed, save
+                    if (this.confirmed.every(Boolean)) this.saveScore();
                 }
+            };
+            this.input.keyboard.on('keydown', this._onKeyDown);
+
+            // 20s timeout
+            this._nameTimeout = this.time.delayedCall(20000, () => {
+                this.saveScore();
             });
         } else {
             this.time.delayedCall(3000, () => {
@@ -6347,22 +6543,101 @@ class GameOverScene extends Phaser.Scene {
     }
 
     updateNameDisplay() {
-        let display = this.nameInput;
-        while (display.length < 3) {
-            display += '_';
-        }
-        this.nameText.setText(display);
+        if (this.nameText) this.nameText.setText(this._formatNameDisplay());
     }
 
     saveScore() {
-        GAME_STATE.topScores.push({
-            name: this.nameInput,
-            score: GAME_STATE.score
-        });
+        // build final name from nameChars, pad with 'A' if needed
+        const name = (this.nameChars || ['A','A','A']).slice(0,3).map((c) => (typeof c === 'string' && c.length ? c[0] : 'A')).join('').toUpperCase();
+
+        GAME_STATE.topScores.push({ name, score: GAME_STATE.score });
         GAME_STATE.topScores.sort((a, b) => b.score - a.score);
         GAME_STATE.topScores = GAME_STATE.topScores.slice(0, 10);
 
+        // persist to localStorage
+        try {
+            localStorage.setItem('blockHunterTopScores', JSON.stringify(GAME_STATE.topScores));
+        } catch (e) { /* ignore */ }
+
+        // also offer updated config.json download by merging into CONFIG
+        try {
+            const cfg = Object.assign({}, CONFIG, { topScores: GAME_STATE.topScores });
+            const blob = new Blob([JSON.stringify(cfg, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'config.json';
+            a.style.display = 'none';
+            document.body.appendChild(a);
+            a.click();
+            setTimeout(() => {
+                try { document.body.removeChild(a); } catch (e) {}
+                URL.revokeObjectURL(url);
+            }, 1000);
+        } catch (e) { /* ignore */ }
+
+        // cleanup keyboard handler and timeout
+        try {
+            if (this._onKeyDown) this.input.keyboard.off('keydown', this._onKeyDown);
+        } catch (e) { /* ignore */ }
+        try { if (this._nameTimeout) this._nameTimeout.remove(false); } catch (e) { }
+
         this.scene.start('TopTenScene');
+    }
+
+    _formatNameDisplay() {
+        const chars = (this.nameChars || ['A','A','A']).slice(0, 3).map((c) => (typeof c === 'string' && c.length ? c[0] : 'A').toUpperCase());
+        return chars.map((ch, i) => {
+            if (this.confirmed && this.confirmed[i]) return ch;
+            if (this.currentCharIndex === i) return `[${ch}]`;
+            return ch;
+        }).join(' ');
+    }
+
+    _cycleLetter(delta) {
+        try {
+            if (!this.nameChars) this.nameChars = ['A', 'A', 'A'];
+            const idx = Number(this.currentCharIndex) || 0;
+            const cur = String(this.nameChars[idx] || 'A').toUpperCase();
+            const code = cur.charCodeAt(0);
+            let pos = (code >= 65 && code <= 90) ? code - 65 : 0;
+            pos = ((pos + delta) % 26 + 26) % 26;
+            this.nameChars[idx] = String.fromCharCode(65 + pos);
+            this.updateNameDisplay();
+        } catch (e) { /* ignore */ }
+    }
+
+    _confirmLetter() {
+        try {
+            if (!this.confirmed) this.confirmed = [false, false, false];
+            this.confirmed[this.currentCharIndex] = true;
+            // advance to next unconfirmed
+            for (let i = this.currentCharIndex + 1; i < 3; i++) {
+                if (!this.confirmed[i]) {
+                    this.currentCharIndex = i;
+                    this.updateNameDisplay();
+                    return;
+                }
+            }
+            // all confirmed? save
+            if (this.confirmed.every(Boolean)) {
+                this.saveScore();
+            } else {
+                this.currentCharIndex = Math.min(2, this.currentCharIndex + 1);
+                this.updateNameDisplay();
+            }
+        } catch (e) { /* ignore */ }
+    }
+
+    _goBackLetter() {
+        try {
+            if (!this.confirmed) this.confirmed = [false, false, false];
+            if (this.currentCharIndex > 0) {
+                this.currentCharIndex--;
+            }
+            this.confirmed[this.currentCharIndex] = false;
+            this.updateNameDisplay();
+        } catch (e) { /* ignore */ }
     }
 }
 
@@ -6376,6 +6651,13 @@ async function inizialization() {
         const cfg = await response.json();
         // Copy all config keys to CONFIG
         Object.assign(CONFIG, cfg);
+        // tokenMap: allow mapping single-letter tokens (eg. 'X') to full tokens (eg. 'w00')
+        // merge any tokenMap provided in config.json into CONFIG.tokenMap
+        try {
+            CONFIG.tokenMap = Object.assign({}, CONFIG.tokenMap || {}, cfg.tokenMap || {});
+        } catch (e) {
+            CONFIG.tokenMap = CONFIG.tokenMap || {};
+        }
         if (!Number.isFinite(Number(CONFIG.playerSize)) || Number(CONFIG.playerSize) <= 0) {
             CONFIG.playerSize = Number(CONFIG.objectSize) || OBJECT_NATIVE_SIZE;
         }

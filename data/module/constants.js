@@ -23,3 +23,6 @@ export const OBJECT_FRAMES = {
     hole2: 14,
     explosion: 15
 };
+// Helmet uses the same spritesheet frame as the player/4th object (index 3)
+// Add as synonym so tools and game can reference `helmet` directly.
+OBJECT_FRAMES.helmet = 3;

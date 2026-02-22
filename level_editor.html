@@ -187,7 +187,7 @@
                     <button id="applyGridBtn" type="button">Applica Griglia</button>
                     <button id="clearGridBtn" type="button">Svuota</button>
                 </div>
-                <div class="tiny">Drag & Drop dalla palette nel canvas. Ruota la tile selezionata con ←/→ o rotella mouse. Premi Canc per svuotare la cella selezionata.</div>
+                <div class="tiny">Drag & Drop dalla palette nel canvas. Ruota la tile selezionata con ←/→ o rotella mouse. Premi `h` per ribaltare orizzontalmente, `v` per ribaltare verticalmente. Premi Canc per svuotare la cella selezionata. Palette wall: 24 frame (4 righe x 6 colonne).</div>
                 <div class="tiny" id="selectedCellInfo">Cella selezionata: nessuna</div>
                 <label style="margin-top:8px;"><input id="revealMode" type="checkbox" style="width:auto; margin-right:6px;">Modalità reveal (A/B)</label>
             </div>
@@ -198,6 +198,7 @@
                     <canvas id="miniMapPreview" width="360" height="300"></canvas>
                 </div>
                 <div class="tiny">La preview si aggiorna in tempo reale mentre modifichi la griglia.</div>
+                <label style="margin-top:6px; display:block;"><input id="showBackground" type="checkbox" style="width:auto; margin-right:6px;" checked>Mostra background nella preview e nella mappa</label>
             </div>
 
             <div class="section">
@@ -211,6 +212,17 @@
                         <label for="levelSpeed">Speed</label>
                         <input id="levelSpeed" type="number" step="0.1" value="1">
                     </div>
+                </div>
+                <div style="margin-top:6px;">
+                    <label for="levelBackground">Background</label>
+                    <select id="levelBackground">
+                        <option value="">(default)</option>
+                        <option value="1" selected>level1</option>
+                        <option value="2">level2</option>
+                        <option value="3">level3</option>
+                        <option value="4">level4</option>
+                        <option value="5">level5</option>
+                    </select>
                 </div>
                 <div class="grid2" style="margin-top:6px;">
                     <div>
