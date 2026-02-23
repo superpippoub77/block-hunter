@@ -1118,6 +1118,20 @@ class TopTenScene extends Phaser.Scene {
             ease: 'Sine.easeInOut'
         });
 
+        // Left/Right arrows for language selection (keep visible during Top Ten)
+        try {
+            this.add.text(320, 560, '◄', {
+                fontSize: '24px',
+                fill: '#ffffff',
+                fontFamily: GAME_FONT
+            }).setOrigin(0.5).setInteractive().on('pointerdown', () => this.changeLanguage(-1));
+            this.add.text(480, 560, '►', {
+                fontSize: '24px',
+                fill: '#ffffff',
+                fontFamily: GAME_FONT
+            }).setOrigin(0.5).setInteractive().on('pointerdown', () => this.changeLanguage(1));
+        } catch (e) { /* ignore if font not ready */ }
+
         // Input handlers for coin insert / language change
         this.setupInput();
 
