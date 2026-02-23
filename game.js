@@ -3483,20 +3483,31 @@ class GameScene extends Phaser.Scene {
 
     setupInput() {
         this.cursors = this.input.keyboard.createCursorKeys();
-        // Player2 controls (WASD + F action) - Option A
+        // Build input mapping from CONFIG.controlPanel when available (falls back to defaults)
+        const panel = (window.CONFIG && window.CONFIG.controlPanel) ? window.CONFIG.controlPanel : (window.CONTROL_PANEL || {});
+        // Player2 keys
+        const p2cfg = panel.player2 || {};
+        const p2move = p2cfg.move || { left: 'A', right: 'D', up: 'W', down: 'S' };
+        const p2shoot = Array.isArray(p2cfg.shoot) ? p2cfg.shoot : (p2cfg.shoot ? p2cfg.shoot : ['M','N']);
         this.p2Keys = this.input.keyboard.addKeys({
-            w: Phaser.Input.Keyboard.KeyCodes.W,
-            a: Phaser.Input.Keyboard.KeyCodes.A,
-            s: Phaser.Input.Keyboard.KeyCodes.S,
-            d: Phaser.Input.Keyboard.KeyCodes.D,
-            f: Phaser.Input.Keyboard.KeyCodes.F
+            w: Phaser.Input.Keyboard.KeyCodes[p2move.up] || Phaser.Input.Keyboard.KeyCodes.W,
+            a: Phaser.Input.Keyboard.KeyCodes[p2move.left] || Phaser.Input.Keyboard.KeyCodes.A,
+            s: Phaser.Input.Keyboard.KeyCodes[p2move.down] || Phaser.Input.Keyboard.KeyCodes.S,
+            d: Phaser.Input.Keyboard.KeyCodes[p2move.right] || Phaser.Input.Keyboard.KeyCodes.D,
+            f: Phaser.Input.Keyboard.KeyCodes.F,
+            m: Phaser.Input.Keyboard.KeyCodes[p2shoot[0]] || Phaser.Input.Keyboard.KeyCodes.M,
+            n: p2shoot[1] ? (Phaser.Input.Keyboard.KeyCodes[p2shoot[1]] || Phaser.Input.Keyboard.KeyCodes.N) : Phaser.Input.Keyboard.KeyCodes.N
         });
 
-        // Shared action keys / misc for Player1
+        // Shared action keys / misc for Player1 - use configured values when present
+        const p1cfg = panel.player1 || {};
+        const p1shoot = Array.isArray(p1cfg.shoot) ? p1cfg.shoot : (p1cfg.shoot ? p1cfg.shoot : ['X','SPACE']);
+        const p1action = Array.isArray(p1cfg.action) ? p1cfg.action : (p1cfg.action ? p1cfg.action : ['Z']);
         this.keys = this.input.keyboard.addKeys({
-            space: Phaser.Input.Keyboard.KeyCodes.SPACE,
-            l: Phaser.Input.Keyboard.KeyCodes.L,
-            z: Phaser.Input.Keyboard.KeyCodes.Z
+            space: Phaser.Input.Keyboard.KeyCodes[p1shoot.includes('SPACE') ? 'SPACE' : 'SPACE'] || Phaser.Input.Keyboard.KeyCodes.SPACE,
+            x: Phaser.Input.Keyboard.KeyCodes[p1shoot[0]] || Phaser.Input.Keyboard.KeyCodes.X,
+            z: Phaser.Input.Keyboard.KeyCodes[p1action[0]] || Phaser.Input.Keyboard.KeyCodes.Z,
+            f: Phaser.Input.Keyboard.KeyCodes.F
         });
 
         this.lastDynamiteTime = 0;
@@ -4571,20 +4582,24 @@ class GameScene extends Phaser.Scene {
             }
         } catch (e) { }
 
-        // Shoot dynamite (keyboard space OR touch action button)
+        // Shoot dynamite (keyboard X or SPACE OR touch action button)
         try {
             const touch = (window && window.TOUCH_INPUT) ? window.TOUCH_INPUT : null;
             const touchAction = !!(touch && touch.action);
-            if (Phaser.Input.Keyboard.JustDown(this.keys.space) || (touchAction && !this._lastTouchAction)) {
+            const p1ShootKeyA = this.keys && this.keys.x;
+            const p1ShootKeyB = this.keys && this.keys.space;
+            if ((p1ShootKeyA && Phaser.Input.Keyboard.JustDown(p1ShootKeyA)) || (p1ShootKeyB && Phaser.Input.Keyboard.JustDown(p1ShootKeyB)) || (touchAction && !this._lastTouchAction)) {
                 this.shootDynamite();
             }
             // remember last touch action state for edge detection
             this._lastTouchAction = touchAction;
         } catch (e) {
             // If anything goes wrong reading touch input, fall back to keyboard only
-            if (Phaser.Input.Keyboard.JustDown(this.keys.space)) {
-                this.shootDynamite();
-            }
+            try {
+                if ((this.keys && this.keys.x && Phaser.Input.Keyboard.JustDown(this.keys.x)) || (this.keys && this.keys.space && Phaser.Input.Keyboard.JustDown(this.keys.space))) {
+                    this.shootDynamite();
+                }
+            } catch (e2) { /* ignore */ }
         }
 
         this.updateCompanionPosition();
@@ -4614,7 +4629,11 @@ class GameScene extends Phaser.Scene {
             }
         } catch (e) { }
         try {
-            if (this.p2Keys && Phaser.Input.Keyboard.JustDown(this.p2Keys.f)) {
+            // Accept legacy F or new N / M keys for player2 action (place plank / open door)
+            const p2ActionF = this.p2Keys && this.p2Keys.f;
+            const p2ActionN = this.p2Keys && this.p2Keys.n;
+            const p2ActionM = this.p2Keys && this.p2Keys.m;
+            if ((p2ActionF && Phaser.Input.Keyboard.JustDown(p2ActionF)) || (p2ActionN && Phaser.Input.Keyboard.JustDown(p2ActionN)) || (p2ActionM && Phaser.Input.Keyboard.JustDown(p2ActionM))) {
                 // try placing plank for player2
                 const used2 = this.placePlankFor(this.player2);
                 if (!used2) {
@@ -6832,6 +6851,9 @@ class BonusScene extends Phaser.Scene {
         this.upKey = this.cursors.up;
         this.downKey = this.cursors.down;
         this.spaceShootKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
+        try {
+            this.spaceShootKeyX = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.X);
+        } catch (e) { this.spaceShootKeyX = null; }
 
         this.bonusHud = this.add.text(12, 10, '', {
             fontSize: '14px',
@@ -7119,7 +7141,7 @@ class BonusScene extends Phaser.Scene {
             this.cart.setVelocityY(-this.jumpVelocity);
         }
 
-        if (this.spaceShootKey && Phaser.Input.Keyboard.JustDown(this.spaceShootKey)) {
+        if ((this.spaceShootKey && Phaser.Input.Keyboard.JustDown(this.spaceShootKey)) || (this.spaceShootKeyX && Phaser.Input.Keyboard.JustDown(this.spaceShootKeyX))) {
             this.shootBonusDynamite();
         }
 
@@ -7201,8 +7223,8 @@ class GameOverScene extends Phaser.Scene {
                     this._cycleLetter(1);
                 } else if (key === 'ArrowDown') {
                     this._cycleLetter(-1);
-                } else if (key === ' ') {
-                    // confirm current letter
+                } else if (key && key.toLowerCase() === 'x') {
+                    // confirm current letter (mapped to X key)
                     this._confirmLetter();
                 } else if (key === 'Backspace') {
                     // go back to previous letter
