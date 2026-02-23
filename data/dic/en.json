@@ -47,4 +47,23 @@
   "coin_info": "1 player: {per} coin{perPlural} — 2 players: {two} coins",
   "topTen": "TOP TEN",
   "story": "In the deep underground labyrinths,\n the block hunter seeks precious gems\n and dodges unstoppable boulders.\n Will you survive and become the best?"
+  ,
+  "obj_dynamite": "Dynamite — projectile: damages objects and triggers explosions.",
+  "obj_heart": "Heart — restores a life.",
+  "obj_stone": "Boulder — rolling obstacle that can crush you.",
+  "obj_player": "Player — that's you.",
+  "obj_dynamite_chest": "Dynamite chest — gives extra dynamite.",
+  "obj_door": "Door — may require a key to open.",
+  "obj_gem": "Gem — collectible that increases your score.",
+  "obj_cart": "Cart / stones — environmental obstacle.",
+  "obj_key": "Key — used to open doors.",
+  "obj_sand_pile": "Sand — slows movement.",
+  "obj_ghost": "Ghost — enemy that can harm the player.",
+  "obj_pepita": "Nugget — small bonus collectible.",
+  "obj_wall": "Wall — solid, impassable terrain.",
+  "obj_wooden": "Wooden plank — consumable used to cover holes.",
+  "obj_hole1": "Hole — a pit in the ground; can be covered with a plank.",
+  "obj_hole2": "Hole (variant) — behaves like a regular hole.",
+  "obj_explosion": "Explosion — visual effect for blasts.",
+  "obj_bat": "Bat — flying enemy (watch when collecting gems)."
 }

@@ -47,4 +47,23 @@
   "coin_info": "1 joueur: {per} pièce{perPlural} — 2 joueurs: {two} pièces",
   "topTen": "MEILLEURS SCORES",
   "story": "Dans les labyrinthes souterrains,\n le chasseur de blocs cherche des gemmes précieuses\n et évite les rochers.\n Survivrez-vous et deviendrez-vous le meilleur?"
+  ,
+  "obj_dynamite": "Dynamite — projectile : inflige des dégâts et provoque des explosions.",
+  "obj_heart": "Cœur — restaure une vie.",
+  "obj_stone": "Roche — obstacle roulant dangereux.",
+  "obj_player": "Joueur — c'est toi.",
+  "obj_dynamite_chest": "Caisse de dynamite — donne de la dynamite supplémentaire.",
+  "obj_door": "Porte — peut nécessiter une clé pour s'ouvrir.",
+  "obj_gem": "Gemme — collectible qui augmente votre score.",
+  "obj_cart": "Chariot / tas de pierres — obstacle environnemental.",
+  "obj_key": "Clé — utilisée pour ouvrir des portes.",
+  "obj_sand_pile": "Sable — ralentit le mouvement.",
+  "obj_ghost": "Fantôme — ennemi qui peut vous blesser.",
+  "obj_pepita": "Pépite — petit collectible bonus.",
+  "obj_wall": "Mur — terrain solide infranchissable.",
+  "obj_wooden": "Planche en bois — consommable utilisé pour couvrir les trous.",
+  "obj_hole1": "Trou — une fosse dans le sol; peut être couverte par une planche.",
+  "obj_hole2": "Trou (variante) — se comporte comme un trou normal.",
+  "obj_explosion": "Explosion — effet visuel lors des détonations.",
+  "obj_bat": "Chauve-souris — ennemi volant (attention en ramassant les gemmes)."
 }

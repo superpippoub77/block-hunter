@@ -29,4 +29,23 @@
   "byline": "por SpikeCode",
   "topTen": "CLASIFICACIÓN",
   "story": "En los profundos laberintos subterráneos,\n el cazador de bloques busca gemas preciosas\n y esquiva rocas imparables.\n ¿Sobrevivirás y serás el mejor?"
+  ,
+  "obj_dynamite": "Dinamita — proyectil: causa explosiones y daño.",
+  "obj_heart": "Corazón — restaura una vida.",
+  "obj_stone": "Roca — obstáculo rodante peligroso.",
+  "obj_player": "Jugador — eres tú.",
+  "obj_dynamite_chest": "Cofre de dinamita — da dinamita extra.",
+  "obj_door": "Puerta — puede requerir una llave.",
+  "obj_gem": "Gema — recolectable que aumenta tu puntuación.",
+  "obj_cart": "Carro / montón de piedras — obstáculo ambiental.",
+  "obj_key": "Llave — para abrir puertas.",
+  "obj_sand_pile": "Arena — ralentiza el movimiento.",
+  "obj_ghost": "Fantasma — enemigo que puede dañarte.",
+  "obj_pepita": "Pepita — pequeño collectible de bonificación.",
+  "obj_wall": "Muro — terreno sólido infranqueable.",
+  "obj_wooden": "Tabla de madera — consumible usado para cubrir huecos.",
+  "obj_hole1": "Hueco — una fosa en el suelo; puede cubrirse con una tabla.",
+  "obj_hole2": "Hueco (variante) — se comporta como un hueco normal.",
+  "obj_explosion": "Explosión — efecto visual para detonaciones.",
+  "obj_bat": "Murciélago — enemigo volador (cuidado al recoger gemas)."
 }

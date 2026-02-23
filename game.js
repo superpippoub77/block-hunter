@@ -294,7 +294,6 @@ class PreloadScene extends Phaser.Scene {
 
         this.load
             .image('title', 'images/title.png')
-            .image('subtitle', 'images/subtitle.png')
             .image('explorer', 'images/explorer.png')
             .image('title_explosion', 'images/title_explosion.png')
             .image('bg', 'images/attract_bg.png')
@@ -557,32 +556,7 @@ class AttractScene extends Phaser.Scene {
                     this.titleImage.alpha = 1;
                     this.titleImage.setScale(1);
 
-                    // Create subtitle sign positioned over the title (small, slightly tilted)
-                    try {
-                        if (!this.subtitleSign) {
-                            const signY = 150 - 36; // a bit above the title center to appear 'hung' on it
-                            this.subtitleSign = this.add.image(400, signY, 'subtitle').setOrigin(0.5);
-                            try {
-                                const canvasW = (this.scale && this.scale.width) ? this.scale.width : CONFIG.width || 800;
-                                const margin = 40;
-                                const maxWidth = 320;
-                                const targetWidth = Math.min(maxWidth, Math.max(80, Math.floor((canvasW - margin) * 0.35)));
-                                const tex = this.subtitleSign.texture && this.subtitleSign.frame ? this.subtitleSign.frame : null;
-                                const srcW = tex ? (tex.width || this.subtitleSign.width) : this.subtitleSign.width;
-                                const srcH = tex ? (tex.height || this.subtitleSign.height) : this.subtitleSign.height;
-                                if (srcW && srcH) {
-                                    const targetHeight = Math.round((targetWidth / srcW) * srcH);
-                                    this.subtitleSign.setDisplaySize(targetWidth, targetHeight);
-                                } else {
-                                    this.subtitleSign.setDisplaySize(targetWidth, Math.round(targetWidth * 0.25));
-                                }
-                            } catch (e) { }
-                            this.subtitleSign.setScale(0.78);
-                            this.subtitleSign.setAngle(-6);
-                            this.subtitleSign.setDepth(19);
-                            try { this.tweens.add({ targets: this.subtitleSign, angle: '-=1.5', duration: 1400, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' }); } catch (e) { }
-                        }
-                    } catch (e) { /* ignore subtitle creation errors */ }
+                    // subtitle removed: no subtitle sign created here
 
                     const explorerImage = this.add.image(-220, 430, 'explorer').setOrigin(0.5);
                     explorerImage.setDepth(20);
@@ -610,96 +584,31 @@ class AttractScene extends Phaser.Scene {
                                         alpha: 1,
                                         duration: 180,
                                         onComplete: () => {
-                                            // After the explosion appears, show subtitle.png as a fade-in, hold, fade-out
-                                            // and only after subtitle finished we move the explosion away and restore the title.
-                                            this.time.delayedCall(120, () => {
-                                                const subtitleImg = this.add.image(400, 210, 'subtitle').setOrigin(0.5);
-                                                // Responsive resize: choose target width based on canvas width, max 400px
-                                                try {
-                                                    const canvasW = (this.scale && this.scale.width) ? this.scale.width : CONFIG.width || 800;
-                                                    const margin = 40; // leave some horizontal margin
-                                                    const maxWidth = 400;
-                                                    const targetWidth = Math.min(maxWidth, Math.max(120, Math.floor((canvasW - margin) * 0.6)));
-                                                    const tex = subtitleImg.texture && subtitleImg.frame ? subtitleImg.frame : null;
-                                                    const srcW = tex ? (tex.width || subtitleImg.width) : subtitleImg.width;
-                                                    const srcH = tex ? (tex.height || subtitleImg.height) : subtitleImg.height;
-                                                    if (srcW && srcH) {
-                                                        const targetHeight = Math.round((targetWidth / srcW) * srcH);
-                                                        subtitleImg.setDisplaySize(targetWidth, targetHeight);
-                                                    } else {
-                                                        subtitleImg.setDisplaySize(targetWidth, Math.round(targetWidth * 0.25));
-                                                    }
-                                                } catch (e) {
-                                                    // ignore sizing errors and proceed with default size
-                                                }
-                                                // Position subtitle under the story/instructions text when possible
-                                                    try {
-                                                    const instr = this.instructionsText;
-                                                    const margin = 8; // spacing between story and subtitle
-                                                    let instrCenterY = 280;
-                                                    let instrHalfH = 0;
-                                                    if (instr) {
-                                                        instrHalfH = (instr.height || 0) / 2;
-                                                        instrCenterY = (typeof instr.y === 'number') ? instr.y : instrCenterY;
-                                                    }
-                                                    const subH = (typeof subtitleImg.displayHeight === 'number' && subtitleImg.displayHeight > 0) ? subtitleImg.displayHeight : ((subtitleImg.frame && subtitleImg.frame.height) || 0);
-                                                    const targetY = instrCenterY + instrHalfH + (subH / 2) + margin;
-                                                    subtitleImg.y = Math.round(targetY);
-                                                } catch (e) {
-                                                    // fallback: keep default y
-                                                }
-                                                subtitleImg.setAlpha(0);
-                                                subtitleImg.setDepth(22);
-
-                                                // Sequence: fade in -> hold -> fade out -> destroy -> continue
-                                                // Pop-in scale + fade-in
-                                                subtitleImg.setScale(0.85);
+                                            // Move the explosion away and restore the title immediately (subtitle removed)
+                                            try {
                                                 this.tweens.add({
-                                                    targets: subtitleImg,
-                                                    alpha: 1,
-                                                    scale: 1,
-                                                    duration: 360,
-                                                    ease: 'Back.easeOut',
+                                                    targets: explosionTitle,
+                                                    y: -180,
+                                                    alpha: 0,
+                                                    duration: 420,
+                                                    ease: 'Cubic.easeIn',
                                                     onComplete: () => {
-                                                        // hold for 800ms, then fade-out with slight scale down
-                                                        this.time.delayedCall(800, () => {
-                                                            this.tweens.add({
-                                                                targets: subtitleImg,
-                                                                alpha: 0,
-                                                                scale: 0.95,
-                                                                duration: 350,
-                                                                ease: 'Quad.easeIn',
-                                                                onComplete: () => {
-                                                                    try { subtitleImg.destroy(); } catch (e) { }
-                                                                    // now move the explosion out and bring back the title
-                                                                    this.tweens.add({
-                                                                        targets: explosionTitle,
-                                                                        y: -180,
-                                                                        alpha: 0,
-                                                                        duration: 420,
-                                                                        ease: 'Cubic.easeIn',
-                                                                        onComplete: () => {
-                                                                            try { explosionTitle.destroy(); } catch (e) { }
-                                                                            this.titleImage.setVisible(true);
-                                                                            this.titleImage.x = 400;
-                                                                            this.titleImage.y = -120;
-                                                                            this.titleImage.angle = 0;
-                                                                            this.titleImage.alpha = 1;
-                                                                            this.titleImage.setScale(1);
-                                                                            this.tweens.add({
-                                                                                targets: this.titleImage,
-                                                                                y: 150,
-                                                                                duration: 800,
-                                                                                ease: 'Bounce.easeOut'
-                                                                            });
-                                                                        }
-                                                                    });
-                                                                }
-                                                            });
+                                                        try { explosionTitle.destroy(); } catch (e) { }
+                                                        this.titleImage.setVisible(true);
+                                                        this.titleImage.x = 400;
+                                                        this.titleImage.y = -120;
+                                                        this.titleImage.angle = 0;
+                                                        this.titleImage.alpha = 1;
+                                                        this.titleImage.setScale(1);
+                                                        this.tweens.add({
+                                                            targets: this.titleImage,
+                                                            y: 150,
+                                                            duration: 800,
+                                                            ease: 'Bounce.easeOut'
                                                         });
                                                     }
                                                 });
-                                            });
+                                            } catch (e) { }
                                         }
                                     });
                                 }
@@ -732,6 +641,60 @@ class AttractScene extends Phaser.Scene {
             ease: 'Sine.easeInOut',
             delay: 800
         });
+
+        // Legend: show object icons + localized descriptions under the story
+        try {
+            const t = TRANSLATIONS[GAME_STATE.language] || {};
+            const legend = [
+                { frame: OBJECT_FRAMES.dynamite_projectile, key: 'obj_dynamite' },
+                { frame: OBJECT_FRAMES.heart, key: 'obj_heart' },
+                { frame: OBJECT_FRAMES.stone, key: 'obj_stone' },
+                { frame: OBJECT_FRAMES.player, key: 'obj_player' },
+                { frame: OBJECT_FRAMES.dynamite_chest, key: 'obj_dynamite_chest' },
+                { frame: OBJECT_FRAMES.door, key: 'obj_door' },
+                { frame: OBJECT_FRAMES.gem, key: 'obj_gem' },
+                { frame: OBJECT_FRAMES.cart, key: 'obj_cart' },
+                { frame: OBJECT_FRAMES.key, key: 'obj_key' },
+                { frame: OBJECT_FRAMES.sand_pile, key: 'obj_sand_pile' },
+                { frame: OBJECT_FRAMES.ghost, key: 'obj_ghost' },
+                { frame: OBJECT_FRAMES.pepita, key: 'obj_pepita' },
+                { frame: OBJECT_FRAMES.wall, key: 'obj_wall' },
+                { frame: OBJECT_FRAMES.wooden, key: 'obj_wooden' },
+                { frame: OBJECT_FRAMES.hole1, key: 'obj_hole1' },
+                { frame: OBJECT_FRAMES.hole2, key: 'obj_hole2' },
+                { frame: OBJECT_FRAMES.explosion, key: 'obj_explosion' }
+            ];
+
+            // include bat as extra (separate spritesheet)
+            legend.push({ frame: 'bat', key: 'obj_bat' });
+
+            const cols = 2;
+            const perCol = Math.ceil(legend.length / cols);
+            const startX = 140;
+            const colSpacing = 320;
+            const startY = (this.instructionsText && this.instructionsText.y) ? (this.instructionsText.y + (this.instructionsText.height || 0) / 2 + 34) : 340;
+            const rowSpacing = 28;
+
+            for (let i = 0; i < legend.length; i++) {
+                const col = Math.floor(i / perCol);
+                const row = i % perCol;
+                const x = startX + col * colSpacing;
+                const y = startY + row * rowSpacing;
+
+                const item = legend[i];
+                // icon: if frame is string 'bat' use bat spritesheet, else use objects spritesheet
+                try {
+                    if (item.frame === 'bat') {
+                        this.add.sprite(x - 60, y, 'bat', 0).setScale(0.4).setOrigin(0, 0.5);
+                    } else {
+                        this.add.sprite(x - 60, y, 'objects', item.frame).setScale(0.5).setOrigin(0, 0.5);
+                    }
+                } catch (e) { }
+
+                const desc = t[item.key] || item.key;
+                this.add.text(x - 36, y, desc, { fontSize: '12px', fill: '#ffffff', fontFamily: GAME_FONT }).setOrigin(0, 0.5).setDepth(2);
+            }
+        } catch (e) { }
 
         // Panels and UI elements
         this.coinText = this.add.text(400, 520, '', {
@@ -784,6 +747,16 @@ class AttractScene extends Phaser.Scene {
             fill: '#ffffff',
             fontFamily: GAME_FONT
         }).setOrigin(0.5).setInteractive().on('pointerdown', () => this.changeLanguage(1));
+
+        // Signature text for attract mode
+        try {
+            this.signatureText = this.add.text(400, 590, 'by SpikeCode', {
+                fontSize: '12px',
+                fill: '#aaaaaa',
+                fontFamily: GAME_FONT
+            }).setOrigin(0.5);
+            this.signatureText.setDepth(2);
+        } catch (e) { /* ignore if font not loaded yet */ }
 
         // Setup input
         this.setupInput();
