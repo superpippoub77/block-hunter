@@ -9,6 +9,7 @@ export const OBJECT_FRAMES = {
     heart: 1,
     stone: 2,
     player: 3,
+    helmet: 3,
     dynamite_chest: 4,
     door: 5,
     gem: 6,
@@ -19,10 +20,14 @@ export const OBJECT_FRAMES = {
     ghost: 10,
     pepita: 11,
     wall: 12,
+    wooden: 12,
     hole1: 13,
     hole2: 14,
     explosion: 15
 };
 // Helmet uses the same spritesheet frame as the player/4th object (index 3)
 // Add as synonym so tools and game can reference `helmet` directly.
-OBJECT_FRAMES.helmet = 3;
+//OBJECT_FRAMES.helmet = OBJECT_FRAMES.player;
+// Wooden plank: temporarily reuse the wall frame (index 12). Replace with a dedicated asset later.
+//OBJECT_FRAMES.wooden = OBJECT_FRAMES.wall;
+//OBJECT_FRAMES.cart = OBJECT_FRAMES.stones;

@@ -26,6 +26,14 @@
   "fgShakeMagnitude": 6,
   "fgShakeCamera": true,
   "fgShakeCameraIntensity": 0.003,
+  "parallaxBgFactor": 0.96,
+  "parallaxFgFactor": 0.92,
+  "parallaxFgDepth": 1500,
+  "attractFgSwayMagnitude": 6,
+  "attractFgSwayDuration": 4000,
+  "gameFgSwayEnabled": true,
+  "gameFgSwayMagnitude": 6,
+  "gameFgSwayDuration": 8000,
   "topTenTimeout": 10000,
   "gemSpawnDelay": 1000,
   "gemsPerLevel": 10,
@@ -38,58 +46,13 @@
   "dynamiteCount": 20,
   "keysCount": 0,
   "disableStaticRocks": false,
-  "debugTileGrid": false,
+  "debugTileGrid": true,
   "bonusTestMode": {
     "enabled": false,
     "bonusLevel": "bonus1",
     "returnLevel": 0
   },
-  "topScores": [
-    {
-      "name": "AAA",
-      "score": 0
-    },
-    {
-      "name": "BBB",
-      "score": 0
-    },
-    {
-      "name": "CCC",
-      "score": 0
-    },
-    {
-      "name": "DDD",
-      "score": 0
-    },
-    {
-      "name": "EEE",
-      "score": 0
-    },
-    {
-      "name": "FFF",
-      "score": 0
-    },
-    {
-      "name": "GGG",
-      "score": 0
-    },
-    {
-      "name": "HHH",
-      "score": 0
-    },
-    {
-      "name": "III",
-      "score": 0
-    },
-    {
-      "name": "JJJ",
-      "score": 10
-    }
-  ],
+
   "scaleMode": "FIT",
-  "enableFullscreen": true,
-  "tokenMap": {
-    "X": "w00",
-    "x": "w00"
-  }
+  "enableFullscreen": true
 }

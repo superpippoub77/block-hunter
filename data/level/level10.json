@@ -1,5 +1,9 @@
 {
   "id": "1.0",
+  "tokenMap": {
+    "X": "w00",
+    "x": "w00"
+  },
   "background": 1,
   "map": {
     "cols": 12,

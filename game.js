@@ -23,7 +23,7 @@ const TILE_NATIVE_HEIGHT = 48;
 const OBJECT_NATIVE_SIZE = 64; // objects.png frames are 64x64
 
 //Default frame dimension
-const defaultFrame = { frameWidth: 64, frameHeight: 64 };
+const defaultFrame = { frameWidth: OBJECT_NATIVE_SIZE, frameHeight: OBJECT_NATIVE_SIZE };
 
 // Load persistent config if present (optional: can be merged after loadConfig)
 function mergeLocalConfig() {
@@ -238,16 +238,41 @@ class PreloadScene extends Phaser.Scene {
             strokeThickness: 4
         }).setOrigin(0.5).setDepth(10);
 
-        // animate loading dots in sequence: ., .., ...
+        // animate loading dots as 3 fixed dots; cycle brightness (alpha) so text size stays constant
         try {
-            let dotCount = 0;
+            const baseStyle = {
+                fontSize: '28px',
+                fill: '#ffffff',
+                fontFamily: GAME_FONT,
+                stroke: '#000000',
+                strokeThickness: 4
+            };
+            // main label without dots
+            const loadingTextMain = loadingText;
+            loadingTextMain.setText('loading');
+
+            // spacing and starting X for dots (positioned right after the main text)
+            const dotSpacing = Math.max(12, Math.round(loadingTextMain.fontSize || 18));
+            const baseRight = loadingTextMain.x + (loadingTextMain.width * 0.5) + 8;
+
+            this._loadingDots = [];
+            for (let i = 0; i < 3; i++) {
+                const dot = this.add.text(baseRight + i * dotSpacing, loadingTextMain.y, '.', baseStyle).setOrigin(0.5);
+                dot.setAlpha(0.35);
+                this._loadingDots.push(dot);
+            }
+
+            // animate alpha cycle: one dot bright at a time
+            let dotIndex = 0;
             this._loadingDotEvent = this.time.addEvent({
                 delay: 400,
                 loop: true,
                 callback: () => {
                     try {
-                        dotCount = (dotCount % 3) + 1;
-                        loadingText.setText('loading' + '.'.repeat(dotCount));
+                        for (let j = 0; j < this._loadingDots.length; j++) {
+                            this._loadingDots[j].setAlpha(j === dotIndex ? 1 : 0.35);
+                        }
+                        dotIndex = (dotIndex + 1) % 3;
                     } catch (e) { }
                 }
             });
@@ -256,6 +281,11 @@ class PreloadScene extends Phaser.Scene {
         this.load.on('complete', () => {
             try {
                 if (this._loadingDotEvent) this._loadingDotEvent.remove(false);
+            } catch (e) { }
+            try {
+                if (this._loadingDots && Array.isArray(this._loadingDots)) {
+                    this._loadingDots.forEach(d => { try { d.destroy(); } catch (e) {} });
+                }
             } catch (e) { }
             if (loadingText && loadingText.destroy) {
                 loadingText.destroy();
@@ -452,16 +482,23 @@ class AttractScene extends Phaser.Scene {
         // Intro music before gameplay
         playLoopAudioSafely(this, 'intro_bgm', 0.35);
 
-        // Background image
-        this.add.image(400, 300, 'bg').setDisplaySize(800, 600);
+    // Background image (use parallaxBgFactor for consistency)
+    const attractBgScroll = (typeof CONFIG.parallaxBgFactor === 'number') ? CONFIG.parallaxBgFactor : 0.96;
+    this.add.image(400, 300, 'bg').setDisplaySize(800, 600).setScrollFactor(attractBgScroll);
         // Foreground parallax image (subtle 3D effect)
         if (this.textures.exists('fg_parallax')) {
-            this.attractFg = this.add.image(400, 300, 'fg_parallax').setDisplaySize(800, 600).setScrollFactor(1.04).setDepth(0);
+            // Use the same parallax factors as GameScene for visual consistency
+            const attractFgScroll = (typeof CONFIG.parallaxFgFactor === 'number') ? CONFIG.parallaxFgFactor : 0.92;
+            this.attractFg = this.add.image(400, 300, 'fg_parallax').setDisplaySize(800, 600).setScrollFactor(attractFgScroll).setDepth(0);
             try {
+                const swayMag = (typeof CONFIG.attractFgSwayMagnitude === 'number')
+                    ? CONFIG.attractFgSwayMagnitude
+                    : (typeof CONFIG.fgShakeMagnitude === 'number' ? CONFIG.fgShakeMagnitude : 8);
+                const swayDur = (typeof CONFIG.attractFgSwayDuration === 'number') ? CONFIG.attractFgSwayDuration : 4000;
                 this.tweens.add({
                     targets: this.attractFg,
-                    x: '+=8',
-                    duration: 4000,
+                    x: `+=${swayMag}`,
+                    duration: swayDur,
                     yoyo: true,
                     repeat: -1,
                     ease: 'Sine.easeInOut'
@@ -838,6 +875,8 @@ class AttractScene extends Phaser.Scene {
             GAME_STATE.lives = 5;
             GAME_STATE.dynamiteCount = 20;
             GAME_STATE.keysCount = 0;
+            // Wooden planks collected by player (used to bridge holes)
+            GAME_STATE.woodenCount = 0;
             GAME_STATE.currentLevel = 0;
             this.scene.start('LevelSelectScene');
         }
@@ -1682,19 +1721,41 @@ class GameScene extends Phaser.Scene {
             selectedBgKey = this.textures.exists(masterLevelBgKey) ? masterLevelBgKey : 'game_bg';
         }
 
+        // Parallax configuration: allow overriding with CONFIG values
+    const parallaxBgFactor = (typeof CONFIG.parallaxBgFactor === 'number') ? CONFIG.parallaxBgFactor : 0.96;
+    const parallaxFgFactor = (typeof CONFIG.parallaxFgFactor === 'number') ? CONFIG.parallaxFgFactor : 0.92; // foreground scrolls slightly slower than bg by default
+    const parallaxFgDepth = (typeof CONFIG.parallaxFgDepth === 'number') ? CONFIG.parallaxFgDepth : 1500; // default depth behind HUD
+
         this.gameBg = this.add.image(CONFIG.width / 2, CONFIG.height / 2, selectedBgKey)
             .setDisplaySize(CONFIG.width, CONFIG.height)
-            .setScrollFactor(0.96)
+            .setScrollFactor(parallaxBgFactor)
             .setDepth(-1000);
 
-        // foreground overlay (fixed frame in front of gameplay)
+        // foreground overlay (fixed frame in front of gameplay) - optional
         if (this.textures.exists('fg_parallax')) {
             const cx = (this.cameras && this.cameras.main) ? this.cameras.main.centerX : (CONFIG.width || 800) / 2;
             const cy = (this.cameras && this.cameras.main) ? this.cameras.main.centerY : (CONFIG.height || 600) / 2;
             this.gameFg = this.add.image(cx, cy, 'fg_parallax')
                 .setDisplaySize(CONFIG.width, CONFIG.height)
-                .setScrollFactor(0)
-                .setDepth(2000);
+                .setScrollFactor(parallaxFgFactor)
+                .setDepth(parallaxFgDepth);
+
+            // subtle horizontal sway to give a gentle parallax motion (configurable)
+            try {
+                const gameSwayEnabled = (typeof CONFIG.gameFgSwayEnabled === 'boolean') ? CONFIG.gameFgSwayEnabled : true;
+                const gameSwayMag = (typeof CONFIG.gameFgSwayMagnitude === 'number') ? CONFIG.gameFgSwayMagnitude : ((typeof CONFIG.attractFgSwayMagnitude === 'number') ? CONFIG.attractFgSwayMagnitude : (typeof CONFIG.fgShakeMagnitude === 'number' ? CONFIG.fgShakeMagnitude : 6));
+                const gameSwayDuration = (typeof CONFIG.gameFgSwayDuration === 'number') ? CONFIG.gameFgSwayDuration : 8000;
+                if (gameSwayEnabled) {
+                    this.tweens.add({
+                        targets: this.gameFg,
+                        x: `+=${gameSwayMag}`,
+                        duration: gameSwayDuration,
+                        yoyo: true,
+                        repeat: -1,
+                        ease: 'Sine.easeInOut'
+                    });
+                }
+            } catch (e) { /* ignore tween errors */ }
         } else {
             console.warn('fg_parallax texture not found in GameScene');
         }
@@ -1740,6 +1801,8 @@ class GameScene extends Phaser.Scene {
         this.shards = this.physics.add.group();
         this.doors = this.physics.add.staticGroup();
         this.hole2Exits = this.physics.add.staticGroup();
+    // Placed planks (visual overlays) - not physics objects
+    this.planks = this.add.group();
 
         // Create tilemap
         this.hasDoorInMap = false;
@@ -1941,7 +2004,7 @@ class GameScene extends Phaser.Scene {
             try {
                 if (val == null) return val;
                 if (typeof val !== 'string') return val;
-                const map = CONFIG.tokenMap || {};
+                const map = (this.levelData && this.levelData.tokenMap) ? this.levelData.tokenMap : (CONFIG.tokenMap || {});
                 const tryKeys = [val, val.toLowerCase(), val.toUpperCase()];
                 for (let k of tryKeys) {
                     if (k && map[k] && String(map[k]).trim() !== String(val)) {
@@ -2203,16 +2266,15 @@ class GameScene extends Phaser.Scene {
                     coverSprite = door;
                 }
 
-                if ((type === 'key' || type === 'pepita' || type === 'heart' || type === 'dynamite' || type === 'skeleton' || type === 'cart' || type === 'helmet') && this.items) {
-                    const frame = type === 'key'
-                        ? OBJECT_FRAMES.key
-                        : (type === 'pepita'
-                            ? OBJECT_FRAMES.pepita
-                            : (type === 'heart'
-                                ? OBJECT_FRAMES.heart
-                                : (type === 'dynamite'
-                                    ? OBJECT_FRAMES.dynamite_chest
-                                    : (type === 'cart' ? OBJECT_FRAMES.cart : (type === 'helmet' ? OBJECT_FRAMES.helmet : OBJECT_FRAMES.wall)))));
+                if ((type === 'key' || type === 'pepita' || type === 'heart' || type === 'dynamite' || type === 'skeleton' || type === 'cart' || type === 'helmet' || type === 'wooden') && this.items) {
+                    let frame = OBJECT_FRAMES.wall;
+                    if (type === 'key') frame = OBJECT_FRAMES.key;
+                    else if (type === 'pepita') frame = OBJECT_FRAMES.pepita;
+                    else if (type === 'heart') frame = OBJECT_FRAMES.heart;
+                    else if (type === 'dynamite') frame = OBJECT_FRAMES.dynamite_chest;
+                    else if (type === 'wooden') frame = OBJECT_FRAMES.wooden;
+                    else if (type === 'cart') frame = OBJECT_FRAMES.cart;
+                    else if (type === 'helmet') frame = OBJECT_FRAMES.helmet;
                     const itemSprite = this.items.create(
                         offsetX + x * CONFIG.tileSize + CONFIG.tileSize / 2,
                         offsetY + y * CONFIG.tileSize + CONFIG.tileSize / 2,
@@ -2232,7 +2294,8 @@ class GameScene extends Phaser.Scene {
                     itemSprite.setData('type', type);
                     itemSprite.setData('gridX', x);
                     itemSprite.setData('gridY', y);
-                    if (type === 'key') {
+                    if (type === 'key' || type === 'wooden') {
+                        // keys and wooden planks float to indicate pickup
                         this.applyKeyFloatingEffect(itemSprite);
                     }
                     coverSprite = itemSprite;
@@ -3318,7 +3381,8 @@ class GameScene extends Phaser.Scene {
             s: Phaser.Input.Keyboard.KeyCodes.S,
             d: Phaser.Input.Keyboard.KeyCodes.D,
             space: Phaser.Input.Keyboard.KeyCodes.SPACE,
-            l: Phaser.Input.Keyboard.KeyCodes.L
+            l: Phaser.Input.Keyboard.KeyCodes.L,
+            z: Phaser.Input.Keyboard.KeyCodes.Z
         });
 
         this.lastDynamiteTime = 0;
@@ -4294,6 +4358,69 @@ class GameScene extends Phaser.Scene {
             this.toggleHeadlamp();
         }
 
+        // Action key (Z): try to place a wooden plank over a nearby hole or open a nearby door
+        try {
+            if (Phaser.Input.Keyboard.JustDown(this.keys.z)) {
+                let used = false;
+                // compute player grid position
+                const px = this.player?.x || 0;
+                const py = this.player?.y || 0;
+                const baseGX = Math.floor((px - (this.mapOffsetX || 0)) / CONFIG.tileSize);
+                const baseGY = Math.floor((py - (this.mapOffsetY || 0)) / CONFIG.tileSize);
+
+                // scan nearby tiles (3x3) for a hole
+                for (let oy = -1; oy <= 1 && !used; oy++) {
+                    for (let ox = -1; ox <= 1 && !used; ox++) {
+                        const gx = baseGX + ox;
+                        const gy = baseGY + oy;
+                        if (!this.tiles[gy] || !this.tiles[gy][gx]) continue;
+                        const tt = this.tiles[gy][gx];
+                        if (tt && tt.type === 'hole') {
+                            // if player has wooden planks, place one
+                            if ((Number(GAME_STATE.woodenCount) || 0) > 0) {
+                                GAME_STATE.woodenCount = Math.max(0, (Number(GAME_STATE.woodenCount) || 0) - 1);
+                                // mark tile as floor so normal hole checks won't trigger
+                                tt.type = 'floor';
+                                // update visual tile if present
+                                try {
+                                    if (tt.sprite && tt.sprite.setFrame) {
+                                        tt.sprite.setFrame(3); // floor frame index
+                                    }
+                                } catch (e) { }
+
+                                // create a visual plank overlay
+                                try {
+                                    const worldX = (this.mapOffsetX || 0) + gx * CONFIG.tileSize + CONFIG.tileSize / 2;
+                                    const worldY = (this.mapOffsetY || 0) + gy * CONFIG.tileSize + CONFIG.tileSize / 2;
+                                    const plank = this.add.sprite(worldX, worldY, 'objects', (OBJECT_FRAMES.wooden || OBJECT_FRAMES.cart));
+                                    plank.setScale((Number(CONFIG.objectSize) || OBJECT_NATIVE_SIZE) / OBJECT_NATIVE_SIZE);
+                                    plank.setDepth((tt.sprite && tt.sprite.depth) ? tt.sprite.depth + 1 : 3000);
+                                    this.planks.add(plank);
+                                    tt.coverSprite = plank;
+                                } catch (e) { }
+
+                                if (this.sound) this.sound.play('select_sfx', { volume: 0.4 });
+                                this.refreshHudIcons && this.refreshHudIcons();
+                                used = true;
+                            }
+                        }
+                    }
+                }
+
+                if (!used) {
+                    // no hole used: try open nearby door with Z (requires keys)
+                    const doors = this.doors?.children?.entries || [];
+                    for (const door of doors) {
+                        if (!door || !door.active) continue;
+                        const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, door.x, door.y);
+                        if (dist <= CONFIG.tileSize * 1.1) {
+                            this.tryOpenDoor(this.player, door);
+                            break;
+                        }
+                    }
+                }
+            }
+        } catch (e) { }
         // Check if on hole
         if (tile && tile.type === 'hole') {
             this.hitHole();
@@ -5035,6 +5162,15 @@ class GameScene extends Phaser.Scene {
         } else if (type === 'skeleton') {
             this.addScore(20, item.x, item.y);
             this.activateCompanionHelper(20000);
+        }
+
+        else if (type === 'wooden') {
+            // Wooden plank pickup: increase plank count (acts like key inventory)
+            this.addScore(5, item.x, item.y);
+            GAME_STATE.woodenCount = (Number(GAME_STATE.woodenCount) || 0) + 1;
+            if (this.levelStats) {
+                this.levelStats.woodenCollected = (Number(this.levelStats.woodenCollected) || 0) + 1;
+            }
         }
 
         item.destroy();
@@ -5850,6 +5986,10 @@ class GameScene extends Phaser.Scene {
         for (let i = 0; i < GAME_STATE.keysCount; i++) {
             addIcon(OBJECT_FRAMES.key);
         }
+        // Wooden planks: displayed like keys (icons stacked)
+        for (let i = 0; i < (Number(GAME_STATE.woodenCount) || 0); i++) {
+            addIcon(OBJECT_FRAMES.wooden);
+        }
         x += sectionGap;
 
         // Dinamite: una sola icona + numero rimanente
@@ -6632,27 +6772,25 @@ class GameOverScene extends Phaser.Scene {
         GAME_STATE.topScores.sort((a, b) => b.score - a.score);
         GAME_STATE.topScores = GAME_STATE.topScores.slice(0, 10);
 
-        // persist to localStorage
+        // persist to server-side topScores file (falls back to localStorage if server unavailable)
         try {
-            localStorage.setItem('blockHunterTopScores', JSON.stringify(GAME_STATE.topScores));
-        } catch (e) { /* ignore */ }
-
-        // also offer updated config.json download by merging into CONFIG
-        try {
-            const cfg = Object.assign({}, CONFIG, { topScores: GAME_STATE.topScores });
-            const blob = new Blob([JSON.stringify(cfg, null, 2)], { type: 'application/json' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = 'config.json';
-            a.style.display = 'none';
-            document.body.appendChild(a);
-            a.click();
-            setTimeout(() => {
-                try { document.body.removeChild(a); } catch (e) {}
-                URL.revokeObjectURL(url);
-            }, 1000);
-        } catch (e) { /* ignore */ }
+            (async () => {
+                try {
+                    const resp = await fetch('/api/top-scores', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(GAME_STATE.topScores)
+                    });
+                    if (!resp || !resp.ok) {
+                        try { localStorage.setItem('blockHunterTopScores', JSON.stringify(GAME_STATE.topScores)); } catch (e) { }
+                    }
+                } catch (e) {
+                    try { localStorage.setItem('blockHunterTopScores', JSON.stringify(GAME_STATE.topScores)); } catch (err) { }
+                }
+            })();
+        } catch (e) {
+            try { localStorage.setItem('blockHunterTopScores', JSON.stringify(GAME_STATE.topScores)); } catch (err) { }
+        }
 
         // cleanup keyboard handler and timeout
         try {
@@ -6775,13 +6913,34 @@ async function inizialization() {
             scene: [PreloadScene, AttractScene, TopTenScene, ConfigScene, LevelSelectScene, GameScene, BonusScene, GameOverScene]
         };
 
-        // Copy game state keys to GAME_STATE
+        // Copy game state keys to GAME_STATE (topScores will be loaded from server if available)
         const stateKeys = [
-            'credits', 'language', 'difficulty', 'currentLevel', 'score', 'lives', 'dynamiteCount', 'keysCount', 'topScores'
+            'credits', 'language', 'difficulty', 'currentLevel', 'score', 'lives', 'dynamiteCount', 'keysCount', 'woodenCount'
         ];
         stateKeys.forEach(k => {
             if (cfg[k] !== undefined) GAME_STATE[k] = cfg[k];
         });
+
+        // Try to load top scores from server API; fallback to config.json topScores if API not available
+        try {
+            let serverTopScores = null;
+            try {
+                const resp = await fetch('/api/top-scores');
+                if (resp && resp.ok) {
+                    serverTopScores = await resp.json();
+                }
+            } catch (e) { serverTopScores = null; }
+
+            if (Array.isArray(serverTopScores) && serverTopScores.length > 0) {
+                GAME_STATE.topScores = serverTopScores.slice(0, 10);
+            } else if (Array.isArray(cfg.topScores)) {
+                GAME_STATE.topScores = cfg.topScores.slice(0, 10);
+            } else {
+                GAME_STATE.topScores = [];
+            }
+        } catch (e) {
+            GAME_STATE.topScores = Array.isArray(cfg.topScores) ? cfg.topScores.slice(0, 10) : [];
+        }
 
         new Phaser.Game(config);
 

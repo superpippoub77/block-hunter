@@ -30,6 +30,74 @@ function safeResolvePath(urlPath) {
 }
 
 const server = http.createServer((req, res) => {
+  // Simple API for top scores: GET /api/top-scores, POST /api/top-scores
+  if (req.url && req.url.startsWith('/api/top-scores')) {
+    const scoresFile = path.join(ROOT_DIR, 'data', 'topScores.json');
+    if (req.method === 'GET') {
+      fs.readFile(scoresFile, 'utf8', (err, data) => {
+        if (err) {
+          // fallback: try to read topScores from data/config.json
+          fs.readFile(path.join(ROOT_DIR, 'data', 'config.json'), 'utf8', (cfgErr, cfgData) => {
+            if (cfgErr) {
+              res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+              res.end(JSON.stringify([]));
+              return;
+            }
+            try {
+              const cfg = JSON.parse(cfgData);
+              const tops = Array.isArray(cfg.topScores) ? cfg.topScores : [];
+              res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+              res.end(JSON.stringify(tops));
+            } catch (e) {
+              res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+              res.end(JSON.stringify([]));
+            }
+          });
+          return;
+        }
+        try {
+          const parsed = JSON.parse(data || '[]');
+          res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+          res.end(JSON.stringify(parsed));
+        } catch (e) {
+          res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+          res.end(JSON.stringify([]));
+        }
+      });
+      return;
+    }
+
+    if (req.method === 'POST') {
+      let body = '';
+      req.on('data', chunk => { body += chunk.toString(); });
+      req.on('end', () => {
+        try {
+          const payload = JSON.parse(body || '[]');
+          // Ensure directory exists
+          try { fs.mkdirSync(path.join(ROOT_DIR, 'data'), { recursive: true }); } catch (_) {}
+          fs.writeFile(scoresFile, JSON.stringify(payload, null, 2), 'utf8', (writeErr) => {
+            if (writeErr) {
+              res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
+              res.end(JSON.stringify({ ok: false, error: writeErr.message }));
+              return;
+            }
+            res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+            res.end(JSON.stringify({ ok: true }));
+          });
+        } catch (e) {
+          res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+          res.end(JSON.stringify({ ok: false, error: 'invalid json' }));
+        }
+      });
+      return;
+    }
+
+    // Method not allowed
+    res.writeHead(405, { 'Content-Type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify({ ok: false, error: 'method not allowed' }));
+    return;
+  }
+
   const filePath = safeResolvePath(req.url || "/");
 
   fs.stat(filePath, (statErr, stats) => {
