@@ -362,6 +362,30 @@ class PreloadScene extends Phaser.Scene {
 
         // Create graphics for remaining assets
         this.createAssets();
+        // create a simple wooden plank texture at runtime (fallback asset)
+        try {
+            const plankW = Math.max(24, Math.round(CONFIG.objectSize ? CONFIG.objectSize * 0.9 : OBJECT_NATIVE_SIZE * 0.5));
+            const plankH = Math.max(12, Math.round(plankW * 0.28));
+            const canvasKey = 'wooden_plank';
+            if (!this.textures.exists(canvasKey)) {
+                const cvs = this.textures.createCanvas(canvasKey + '_tmp', plankW, plankH);
+                const ctx = cvs.getContext();
+                // wood grain background
+                ctx.fillStyle = '#8B5A2B';
+                ctx.fillRect(0, 0, plankW, plankH);
+                // lighter stripe
+                ctx.fillStyle = 'rgba(255,255,255,0.06)';
+                for (let i = 2; i < plankW; i += 6) {
+                    ctx.fillRect(i, 0, 2, plankH);
+                }
+                // add a subtle darker edge
+                ctx.fillStyle = 'rgba(0,0,0,0.12)';
+                ctx.fillRect(0, 0, 2, plankH);
+                ctx.fillRect(plankW - 2, 0, 2, plankH);
+                this.textures.addCanvas(canvasKey, cvs.canvas);
+                this.textures.remove(canvasKey + '_tmp');
+            }
+        } catch (e) { /* ignore any texture creation errors */ }
         console.log("Assets loaded and created.");
     }
 
@@ -844,6 +868,8 @@ class AttractScene extends Phaser.Scene {
                 intro.stop();
             }
             GAME_STATE.credits -= players;
+            // record number of players for later scenes
+            GAME_STATE.players = Number(players) || 1;
             GAME_STATE.score = 0;
             GAME_STATE.lives = 5;
             GAME_STATE.dynamiteCount = 20;
@@ -851,6 +877,13 @@ class AttractScene extends Phaser.Scene {
             // Wooden planks collected by player (used to bridge holes)
             GAME_STATE.woodenCount = 0;
             GAME_STATE.currentLevel = 0;
+            // initialize lives per-player when starting 2-player
+            if (Number(GAME_STATE.players) === 2) {
+                GAME_STATE.livesP1 = 5;
+                GAME_STATE.livesP2 = 5;
+            } else {
+                GAME_STATE.lives = 5;
+            }
             this.scene.start('LevelSelectScene');
         }
     }
@@ -1807,6 +1840,15 @@ class GameScene extends Phaser.Scene {
 
         this.createTilemap();
 
+        // restore any previously placed planks for this level (persisted in localStorage)
+        try {
+            if (!Array.isArray(GAME_STATE.placedPlanks)) {
+                const saved = localStorage.getItem('blockHunterPlacedPlanks');
+                GAME_STATE.placedPlanks = saved ? JSON.parse(saved) : [];
+            }
+            this.restorePlacedPlanks && this.restorePlacedPlanks();
+        } catch (e) { }
+
         // Create player
         this.createPlayer();
 
@@ -2428,6 +2470,39 @@ class GameScene extends Phaser.Scene {
             this.player.body.setSize(Math.floor(w * 0.7), Math.floor(h * 0.7));
             this.player.body.setOffset(Math.floor(w * 0.15), Math.floor(h * 0.15));
         }
+
+        // If two-player mode, create player2 as well
+        try {
+            if (Number(GAME_STATE.players) === 2) {
+                // try to use a separate playerStart2 if provided in levelData
+                let px2 = px + (CONFIG.tileSize || 64);
+                let py2 = py;
+                if (this.levelData && this.levelData.playerStart2) {
+                    const ps2 = this.levelData.playerStart2;
+                    if (typeof ps2.x === 'number' && typeof ps2.y === 'number') {
+                        px2 = ps2.x;
+                        py2 = ps2.y;
+                    } else if (typeof ps2.row === 'number' && typeof ps2.col === 'number') {
+                        px2 = this.mapOffsetX + ps2.col * CONFIG.tileSize + CONFIG.tileSize / 2;
+                        py2 = this.mapOffsetY + ps2.row * CONFIG.tileSize + CONFIG.tileSize / 2;
+                    }
+                }
+
+                this.player2 = this.physics.add.sprite(px2, py2, 'player_front', 0);
+                const playerDisplaySize = Number(CONFIG.playerSize) || Number(CONFIG.objectSize) || OBJECT_NATIVE_SIZE;
+                this.player2.setDisplaySize(playerDisplaySize, playerDisplaySize);
+                this.player2Facing = 'front';
+                this.player2VerticalFacing = 'front';
+                this.player2.setFlipX(false);
+                this.player2.setCollideWorldBounds(true);
+                if (this.player2.body) {
+                    const w2 = this.player2.displayWidth || this.player2.width;
+                    const h2 = this.player2.displayHeight || this.player2.height;
+                    this.player2.body.setSize(Math.floor(w2 * 0.7), Math.floor(h2 * 0.7));
+                    this.player2.body.setOffset(Math.floor(w2 * 0.15), Math.floor(h2 * 0.15));
+                }
+            }
+        } catch (e) { }
     }
 
     spawnStaticRocks() {
@@ -2939,6 +3014,29 @@ class GameScene extends Phaser.Scene {
             }
         }
 
+        // If a second player exists, wire the same overlaps so they interact with the world too
+        try {
+            if (this.player2) {
+                this.physics.add.overlap(this.player2, this.gems, this.collectGem, null, this);
+                this.physics.add.overlap(this.player2, this.items, this.collectItem, null, this);
+                this.physics.add.overlap(this.player2, this.bats, this.hitByBat, null, this);
+                const p2RockCollider = this.physics.add.collider(this.player2, this.rocks, this.hitByRock, null, this);
+                if (p2RockCollider) this.playerCollisionRefs.push(p2RockCollider);
+                this.physics.add.overlap(this.player2, this.boulders, this.hitByBoulder, null, this);
+                this.physics.add.overlap(this.player2, this.ghosts, this.hitByGhost, null, this);
+                this.physics.add.overlap(this.player2, this.shards, this.hitByShard, null, this);
+                this.physics.add.overlap(this.player2, this.hole2Exits, this.onPlayerReachHole2Exit, null, this);
+                if (this.walls) {
+                    const p2WallCollider = this.physics.add.collider(this.player2, this.walls);
+                    if (p2WallCollider) this.playerCollisionRefs.push(p2WallCollider);
+                }
+                if (this.doors) {
+                    const p2DoorCollider = this.physics.add.collider(this.player2, this.doors, this.onPlayerDoorCollide, null, this);
+                    if (p2DoorCollider) this.playerCollisionRefs.push(p2DoorCollider);
+                }
+            }
+        } catch (e) { }
+
         // Dynamite collisions
         this.physics.add.collider(this.dynamites, this.rocks, this.dynamiteHitRock, null, this);
         this.physics.add.overlap(this.dynamites, this.boulders, this.dynamiteHitBoulder, null, this);
@@ -3348,11 +3446,17 @@ class GameScene extends Phaser.Scene {
 
     setupInput() {
         this.cursors = this.input.keyboard.createCursorKeys();
-        this.keys = this.input.keyboard.addKeys({
+        // Player2 controls (WASD + F action) - Option A
+        this.p2Keys = this.input.keyboard.addKeys({
             w: Phaser.Input.Keyboard.KeyCodes.W,
             a: Phaser.Input.Keyboard.KeyCodes.A,
             s: Phaser.Input.Keyboard.KeyCodes.S,
             d: Phaser.Input.Keyboard.KeyCodes.D,
+            f: Phaser.Input.Keyboard.KeyCodes.F
+        });
+
+        // Shared action keys / misc for Player1
+        this.keys = this.input.keyboard.addKeys({
             space: Phaser.Input.Keyboard.KeyCodes.SPACE,
             l: Phaser.Input.Keyboard.KeyCodes.L,
             z: Phaser.Input.Keyboard.KeyCodes.Z
@@ -4121,10 +4225,18 @@ class GameScene extends Phaser.Scene {
     }
 
     onLevelTimeout() {
-        this.loseLife();
-        if (GAME_STATE.lives > 0) {
-            this.levelTimeRemaining = this.levelTimeTotal;
-            this.updateTimerBar();
+        // In multiplayer penalize both players on timeout, otherwise single-player lose
+        this.loseLife({ forAll: Number(GAME_STATE.players) === 2 });
+        if (Number(GAME_STATE.players) === 2) {
+            if ((Number(GAME_STATE.livesP1) || 0) > 0 || (Number(GAME_STATE.livesP2) || 0) > 0) {
+                this.levelTimeRemaining = this.levelTimeTotal;
+                this.updateTimerBar();
+            }
+        } else {
+            if ((Number(GAME_STATE.lives) || 0) > 0) {
+                this.levelTimeRemaining = this.levelTimeTotal;
+                this.updateTimerBar();
+            }
         }
     }
 
@@ -4146,10 +4258,21 @@ class GameScene extends Phaser.Scene {
             }
         } catch (e) { }
 
-        if (this.cursors.left.isDown || this.keys.a.isDown) velocityX = -1;
-        if (this.cursors.right.isDown || this.keys.d.isDown) velocityX = 1;
-        if (this.cursors.up.isDown || this.keys.w.isDown) velocityY = -1;
-        if (this.cursors.down.isDown || this.keys.s.isDown) velocityY = 1;
+        // Player 1 movement (arrow keys)
+        if (this.cursors.left.isDown) velocityX = -1;
+        if (this.cursors.right.isDown) velocityX = 1;
+        if (this.cursors.up.isDown) velocityY = -1;
+        if (this.cursors.down.isDown) velocityY = 1;
+
+        // Player 2 movement (WASD) - compute separate velocity but do not override player1's
+        let p2VelocityX = 0;
+        let p2VelocityY = 0;
+        try {
+            if (this.p2Keys.a.isDown) p2VelocityX = -1;
+            if (this.p2Keys.d.isDown) p2VelocityX = 1;
+            if (this.p2Keys.w.isDown) p2VelocityY = -1;
+            if (this.p2Keys.s.isDown) p2VelocityY = 1;
+        } catch (e) { /* p2Keys may not exist */ }
 
         if (velocityX !== 0 || velocityY !== 0) {
             this.lastMoveDir = {
@@ -4158,10 +4281,21 @@ class GameScene extends Phaser.Scene {
             };
         }
 
+        if (typeof p2VelocityX !== 'undefined' && (p2VelocityX !== 0 || p2VelocityY !== 0)) {
+            this.lastMoveDirP2 = {
+                x: Math.sign(p2VelocityX),
+                y: Math.sign(p2VelocityY)
+            };
+        }
+
         // Normalize diagonal movement
         if (velocityX !== 0 && velocityY !== 0) {
             velocityX *= 0.707;
             velocityY *= 0.707;
+        }
+        if (p2VelocityX !== 0 && p2VelocityY !== 0) {
+            p2VelocityX *= 0.707;
+            p2VelocityY *= 0.707;
         }
 
         let speed = CONFIG.playerSpeed;
@@ -4201,6 +4335,12 @@ class GameScene extends Phaser.Scene {
         }
 
         this.player.setVelocity(velocityX * speed, velocityY * speed);
+        // apply velocity for player2 if present
+        try {
+            if (this.player2 && this.player2.active) {
+                this.player2.setVelocity(p2VelocityX * speed, p2VelocityY * speed);
+            }
+        } catch (e) { }
 
         // Keep sand halo positioned on the player while effect active
         if (this.playerSandHalo && this.player && this.player.active) {
@@ -4247,8 +4387,9 @@ class GameScene extends Phaser.Scene {
             } catch (e) { /* ignore runtime errors in helmet scan */ }
         }
 
-        // Directional walk animations: down/front, up/back, right/right, left/right+flipX
-        const isMoving = velocityX !== 0 || velocityY !== 0;
+    // Directional walk animations: down/front, up/back, right/right, left/right+flipX
+    const isMoving = velocityX !== 0 || velocityY !== 0;
+    const isMovingP2 = (typeof p2VelocityX !== 'undefined') ? (p2VelocityX !== 0 || p2VelocityY !== 0) : false;
         if (isMoving) {
             const stepInterval = 180;
             if (!this.lastStepSoundTime || (this.time.now - this.lastStepSoundTime) >= stepInterval) {
@@ -4308,6 +4449,63 @@ class GameScene extends Phaser.Scene {
             }
         }
 
+        // Player2 animations (mirror of player but separate state)
+        try {
+            if (this.player2 && this.player2.active) {
+                if (isMovingP2) {
+                    let nextFacingP2 = this.player2Facing || 'front';
+                    if (Math.abs(p2VelocityX) > Math.abs(p2VelocityY)) {
+                        const verticalFacing2 = this.player2VerticalFacing || 'front';
+                        if (verticalFacing2 === 'back') {
+                            nextFacingP2 = p2VelocityX > 0 ? 'back_right' : 'back_left';
+                        } else {
+                            nextFacingP2 = p2VelocityX > 0 ? 'right' : 'left';
+                        }
+                    } else {
+                        nextFacingP2 = p2VelocityY < 0 ? 'back' : 'front';
+                        this.player2VerticalFacing = nextFacingP2;
+                    }
+                    this.player2Facing = nextFacingP2;
+
+                    let animKey2 = 'player_front_walk';
+                    if (nextFacingP2 === 'back') animKey2 = 'player_back_walk';
+                    else if (nextFacingP2 === 'back_right' || nextFacingP2 === 'back_left') animKey2 = 'player_back_right_walk';
+                    else if (nextFacingP2 === 'right' || nextFacingP2 === 'left') animKey2 = 'player_right_walk';
+
+                    if (!this.player2.anims.isPlaying || this.player2.anims.currentAnim?.key !== animKey2) {
+                        this.player2.anims.play(animKey2, true);
+                    }
+                    this.player2.setFlipX(nextFacingP2 === 'left' || nextFacingP2 === 'back_left');
+                } else {
+                    const currentAnimKey2 = this.player2.anims.currentAnim?.key;
+                    if (this.player2.anims.isPlaying && (currentAnimKey2 === 'player_front_walk' || currentAnimKey2 === 'player_back_walk' || currentAnimKey2 === 'player_right_walk' || currentAnimKey2 === 'player_back_right_walk')) {
+                        this.player2.anims.stop();
+                    }
+
+                    const facing2 = this.player2Facing || 'front';
+                    if (facing2 === 'back') {
+                        this.player2.setTexture('player_back', 0);
+                        this.player2.setFlipX(false);
+                    } else if (facing2 === 'back_right') {
+                        this.player2.setTexture('player_back_right', 0);
+                        this.player2.setFlipX(false);
+                    } else if (facing2 === 'back_left') {
+                        this.player2.setTexture('player_back_right', 0);
+                        this.player2.setFlipX(true);
+                    } else if (facing2 === 'right') {
+                        this.player2.setTexture('player_right', 0);
+                        this.player2.setFlipX(false);
+                    } else if (facing2 === 'left') {
+                        this.player2.setTexture('player_right', 0);
+                        this.player2.setFlipX(true);
+                    } else {
+                        this.player2.setTexture('player_front', 0);
+                        this.player2.setFlipX(false);
+                    }
+                }
+            }
+        } catch (e) { }
+
         // Shoot dynamite (keyboard space OR touch action button)
         try {
             const touch = (window && window.TOUCH_INPUT) ? window.TOUCH_INPUT : null;
@@ -4331,63 +4529,36 @@ class GameScene extends Phaser.Scene {
             this.toggleHeadlamp();
         }
 
-        // Action key (Z): try to place a wooden plank over a nearby hole or open a nearby door
+        // Action keys: Player1 Z, Player2 F (try to place plank or open door)
         try {
             if (Phaser.Input.Keyboard.JustDown(this.keys.z)) {
-                let used = false;
-                // compute player grid position
-                const px = this.player?.x || 0;
-                const py = this.player?.y || 0;
-                const baseGX = Math.floor((px - (this.mapOffsetX || 0)) / CONFIG.tileSize);
-                const baseGY = Math.floor((py - (this.mapOffsetY || 0)) / CONFIG.tileSize);
-
-                // scan nearby tiles (3x3) for a hole
-                for (let oy = -1; oy <= 1 && !used; oy++) {
-                    for (let ox = -1; ox <= 1 && !used; ox++) {
-                        const gx = baseGX + ox;
-                        const gy = baseGY + oy;
-                        if (!this.tiles[gy] || !this.tiles[gy][gx]) continue;
-                        const tt = this.tiles[gy][gx];
-                        if (tt && tt.type === 'hole') {
-                            // if player has wooden planks, place one
-                            if ((Number(GAME_STATE.woodenCount) || 0) > 0) {
-                                GAME_STATE.woodenCount = Math.max(0, (Number(GAME_STATE.woodenCount) || 0) - 1);
-                                // mark tile as floor so normal hole checks won't trigger
-                                tt.type = 'floor';
-                                // update visual tile if present
-                                try {
-                                    if (tt.sprite && tt.sprite.setFrame) {
-                                        tt.sprite.setFrame(3); // floor frame index
-                                    }
-                                } catch (e) { }
-
-                                // create a visual plank overlay
-                                try {
-                                    const worldX = (this.mapOffsetX || 0) + gx * CONFIG.tileSize + CONFIG.tileSize / 2;
-                                    const worldY = (this.mapOffsetY || 0) + gy * CONFIG.tileSize + CONFIG.tileSize / 2;
-                                    const plank = this.add.sprite(worldX, worldY, 'objects', (OBJECT_FRAMES.wooden || OBJECT_FRAMES.cart));
-                                    plank.setScale((Number(CONFIG.objectSize) || OBJECT_NATIVE_SIZE) / OBJECT_NATIVE_SIZE);
-                                    plank.setDepth((tt.sprite && tt.sprite.depth) ? tt.sprite.depth + 1 : 3000);
-                                    this.planks.add(plank);
-                                    tt.coverSprite = plank;
-                                } catch (e) { }
-
-                                if (this.sound) this.sound.play('select_sfx', { volume: 0.4 });
-                                this.refreshHudIcons && this.refreshHudIcons();
-                                used = true;
-                            }
-                        }
-                    }
-                }
-
+                // try placing plank for player1
+                const used = this.placePlankFor(this.player);
                 if (!used) {
-                    // no hole used: try open nearby door with Z (requires keys)
+                    // open nearby door for player1
                     const doors = this.doors?.children?.entries || [];
                     for (const door of doors) {
                         if (!door || !door.active) continue;
                         const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, door.x, door.y);
                         if (dist <= CONFIG.tileSize * 1.1) {
                             this.tryOpenDoor(this.player, door);
+                            break;
+                        }
+                    }
+                }
+            }
+        } catch (e) { }
+        try {
+            if (this.p2Keys && Phaser.Input.Keyboard.JustDown(this.p2Keys.f)) {
+                // try placing plank for player2
+                const used2 = this.placePlankFor(this.player2);
+                if (!used2) {
+                    const doors = this.doors?.children?.entries || [];
+                    for (const door of doors) {
+                        if (!door || !door.active) continue;
+                        const dist = Phaser.Math.Distance.Between(this.player2.x, this.player2.y, door.x, door.y);
+                        if (dist <= CONFIG.tileSize * 1.1) {
+                            this.tryOpenDoor(this.player2, door);
                             break;
                         }
                     }
@@ -5020,6 +5191,43 @@ class GameScene extends Phaser.Scene {
         });
     }
 
+    respawnPlayer(player) {
+        try {
+            const pl = player || this.player;
+            if (!pl) return;
+            // find level playerStart if available
+            let px = CONFIG.width / 2;
+            let py = CONFIG.height / 2;
+            if (this.levelData && this.levelData.playerStart) {
+                const ps = this.levelData.playerStart;
+                if (typeof ps.x === 'number' && typeof ps.y === 'number') {
+                    px = ps.x;
+                    py = ps.y;
+                } else if (typeof ps.row === 'number' && typeof ps.col === 'number') {
+                    px = this.mapOffsetX + ps.col * CONFIG.tileSize + CONFIG.tileSize / 2;
+                    py = this.mapOffsetY + ps.row * CONFIG.tileSize + CONFIG.tileSize / 2;
+                }
+            }
+            pl.setActive(true);
+            pl.setVisible(true);
+            try { pl.body && pl.body.setVelocity(0, 0); } catch (e) { }
+            pl.setPosition(px, py);
+            // short invulnerability effect
+            this.invulnerable = true;
+            this.tweens.add({
+                targets: pl,
+                alpha: 0.3,
+                duration: 100,
+                yoyo: true,
+                repeat: 10,
+                onComplete: () => {
+                    this.invulnerable = false;
+                    pl.alpha = 1;
+                }
+            });
+        } catch (e) { }
+    }
+
     explodeNearbyRocks(centerX, centerY, radius) {
         const rocks = this.rocks?.children?.entries || [];
         rocks.forEach((rock) => {
@@ -5126,7 +5334,18 @@ class GameScene extends Phaser.Scene {
             this.addScore(10, item.x, item.y);
             this.activateHelmet(10000);
         } else if (type === 'pepita' || type === 'heart') {
-            GAME_STATE.lives++;
+            // award life to the collecting player when in 2-player mode
+            if (Number(GAME_STATE.players) === 2) {
+                if (player === this.player) {
+                    GAME_STATE.livesP1 = (Number(GAME_STATE.livesP1) || 0) + 1;
+                } else if (player === this.player2) {
+                    GAME_STATE.livesP2 = (Number(GAME_STATE.livesP2) || 0) + 1;
+                } else {
+                    GAME_STATE.lives = (Number(GAME_STATE.lives) || 0) + 1;
+                }
+            } else {
+                GAME_STATE.lives = (Number(GAME_STATE.lives) || 0) + 1;
+            }
             if (this.levelStats) {
                 this.levelStats.pepitasCollected = (Number(this.levelStats.pepitasCollected) || 0) + 1;
             }
@@ -5292,7 +5511,7 @@ class GameScene extends Phaser.Scene {
     }
 
     hitByBoulder(player, boulder) {
-        this.loseLife();
+        this.loseLife({ player });
         boulder.destroy();
     }
 
@@ -5333,17 +5552,17 @@ class GameScene extends Phaser.Scene {
         if (!isFalling) return;
 
         // Normal hit by falling rock
-        this.loseLife();
+        this.loseLife({ player });
         try { rock.destroy(); } catch (e) { }
     }
 
     hitByShard(player, shard) {
-        this.loseLife();
+        this.loseLife({ player });
         shard.destroy();
     }
 
     hitByGhost(player, ghost) {
-        this.loseLife();
+        this.loseLife({ player });
     }
 
     hitByBat(player, bat) {
@@ -5366,32 +5585,167 @@ class GameScene extends Phaser.Scene {
             return;
         }
 
-        this.loseLife();
+        this.loseLife({ player });
     }
 
     hitHole() {
         this.loseLife();
     }
 
+    // Place a wooden plank for a specific player (tries to bridge nearby hole)
+    placePlankFor(player) {
+        if (!player || !player.active) return false;
+        try {
+            let used = false;
+            const px = player.x || 0;
+            const py = player.y || 0;
+            const baseGX = Math.floor((px - (this.mapOffsetX || 0)) / CONFIG.tileSize);
+            const baseGY = Math.floor((py - (this.mapOffsetY || 0)) / CONFIG.tileSize);
+
+            for (let oy = -1; oy <= 1 && !used; oy++) {
+                for (let ox = -1; ox <= 1 && !used; ox++) {
+                    const gx = baseGX + ox;
+                    const gy = baseGY + oy;
+                    if (!this.tiles[gy] || !this.tiles[gy][gx]) continue;
+                    const tt = this.tiles[gy][gx];
+                    if (tt && tt.type === 'hole') {
+                        if ((Number(GAME_STATE.woodenCount) || 0) > 0) {
+                            GAME_STATE.woodenCount = Math.max(0, (Number(GAME_STATE.woodenCount) || 0) - 1);
+                            tt.type = 'floor';
+                            try { if (tt.sprite && tt.sprite.setFrame) tt.sprite.setFrame(3); } catch (e) { }
+
+                            // create visual plank overlay - prefer runtime wooden_plank texture if present
+                            try {
+                                const worldX = (this.mapOffsetX || 0) + gx * CONFIG.tileSize + CONFIG.tileSize / 2;
+                                const worldY = (this.mapOffsetY || 0) + gy * CONFIG.tileSize + CONFIG.tileSize / 2;
+                                let plank = null;
+                                if (this.textures && this.textures.exists('wooden_plank')) {
+                                    plank = this.add.image(worldX, worldY, 'wooden_plank');
+                                    // size it relative to objectSize
+                                    const scale = (Number(CONFIG.objectSize) || OBJECT_NATIVE_SIZE) / OBJECT_NATIVE_SIZE;
+                                    plank.setDisplaySize(Math.round(CONFIG.tileSize * 0.98), Math.round(CONFIG.tileSize * 0.4));
+                                } else {
+                                    plank = this.add.sprite(worldX, worldY, 'objects', (OBJECT_FRAMES.wooden || OBJECT_FRAMES.cart));
+                                    plank.setScale((Number(CONFIG.objectSize) || OBJECT_NATIVE_SIZE) / OBJECT_NATIVE_SIZE);
+                                }
+                                plank.setDepth((tt.sprite && tt.sprite.depth) ? tt.sprite.depth + 1 : 3000);
+                                this.planks.add(plank);
+                                tt.coverSprite = plank;
+                            } catch (e) { }
+
+                            // persist placed plank for this level
+                            try {
+                                GAME_STATE.placedPlanks = GAME_STATE.placedPlanks || [];
+                                GAME_STATE.placedPlanks.push({ level: Number(GAME_STATE.currentLevel) || 0, gridX: gx, gridY: gy });
+                                localStorage.setItem('blockHunterPlacedPlanks', JSON.stringify(GAME_STATE.placedPlanks));
+                            } catch (e) { }
+
+                            if (this.sound) this.sound.play('select_sfx', { volume: 0.4 });
+                            this.refreshHudIcons && this.refreshHudIcons();
+                            used = true;
+                        }
+                    }
+                }
+            }
+            return used;
+        } catch (e) {
+            return false;
+        }
+    }
+
+    restorePlacedPlanks() {
+        try {
+            const placed = Array.isArray(GAME_STATE.placedPlanks) ? GAME_STATE.placedPlanks : [];
+            for (const p of placed) {
+                if (Number(p.level) !== Number(GAME_STATE.currentLevel)) continue;
+                const gx = Number(p.gridX);
+                const gy = Number(p.gridY);
+                if (!this.tiles[gy] || !this.tiles[gy][gx]) continue;
+                const tt = this.tiles[gy][gx];
+                if (!tt) continue;
+                // mark as floor and add overlay if not already
+                tt.type = 'floor';
+                try { if (tt.sprite && tt.sprite.setFrame) tt.sprite.setFrame(3); } catch (e) { }
+                if (!tt.coverSprite) {
+                    const worldX = (this.mapOffsetX || 0) + gx * CONFIG.tileSize + CONFIG.tileSize / 2;
+                    const worldY = (this.mapOffsetY || 0) + gy * CONFIG.tileSize + CONFIG.tileSize / 2;
+                    let plank = null;
+                    if (this.textures && this.textures.exists('wooden_plank')) {
+                        plank = this.add.image(worldX, worldY, 'wooden_plank');
+                        plank.setDisplaySize(Math.round(CONFIG.tileSize * 0.98), Math.round(CONFIG.tileSize * 0.4));
+                    } else {
+                        plank = this.add.sprite(worldX, worldY, 'objects', (OBJECT_FRAMES.wooden || OBJECT_FRAMES.cart));
+                        plank.setScale((Number(CONFIG.objectSize) || OBJECT_NATIVE_SIZE) / OBJECT_NATIVE_SIZE);
+                    }
+                    plank.setDepth((tt.sprite && tt.sprite.depth) ? tt.sprite.depth + 1 : 3000);
+                    this.planks.add(plank);
+                    tt.coverSprite = plank;
+                }
+            }
+        } catch (e) { }
+    }
+
     loseLife(options = {}) {
         if (this.cartPowerActive) return;
         if (this.invulnerable) return;
-
         const skipScorePenalty = !!options.skipScorePenalty;
         const reason = options.reason || '';
         const popupX = options.popupX;
         const popupY = options.popupY;
+        const player = options.player;
+        const forAll = !!options.forAll;
 
-        GAME_STATE.lives--;
+        // decrement appropriate lives counter
+        if (forAll && Number(GAME_STATE.players) === 2) {
+            GAME_STATE.livesP1 = Math.max(0, (Number(GAME_STATE.livesP1) || 0) - 1);
+            GAME_STATE.livesP2 = Math.max(0, (Number(GAME_STATE.livesP2) || 0) - 1);
+        } else if (player) {
+            if (Number(GAME_STATE.players) === 2) {
+                if (player === this.player) GAME_STATE.livesP1 = Math.max(0, (Number(GAME_STATE.livesP1) || 0) - 1);
+                else if (player === this.player2) GAME_STATE.livesP2 = Math.max(0, (Number(GAME_STATE.livesP2) || 0) - 1);
+                else GAME_STATE.lives = Math.max(0, (Number(GAME_STATE.lives) || 0) - 1);
+            } else {
+                GAME_STATE.lives = Math.max(0, (Number(GAME_STATE.lives) || 0) - 1);
+            }
+        } else {
+            GAME_STATE.lives = Math.max(0, (Number(GAME_STATE.lives) || 0) - 1);
+        }
+
         if (!skipScorePenalty) {
-            this.addScore(-20, this.player?.x, this.player?.y, true);
+            const sx = (player && player.x) ? player.x : this.player?.x;
+            const sy = (player && player.y) ? player.y : this.player?.y;
+            this.addScore(-20, sx, sy, true);
         }
 
         if (reason === 'score_underflow') {
             this.showLifeLossPopup(popupX, popupY);
         }
 
-        if (GAME_STATE.lives <= 0) {
+        // Decide game over or respawn based on single/multi player state
+        if (Number(GAME_STATE.players) === 2) {
+            const p1 = Number(GAME_STATE.livesP1) || 0;
+            const p2 = Number(GAME_STATE.livesP2) || 0;
+            if (p1 <= 0 && p2 <= 0) {
+                this.gameOver();
+                return;
+            }
+            // if the affected player still has lives, respawn that player; otherwise disable their sprite
+            if (player === this.player) {
+                if ((Number(GAME_STATE.livesP1) || 0) > 0) this.respawnPlayer(this.player);
+                else try { this.player.setActive(false).setVisible(false); } catch (e) { }
+            } else if (player === this.player2) {
+                if ((Number(GAME_STATE.livesP2) || 0) > 0) this.respawnPlayer(this.player2);
+                else try { this.player2.setActive(false).setVisible(false); } catch (e) { }
+            } else {
+                // generic fallback: respawn main player if any lives remain
+                if ((Number(GAME_STATE.livesP1) || 0) > 0) this.respawnPlayer(this.player);
+            }
+            this.refreshHudIcons && this.refreshHudIcons();
+            return;
+        }
+
+        // Single-player fallback
+        if ((Number(GAME_STATE.lives) || 0) <= 0) {
             this.gameOver();
             return;
         }
@@ -5949,9 +6303,15 @@ class GameScene extends Phaser.Scene {
             return txt;
         };
 
-        // Cuori: solo icone
-        for (let i = 0; i < GAME_STATE.lives; i++) {
-            addIcon(OBJECT_FRAMES.heart);
+        // Cuori: show per-player hearts in multiplayer, otherwise single hearts
+        if (Number(GAME_STATE.players) === 2) {
+            const p1Lives = Number(GAME_STATE.livesP1) || 0;
+            for (let i = 0; i < p1Lives; i++) addIcon(OBJECT_FRAMES.heart);
+            x += sectionGap;
+            const p2Lives = Number(GAME_STATE.livesP2) || 0;
+            for (let i = 0; i < p2Lives; i++) addIcon(OBJECT_FRAMES.heart);
+        } else {
+            for (let i = 0; i < (Number(GAME_STATE.lives) || 0); i++) addIcon(OBJECT_FRAMES.heart);
         }
         x += sectionGap;
 
