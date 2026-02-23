@@ -37,6 +37,28 @@ window.GAME_CONFIG = {
         multipliers: { small: 0.7, medium: 1.0, large: 1.5 }
     }
     ,
+    // Control mapping: define keys used by player 1 and player 2.
+    // Each entry uses key names that match Phaser's Keyboard.KeyCodes (e.g. 'LEFT','A','Z','SPACE').
+    // Values may be strings (single key) or arrays (primary + alternates).
+    controlPanel: {
+        player1: {
+            // movement: arrow keys as default for player1
+            move: { left: 'LEFT', right: 'RIGHT', up: 'UP', down: 'DOWN' },
+            // shooting / dynamite: prefer 'X', keep 'SPACE' as legacy fallback
+            shoot: ['X', 'SPACE'],
+            // action/confirm (place/open): primary 'Z'
+            action: ['Z']
+        },
+        player2: {
+            // movement: WASD for player2
+            move: { left: 'A', right: 'D', up: 'W', down: 'S' },
+            // shooting: prefer 'M' with 'N' as alternate; keep 'F' as legacy fallback
+            shoot: ['M', 'N', 'F'],
+            // action/confirm: use 'M' and 'N' for player2 actions
+            action: ['M', 'N']
+        }
+    }
+    ,
     // How many credits are required per player (set to 1 by default). The second
     // player requires exactly double this amount.
     CREDITS_PER_PLAYER: 1,
@@ -45,3 +67,5 @@ window.GAME_CONFIG = {
 
 // Make a convenience alias for console tweaking
 window.BLOCK_SIZE_CONFIG = window.GAME_CONFIG.BLOCK_SIZE_CONFIG;
+// Expose control panel mapping for easy access at runtime (console/tests)
+window.CONTROL_PANEL = window.GAME_CONFIG.controlPanel;

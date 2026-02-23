@@ -22,7 +22,11 @@ export function update(scene) {
                 window.player.x = Phaser.Math.Clamp(window.player.x, 10, 790);
                 window.player.y = Phaser.Math.Clamp(window.player.y, 10, 590);
 
-                if (Phaser.Input.Keyboard.JustDown(window.spaceKey)) {
+                // Allow P1 to shoot using configured keys (from CONFIG.controlPanel) or fallbacks
+                const p1map = (window.inputMap && window.inputMap.p1) ? window.inputMap.p1 : null;
+                const p1Shoot1 = p1map && p1map.shoot1;
+                const p1Shoot2 = p1map && p1map.shoot2;
+                if ((p1Shoot1 && Phaser.Input.Keyboard.JustDown(p1Shoot1)) || (p1Shoot2 && Phaser.Input.Keyboard.JustDown(p1Shoot2))) {
                     try { window.shoot && window.shoot(scene, window.player); } catch (e) { }
                 }
             } catch (e) { /* ignore */ }
@@ -55,19 +59,22 @@ export function update(scene) {
         } catch (e) { /* non-critical */ }
 
         // Player 2 movement & animation
-        if (window.player2 && window.wasdKeys) {
+    if (window.player2 && (window.inputMap && window.inputMap.p2)) {
             try {
-                if (window.wasdKeys.left && window.wasdKeys.left.isDown) window.player2.x -= 5;
-                else if (window.wasdKeys.right && window.wasdKeys.right.isDown) window.player2.x += 5;
+        const p2map = window.inputMap.p2;
+        if (p2map.left && p2map.left.isDown) window.player2.x -= 5;
+        else if (p2map.right && p2map.right.isDown) window.player2.x += 5;
 
-                if (window.wasdKeys.up && window.wasdKeys.up.isDown) window.player2.y -= 5;
-                else if (window.wasdKeys.down && window.wasdKeys.down.isDown) window.player2.y += 5;
+        if (p2map.up && p2map.up.isDown) window.player2.y -= 5;
+        else if (p2map.down && p2map.down.isDown) window.player2.y += 5;
 
                 window.player2.x = Phaser.Math.Clamp(window.player2.x, 10, 790);
                 window.player2.y = Phaser.Math.Clamp(window.player2.y, 10, 590);
 
-                const p2ShootKey = window.wasdKeys.shoot || window.wasdKeys.F || window.wasdKeys.f;
-                if (p2ShootKey && Phaser.Input.Keyboard.JustDown(p2ShootKey)) {
+                // Player2: support primary and alternate shoot keys (configured in create)
+                const p2ShootKey1 = p2map && p2map.shoot1;
+                const p2ShootKey2 = p2map && p2map.shoot2;
+                if ((p2ShootKey1 && Phaser.Input.Keyboard.JustDown(p2ShootKey1)) || (p2ShootKey2 && Phaser.Input.Keyboard.JustDown(p2ShootKey2))) {
                     try { window.shoot && window.shoot(scene, window.player2); } catch (e) { }
                 }
             } catch (e) { }

@@ -1463,8 +1463,8 @@
                 return;
             }
             keys[e.key] = true;
-            // Shoot bullet
-            if (e.key === ' ' && gameState === 'playing') {
+            // Shoot bullet (mapped to X or Z key)
+            if (e.key && (e.key.toLowerCase() === 'x' || e.key.toLowerCase() === 'z') && gameState === 'playing') {
                 e.preventDefault();
                 // Determina la direzione
                 let dx = 0, dy = 0, width = 8, height = 8, offsetX = 0, offsetY = 0;

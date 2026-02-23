@@ -53,6 +53,19 @@
     "returnLevel": 0
   },
 
+  "controlPanel": {
+    "player1": {
+      "move": { "left": "LEFT", "right": "RIGHT", "up": "UP", "down": "DOWN" },
+      "shoot": ["X", "SPACE"],
+      "action": ["Z"]
+    },
+    "player2": {
+      "move": { "left": "A", "right": "D", "up": "W", "down": "S" },
+      "shoot": ["M", "N", "F"],
+      "action": ["M", "N"]
+    }
+  },
+
   "scaleMode": "FIT",
   "enableFullscreen": true
 }

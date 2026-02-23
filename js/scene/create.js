@@ -77,22 +77,43 @@ export function create(scene) {
             }
 
             try {
+                // Read Player2 mapping from CONFIG.controlPanel if available
+                const panel = (window.CONFIG && window.CONFIG.controlPanel) ? window.CONFIG.controlPanel : (window.CONTROL_PANEL || {});
+                const p2cfg = panel.player2 || {};
+                const p2move = p2cfg.move || { left: 'A', right: 'D', up: 'W', down: 'S' };
+                const p2shoot = Array.isArray(p2cfg.shoot) ? p2cfg.shoot : (p2cfg.shoot ? [p2cfg.shoot] : ['M','N']);
+
                 window.wasdKeys = scene.input.keyboard.addKeys({
-                    up: Phaser.Input.Keyboard.KeyCodes.W,
-                    left: Phaser.Input.Keyboard.KeyCodes.A,
-                    down: Phaser.Input.Keyboard.KeyCodes.S,
-                    right: Phaser.Input.Keyboard.KeyCodes.D,
-                    shoot: Phaser.Input.Keyboard.KeyCodes.F
+                    up: Phaser.Input.Keyboard.KeyCodes[p2move.up] || Phaser.Input.Keyboard.KeyCodes.W,
+                    left: Phaser.Input.Keyboard.KeyCodes[p2move.left] || Phaser.Input.Keyboard.KeyCodes.A,
+                    down: Phaser.Input.Keyboard.KeyCodes[p2move.down] || Phaser.Input.Keyboard.KeyCodes.S,
+                    right: Phaser.Input.Keyboard.KeyCodes[p2move.right] || Phaser.Input.Keyboard.KeyCodes.D,
+                    shoot: Phaser.Input.Keyboard.KeyCodes[p2shoot[0]] || Phaser.Input.Keyboard.KeyCodes.M,
+                    shootAlt: p2shoot[1] ? (Phaser.Input.Keyboard.KeyCodes[p2shoot[1]] || Phaser.Input.Keyboard.KeyCodes.N) : undefined
                 });
+
+                // store in inputMap for unified access
+                window.inputMap = window.inputMap || {};
+                window.inputMap.p2 = {
+                    up: window.wasdKeys.up,
+                    left: window.wasdKeys.left,
+                    down: window.wasdKeys.down,
+                    right: window.wasdKeys.right,
+                    shoot1: window.wasdKeys.shoot,
+                    shoot2: window.wasdKeys.shootAlt
+                };
             } catch (e) {
-                const raw = scene.input.keyboard.addKeys('W,A,S,D,F');
+                const raw = scene.input.keyboard.addKeys('W,A,S,D,M,N');
                 window.wasdKeys = {
                     up: raw.W || raw.w,
                     left: raw.A || raw.a,
                     down: raw.S || raw.s,
                     right: raw.D || raw.d,
-                    shoot: raw.F || raw.f
+                    shoot: raw.M || raw.m,
+                    shootAlt: raw.N || raw.n
                 };
+                window.inputMap = window.inputMap || {};
+                window.inputMap.p2 = { up: window.wasdKeys.up, left: window.wasdKeys.left, down: window.wasdKeys.down, right: window.wasdKeys.right, shoot1: window.wasdKeys.shoot, shoot2: window.wasdKeys.shootAlt };
             }
         }
 
@@ -120,7 +141,44 @@ export function create(scene) {
 
         // Input
         window.cursors = scene.input.keyboard.createCursorKeys();
-        window.spaceKey = scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
+        // Input: build keys from CONFIG.controlPanel (if present) with sensible fallbacks
+        try {
+            const panel = (window.CONFIG && window.CONFIG.controlPanel) ? window.CONFIG.controlPanel : (window.CONTROL_PANEL || {});
+            // Player1 mapping
+            const p1cfg = panel.player1 || {};
+            const p1shoot = Array.isArray(p1cfg.shoot) ? p1cfg.shoot : (p1cfg.shoot ? [p1cfg.shoot] : ['X','SPACE']);
+            const p1action = Array.isArray(p1cfg.action) ? p1cfg.action : (p1cfg.action ? [p1cfg.action] : ['Z']);
+
+            const p1KeyDefs = {
+                shoot1: Phaser.Input.Keyboard.KeyCodes[p1shoot[0]] || Phaser.Input.Keyboard.KeyCodes.X,
+                shoot2: p1shoot[1] ? (Phaser.Input.Keyboard.KeyCodes[p1shoot[1]] || Phaser.Input.Keyboard.KeyCodes.SPACE) : undefined,
+                action1: Phaser.Input.Keyboard.KeyCodes[p1action[0]] || Phaser.Input.Keyboard.KeyCodes.Z
+            };
+            // addKeys ignores undefined values
+            const rawP1 = scene.input.keyboard.addKeys(p1KeyDefs);
+            window.inputMap = window.inputMap || {};
+            window.inputMap.p1 = {
+                shoot1: rawP1.shoot1 || rawP1.SHOOT1,
+                shoot2: rawP1.shoot2 || rawP1.SHOOT2,
+                action1: rawP1.action1 || rawP1.ACTION1
+            };
+            // Backwards compatibility: expose p1Keys.x and p1Keys.z and spaceKey
+            window.p1Keys = window.p1Keys || {};
+            window.p1Keys.x = window.inputMap.p1.shoot1;
+            window.p1Keys.z = window.inputMap.p1.action1;
+            window.spaceKey = window.p1Keys.x || scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
+        } catch (e) {
+            // fallback to previous behavior
+            try {
+                window.p1Keys = scene.input.keyboard.addKeys({ x: Phaser.Input.Keyboard.KeyCodes.X, z: Phaser.Input.Keyboard.KeyCodes.Z });
+            } catch (e2) {
+                const rawP1 = scene.input.keyboard.addKeys('X,Z');
+                window.p1Keys = { x: rawP1.X || rawP1.x, z: rawP1.Z || rawP1.z };
+            }
+            window.spaceKey = window.p1Keys.x || scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
+            window.inputMap = window.inputMap || {};
+            window.inputMap.p1 = { shoot1: window.p1Keys.x, action1: window.p1Keys.z };
+        }
 
         // HUD
         window.scoreText1 = scene.add.text(16, 16, 'P1: 0', { fontSize: '14px', fontFamily: window.GAME_FONT, fill: '#00ffff' }).setDepth(100);

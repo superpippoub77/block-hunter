@@ -106,13 +106,47 @@
             if (e.key === 'ArrowRight' || e.key === 'd') window.TOUCH_INPUT.x = 1;
             if (e.key === 'ArrowUp' || e.key === 'w') window.TOUCH_INPUT.y = -1;
             if (e.key === 'ArrowDown' || e.key === 's') window.TOUCH_INPUT.y = 1;
-            if (e.key === ' ' || e.key.toLowerCase() === 'x') window.TOUCH_INPUT.action = true;
+            // Map configured player1 action/shoot keys to the action button for touch/keyboard fallback
+            const panel = (window.CONFIG && window.CONFIG.controlPanel) ? window.CONFIG.controlPanel : (window.CONTROL_PANEL || {});
+            const p1cfg = panel.player1 || {};
+            const actionKeys = Array.isArray(p1cfg.shoot) ? p1cfg.shoot : (p1cfg.shoot ? [p1cfg.shoot] : ['X','SPACE']);
+            const actionAlt = Array.isArray(p1cfg.action) ? p1cfg.action : (p1cfg.action ? [p1cfg.action] : ['Z']);
+            const keysToCheck = [].concat(actionKeys || [], actionAlt || []);
+            const isMatch = (configuredKey) => {
+                if (!configuredKey || !e.key) return false;
+                const ck = String(configuredKey).toUpperCase();
+                // space
+                if (ck === 'SPACE') return (e.code === 'Space' || e.key === ' ' || e.key === 'Spacebar');
+                // arrows
+                if (ck === 'LEFT') return e.key === 'ArrowLeft';
+                if (ck === 'RIGHT') return e.key === 'ArrowRight';
+                if (ck === 'UP') return e.key === 'ArrowUp';
+                if (ck === 'DOWN') return e.key === 'ArrowDown';
+                // single character compare
+                return e.key.toLowerCase() === ck.toLowerCase();
+            };
+            if (keysToCheck.some(isMatch)) window.TOUCH_INPUT.action = true;
         });
         window.addEventListener('keyup', (e) => {
             if (!('ontouchstart' in window) && navigator.maxTouchPoints === 0) return;
             if (['ArrowLeft','a','ArrowRight','d'].includes(e.key)) window.TOUCH_INPUT.x = 0;
             if (['ArrowUp','w','ArrowDown','s'].includes(e.key)) window.TOUCH_INPUT.y = 0;
-            if (e.key === ' ' || e.key.toLowerCase() === 'x') window.TOUCH_INPUT.action = false;
+            const panel = (window.CONFIG && window.CONFIG.controlPanel) ? window.CONFIG.controlPanel : (window.CONTROL_PANEL || {});
+            const p1cfg = panel.player1 || {};
+            const actionKeys = Array.isArray(p1cfg.shoot) ? p1cfg.shoot : (p1cfg.shoot ? [p1cfg.shoot] : ['X','SPACE']);
+            const actionAlt = Array.isArray(p1cfg.action) ? p1cfg.action : (p1cfg.action ? [p1cfg.action] : ['Z']);
+            const keysToCheck = [].concat(actionKeys || [], actionAlt || []);
+            const isMatch = (configuredKey) => {
+                if (!configuredKey || !e.key) return false;
+                const ck = String(configuredKey).toUpperCase();
+                if (ck === 'SPACE') return (e.code === 'Space' || e.key === ' ' || e.key === 'Spacebar');
+                if (ck === 'LEFT') return e.key === 'ArrowLeft';
+                if (ck === 'RIGHT') return e.key === 'ArrowRight';
+                if (ck === 'UP') return e.key === 'ArrowUp';
+                if (ck === 'DOWN') return e.key === 'ArrowDown';
+                return e.key.toLowerCase() === ck.toLowerCase();
+            };
+            if (keysToCheck.some(isMatch)) window.TOUCH_INPUT.action = false;
         });
     }
 
