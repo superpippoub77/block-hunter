@@ -873,9 +873,15 @@ class AttractScene extends Phaser.Scene {
             GAME_STATE.score = 0;
             GAME_STATE.lives = 5;
             GAME_STATE.dynamiteCount = 20;
+            // Single-player inventory (kept for backward compatibility)
             GAME_STATE.keysCount = 0;
             // Wooden planks collected by player (used to bridge holes)
             GAME_STATE.woodenCount = 0;
+            // Per-player inventories for local 2-player mode
+            GAME_STATE.keysP1 = 0;
+            GAME_STATE.keysP2 = 0;
+            GAME_STATE.woodenP1 = 0;
+            GAME_STATE.woodenP2 = 0;
             GAME_STATE.currentLevel = 0;
             // initialize lives per-player when starting 2-player
             if (Number(GAME_STATE.players) === 2) {
@@ -2471,6 +2477,24 @@ class GameScene extends Phaser.Scene {
             this.player.body.setOffset(Math.floor(w * 0.15), Math.floor(h * 0.15));
         }
 
+        // Create a small '1P' label that follows player1 in 2-player mode
+        try {
+            if (Number(GAME_STATE.players) === 2) {
+                const labelY = py - (this.player.displayHeight || playerDisplaySize) / 2 - 6;
+                this.playerLabel = this.add.text(px - 10, labelY, '1P', {
+                    fontSize: '12px',
+                    fill: '#ffff00',
+                    fontFamily: GAME_FONT
+                }).setOrigin(0.5, 1);
+                // add a visible black stroke for legibility
+                try { this.playerLabel.setStroke('#000000', 3); } catch (e) { }
+                // Put label above most game elements so it's always readable
+                this.playerLabel.setDepth(2500);
+                // tint player sprite to a reference color (yellow) for quick identification
+                try { this.player.setTint(0xffff00); } catch (e) { }
+            }
+        } catch (e) { /* ignore label creation errors */ }
+
         // If two-player mode, create player2 as well
         try {
             if (Number(GAME_STATE.players) === 2) {
@@ -2501,6 +2525,19 @@ class GameScene extends Phaser.Scene {
                     this.player2.body.setSize(Math.floor(w2 * 0.7), Math.floor(h2 * 0.7));
                     this.player2.body.setOffset(Math.floor(w2 * 0.15), Math.floor(h2 * 0.15));
                 }
+                // Create a small '2P' label that follows player2
+                try {
+                    const labelY2 = py2 - (this.player2.displayHeight || playerDisplaySize) / 2 - 6;
+                    this.player2Label = this.add.text(px2 + 10, labelY2, '2P', {
+                        fontSize: '12px',
+                        fill: '#ff0000',
+                        fontFamily: GAME_FONT
+                    }).setOrigin(0.5, 1);
+                    try { this.player2Label.setStroke('#000000', 3); } catch (e) { }
+                    this.player2Label.setDepth(2500);
+                    // tint player2 sprite to a reference color (red)
+                    try { this.player2.setTint(0xff0000); } catch (e) { }
+                } catch (e) { /* ignore */ }
             }
         } catch (e) { }
     }
@@ -4342,6 +4379,34 @@ class GameScene extends Phaser.Scene {
             }
         } catch (e) { }
 
+        // Update floating player labels (1P / 2P) so they follow each player
+        try {
+            const labelOffsetY = -6;
+            if (this.playerLabel) {
+                if (this.player && this.player.active) {
+                    const pHeight = (this.player.displayHeight || Number(CONFIG.playerSize) || OBJECT_NATIVE_SIZE);
+                    const lx = Math.round(this.player.x - 10);
+                    const ly = Math.round(this.player.y - (pHeight / 2) + labelOffsetY);
+                    this.playerLabel.setPosition(lx, ly);
+                    this.playerLabel.setVisible(true);
+                } else {
+                    try { this.playerLabel.setVisible(false); } catch (e) { }
+                }
+            }
+
+            if (this.player2Label) {
+                if (this.player2 && this.player2.active) {
+                    const p2Height = (this.player2.displayHeight || Number(CONFIG.playerSize) || OBJECT_NATIVE_SIZE);
+                    const lx2 = Math.round(this.player2.x + 10);
+                    const ly2 = Math.round(this.player2.y - (p2Height / 2) + labelOffsetY);
+                    this.player2Label.setPosition(lx2, ly2);
+                    this.player2Label.setVisible(true);
+                } else {
+                    try { this.player2Label.setVisible(false); } catch (e) { }
+                }
+            }
+        } catch (e) { /* ignore label update errors */ }
+
         // Keep sand halo positioned on the player while effect active
         if (this.playerSandHalo && this.player && this.player.active) {
             try { this.playerSandHalo.setPosition(this.player.x, this.player.y); } catch (e) { }
@@ -4625,7 +4690,12 @@ class GameScene extends Phaser.Scene {
             if (!door || !door.active) continue;
             if (!door.getData('locked')) continue;
             if (door.getData('opening')) continue;
-            if (GAME_STATE.keysCount <= 0) continue;
+            // In 2-player mode, check player1's keys; otherwise check global keys
+            if (Number(GAME_STATE.players) === 2) {
+                if ((Number(GAME_STATE.keysP1) || 0) <= 0) continue;
+            } else {
+                if ((Number(GAME_STATE.keysCount) || 0) <= 0) continue;
+            }
 
             const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, door.x, door.y);
             if (dist <= CONFIG.tileSize * 1.1) {
@@ -5323,7 +5393,18 @@ class GameScene extends Phaser.Scene {
 
         if (type === 'key') {
             this.addScore(5, item.x, item.y);
-            GAME_STATE.keysCount++;
+            // Award key to the collecting player in 2-player mode, otherwise to global inventory
+            if (Number(GAME_STATE.players) === 2) {
+                if (player === this.player) {
+                    GAME_STATE.keysP1 = (Number(GAME_STATE.keysP1) || 0) + 1;
+                } else if (player === this.player2) {
+                    GAME_STATE.keysP2 = (Number(GAME_STATE.keysP2) || 0) + 1;
+                } else {
+                    GAME_STATE.keysCount = (Number(GAME_STATE.keysCount) || 0) + 1;
+                }
+            } else {
+                GAME_STATE.keysCount = (Number(GAME_STATE.keysCount) || 0) + 1;
+            }
             this.lastKeyPos = { x: item.x, y: item.y };
             if (this.levelStats) {
                 this.levelStats.keysCollected = (Number(this.levelStats.keysCollected) || 0) + 1;
@@ -5357,9 +5438,19 @@ class GameScene extends Phaser.Scene {
         }
 
         else if (type === 'wooden') {
-            // Wooden plank pickup: increase plank count (acts like key inventory)
+            // Wooden plank pickup: increase plank count (per-player in 2-player mode)
             this.addScore(5, item.x, item.y);
-            GAME_STATE.woodenCount = (Number(GAME_STATE.woodenCount) || 0) + 1;
+            if (Number(GAME_STATE.players) === 2) {
+                if (player === this.player) {
+                    GAME_STATE.woodenP1 = (Number(GAME_STATE.woodenP1) || 0) + 1;
+                } else if (player === this.player2) {
+                    GAME_STATE.woodenP2 = (Number(GAME_STATE.woodenP2) || 0) + 1;
+                } else {
+                    GAME_STATE.woodenCount = (Number(GAME_STATE.woodenCount) || 0) + 1;
+                }
+            } else {
+                GAME_STATE.woodenCount = (Number(GAME_STATE.woodenCount) || 0) + 1;
+            }
             if (this.levelStats) {
                 this.levelStats.woodenCollected = (Number(this.levelStats.woodenCollected) || 0) + 1;
             }
@@ -5452,9 +5543,23 @@ class GameScene extends Phaser.Scene {
         if (!door || !door.active) return;
         if (door.getData('opening')) return;
         if (!door.getData('locked')) return;
-        if (GAME_STATE.keysCount <= 0) return;
-
-        GAME_STATE.keysCount = Math.max(0, GAME_STATE.keysCount - 1);
+        // Determine keys count for this player (support per-player inventories)
+        const playersCount = Number(GAME_STATE.players) || 1;
+        if (playersCount === 2) {
+            if (player === this.player) {
+                if ((Number(GAME_STATE.keysP1) || 0) <= 0) return;
+                GAME_STATE.keysP1 = Math.max(0, (Number(GAME_STATE.keysP1) || 0) - 1);
+            } else if (player === this.player2) {
+                if ((Number(GAME_STATE.keysP2) || 0) <= 0) return;
+                GAME_STATE.keysP2 = Math.max(0, (Number(GAME_STATE.keysP2) || 0) - 1);
+            } else {
+                if ((Number(GAME_STATE.keysCount) || 0) <= 0) return;
+                GAME_STATE.keysCount = Math.max(0, (Number(GAME_STATE.keysCount) || 0) - 1);
+            }
+        } else {
+            if ((Number(GAME_STATE.keysCount) || 0) <= 0) return;
+            GAME_STATE.keysCount = Math.max(0, (Number(GAME_STATE.keysCount) || 0) - 1);
+        }
         door.setData('opening', true);
         door.setData('locked', false);
         if (door.disableBody) {
@@ -5609,8 +5714,25 @@ class GameScene extends Phaser.Scene {
                     if (!this.tiles[gy] || !this.tiles[gy][gx]) continue;
                     const tt = this.tiles[gy][gx];
                     if (tt && tt.type === 'hole') {
-                        if ((Number(GAME_STATE.woodenCount) || 0) > 0) {
-                            GAME_STATE.woodenCount = Math.max(0, (Number(GAME_STATE.woodenCount) || 0) - 1);
+                        // Determine wooden plank count for this player (support per-player inventories)
+                        const playersCount = Number(GAME_STATE.players) || 1;
+                        let availableWood = 0;
+                        if (playersCount === 2) {
+                            if (player === this.player) availableWood = Number(GAME_STATE.woodenP1) || 0;
+                            else if (player === this.player2) availableWood = Number(GAME_STATE.woodenP2) || 0;
+                            else availableWood = Number(GAME_STATE.woodenCount) || 0;
+                        } else {
+                            availableWood = Number(GAME_STATE.woodenCount) || 0;
+                        }
+                        if (availableWood > 0) {
+                            // consume one from the proper slot
+                            if (playersCount === 2) {
+                                if (player === this.player) GAME_STATE.woodenP1 = Math.max(0, (Number(GAME_STATE.woodenP1) || 0) - 1);
+                                else if (player === this.player2) GAME_STATE.woodenP2 = Math.max(0, (Number(GAME_STATE.woodenP2) || 0) - 1);
+                                else GAME_STATE.woodenCount = Math.max(0, (Number(GAME_STATE.woodenCount) || 0) - 1);
+                            } else {
+                                GAME_STATE.woodenCount = Math.max(0, (Number(GAME_STATE.woodenCount) || 0) - 1);
+                            }
                             tt.type = 'floor';
                             try { if (tt.sprite && tt.sprite.setFrame) tt.sprite.setFrame(3); } catch (e) { }
 
@@ -6315,15 +6437,25 @@ class GameScene extends Phaser.Scene {
         }
         x += sectionGap;
 
-        // Chiavi: solo icone
-        for (let i = 0; i < GAME_STATE.keysCount; i++) {
-            addIcon(OBJECT_FRAMES.key);
+        // Keys and wooden planks: show per-player stacks in 2-player mode, otherwise global
+        if (Number(GAME_STATE.players) === 2) {
+            // Player 1 inventory
+            const p1Keys = Number(GAME_STATE.keysP1) || 0;
+            for (let i = 0; i < p1Keys; i++) addIcon(OBJECT_FRAMES.key);
+            const p1Wood = Number(GAME_STATE.woodenP1) || 0;
+            for (let i = 0; i < p1Wood; i++) addIcon(OBJECT_FRAMES.wooden);
+            x += sectionGap;
+            // Player 2 inventory
+            const p2Keys = Number(GAME_STATE.keysP2) || 0;
+            for (let i = 0; i < p2Keys; i++) addIcon(OBJECT_FRAMES.key);
+            const p2Wood = Number(GAME_STATE.woodenP2) || 0;
+            for (let i = 0; i < p2Wood; i++) addIcon(OBJECT_FRAMES.wooden);
+            x += sectionGap;
+        } else {
+            for (let i = 0; i < (Number(GAME_STATE.keysCount) || 0); i++) addIcon(OBJECT_FRAMES.key);
+            for (let i = 0; i < (Number(GAME_STATE.woodenCount) || 0); i++) addIcon(OBJECT_FRAMES.wooden);
+            x += sectionGap;
         }
-        // Wooden planks: displayed like keys (icons stacked)
-        for (let i = 0; i < (Number(GAME_STATE.woodenCount) || 0); i++) {
-            addIcon(OBJECT_FRAMES.wooden);
-        }
-        x += sectionGap;
 
         // Dinamite: una sola icona + numero rimanente
         addIcon(OBJECT_FRAMES.dynamite_projectile);
