@@ -1893,8 +1893,13 @@ class GameScene extends Phaser.Scene {
                     const fgHeight = Math.max(worldHeight, CONFIG.height);
                     this.gameFg.setDisplaySize(fgWidth, fgHeight);
                     this.gameFg.setPosition(worldX, worldY);
-                    // Place the foreground above everything (UI included) as requested
-                    try { this.gameFg.setDepth(10000); } catch (e) { }
+                    // Place the foreground above world objects but below HUD by default
+                    try { this.gameFg.setDepth(3000); } catch (e) { }
+                    // Apply configurable alpha/transparency so the background is still visible
+                    try {
+                        const fgAlpha = (typeof CONFIG.parallaxFgAlpha === 'number') ? Number(CONFIG.parallaxFgAlpha) : 0.92;
+                        this.gameFg.setAlpha(Phaser.Math.Clamp(fgAlpha, 0, 1));
+                    } catch (e) { }
                     // Use a scroll factor < background so the FG moves more slowly (parallax)
                     this.gameFg.setScrollFactor(parallaxFgFactor);
                 } catch (e) { /* ignore failures creating FG */ }
