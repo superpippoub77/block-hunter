@@ -421,6 +421,10 @@ class PreloadScene extends Phaser.Scene {
             this.load.image(`game_bg_${master}`, `images/level${master}.png`);
         }
 
+        // Load optional foreground image (parallax overlay)
+        // Place a file named 'foreground.png' in the images/ folder to use it.
+        this.load.image('game_fg', 'images/foreground.png');
+
         // Create graphics for remaining assets
         this.createAssets();
         // create a simple wooden plank texture at runtime (fallback asset)
@@ -1872,7 +1876,30 @@ class GameScene extends Phaser.Scene {
             this.gameBg.setScrollFactor(parallaxBgFactor);
         }
 
-        // Foreground removed: no FG is created for the game world.
+        // Foreground: create a parallax foreground image that sits above the game world.
+        try {
+            // Foreground parallax factor (moves slower than background by default)
+            const parallaxFgFactor = (typeof CONFIG.parallaxFgFactor === 'number')
+                ? CONFIG.parallaxFgFactor
+                : Math.max(0, (parallaxBgFactor || 0.96) * 0.88);
+
+            if (this.textures.exists('game_fg')) {
+                try {
+                    // Use top-left origin so FG aligns to the map origin
+                    this.gameFg = this.add.image(worldX, worldY, 'game_fg');
+                    this.gameFg.setOrigin(0, 0);
+                    // Match FG size to world extents so it covers the level
+                    const fgWidth = Math.max(worldWidth, CONFIG.width);
+                    const fgHeight = Math.max(worldHeight, CONFIG.height);
+                    this.gameFg.setDisplaySize(fgWidth, fgHeight);
+                    this.gameFg.setPosition(worldX, worldY);
+                    // Place the foreground above everything (UI included) as requested
+                    try { this.gameFg.setDepth(10000); } catch (e) { }
+                    // Use a scroll factor < background so the FG moves more slowly (parallax)
+                    this.gameFg.setScrollFactor(parallaxFgFactor);
+                } catch (e) { /* ignore failures creating FG */ }
+            }
+        } catch (e) { }
 
         // Camera follow: move view with player to explore larger maps
         const camera = this.cameras.main;
