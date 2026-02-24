@@ -1037,7 +1037,7 @@ class TopTenScene extends Phaser.Scene {
         // Fallback: se la traduzione manca, mostra 'CLASSIFICA'
         const topTenTitle = t.topTen || 'CLASSIFICA';
         const topTitle = this.add.text(400, 80, topTenTitle, {
-            fontSize: '48px',
+            fontSize: '24px',
             fill: '#ffff00',
             fontFamily: GAME_FONT
         }).setOrigin(0.5);
