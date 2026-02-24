@@ -1,22 +1,27 @@
 {
   "id": "1.1",
+  "tokenMap": {
+    "X": "w00",
+    "x": "w00"
+  },
+  "background": 1,
   "map": {
     "cols": 12,
     "rows": 12,
     "timer": 120,
     "tiles": [
-      ["m","-","-","-","-","-","h","-","-","-","c","-"],
-      ["-","-","-","-","-","p","-","-","-","-","-","-"],
-      ["-","-","w53","w33/m","w02","d","w03","w04","w05","-","-","-"],
-      ["ghost","-","w06","f","f","f","f","f","w10","-","g","-"],
-      ["-","-","w11","f","f","f","f","f","w12","-","-","-"],
-      ["-","-","w13","w14","w15","w16","w20","w21","w22","-","-","-"],
-      ["-","-","-","-","-","-","-","-","-","-","k","-"],
-      ["-","w23","w24","w25","d","w26","w26","w26","-","-","-","-"],
-      ["k","w26","f","f","f","f","f","w26","-","h","-","-"],
-      ["m","w26","f","f","f","f","f","w26","-","-","-","-"],
-      ["bat","w26","w26","w26","w26","w26","w26","w26","-","-","g","-"],
-      ["g","-","-","-","-","-","-","-","-","-","-","-"]
+      ["","","","","back","","h","","","","c","exit"],
+      ["","","","","","p","","","","","",""],
+      ["","","x","x/m","d","x","x","x","","","",""],
+      ["ghost","x","","f","f","f","f","f","x","","g",""],
+      ["","","x","f","f","f","f","f","x","","",""],
+      ["","","x","x","x","x","x","x","x","","",""],
+      ["","","","","","","","","","","k",""],
+      ["","w23","w24","w25","d","w26","w26","w26","","","",""],
+      ["k","w26","f","f","f","f","f","w26","","s","",""],
+      ["m","w26","f","f","f","f","f","w26","","","",""],
+      ["bat","w26","w26","w26","w26","w26","w26","w26","","","g",""],
+      ["g","","","","","","","","","","",""]
     ]
   },
   "playerStart": { "row": 1, "col": 1 },
@@ -24,15 +29,20 @@
     "enabled": true,
     "dynamicSize": null,
     "rotation": null,
-    "chaotic": null
+    "chaotic": null,
+    "shardBurstCount": 8
   },
   "dynamicBoulders": {
-    "enabled": false,
-    "directions": null,
-    "sizes": null
+    "enabled": true,
+    "directions": ["top", "bottom", "left", "right"],
+    "sizes": null,
+    "splitOnImpact": true,
+    "splitPiecesRange": [2, 3],
+    "maxSplitGeneration": 1
   },
   "speed": 1,
-  "escapeRoute": false,
+  "requiredGems": 2,
+  "escapeRoute": true,
   "objectiveLabel": "objective_collect_gems_and_survive",
   "enemies": null,
   "collectibles": null,
@@ -44,5 +54,22 @@
   "ghost":2,
   "bat":2,
   "ghostSpeed": 80,
-  "batSpeed": 90
+  "batSpeed": 90,
+  "bonus": {
+    "enabled": false,
+    "name": "bonus1",
+    "label": "BONUS CARRELLO",
+    "criteria": {
+      "mode": "all",
+      "points": 120,
+      "keysCollected": 1
+    },
+    "rewardScore": 120,
+    "pepitaScore": 12,
+    "baseSpeed": 280,
+    "minSpeed": 180,
+    "maxSpeed": 520,
+    "speedStep": 340,
+    "jumpVelocity": 600
+  }
 }

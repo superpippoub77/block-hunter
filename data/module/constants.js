@@ -23,6 +23,7 @@ export const OBJECT_FRAMES = {
     wooden: 12,
     hole1: 13,
     hole2: 14,
+    exit: 14,
     explosion: 15
 };
 // Helmet uses the same spritesheet frame as the player/4th object (index 3)

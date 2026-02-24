@@ -2070,6 +2070,14 @@ class GameScene extends Phaser.Scene {
                 return { type: 'wall', wallFrame: 0, wallRotation: 0, wallFlip: '0' };
             }
 
+            // Support multi-character tokens like 'exit' which should map to hole2 (the exit frame)
+            if (typeof value === 'string') {
+                const vnorm = value.trim().toLowerCase();
+                if (vnorm === 'exit' || vnorm === 'hole2') {
+                    return { type: 'hole2', wallFrame: 0, wallRotation: 0 };
+                }
+            }
+
             if (value.length === 1) {
                 switch (value) {
                     case 'w': return { type: 'wall', wallFrame: 0, wallRotation: 0 };
@@ -2928,7 +2936,10 @@ class GameScene extends Phaser.Scene {
         });
         if (alreadyExists) return;
 
-        const hole2Exit = this.hole2Exits.create(worldX, worldY, 'objects', OBJECT_FRAMES.hole2);
+    // Use the semantic `exit` frame if available (falls back to `hole2` otherwise)
+        const exitFrame = (OBJECT_FRAMES.exit !== undefined) ? OBJECT_FRAMES.exit : OBJECT_FRAMES.hole2;
+        const hole2Exit = this.hole2Exits.create(worldX, worldY, 'objects', exitFrame);
+        // Match gem sizing/animation so the exit pulses similarly
         const hole2ScaleFactor = CONFIG.objectSize / OBJECT_NATIVE_SIZE;
         hole2Exit.setScale(hole2ScaleFactor);
         hole2Exit.setData('gridX', gridX);
@@ -2938,6 +2949,52 @@ class GameScene extends Phaser.Scene {
         }
         if (hole2Exit.refreshBody) {
             hole2Exit.refreshBody();
+        }
+
+        // Pulse tween similar to gems
+        try {
+            this.tweens.add({
+                targets: hole2Exit,
+                scale: 1.2,
+                duration: 500,
+                yoyo: true,
+                repeat: -1
+            });
+        } catch (e) {
+            // If tweening fails for any reason, continue without animation
+            console.warn('Failed to tween hole2 exit:', e);
+        }
+
+        // Create an "EXIT" overlay label in sovraimpressione
+        try {
+            if (!this.exitLabels) {
+                this.exitLabels = this.add.group();
+            }
+            // Center the label exactly on the tile's center (worldX, worldY)
+            const fontSize = Math.max(10, Math.floor(CONFIG.objectSize / 3));
+            const label = this.add.text(worldX, worldY, 'EXIT', {
+                fontFamily: 'PressStart2P, Arial',
+                fontSize: `${fontSize}px`,
+                color: '#ffffff',
+                stroke: '#000000',
+                strokeThickness: 4,
+                align: 'center'
+            }).setOrigin(0.5, 0.5);
+            // Ensure it draws above other objects
+            label.setDepth(1000);
+            this.exitLabels.add(label);
+
+            // Gentle up/down float for the label around the cell center
+            this.tweens.add({
+                targets: label,
+                y: worldY - 6,
+                duration: 700,
+                yoyo: true,
+                repeat: -1,
+                ease: 'Sine.easeInOut'
+            });
+        } catch (e) {
+            console.warn('Failed to create EXIT label:', e);
         }
     }
 
@@ -4627,6 +4684,11 @@ class GameScene extends Phaser.Scene {
             this.hitHole();
         }
 
+        // Check if on back tile: return to previous level
+        if (tile && tile.type === 'back') {
+            this.goToPreviousLevel();
+        }
+
         // Check proximity to doors for opening
         this.checkDoorProximity();
 
@@ -5655,8 +5717,81 @@ class GameScene extends Phaser.Scene {
         this.loseLife({ player });
     }
 
-    hitHole() {
-        this.loseLife();
+    hitHole(player) {
+        // Visual falling effect into the hole, then lose life and respawn
+        const pl = player || this.player;
+        try {
+            if (!pl || !pl.active) return;
+
+            // prevent re-entrancy
+            if (pl.getData && pl.getData('fallingIntoHole')) return;
+            if (pl.setData) pl.setData('fallingIntoHole', true);
+
+            // compute center of the tile the player is on
+            const gridX = Math.floor((pl.x - (this.mapOffsetX || 0)) / CONFIG.tileSize);
+            const gridY = Math.floor((pl.y - (this.mapOffsetY || 0)) / CONFIG.tileSize);
+            const centerX = this.mapOffsetX + gridX * CONFIG.tileSize + CONFIG.tileSize / 2;
+            const centerY = this.mapOffsetY + gridY * CONFIG.tileSize + CONFIG.tileSize / 2;
+
+            // stop player movement
+            try { if (pl.body) { pl.body.setVelocity(0, 0); pl.body.setEnable(false); } } catch (e) { }
+
+            // play optional fall sfx if available
+            try { if (this.sound && this.sound.get('fall_sfx')) this.sound.play('fall_sfx'); } catch (e) { }
+
+            // sinking tween: move to center, shrink and fade
+            this.tweens.add({
+                targets: pl,
+                x: centerX,
+                y: centerY + (CONFIG.tileSize * 0.18),
+                scale: 0.35,
+                alpha: 0,
+                angle: 14,
+                duration: 520,
+                ease: 'Cubic.easeIn',
+                onComplete: () => {
+                    try {
+                        // create a small dust puff and play fall sfx (if available)
+                        try {
+                            if (this.createDustPuff) this.createDustPuff(centerX, centerY, 0.9);
+                        } catch (e) { }
+                        try {
+                            if (this.sound) {
+                                if (this.sound.get('fall_sfx')) this.sound.play('fall_sfx');
+                                else if (this.sound.get('explosion_sfx')) this.sound.play('explosion_sfx', { volume: 0.35 });
+                            }
+                        } catch (e) { }
+
+                        // hide the sprite and mark inactive briefly
+                        pl.setVisible(false);
+                        pl.setActive(false);
+                    } catch (e) { }
+
+                    // ensure flag removed so respawn logic can reuse the player
+                    try { if (pl.setData) pl.setData('fallingIntoHole', false); } catch (e) { }
+
+                    // finally, register life loss for this player and show popup at hole center
+                    try { this.loseLife({ player: pl, popupX: centerX, popupY: centerY }); } catch (e) { this.loseLife(); }
+
+                    // re-enable body if it exists (respawnPlayer will reposition/enable visuals)
+                    try { if (pl.body) pl.body.setEnable(true); } catch (e) { }
+
+                    // Ensure player's scale is restored after respawn (respawnPlayer doesn't modify scale)
+                    try {
+                        const restoreScale = () => {
+                            try {
+                                const desired = (Number(CONFIG.playerSize) || Number(CONFIG.objectSize) || OBJECT_NATIVE_SIZE) / OBJECT_NATIVE_SIZE;
+                                if (pl && pl.setScale) pl.setScale(desired);
+                            } catch (e) { }
+                        };
+                        this.time.delayedCall(620, restoreScale);
+                    } catch (e) { }
+                }
+            });
+        } catch (e) {
+            // fallback behavior
+            try { this.loseLife({ player: pl }); } catch (err) { this.loseLife(); }
+        }
     }
 
     // Place a wooden plank for a specific player (tries to bridge nearby hole)
@@ -6013,6 +6148,89 @@ class GameScene extends Phaser.Scene {
         };
 
         this.time.delayedCall(1500, goToNextLevel);
+    }
+
+    goToPreviousLevel() {
+        if (this.isLevelTransitioning) return;
+        this.isLevelTransitioning = true;
+
+        // stop ongoing timers and effects similar to levelComplete cleanup
+        try {
+            this.deactivateCompanionHelper && this.deactivateCompanionHelper();
+            this.stopLevelLightEffect && this.stopLevelLightEffect();
+            this.stopGhostSfx && this.stopGhostSfx();
+        } catch (e) { }
+
+        if (this.boulderTimer) {
+            this.boulderTimer.remove();
+            this.boulderTimer = null;
+        }
+        if (this.rockSpawnTimer) {
+            this.rockSpawnTimer.remove();
+            this.rockSpawnTimer = null;
+        }
+        if (this.levelTimerEvent) {
+            this.levelTimerEvent.remove();
+            this.levelTimerEvent = null;
+        }
+        if (this.ghostDirectionTimer) {
+            this.ghostDirectionTimer.remove();
+            this.ghostDirectionTimer = null;
+        }
+        if (this.batDirectionTimer) {
+            this.batDirectionTimer.remove();
+            this.batDirectionTimer = null;
+        }
+
+        const totalLevels = (LEVEL_CONFIG && Array.isArray(LEVEL_CONFIG.levels)) ? LEVEL_CONFIG.levels.length : 1;
+        const current = Number(GAME_STATE.currentLevel) || 0;
+        const prev = ((current - 1) + totalLevels) % Math.max(1, totalLevels);
+        GAME_STATE.currentLevel = prev;
+
+        // Show a central flashing "BACK" overlay before transitioning
+        try {
+            const cam = this.cameras?.main;
+            const cx = cam ? cam.width / 2 : (CONFIG.width / 2);
+            const cy = cam ? cam.height / 2 : (CONFIG.height / 2);
+
+            const overlay = this.add.rectangle(cx, cy, cam ? cam.width : CONFIG.width, cam ? cam.height : CONFIG.height, 0x000000, 1)
+                .setScrollFactor(0)
+                .setDepth(4000);
+
+            const label = this.add.text(cx, cy, 'BACK', {
+                fontSize: '34px',
+                fill: '#ffffff',
+                fontFamily: GAME_FONT,
+                stroke: '#000000',
+                strokeThickness: 5,
+                align: 'center'
+            }).setOrigin(0.5).setDepth(4001).setScrollFactor(0);
+
+            // Flash/scale for 700ms (two half cycles) then transition
+            this.tweens.add({
+                targets: label,
+                alpha: { from: 1, to: 0 },
+                scale: { from: 0.95, to: 1.08 },
+                duration: 350,
+                yoyo: true,
+                repeat: 1,
+                ease: 'Sine.easeInOut',
+                onComplete: () => {
+                    try {
+                        if (label && label.destroy) label.destroy();
+                        if (overlay && overlay.destroy) overlay.destroy();
+                    } catch (e) { }
+                    try {
+                        this.scene.restart();
+                    } catch (e) {
+                        try { window.location.reload(); } catch (err) { }
+                    }
+                }
+            });
+        } catch (e) {
+            // If rendering overlay fails, fallback to immediate restart
+            try { this.scene.restart(); } catch (err) { try { window.location.reload(); } catch (e2) { } }
+        }
     }
 
     gameOver() {
