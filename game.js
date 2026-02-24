@@ -1738,6 +1738,8 @@ class GameScene extends Phaser.Scene {
         const masterLevel = getLevelMasterNumber(GAME_STATE.currentLevel);
         const masterLevelBgKey = `game_bg_${masterLevel}`;
         let selectedBgKey = 'game_bg';
+        let pendingDynamicBg = null; // when level provides a path to load dynamically
+
         // prefer explicit background set in level JSON
         if (this.levelData && this.levelData.background != null) {
             const b = this.levelData.background;
@@ -1749,7 +1751,13 @@ class GameScene extends Phaser.Scene {
                     const k = `game_bg_${b}`;
                     if (this.textures.exists(k)) selectedBgKey = k;
                 } else if (this.textures.exists(b)) {
+                    // string refers to an already-loaded texture key
                     selectedBgKey = b;
+                } else {
+                    // treat string as a path/URL to load dynamically; generate a unique key
+                    const genKey = `game_bg_level_${GAME_STATE.currentLevel}`;
+                    pendingDynamicBg = { key: genKey, src: b };
+                    // leave selectedBgKey as default for now; we'll swap texture after load
                 }
             }
         } else {
@@ -1763,6 +1771,36 @@ class GameScene extends Phaser.Scene {
             .setDisplaySize(CONFIG.width, CONFIG.height)
             .setScrollFactor(parallaxBgFactor)
             .setDepth(-1000);
+
+        // If the level requested a background image path that wasn't preloaded, load it dynamically
+        if (pendingDynamicBg) {
+            try {
+                // avoid re-adding if already in cache under generated key
+                if (!this.textures.exists(pendingDynamicBg.key)) {
+                    this.load.image(pendingDynamicBg.key, pendingDynamicBg.src);
+                    this.load.once('complete', () => {
+                        try {
+                            if (this.gameBg && this.gameBg.setTexture) {
+                                this.gameBg.setTexture(pendingDynamicBg.key);
+                                // resize to world extents after swapping texture
+                                const bgW = Math.max(worldWidth, CONFIG.width);
+                                const bgH = Math.max(worldHeight, CONFIG.height);
+                                try { this.gameBg.setOrigin(0, 0); } catch (e) { }
+                                this.gameBg.setDisplaySize(bgW, bgH);
+                                this.gameBg.setPosition(worldX, worldY);
+                                this.gameBg.setScrollFactor(parallaxBgFactor);
+                            }
+                        } catch (e) { }
+                    });
+                    this.load.start();
+                } else {
+                    // already exists under generated key
+                    try {
+                        this.gameBg.setTexture(pendingDynamicBg.key);
+                    } catch (e) { }
+                }
+            } catch (e) { }
+        }
 
         // Foreground will be created after the tilemap/world size is known.
         // We avoid creating it here to keep positioning simple and consistent
@@ -1883,10 +1921,12 @@ class GameScene extends Phaser.Scene {
                 ? CONFIG.parallaxFgFactor
                 : Math.max(0, (parallaxBgFactor || 0.96) * 0.88);
 
-            if (this.textures.exists('game_fg')) {
+            // Helper to instantiate the FG once the texture key is available
+            const createForegroundWithKey = (fgKey) => {
                 try {
+                    if (!this.textures.exists(fgKey)) return;
                     // Use top-left origin so FG aligns to the map origin
-                    this.gameFg = this.add.image(worldX, worldY, 'game_fg');
+                    this.gameFg = this.add.image(worldX, worldY, fgKey);
                     this.gameFg.setOrigin(0, 0);
                     // Match FG size to world extents so it covers the level
                     const fgWidth = Math.max(worldWidth, CONFIG.width);
@@ -1903,6 +1943,41 @@ class GameScene extends Phaser.Scene {
                     // Use a scroll factor < background so the FG moves more slowly (parallax)
                     this.gameFg.setScrollFactor(parallaxFgFactor);
                 } catch (e) { /* ignore failures creating FG */ }
+            };
+
+            // Determine which FG to use: level override -> loaded key -> dynamic load -> default 'game_fg'
+            const defaultFgKey = 'game_fg';
+            const levelFgSpec = (this.levelData && typeof this.levelData.foreground === 'string') ? this.levelData.foreground.trim() : null;
+
+            if (levelFgSpec) {
+                // If the specified string matches an already-loaded texture key, use it directly
+                if (this.textures.exists(levelFgSpec)) {
+                    createForegroundWithKey(levelFgSpec);
+                } else {
+                    // Treat the spec as a URL/path and load it dynamically into a unique key
+                    const generatedKey = `game_fg_level_${GAME_STATE.currentLevel}`;
+                    // If already loaded under the generated key, use it
+                    if (this.textures.exists(generatedKey)) {
+                        createForegroundWithKey(generatedKey);
+                    } else {
+                        try {
+                            // Start a one-off dynamic load for the requested foreground image
+                            this.load.image(generatedKey, levelFgSpec);
+                            this.load.once('complete', () => {
+                                try { createForegroundWithKey(generatedKey); } catch (e) { }
+                            });
+                            this.load.start();
+                        } catch (e) {
+                            // If dynamic load fails, fall back to default FG if available
+                            if (this.textures.exists(defaultFgKey)) createForegroundWithKey(defaultFgKey);
+                        }
+                    }
+                }
+            } else {
+                // No level override: use the default game_fg texture if present
+                if (this.textures.exists(defaultFgKey)) {
+                    createForegroundWithKey(defaultFgKey);
+                }
             }
         } catch (e) { }
 
