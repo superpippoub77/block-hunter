@@ -297,7 +297,8 @@ class PreloadScene extends Phaser.Scene {
             .image('explorer', 'images/explorer.png')
             .image('title_explosion', 'images/title_explosion.png')
             .image('bg', 'images/attract_bg.png')
-            .image('game_bg', 'images/game_bg.png')
+            // 'game_bg.png' may be missing in some distributions; use level1.png as a fallback background
+            .image('game_bg', 'images/level1.png')
             .image('fg_parallax', 'images/foreground.png')
             // Load flags sprite (8 flags: it, fr, de, en, us, ja, es, zh - 64x64 each)
             .spritesheet('flags', 'images/flags.png', { frameWidth: 64, frameHeight: 32 })
@@ -511,7 +512,8 @@ class AttractScene extends Phaser.Scene {
         // Foreground parallax image (subtle 3D effect)
         if (this.textures.exists('fg_parallax')) {
             // Use the same parallax factors as GameScene for visual consistency
-            const attractFgScroll = (typeof CONFIG.parallaxFgFactor === 'number') ? CONFIG.parallaxFgFactor : 0.92;
+            // Default to the same parallax factor used by the background so FG and BG move together
+            const attractFgScroll = (typeof CONFIG.parallaxFgFactor === 'number') ? CONFIG.parallaxFgFactor : attractBgScroll;
             this.attractFg = this.add.image(400, 300, 'fg_parallax').setDisplaySize(800, 600).setScrollFactor(attractFgScroll).setDepth(0);
             try {
                 const swayMag = (typeof CONFIG.attractFgSwayMagnitude === 'number')
@@ -666,59 +668,8 @@ class AttractScene extends Phaser.Scene {
             delay: 800
         });
 
-        // Legend: show object icons + localized descriptions under the story
-        try {
-            const t = TRANSLATIONS[GAME_STATE.language] || {};
-            const legend = [
-                { frame: OBJECT_FRAMES.dynamite_projectile, key: 'obj_dynamite' },
-                { frame: OBJECT_FRAMES.heart, key: 'obj_heart' },
-                { frame: OBJECT_FRAMES.stone, key: 'obj_stone' },
-                { frame: OBJECT_FRAMES.player, key: 'obj_player' },
-                { frame: OBJECT_FRAMES.dynamite_chest, key: 'obj_dynamite_chest' },
-                { frame: OBJECT_FRAMES.door, key: 'obj_door' },
-                { frame: OBJECT_FRAMES.gem, key: 'obj_gem' },
-                { frame: OBJECT_FRAMES.cart, key: 'obj_cart' },
-                { frame: OBJECT_FRAMES.key, key: 'obj_key' },
-                { frame: OBJECT_FRAMES.sand_pile, key: 'obj_sand_pile' },
-                { frame: OBJECT_FRAMES.ghost, key: 'obj_ghost' },
-                { frame: OBJECT_FRAMES.pepita, key: 'obj_pepita' },
-                { frame: OBJECT_FRAMES.wall, key: 'obj_wall' },
-                { frame: OBJECT_FRAMES.wooden, key: 'obj_wooden' },
-                { frame: OBJECT_FRAMES.hole1, key: 'obj_hole1' },
-                { frame: OBJECT_FRAMES.hole2, key: 'obj_hole2' },
-                { frame: OBJECT_FRAMES.explosion, key: 'obj_explosion' }
-            ];
-
-            // include bat as extra (separate spritesheet)
-            legend.push({ frame: 'bat', key: 'obj_bat' });
-
-            const cols = 2;
-            const perCol = Math.ceil(legend.length / cols);
-            const startX = 140;
-            const colSpacing = 320;
-            const startY = (this.instructionsText && this.instructionsText.y) ? (this.instructionsText.y + (this.instructionsText.height || 0) / 2 + 34) : 340;
-            const rowSpacing = 28;
-
-            for (let i = 0; i < legend.length; i++) {
-                const col = Math.floor(i / perCol);
-                const row = i % perCol;
-                const x = startX + col * colSpacing;
-                const y = startY + row * rowSpacing;
-
-                const item = legend[i];
-                // icon: if frame is string 'bat' use bat spritesheet, else use objects spritesheet
-                try {
-                    if (item.frame === 'bat') {
-                        this.add.sprite(x - 60, y, 'bat', 0).setScale(0.4).setOrigin(0, 0.5);
-                    } else {
-                        this.add.sprite(x - 60, y, 'objects', item.frame).setScale(0.5).setOrigin(0, 0.5);
-                    }
-                } catch (e) { }
-
-                const desc = t[item.key] || item.key;
-                this.add.text(x - 36, y, desc, { fontSize: '12px', fill: '#ffffff', fontFamily: GAME_FONT }).setOrigin(0, 0.5).setDepth(2);
-            }
-        } catch (e) { }
+        // Legend of objects removed by request (was showing object icons and descriptions).
+        // If you want to re-enable it later, restore the legend block here.
 
         // Panels and UI elements
         this.coinText = this.add.text(400, 520, '', {
@@ -1006,6 +957,11 @@ class TopTenScene extends Phaser.Scene {
 
         this.add.image(400, 300, 'bg').setDisplaySize(800, 600);
 
+        // Dim background with attract overlay alpha so Level Select matches Attract UI
+        try {
+            const overlayAlpha = (typeof CONFIG.attractOverlayAlpha === 'number') ? CONFIG.attractOverlayAlpha : 0.35;
+            this.levelSelectOverlay = this.add.rectangle((CONFIG.width || 800) / 2, (CONFIG.height || 600) / 2, (CONFIG.width || 800), (CONFIG.height || 600), 0x000000, overlayAlpha).setDepth(0.1);
+        } catch (e) { /* ignore if CONFIG not ready */ }
         // Fallback: se la traduzione manca, mostra 'CLASSIFICA'
         const topTenTitle = t.topTen || 'CLASSIFICA';
         const topTitle = this.add.text(400, 80, topTenTitle, {
@@ -1513,7 +1469,7 @@ class LevelSelectScene extends Phaser.Scene {
             fontSize: '40px',
             fill: '#ffff00',
             fontFamily: GAME_FONT
-        }).setOrigin(0.5);
+        }).setOrigin(0.5).setDepth(1);
 
         // Difficulties configuration and selectable UI
         this.difficulties = [
@@ -1570,7 +1526,7 @@ class LevelSelectScene extends Phaser.Scene {
                 fontSize: '32px',
                 fill: '#ffffff',
                 fontFamily: GAME_FONT
-            }).setOrigin(0.5).setInteractive();
+            }).setOrigin(0.5).setInteractive().setDepth(1);
 
             text.on('pointerover', () => {
                 if (this.selectedIndex !== idx) {
@@ -1593,6 +1549,9 @@ class LevelSelectScene extends Phaser.Scene {
 
         // Initialize selection visuals
         this.updateSelection();
+
+    // Ensure selection graphics and UI are above the attract overlay
+    try { if (this.selectionGraphics && this.selectionGraphics.setDepth) this.selectionGraphics.setDepth(1); } catch (e) { }
 
         // Keyboard navigation: Up/Down to change selection, Enter/Space to confirm
         this.input.keyboard.on('keydown-UP', () => this.changeSelection(-1));
@@ -1749,7 +1708,8 @@ class GameScene extends Phaser.Scene {
 
         // Parallax configuration: allow overriding with CONFIG values
     const parallaxBgFactor = (typeof CONFIG.parallaxBgFactor === 'number') ? CONFIG.parallaxBgFactor : 0.96;
-    const parallaxFgFactor = (typeof CONFIG.parallaxFgFactor === 'number') ? CONFIG.parallaxFgFactor : 0.92; // foreground scrolls slightly slower than bg by default
+    // By default make foreground scroll the same as background so they move together at end-of-level
+    const parallaxFgFactor = (typeof CONFIG.parallaxFgFactor === 'number') ? CONFIG.parallaxFgFactor : parallaxBgFactor;
     const parallaxFgDepth = (typeof CONFIG.parallaxFgDepth === 'number') ? CONFIG.parallaxFgDepth : 1500; // default depth behind HUD
 
         this.gameBg = this.add.image(CONFIG.width / 2, CONFIG.height / 2, selectedBgKey)
@@ -4619,13 +4579,13 @@ class GameScene extends Phaser.Scene {
         this.updateCompanionPosition();
 
         // Toggle miner headlamp when room light is off
-        if (Phaser.Input.Keyboard.JustDown(this.keys.l)) {
+        if (this.keys && this.keys.l && Phaser.Input.Keyboard.JustDown(this.keys.l)) {
             this.toggleHeadlamp();
         }
 
         // Action keys: Player1 Z, Player2 F (try to place plank or open door)
         try {
-            if (Phaser.Input.Keyboard.JustDown(this.keys.z)) {
+            if (this.keys && this.keys.z && Phaser.Input.Keyboard.JustDown(this.keys.z)) {
                 // try placing plank for player1
                 const used = this.placePlankFor(this.player);
                 if (!used) {
@@ -6567,6 +6527,38 @@ class BonusScene extends Phaser.Scene {
             .setDisplaySize(worldWidth, worldHeight)
             .setDepth(-1000);
 
+        // Bonus scene foreground (parallax) — behave like GameScene foreground by default
+        try {
+            const parallaxBgFactor = (typeof CONFIG.parallaxBgFactor === 'number') ? CONFIG.parallaxBgFactor : 0.96;
+            const parallaxFgFactor = (typeof CONFIG.parallaxFgFactor === 'number') ? CONFIG.parallaxFgFactor : parallaxBgFactor;
+            const parallaxFgDepth = (typeof CONFIG.parallaxFgDepth === 'number') ? CONFIG.parallaxFgDepth : 1500;
+            if (this.textures.exists('fg_parallax')) {
+                this.bonusFg = this.add.image(worldWidth / 2, worldHeight / 2, 'fg_parallax')
+                    .setDisplaySize(worldWidth, worldHeight)
+                    .setScrollFactor(parallaxFgFactor)
+                    .setDepth(parallaxFgDepth);
+
+                // subtle sway matching GameScene behavior
+                try {
+                    const gameSwayEnabled = (typeof CONFIG.gameFgSwayEnabled === 'boolean') ? CONFIG.gameFgSwayEnabled : true;
+                    const gameSwayMag = (typeof CONFIG.gameFgSwayMagnitude === 'number') ? CONFIG.gameFgSwayMagnitude : ((typeof CONFIG.attractFgSwayMagnitude === 'number') ? CONFIG.attractFgSwayMagnitude : (typeof CONFIG.fgShakeMagnitude === 'number' ? CONFIG.fgShakeMagnitude : 6));
+                    const gameSwayDuration = (typeof CONFIG.gameFgSwayDuration === 'number') ? CONFIG.gameFgSwayDuration : 8000;
+                    if (gameSwayEnabled) {
+                        this.tweens.add({
+                            targets: this.bonusFg,
+                            x: `+=${gameSwayMag}`,
+                            duration: gameSwayDuration,
+                            yoyo: true,
+                            repeat: -1,
+                            ease: 'Sine.easeInOut'
+                        });
+                    }
+                } catch (e) { /* ignore tween errors */ }
+            } else {
+                console.warn('fg_parallax texture not found in BonusScene');
+            }
+        } catch (e) { /* ignore if CONFIG not ready */ }
+
         this.bonusRails = this.physics.add.staticGroup();
         this.bonusHazards = this.physics.add.group({ allowGravity: false, immovable: true });
         this.bonusPepitas = this.physics.add.group({ allowGravity: false, immovable: true });
@@ -7199,17 +7191,23 @@ class GameOverScene extends Phaser.Scene {
 
         this.add.rectangle(400, 300, 800, 600, 0x220000);
 
+        // Dim background with attract overlay alpha so Game Over matches Attract UI
+        try {
+            const overlayAlpha = (typeof CONFIG.attractOverlayAlpha === 'number') ? CONFIG.attractOverlayAlpha : 0.35;
+            this.gameOverOverlay = this.add.rectangle(400, 300, 800, 600, 0x000000, overlayAlpha).setDepth(0.1);
+        } catch (e) { /* ignore if CONFIG not ready */ }
+
         this.add.text(400, 200, gameOverText, {
             fontSize: '64px',
             fill: '#ff0000',
             fontFamily: GAME_FONT
-        }).setOrigin(0.5);
+        }).setOrigin(0.5).setDepth(1);
 
         this.add.text(400, 280, `${scoreLabel}: ${GAME_STATE.score}`, {
             fontSize: '32px',
             fill: '#ffffff',
             fontFamily: GAME_FONT
-        }).setOrigin(0.5);
+        }).setOrigin(0.5).setDepth(1);
 
         // Check if high score
         const lowestScore = GAME_STATE.topScores[GAME_STATE.topScores.length - 1].score;
@@ -7218,7 +7216,7 @@ class GameOverScene extends Phaser.Scene {
                 fontSize: '24px',
                 fill: '#00ff00',
                 fontFamily: GAME_FONT
-            }).setOrigin(0.5);
+            }).setOrigin(0.5).setDepth(1);
 
             // Letter picker: 3 letters, cycle with UP/DOWN, confirm letter with SPACE, 20s timeout
             this.nameChars = ['A', 'A', 'A'];
@@ -7228,7 +7226,7 @@ class GameOverScene extends Phaser.Scene {
                 fontSize: '32px',
                 fill: '#ffff00',
                 fontFamily: GAME_FONT
-            }).setOrigin(0.5);
+            }).setOrigin(0.5).setDepth(1);
 
             // Keyboard handlers
             this._onKeyDown = (event) => {
@@ -7435,9 +7433,27 @@ async function inizialization() {
             if (Array.isArray(serverTopScores) && serverTopScores.length > 0) {
                 GAME_STATE.topScores = serverTopScores.slice(0, 10);
             } else if (Array.isArray(cfg.topScores)) {
+                // allow embedding topScores directly in data/config.json
                 GAME_STATE.topScores = cfg.topScores.slice(0, 10);
             } else {
-                GAME_STATE.topScores = [];
+                // fallback: try to load a static data/topScores.json file (useful when
+                // running the game as static files without the server API)
+                try {
+                    const resp2 = await fetch('data/topScores.json');
+                    if (resp2 && resp2.ok) {
+                        const staticScores = await resp2.json();
+                        if (Array.isArray(staticScores) && staticScores.length > 0) {
+                            GAME_STATE.topScores = staticScores.slice(0, 10);
+                            console.log('Loaded top scores from static data/topScores.json');
+                        } else {
+                            GAME_STATE.topScores = [];
+                        }
+                    } else {
+                        GAME_STATE.topScores = [];
+                    }
+                } catch (e) {
+                    GAME_STATE.topScores = [];
+                }
             }
         } catch (e) {
             GAME_STATE.topScores = Array.isArray(cfg.topScores) ? cfg.topScores.slice(0, 10) : [];

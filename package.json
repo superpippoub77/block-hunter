@@ -3,7 +3,8 @@
   "version": "1.0.0",
   "description": "Block Hunter - Arcade game",
   "scripts": {
-    "start": "npx serve -p 8000",
+  "start": "npx serve -p 8000",
+  "start:api": "node server.js",
     "cap:init": "npx cap init block-hunter com.example.blockhunter --web-dir=www",
     "cap:add:android": "npx cap add android",
     "cap:copy": "npx cap copy",
