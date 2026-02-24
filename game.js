@@ -12,6 +12,8 @@ const GAME_STATE = {};
 
 
 const GAME_FONT = '"Press Start 2P"';
+// Depth value for HUD elements so they always render above game world/foreground
+const HUD_DEPTH = 10000;
 // Translations
 const TRANSLATIONS = {};
 // Load configuration from /data/config.json
@@ -715,28 +717,28 @@ class AttractScene extends Phaser.Scene {
         // Legend of objects removed by request (was showing object icons and descriptions).
         // If you want to re-enable it later, restore the legend block here.
 
-        // Panels and UI elements
+        // Panels and UI elements (HUD placed on top using HUD_DEPTH)
         this.coinText = this.add.text(400, 520, '', {
             fontSize: '24px',
             fill: '#ffee00ff',
             fontFamily: GAME_FONT
-        }).setOrigin(0.5);
-        this.coinPanel = this.add.graphics();
+        }).setOrigin(0.5).setDepth(HUD_DEPTH).setScrollFactor(0);
+        this.coinPanel = this.add.graphics().setDepth(HUD_DEPTH - 1).setScrollFactor(0);
         this.player1Text = this.add.text(150, 550, '', {
             fontSize: '18px',
             fill: '#666666',
             fontFamily: GAME_FONT
-        }).setOrigin(0.5);
-        this.player1Panel = this.add.graphics();
+        }).setOrigin(0.5).setDepth(HUD_DEPTH).setScrollFactor(0);
+        this.player1Panel = this.add.graphics().setDepth(HUD_DEPTH - 1).setScrollFactor(0);
         this.player2Text = this.add.text(650, 550, '', {
             fontSize: '18px',
             fill: '#666666',
             fontFamily: GAME_FONT
-        }).setOrigin(0.5);
-        this.player2Panel = this.add.graphics();
+        }).setOrigin(0.5).setDepth(HUD_DEPTH).setScrollFactor(0);
+        this.player2Panel = this.add.graphics().setDepth(HUD_DEPTH - 1).setScrollFactor(0);
 
         // Language selector with flags
-        this.flagSprite = this.add.sprite(400, 560, 'flags', this.currentLangIndex).setOrigin(0.5);
+        this.flagSprite = this.add.sprite(400, 560, 'flags', this.currentLangIndex).setOrigin(0.5).setDepth(HUD_DEPTH).setScrollFactor(0);
         this.tweens.add({
             targets: this.flagSprite,
             scaleX: 1.05,
@@ -774,7 +776,7 @@ class AttractScene extends Phaser.Scene {
                 fill: '#aaaaaa',
                 fontFamily: GAME_FONT
             }).setOrigin(0.5);
-            this.signatureText.setDepth(2);
+            this.signatureText.setDepth(HUD_DEPTH);
         } catch (e) { /* ignore if font not loaded yet */ }
 
         // Setup input
@@ -932,9 +934,9 @@ class AttractScene extends Phaser.Scene {
         this.instructionsText.setText(displayedText);
 
         // Make sure UI texts are above panels
-        this.coinText.setDepth(2);
-        this.player1Text.setDepth(2);
-        this.player2Text.setDepth(2);
+        this.coinText.setDepth(HUD_DEPTH);
+        this.player1Text.setDepth(HUD_DEPTH);
+        this.player2Text.setDepth(HUD_DEPTH);
 
         // Draw/update panels: coin always visible, player panels visible only when active
         if (this.coinPanel) drawTextPanel(this.coinPanel, this.coinText, { paddingX: 14, paddingY: 8 });
@@ -1086,30 +1088,30 @@ class TopTenScene extends Phaser.Scene {
         this.currentLangIndex = Math.max(0, this.languages.indexOf(GAME_STATE.language));
         if (!GAME_STATE.language) GAME_STATE.language = this.languages[this.currentLangIndex];
 
-        // Coin/credits
+        // Coin/credits (HUD placed on top)
         this.coinText = this.add.text(400, 520, '', {
             fontSize: '24px',
             fill: '#ffee00ff',
             fontFamily: GAME_FONT
-        }).setOrigin(0.5);
-        this.coinPanel = this.add.graphics();
+        }).setOrigin(0.5).setDepth(HUD_DEPTH).setScrollFactor(0);
+        this.coinPanel = this.add.graphics().setDepth(HUD_DEPTH - 1).setScrollFactor(0);
 
         // Player labels
         this.player1Text = this.add.text(150, 550, '', {
             fontSize: '18px',
             fill: '#666666',
             fontFamily: GAME_FONT
-        }).setOrigin(0.5);
-        this.player1Panel = this.add.graphics();
+        }).setOrigin(0.5).setDepth(HUD_DEPTH).setScrollFactor(0);
+        this.player1Panel = this.add.graphics().setDepth(HUD_DEPTH - 1).setScrollFactor(0);
         this.player2Text = this.add.text(650, 550, '', {
             fontSize: '18px',
             fill: '#666666',
             fontFamily: GAME_FONT
-        }).setOrigin(0.5);
-        this.player2Panel = this.add.graphics();
+        }).setOrigin(0.5).setDepth(HUD_DEPTH).setScrollFactor(0);
+        this.player2Panel = this.add.graphics().setDepth(HUD_DEPTH - 1).setScrollFactor(0);
 
         // Flags (language selector display)
-        this.flagSprite = this.add.sprite(400, 560, 'flags', this.currentLangIndex).setOrigin(0.5);
+        this.flagSprite = this.add.sprite(400, 560, 'flags', this.currentLangIndex).setOrigin(0.5).setDepth(HUD_DEPTH).setScrollFactor(0);
         this.tweens.add({
             targets: this.flagSprite,
             scaleX: 1.05,
@@ -2771,7 +2773,7 @@ class GameScene extends Phaser.Scene {
             try {
                 if (!spr || !spr.active) return;
                 // Keep UI/labels with intentionally large depths untouched
-                if (spr.depth && spr.depth >= 2000) return;
+                if (spr.depth && spr.depth >= HUD_DEPTH) return;
                 // Use rounded Y to avoid tiny jitter depth changes
                 spr.setDepth(Math.round(spr.y));
             } catch (e) { }
@@ -3085,8 +3087,8 @@ class GameScene extends Phaser.Scene {
     // Durante la caduta la roccia deve essere in primo piano rispetto agli oggetti sotto
     try {
         // Compute a depth that is above all in-game world objects but below UI/HUD elements.
-        // We consider HUD/UI elements to be at depth >= 2000 (convention in this project).
-        const HUD_DEPTH_THRESHOLD = 2000;
+        // Use `HUD_DEPTH` as threshold for HUD/UI elements.
+        const HUD_DEPTH_THRESHOLD = HUD_DEPTH;
         let maxWorldDepth = 0;
         try {
             const children = this.children && this.children.list ? this.children.list : [];
@@ -3098,8 +3100,9 @@ class GameScene extends Phaser.Scene {
                 if (d > maxWorldDepth) maxWorldDepth = d;
             }
         } catch (e) { }
-        // place the falling rock above all world objects
-        const fallingDepth = Math.max( (Math.round(maxWorldDepth) + 4), 3000 );
+        // place the falling rock above all world objects but below HUD; clamp if needed
+        let fallingDepth = Math.max((Math.round(maxWorldDepth) + 4), 3000);
+        if (fallingDepth >= HUD_DEPTH_THRESHOLD) fallingDepth = Math.max(3000, HUD_DEPTH_THRESHOLD - 10);
         rock.setDepth(fallingDepth);
         // ensure shadow renders just below the rock while falling
         try {
@@ -3177,6 +3180,7 @@ class GameScene extends Phaser.Scene {
                     yoyo: true,
                     ease: 'Sine.easeOut'
                 });
+                // No tremble: keep final transform stable after landing
 
                 // Polvere che si alza
                 this.createDustPuff(rock.x, rock.y, scale);
@@ -4156,7 +4160,7 @@ class GameScene extends Phaser.Scene {
             const pepitaScaleFactor = (CONFIG.objectSize / OBJECT_NATIVE_SIZE) * (pepitaSize / OBJECT_NATIVE_SIZE);
             pepita.setScale(pepitaScaleFactor);
             pepita.setScrollFactor(0);
-            pepita.setDepth(2000);
+            pepita.setDepth(HUD_DEPTH - 1);
             pepita.setVisible(false);
             this.hudContainer.add(pepita);
             this.timerPepitas.push(pepita);
@@ -4173,13 +4177,13 @@ class GameScene extends Phaser.Scene {
             // tint to gray to give a "disabled" appearance and slightly lower alpha
             disabled.setTint(0x888888);
             disabled.setAlpha(0.95);
-            disabled.setDepth(pepita.depth + 1);
+            disabled.setDepth(HUD_DEPTH);
             disabled.setVisible(false);
             this.hudContainer.add(disabled);
             this.timerPepitasDisabled.push(disabled);
         }
 
-        this.hudContainer.setDepth(2000);
+        this.hudContainer.setDepth(HUD_DEPTH);
         // Hide timer label initially
         this.timerLabel.setVisible(false);
         // Hide both layers initially
@@ -7130,7 +7134,7 @@ class GameScene extends Phaser.Scene {
         });
         this.topStatsObjects.length = 0;
 
-        const iconSize = 16;
+        const iconSize = 24;
         const iconGap = 3;
         const sectionGap = 14;
         const topY = 18;
@@ -7149,7 +7153,8 @@ class GameScene extends Phaser.Scene {
 
         const addIcon = (frame) => {
             const icon = this.add.sprite(x, topY, 'objects', frame).setDisplaySize(iconSize, iconSize);
-            icon.setDepth(2000);
+            icon.setDepth(HUD_DEPTH);
+            icon.setScrollFactor(0);
             this.hudContainer.add(icon);
             this.topStatsObjects.push(icon);
             x += iconSize + iconGap;
@@ -7162,7 +7167,8 @@ class GameScene extends Phaser.Scene {
                 fill: color,
                 fontFamily: GAME_FONT
             }).setOrigin(0, 0.5);
-            txt.setDepth(2000);
+            txt.setDepth(HUD_DEPTH);
+            txt.setScrollFactor(0);
             this.hudContainer.add(txt);
             this.topStatsObjects.push(txt);
             x += txt.width + sectionGap;

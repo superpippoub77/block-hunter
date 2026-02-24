@@ -5,7 +5,7 @@
     "x": "w00"
   },
   "background": "images/level1.png",
-  "foreground": "images/foreground1.png",
+  "foreground": "images/foreground.png",
   "map": {
     "cols": 12,
     "rows": 12,
