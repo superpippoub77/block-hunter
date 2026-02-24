@@ -10,7 +10,7 @@
     "rows": 12,
     "timer": 120,
     "tiles": [
-      ["m","","helmet","","","","h","","","l","c","s"],
+      ["","","","","","","h","","","","c","s"],
       ["","","","","","p","","","","","",""],
       ["","","x","x/m","d","x","x","x","","","",""],
       ["ghost","x","","f","f","f","f","f","x","","g",""],
@@ -41,6 +41,7 @@
     "maxSplitGeneration": 1
   },
   "speed": 1,
+  "requiredGems": 2,
   "escapeRoute": true,
   "objectiveLabel": "objective_collect_gems_and_survive",
   "enemies": null,

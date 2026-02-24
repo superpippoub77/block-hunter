@@ -1817,6 +1817,11 @@ class GameScene extends Phaser.Scene {
         } else {
             this.gemsRemaining = CONFIG.gemsPerLevel;
         }
+        // Number of gems required to unlock the exit for this level.
+        // Priority: levelData.requiredGems || levelData.gemsRequired || levelData.map.requiredGems -> fallback CONFIG.gemsPerLevel
+        this.requiredGems = Number(this.levelData?.requiredGems ?? this.levelData?.gemsRequired ?? this.levelData?.map?.requiredGems ?? CONFIG.gemsPerLevel) || Number(CONFIG.gemsPerLevel);
+        // Flag set when exit(s) are unlocked/visible and can be used to complete the level
+        this.exitUnlocked = false;
 
         // Spawn static rocks solo se non disabilitato da config
         if (!CONFIG.disableStaticRocks) {
@@ -2940,13 +2945,37 @@ class GameScene extends Phaser.Scene {
         if (this.hole2ExitsActive) return;
 
         const exits = Array.isArray(this.hole2ExitPositions) ? this.hole2ExitPositions : [];
+
+        // If no explicit exit positions were defined in the map, attempt to create a sensible fallback
         if (!exits.length) {
-            this.levelComplete();
-            return;
+            // Try to find a walkable tile near the player; otherwise pick a random walkable tile
+            let pick = null;
+            try {
+                const centerX = this.player?.x || (this.mapOffsetX + Math.floor(this.mapCols / 2) * CONFIG.tileSize);
+                const centerY = this.player?.y || (this.mapOffsetY + Math.floor(this.mapRows / 2) * CONFIG.tileSize);
+                const nearest = this.getNearestPoint(centerX, centerY, this.mapGemPositions || []);
+                if (nearest) {
+                    pick = nearest;
+                } else {
+                    const tile = this.getRandomWalkableTile();
+                    if (tile) {
+                        pick = { x: this.mapOffsetX + tile.x * CONFIG.tileSize + CONFIG.tileSize / 2, y: this.mapOffsetY + tile.y * CONFIG.tileSize + CONFIG.tileSize / 2, gridX: tile.x, gridY: tile.y };
+                    }
+                }
+            } catch (e) { pick = null; }
+
+            if (pick) {
+                // register fallback exit position so the objective pointer can use it
+                this.hole2ExitPositions = this.hole2ExitPositions || [];
+                this.hole2ExitPositions.push({ x: pick.x, y: pick.y, gridX: pick.gridX ?? null, gridY: pick.gridY ?? null });
+            }
         }
 
         this.hole2ExitsActive = true;
-        exits.forEach((exitPos) => {
+        // mark the exit as unlocked so overlap handlers allow level completion
+        this.exitUnlocked = true;
+
+        (Array.isArray(this.hole2ExitPositions) ? this.hole2ExitPositions : []).forEach((exitPos) => {
             this.spawnHole2ExitAt(exitPos.x, exitPos.y, exitPos.gridX, exitPos.gridY);
         });
     }
@@ -2954,7 +2983,8 @@ class GameScene extends Phaser.Scene {
     onPlayerReachHole2Exit(player, hole2Exit) {
         if (!this.hole2ExitsActive) return;
         if (!hole2Exit || !hole2Exit.active) return;
-        if ((Number(this.gemsRemaining) || 0) > 0) return;
+        // Ensure exit has been unlocked by collecting the required number of gems
+        if (!this.exitUnlocked) return;
         this.levelComplete();
     }
 
@@ -5299,12 +5329,23 @@ class GameScene extends Phaser.Scene {
 
         this.gemsRemaining--;
 
+        // If collecting this gem reached the configured required amount, unlock the exit(s)
+        try {
+            const collected = Number(this.levelStats?.gemsCollected) || 0;
+            if (!this.exitUnlocked && collected >= Number(this.requiredGems || 0)) {
+                this.activateHole2Exits();
+            }
+        } catch (e) { /* ignore */ }
+
         if (this.gemsRemaining > 0) {
             this.time.delayedCall(CONFIG.gemSpawnDelay, () => this.spawnGem());
             return;
         }
 
-        this.activateHole2Exits();
+        // If there are no more gems to spawn, ensure exits are active as a fallback
+        if (!this.exitUnlocked) {
+            this.activateHole2Exits();
+        }
     }
 
     collectItem(player, item) {
