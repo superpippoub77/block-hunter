@@ -337,6 +337,30 @@ class PreloadScene extends Phaser.Scene {
                     } catch (e) { }
                 }
             });
+            // List of recently loaded files shown under the loading text
+            this._loadedLines = [];
+            const linesBaseY = 340;
+            const lineHeight = 18;
+            try {
+                this.load.on('filecomplete', (key, type) => {
+                    try {
+                        const label = `${key} (${type})`;
+                        const txt = this.add.text(400, linesBaseY + this._loadedLines.length * lineHeight, label, {
+                            fontSize: '14px',
+                            fill: '#ffffff',
+                            fontFamily: GAME_FONT
+                        }).setOrigin(0.5, 0).setDepth(11);
+                        this._loadedLines.push(txt);
+                        // keep only last 10 entries
+                        if (this._loadedLines.length > 10) {
+                            const old = this._loadedLines.shift();
+                            try { if (old && old.destroy) old.destroy(); } catch (e) { }
+                            // relayout
+                            this._loadedLines.forEach((t, i) => { try { t.y = linesBaseY + i * lineHeight; } catch (e) { } });
+                        }
+                    } catch (e) { }
+                });
+            } catch (e) { }
         } catch (e) { }
 
         this.load.on('complete', () => {
@@ -348,12 +372,15 @@ class PreloadScene extends Phaser.Scene {
                     this._loadingDots.forEach(d => { try { d.destroy(); } catch (e) {} });
                 }
             } catch (e) { }
+            // (title handled when its file is loaded via 'filecomplete-title')
             if (loadingText && loadingText.destroy) {
                 loadingText.destroy();
             }
         });
     // add credit in loading scene
     try { addSpikeCredit(this); } catch (e) { }
+
+    // title not shown during preload
 
         this.load
             .image('title', 'images/title.png')
@@ -593,6 +620,7 @@ class AttractScene extends Phaser.Scene {
             duration: 800,
             ease: 'Bounce.easeOut',
             onComplete: () => {
+                // (no physics body on titleImage in attract mode)
                 const vibTween = this.tweens.add({
                     targets: this.titleImage,
                     x: '+=6',
@@ -632,6 +660,7 @@ class AttractScene extends Phaser.Scene {
 
                     const explorerImage = this.add.image(-220, 430, 'explorer').setOrigin(0.5);
                     explorerImage.setDepth(20);
+                    // (no physics body on explorerImage in attract mode)
                     this.tweens.add({
                         targets: explorerImage,
                         x: 400,
@@ -723,19 +752,22 @@ class AttractScene extends Phaser.Scene {
             fill: '#ffee00ff',
             fontFamily: GAME_FONT
         }).setOrigin(0.5).setDepth(HUD_DEPTH).setScrollFactor(0);
-        this.coinPanel = this.add.graphics().setDepth(HUD_DEPTH - 1).setScrollFactor(0);
+        // no coinPanel graphic: remove decorative frame under the coin text
+        this.coinPanel = null;
         this.player1Text = this.add.text(150, 550, '', {
             fontSize: '18px',
             fill: '#666666',
             fontFamily: GAME_FONT
         }).setOrigin(0.5).setDepth(HUD_DEPTH).setScrollFactor(0);
-        this.player1Panel = this.add.graphics().setDepth(HUD_DEPTH - 1).setScrollFactor(0);
+        // no player1Panel graphic: remove decorative frame under the player1 text
+        this.player1Panel = null;
         this.player2Text = this.add.text(650, 550, '', {
             fontSize: '18px',
             fill: '#666666',
             fontFamily: GAME_FONT
         }).setOrigin(0.5).setDepth(HUD_DEPTH).setScrollFactor(0);
-        this.player2Panel = this.add.graphics().setDepth(HUD_DEPTH - 1).setScrollFactor(0);
+        // no player2Panel graphic: remove decorative frame under the player2 text
+        this.player2Panel = null;
 
         // Language selector with flags
         this.flagSprite = this.add.sprite(400, 560, 'flags', this.currentLangIndex).setOrigin(0.5).setDepth(HUD_DEPTH).setScrollFactor(0);
@@ -770,14 +802,7 @@ class AttractScene extends Phaser.Scene {
         }).setOrigin(0.5).setInteractive().on('pointerdown', () => this.changeLanguage(1));
 
         // Signature text for attract mode
-        try {
-            this.signatureText = this.add.text(400, 590, 'by SpikeCode', {
-                fontSize: '12px',
-                fill: '#aaaaaa',
-                fontFamily: GAME_FONT
-            }).setOrigin(0.5);
-            this.signatureText.setDepth(HUD_DEPTH);
-        } catch (e) { /* ignore if font not loaded yet */ }
+        // signature text removed from bottom-center in AttractScene (keep credit via addSpikeCredit)
 
         // Setup input
         this.setupInput();
@@ -797,6 +822,7 @@ class AttractScene extends Phaser.Scene {
             });
             this.updateUI();
             this.resetTimeout();
+            // Attract-mode decorative stones disabled (removed)
         });
     }
 
@@ -1094,21 +1120,22 @@ class TopTenScene extends Phaser.Scene {
             fill: '#ffee00ff',
             fontFamily: GAME_FONT
         }).setOrigin(0.5).setDepth(HUD_DEPTH).setScrollFactor(0);
-        this.coinPanel = this.add.graphics().setDepth(HUD_DEPTH - 1).setScrollFactor(0);
+        // remove decorative panel under coin text
+        this.coinPanel = null;
 
-        // Player labels
+        // Player labels (no decorative panels)
         this.player1Text = this.add.text(150, 550, '', {
             fontSize: '18px',
             fill: '#666666',
             fontFamily: GAME_FONT
         }).setOrigin(0.5).setDepth(HUD_DEPTH).setScrollFactor(0);
-        this.player1Panel = this.add.graphics().setDepth(HUD_DEPTH - 1).setScrollFactor(0);
+        this.player1Panel = null;
         this.player2Text = this.add.text(650, 550, '', {
             fontSize: '18px',
             fill: '#666666',
             fontFamily: GAME_FONT
         }).setOrigin(0.5).setDepth(HUD_DEPTH).setScrollFactor(0);
-        this.player2Panel = this.add.graphics().setDepth(HUD_DEPTH - 1).setScrollFactor(0);
+        this.player2Panel = null;
 
         // Flags (language selector display)
         this.flagSprite = this.add.sprite(400, 560, 'flags', this.currentLangIndex).setOrigin(0.5).setDepth(HUD_DEPTH).setScrollFactor(0);
@@ -3951,6 +3978,16 @@ class GameScene extends Phaser.Scene {
 
             const finalScale = baseScale * perspectiveScale * flutterScale;
             ghost.setScale(finalScale);
+            try {
+                // Mirror the ghost sprite when moving left so animation appears mirrored
+                const vx = ghost.body && ghost.body.velocity ? (ghost.body.velocity.x || 0) : 0;
+                const threshold = 2; // small deadzone
+                if (vx < -threshold) {
+                    ghost.setFlipX(true);
+                } else if (vx > threshold) {
+                    ghost.setFlipX(false);
+                }
+            } catch (e) { }
         });
     }
 
