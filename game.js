@@ -299,7 +299,6 @@ class PreloadScene extends Phaser.Scene {
             .image('bg', 'images/attract_bg.png')
             // 'game_bg.png' may be missing in some distributions; use level1.png as a fallback background
             .image('game_bg', 'images/level1.png')
-            .image('fg_parallax', 'images/foreground.png')
             // Load flags sprite (8 flags: it, fr, de, en, us, ja, es, zh - 64x64 each)
             .spritesheet('flags', 'images/flags.png', { frameWidth: 64, frameHeight: 32 })
             // Load tiles sprite (6 tiles: wall, hole, sand, floor, stone, hole2 - 64x48 each)
@@ -509,29 +508,6 @@ class AttractScene extends Phaser.Scene {
     // Background image (use parallaxBgFactor for consistency)
     const attractBgScroll = (typeof CONFIG.parallaxBgFactor === 'number') ? CONFIG.parallaxBgFactor : 0.96;
     this.add.image(400, 300, 'bg').setDisplaySize(800, 600).setScrollFactor(attractBgScroll);
-        // Foreground parallax image (subtle 3D effect)
-        if (this.textures.exists('fg_parallax')) {
-            // Use the same parallax factors as GameScene for visual consistency
-            // Default to the same parallax factor used by the background so FG and BG move together
-            const attractFgScroll = (typeof CONFIG.parallaxFgFactor === 'number') ? CONFIG.parallaxFgFactor : attractBgScroll;
-            this.attractFg = this.add.image(400, 300, 'fg_parallax').setDisplaySize(800, 600).setScrollFactor(attractFgScroll).setDepth(0);
-            try {
-                const swayMag = (typeof CONFIG.attractFgSwayMagnitude === 'number')
-                    ? CONFIG.attractFgSwayMagnitude
-                    : (typeof CONFIG.fgShakeMagnitude === 'number' ? CONFIG.fgShakeMagnitude : 8);
-                const swayDur = (typeof CONFIG.attractFgSwayDuration === 'number') ? CONFIG.attractFgSwayDuration : 4000;
-                this.tweens.add({
-                    targets: this.attractFg,
-                    x: `+=${swayMag}`,
-                    duration: swayDur,
-                    yoyo: true,
-                    repeat: -1,
-                    ease: 'Sine.easeInOut'
-                });
-            } catch (e) { }
-        } else {
-            console.warn('fg_parallax texture not found in AttractScene');
-        }
         // Configurable dark overlay to dim the background while UI is visible
         const overlayAlpha = (typeof CONFIG.attractOverlayAlpha === 'number') ? CONFIG.attractOverlayAlpha : 0.35;
         this.attractOverlay = this.add.rectangle(400, 300, 800, 600, 0x000000, overlayAlpha).setDepth(0.1);
@@ -1707,44 +1683,16 @@ class GameScene extends Phaser.Scene {
         }
 
         // Parallax configuration: allow overriding with CONFIG values
-    const parallaxBgFactor = (typeof CONFIG.parallaxBgFactor === 'number') ? CONFIG.parallaxBgFactor : 0.96;
-    // By default make foreground scroll the same as background so they move together at end-of-level
-    const parallaxFgFactor = (typeof CONFIG.parallaxFgFactor === 'number') ? CONFIG.parallaxFgFactor : parallaxBgFactor;
-    const parallaxFgDepth = (typeof CONFIG.parallaxFgDepth === 'number') ? CONFIG.parallaxFgDepth : 1500; // default depth behind HUD
+        const parallaxBgFactor = (typeof CONFIG.parallaxBgFactor === 'number') ? CONFIG.parallaxBgFactor : 0.96;
 
         this.gameBg = this.add.image(CONFIG.width / 2, CONFIG.height / 2, selectedBgKey)
             .setDisplaySize(CONFIG.width, CONFIG.height)
             .setScrollFactor(parallaxBgFactor)
             .setDepth(-1000);
 
-        // foreground overlay (fixed frame in front of gameplay) - optional
-        if (this.textures.exists('fg_parallax')) {
-            const cx = (this.cameras && this.cameras.main) ? this.cameras.main.centerX : (CONFIG.width || 800) / 2;
-            const cy = (this.cameras && this.cameras.main) ? this.cameras.main.centerY : (CONFIG.height || 600) / 2;
-            this.gameFg = this.add.image(cx, cy, 'fg_parallax')
-                .setDisplaySize(CONFIG.width, CONFIG.height)
-                .setScrollFactor(parallaxFgFactor)
-                .setDepth(parallaxFgDepth);
-
-            // subtle horizontal sway to give a gentle parallax motion (configurable)
-            try {
-                const gameSwayEnabled = (typeof CONFIG.gameFgSwayEnabled === 'boolean') ? CONFIG.gameFgSwayEnabled : true;
-                const gameSwayMag = (typeof CONFIG.gameFgSwayMagnitude === 'number') ? CONFIG.gameFgSwayMagnitude : ((typeof CONFIG.attractFgSwayMagnitude === 'number') ? CONFIG.attractFgSwayMagnitude : (typeof CONFIG.fgShakeMagnitude === 'number' ? CONFIG.fgShakeMagnitude : 6));
-                const gameSwayDuration = (typeof CONFIG.gameFgSwayDuration === 'number') ? CONFIG.gameFgSwayDuration : 8000;
-                if (gameSwayEnabled) {
-                    this.tweens.add({
-                        targets: this.gameFg,
-                        x: `+=${gameSwayMag}`,
-                        duration: gameSwayDuration,
-                        yoyo: true,
-                        repeat: -1,
-                        ease: 'Sine.easeInOut'
-                    });
-                }
-            } catch (e) { /* ignore tween errors */ }
-        } else {
-            console.warn('fg_parallax texture not found in GameScene');
-        }
+        // Foreground will be created after the tilemap/world size is known.
+        // We avoid creating it here to keep positioning simple and consistent
+        // across all levels (see creation after world bounds are set).
 
         // Get level data from JSON
         const levelFileName = getLevelFileName(GAME_STATE.currentLevel);
@@ -1846,10 +1794,15 @@ class GameScene extends Phaser.Scene {
         if (this.gameBg) {
             const bgWidth = Math.max(worldWidth, CONFIG.width);
             const bgHeight = Math.max(worldHeight, CONFIG.height);
+            // Use top-left origin so BG aligns exactly to the map origin and matches FG sizing/positioning
+            try { this.gameBg.setOrigin(0, 0); } catch (e) { }
             this.gameBg.setDisplaySize(bgWidth, bgHeight);
-            this.gameBg.setPosition(worldX + bgWidth / 2, worldY + bgHeight / 2);
-            this.gameBg.setScrollFactor(1);
+            this.gameBg.setPosition(worldX, worldY);
+            // Use configured parallax factor for background so it matches parallaxBgFactor
+            this.gameBg.setScrollFactor(parallaxBgFactor);
         }
+
+        // Foreground removed: no FG is created for the game world.
 
         // Camera follow: move view with player to explore larger maps
         const camera = this.cameras.main;
@@ -1911,8 +1864,9 @@ class GameScene extends Phaser.Scene {
                 if (this.gameBg) {
                     const bgW = Math.max(worldWidth, w);
                     const bgH = Math.max(worldHeight, h);
+                    try { this.gameBg.setOrigin(0, 0); } catch (e) { }
                     this.gameBg.setDisplaySize(bgW, bgH);
-                    this.gameBg.setPosition(worldX + bgW / 2, worldY + bgH / 2);
+                    this.gameBg.setPosition(worldX, worldY);
                 }
 
                 // Reposition HUD elements
@@ -2357,6 +2311,11 @@ class GameScene extends Phaser.Scene {
         this.mapCols = mapCols;
         this.mapOffsetX = offsetX;
         this.mapOffsetY = offsetY;
+
+        // Foreground resizing/positioning removed here to keep logic simple.
+        // The foreground will be created and positioned once the world bounds
+        // are established (see creation after background sizing). Keeping the
+        // creation in one place ensures consistent behaviour across all levels.
 
         // --- Debug: draw light tile outlines to visualize the grid ---
         // Create a graphics layer that outlines each tile. Useful to see
@@ -3728,8 +3687,18 @@ class GameScene extends Phaser.Scene {
             try {
                 const domHudRoot = document.getElementById('dom-hud');
                 if (domHudRoot) {
-                    domHudRoot.style.display = 'flex';
-                    domHudRoot.removeAttribute('aria-hidden');
+                    // Only show the DOM HUD for actual touch devices.
+                    // Desktop and coarse-pointer devices should keep the in-canvas Phaser HUD.
+                    const hasTouch = (('ontouchstart' in window) || (navigator.maxTouchPoints && navigator.maxTouchPoints > 0));
+                    const shouldShowDomHud = !!hasTouch;
+                    if (shouldShowDomHud) {
+                        domHudRoot.style.display = 'flex';
+                        domHudRoot.removeAttribute('aria-hidden');
+                    } else {
+                        // keep it hidden for desktop/mouse users
+                        domHudRoot.style.display = 'none';
+                        domHudRoot.setAttribute('aria-hidden', 'true');
+                    }
                 }
             } catch (e) { /* noop */ }
             // Remove legacy global Phaser text objects to avoid duplicate HUD elements
@@ -4655,22 +4624,7 @@ class GameScene extends Phaser.Scene {
         }
         this.updateObjectivePointerUI();
 
-        // Foreground parallax positioning: nudge fg to follow camera for subtle depth
-        try {
-            if (this.gameFg && this.cameras && this.cameras.main) {
-                // If foreground is fixed (scrollFactor 0) keep it centered on camera
-                const cam = this.cameras.main;
-                const fgFactorX = (typeof this.gameFg.scrollFactorX === 'number') ? this.gameFg.scrollFactorX : 1.04;
-                const fgFactorY = (typeof this.gameFg.scrollFactorY === 'number') ? this.gameFg.scrollFactorY : 1.04;
-                if (fgFactorX === 0 && fgFactorY === 0) {
-                    this.gameFg.setPosition(cam.centerX, cam.centerY);
-                } else {
-                    const offsetX = Math.round(cam.scrollX * (1 - fgFactorX));
-                    const offsetY = Math.round(cam.scrollY * (1 - fgFactorY));
-                    this.gameFg.setPosition((CONFIG.width || 800) / 2 + offsetX, (CONFIG.height || 600) / 2 + offsetY);
-                }
-            }
-        } catch (e) { }
+    // Foreground removed: no per-frame FG adjustments needed.
 
         // Update UI
         this.updateUITexts();
@@ -5047,36 +5001,10 @@ class GameScene extends Phaser.Scene {
             duration: 250,
             onComplete: () => explosion.destroy()
         });
-        // Make foreground 'shake' briefly to emphasize impact
+        // Optional camera shake to emphasize impact (foreground removed)
         try {
-            const shakeEnabled = (CONFIG.fgShakeEnabled === undefined) ? true : !!CONFIG.fgShakeEnabled;
-            if (shakeEnabled && this.gameFg) {
-                const mag = Number(CONFIG.fgShakeMagnitude) || 6;
-                const dx = Phaser.Math.Between(-mag, mag);
-                const dy = Phaser.Math.Between(-Math.max(1, Math.round(mag / 2)), Math.max(1, Math.round(mag / 2)));
-                const origX = this.gameFg.x;
-                const origY = this.gameFg.y;
-                this.tweens.add({
-                    targets: this.gameFg,
-                    x: origX + dx,
-                    y: origY + dy,
-                    duration: 120,
-                    yoyo: true,
-                    repeat: 2,
-                    ease: 'Sine.easeInOut',
-                    onComplete: () => {
-                        try {
-                            if (this.cameras && this.cameras.main) {
-                                this.gameFg.setPosition(this.cameras.main.centerX, this.cameras.main.centerY);
-                            } else {
-                                this.gameFg.setPosition((CONFIG.width || 800) / 2, (CONFIG.height || 600) / 2);
-                            }
-                        } catch (e) { }
-                    }
-                });
-            }
-            if (this.cameras && this.cameras.main && CONFIG.fgShakeCamera) {
-                try { this.cameras.main.shake(160, Number(CONFIG.fgShakeCameraIntensity) || 0.003); } catch (e) { }
+            if (this.cameras && this.cameras.main && CONFIG.enableImpactShake) {
+                try { this.cameras.main.shake(160, 0.003); } catch (e) { }
             }
         } catch (e) { }
     }
@@ -6527,37 +6455,7 @@ class BonusScene extends Phaser.Scene {
             .setDisplaySize(worldWidth, worldHeight)
             .setDepth(-1000);
 
-        // Bonus scene foreground (parallax) — behave like GameScene foreground by default
-        try {
-            const parallaxBgFactor = (typeof CONFIG.parallaxBgFactor === 'number') ? CONFIG.parallaxBgFactor : 0.96;
-            const parallaxFgFactor = (typeof CONFIG.parallaxFgFactor === 'number') ? CONFIG.parallaxFgFactor : parallaxBgFactor;
-            const parallaxFgDepth = (typeof CONFIG.parallaxFgDepth === 'number') ? CONFIG.parallaxFgDepth : 1500;
-            if (this.textures.exists('fg_parallax')) {
-                this.bonusFg = this.add.image(worldWidth / 2, worldHeight / 2, 'fg_parallax')
-                    .setDisplaySize(worldWidth, worldHeight)
-                    .setScrollFactor(parallaxFgFactor)
-                    .setDepth(parallaxFgDepth);
-
-                // subtle sway matching GameScene behavior
-                try {
-                    const gameSwayEnabled = (typeof CONFIG.gameFgSwayEnabled === 'boolean') ? CONFIG.gameFgSwayEnabled : true;
-                    const gameSwayMag = (typeof CONFIG.gameFgSwayMagnitude === 'number') ? CONFIG.gameFgSwayMagnitude : ((typeof CONFIG.attractFgSwayMagnitude === 'number') ? CONFIG.attractFgSwayMagnitude : (typeof CONFIG.fgShakeMagnitude === 'number' ? CONFIG.fgShakeMagnitude : 6));
-                    const gameSwayDuration = (typeof CONFIG.gameFgSwayDuration === 'number') ? CONFIG.gameFgSwayDuration : 8000;
-                    if (gameSwayEnabled) {
-                        this.tweens.add({
-                            targets: this.bonusFg,
-                            x: `+=${gameSwayMag}`,
-                            duration: gameSwayDuration,
-                            yoyo: true,
-                            repeat: -1,
-                            ease: 'Sine.easeInOut'
-                        });
-                    }
-                } catch (e) { /* ignore tween errors */ }
-            } else {
-                console.warn('fg_parallax texture not found in BonusScene');
-            }
-        } catch (e) { /* ignore if CONFIG not ready */ }
+        // Bonus foreground removed: no bonus scene FG created.
 
         this.bonusRails = this.physics.add.staticGroup();
         this.bonusHazards = this.physics.add.group({ allowGravity: false, immovable: true });
