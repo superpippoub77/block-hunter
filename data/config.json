@@ -33,7 +33,7 @@
   "currentLevel": 0,
   "score": 0,
   "lives": 5,
-  "dynamiteCount": 20,
+  "dynamiteCount": 40,
   "keysCount": 0,
   "disableStaticRocks": false,
   "debugTileGrid": true,

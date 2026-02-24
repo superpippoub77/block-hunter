@@ -790,16 +790,28 @@ class AttractScene extends Phaser.Scene {
             ease: 'Sine.easeInOut',
             delay: 200
         });
-        this.add.text(320, 560, '◄', {
+        this.leftArrow = this.add.text(320, 560, '◄', {
             fontSize: '24px',
             fill: '#ffffff',
             fontFamily: GAME_FONT
-        }).setOrigin(0.5).setInteractive().on('pointerdown', () => this.changeLanguage(-1));
-        this.add.text(480, 560, '►', {
+        }).setOrigin(0.5).setInteractive().setDepth(HUD_DEPTH).setScrollFactor(0).on('pointerdown', () => this.changeLanguage(-1));
+        this.rightArrow = this.add.text(480, 560, '►', {
             fontSize: '24px',
             fill: '#ffffff',
             fontFamily: GAME_FONT
-        }).setOrigin(0.5).setInteractive().on('pointerdown', () => this.changeLanguage(1));
+        }).setOrigin(0.5).setInteractive().setDepth(HUD_DEPTH).setScrollFactor(0).on('pointerdown', () => this.changeLanguage(1));
+
+        // helper to pulse an arrow and temporarily change color to yellow
+        this.pulseArrow = (arrow) => {
+            if (!arrow) return;
+            try {
+                const original = (arrow.style && arrow.style.fill) || '#ffffff';
+                arrow.setStyle && arrow.setStyle({ fill: '#ffff00' });
+                this.tweens.add({ targets: arrow, scaleX: 1.6, scaleY: 1.6, duration: 120, yoyo: true, ease: 'Sine.easeOut', onComplete: () => {
+                    try { arrow.setStyle && arrow.setStyle({ fill: original }); } catch (e) { }
+                }});
+            } catch (e) { }
+        };
 
         // Signature text for attract mode
         // signature text removed from bottom-center in AttractScene (keep credit via addSpikeCredit)
@@ -893,13 +905,13 @@ class AttractScene extends Phaser.Scene {
             GAME_STATE.credits -= players;
             // record number of players for later scenes
             GAME_STATE.players = Number(players) || 1;
-            GAME_STATE.score = 0;
-            GAME_STATE.lives = 5;
-            GAME_STATE.dynamiteCount = 20;
+            GAME_STATE.score = GAME_STATE.score || 0;
+            GAME_STATE.lives = GAME_STATE.lives || 5;
+            GAME_STATE.dynamiteCount = GAME_STATE.dynamiteCount || 20;
             // Single-player inventory (kept for backward compatibility)
-            GAME_STATE.keysCount = 0;
+            GAME_STATE.keysCount = GAME_STATE.keysCount || 0;
             // Wooden planks collected by player (used to bridge holes)
-            GAME_STATE.woodenCount = 0;
+            GAME_STATE.woodenCount = GAME_STATE.woodenCount || 0;
             // Per-player inventories for local 2-player mode
             GAME_STATE.keysP1 = 0;
             GAME_STATE.keysP2 = 0;
@@ -928,6 +940,30 @@ class AttractScene extends Phaser.Scene {
         if (this.flagSprite) {
             this.flagSprite.setFrame(this.currentLangIndex);
         }
+
+        // swish effect: quick slide + small tilt when changing flag
+        try {
+            if (this.flagSprite) {
+                const dirSign = (dir > 0) ? 1 : -1;
+                this.tweens.add({
+                    targets: this.flagSprite,
+                    x: this.flagSprite.x + (dirSign * 28),
+                    angle: dirSign * 6,
+                    scaleX: 1.15,
+                    scaleY: 0.95,
+                    duration: 140,
+                    yoyo: true,
+                    ease: 'Cubic.easeOut',
+                    onComplete: () => { try { this.flagSprite.setAngle(0); this.flagSprite.setScale(1,1); } catch (e) { } }
+                });
+            }
+        } catch (e) { }
+
+        // visual feedback: pulse and yellow the appropriate arrow
+        try {
+            if (dir > 0) this.pulseArrow && this.pulseArrow(this.rightArrow);
+            else if (dir < 0) this.pulseArrow && this.pulseArrow(this.leftArrow);
+        } catch (e) { }
 
         // Carica il nuovo dizionario e aggiorna la UI solo dopo il caricamento
         loadTranslations(GAME_STATE.language, () => {
@@ -1152,16 +1188,28 @@ class TopTenScene extends Phaser.Scene {
 
         // Left/Right arrows for language selection (keep visible during Top Ten)
         try {
-            this.add.text(320, 560, '◄', {
+            this.topLeftArrow = this.add.text(320, 560, '◄', {
                 fontSize: '24px',
                 fill: '#ffffff',
                 fontFamily: GAME_FONT
-            }).setOrigin(0.5).setInteractive().on('pointerdown', () => this.changeLanguage(-1));
-            this.add.text(480, 560, '►', {
+            }).setOrigin(0.5).setInteractive().setDepth(HUD_DEPTH).setScrollFactor(0).on('pointerdown', () => this.changeLanguage(-1));
+            this.topRightArrow = this.add.text(480, 560, '►', {
                 fontSize: '24px',
                 fill: '#ffffff',
                 fontFamily: GAME_FONT
-            }).setOrigin(0.5).setInteractive().on('pointerdown', () => this.changeLanguage(1));
+            }).setOrigin(0.5).setInteractive().setDepth(HUD_DEPTH).setScrollFactor(0).on('pointerdown', () => this.changeLanguage(1));
+
+            // helper for TopTen pulse feedback
+            this.pulseTopArrow = (arrow) => {
+                if (!arrow) return;
+                try {
+                    const orig = (arrow.style && arrow.style.fill) || '#ffffff';
+                    arrow.setStyle && arrow.setStyle({ fill: '#ffff00' });
+                    this.tweens.add({ targets: arrow, scaleX: 1.6, scaleY: 1.6, duration: 120, yoyo: true, ease: 'Sine.easeOut', onComplete: () => {
+                        try { arrow.setStyle && arrow.setStyle({ fill: orig }); } catch (e) { }
+                    }});
+                } catch (e) { }
+            };
         } catch (e) { /* ignore if font not ready */ }
 
         // Input handlers for coin insert / language change
@@ -1197,6 +1245,28 @@ class TopTenScene extends Phaser.Scene {
         this.currentLangIndex = (this.currentLangIndex + dir + this.languages.length) % this.languages.length;
         GAME_STATE.language = this.languages[this.currentLangIndex];
         if (this.flagSprite) this.flagSprite.setFrame(this.currentLangIndex);
+        // swish effect for TopTen flag change
+        try {
+            if (this.flagSprite) {
+                const dirSign = (dir > 0) ? 1 : -1;
+                this.tweens.add({
+                    targets: this.flagSprite,
+                    x: this.flagSprite.x + (dirSign * 28),
+                    angle: dirSign * 6,
+                    scaleX: 1.15,
+                    scaleY: 0.95,
+                    duration: 140,
+                    yoyo: true,
+                    ease: 'Cubic.easeOut',
+                    onComplete: () => { try { this.flagSprite.setAngle(0); this.flagSprite.setScale(1,1); } catch (e) { } }
+                });
+            }
+        } catch (e) { }
+        // visual feedback for TopTen
+        try {
+            if (dir > 0) this.pulseTopArrow && this.pulseTopArrow(this.topRightArrow);
+            else if (dir < 0) this.pulseTopArrow && this.pulseTopArrow(this.topLeftArrow);
+        } catch (e) { }
         loadTranslations(GAME_STATE.language, () => {
             // Refresh texts that depend on translations
             // Update top title
@@ -7962,7 +8032,7 @@ class GameOverScene extends Phaser.Scene {
         } catch (e) { /* ignore if CONFIG not ready */ }
 
         this.add.text(400, 200, gameOverText, {
-            fontSize: '64px',
+            fontSize: '24px',
             fill: '#ff0000',
             fontFamily: GAME_FONT
         }).setOrigin(0.5).setDepth(1);
