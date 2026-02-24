@@ -56,4 +56,15 @@
 
   "scaleMode": "FIT",
   "enableFullscreen": true
+  ,
+    "objectContactByType": {
+    "default": { "contactType": "edge", "radiusMultiplier": 0.45, "radiusPixels": 29, "proximityTiles": 0.9, "proximityPixels": 58 },
+    "player": { "contactType": "center", "radiusMultiplier": 0.35, "radiusPixels": 22, "proximityTiles": 0.85, "proximityPixels": 54 },
+    "item": { "contactType": "center", "radiusMultiplier": 0.45, "radiusPixels": 29, "proximityTiles": 0.9, "proximityPixels": 58 },
+    "gem": { "contactType": "center-front", "radiusMultiplier": 0.62, "radiusPixels": 40, "proximityTiles": 0.9, "proximityPixels": 58 },
+    "wall": { "contactType": "edge", "radiusMultiplier": 0.9, "radiusPixels": 58, "proximityTiles": 1.0, "proximityPixels": 64 },
+    "door": { "contactType": "edge", "radiusMultiplier": 0.7, "radiusPixels": 45, "proximityTiles": 0.9, "proximityPixels": 58 },
+    "exit": { "contactType": "center-front", "radiusMultiplier": 0.62, "radiusPixels": 40, "proximityTiles": 0.9, "proximityPixels": 58 },
+    "rock": { "contactType": "edge", "radiusMultiplier": 0.6, "radiusPixels": 38, "proximityTiles": 0.95, "proximityPixels": 61 }
+  }
 }

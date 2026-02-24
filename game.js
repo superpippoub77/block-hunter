@@ -2,7 +2,7 @@
 // BLOCKHUNTER - Arcade Game in Phaser 3
 // ============================================================================
 
-import { OBJECT_FRAMES } from './data/module/constants.js';
+import { OBJECT_FRAMES, TILE_FRAMES, WALL_TILE_COLS } from './data/module/constants.js';
 
 // Global configuration (populated from /data/config.json)
 const CONFIG = {};
@@ -160,6 +160,40 @@ function playLoopAudioSafely(scene, key, volume = 0.3) {
     playNow();
 }
 
+// Resolve contact type mapping from CONFIG for reuse across scenes
+function resolveContactSpec(typename) {
+    try {
+        const map = (CONFIG && CONFIG.objectContactByType) ? CONFIG.objectContactByType : {};
+        const rawDef = (map && map.default) ? map.default : {};
+        const def = {
+            contactType: rawDef.contactType || 'edge',
+            radiusMultiplier: (typeof rawDef.radiusMultiplier === 'number') ? rawDef.radiusMultiplier : 0.45,
+            radiusPixels: (typeof rawDef.radiusPixels === 'number') ? rawDef.radiusPixels : null,
+            proximityTiles: (typeof rawDef.proximityTiles === 'number') ? rawDef.proximityTiles : 0.9,
+            proximityPixels: (typeof rawDef.proximityPixels === 'number') ? rawDef.proximityPixels : null
+        };
+
+        if (!typename) return def;
+        const raw = map[typename];
+        if (!raw) return def;
+
+        // If spec is a string (historic), convert to object using defaults
+        if (typeof raw === 'string') {
+            return Object.assign({}, def, { contactType: raw });
+        }
+
+        return {
+            contactType: raw.contactType || def.contactType,
+            radiusMultiplier: (typeof raw.radiusMultiplier === 'number') ? raw.radiusMultiplier : def.radiusMultiplier,
+            radiusPixels: (typeof raw.radiusPixels === 'number') ? raw.radiusPixels : def.radiusPixels,
+            proximityTiles: (typeof raw.proximityTiles === 'number') ? raw.proximityTiles : def.proximityTiles,
+            proximityPixels: (typeof raw.proximityPixels === 'number') ? raw.proximityPixels : def.proximityPixels
+        };
+    } catch (e) {
+        return { contactType: 'edge', radiusMultiplier: 0.45, radiusPixels: null, proximityTiles: 0.9, proximityPixels: null };
+    }
+}
+
 // Level configurations
 const LEVEL_CONFIG = {
     globalRules: {
@@ -215,6 +249,31 @@ function getLevelFileName(levelIndex) {
 
 function getLevelMasterNumber(levelIndex) {
     return Math.floor(levelIndex / 5) + 1;
+}
+
+// Small helper to add an unobtrusive 'by SpikeCode' credit to a scene.
+// Call from scenes where the credit should appear (not the main GameScene).
+function addSpikeCredit(scene, opts = {}) {
+    try {
+        if (!scene || !scene.add) return null;
+        const w = Number(CONFIG.width) || 800;
+        const h = Number(CONFIG.height) || 600;
+        const style = Object.assign({
+            fontSize: '12px',
+            fill: '#cfdff8',
+            fontFamily: GAME_FONT,
+            stroke: '#000000',
+            strokeThickness: 3
+        }, opts.style || {});
+
+        const credit = scene.add.text(w - 8, h - 6, 'by SpikeCode', style).setOrigin(1, 1);
+        try { credit.setDepth(9999); } catch (e) { }
+        // Keep it fixed to camera (no parallax)
+        try { credit.setScrollFactor(0); } catch (e) { }
+        // Make it non-interactive
+        try { credit.setInteractive && credit.disableInteractive && credit.disableInteractive(); } catch (e) { }
+        return credit;
+    } catch (e) { return null; }
 }
 
 
@@ -291,6 +350,8 @@ class PreloadScene extends Phaser.Scene {
                 loadingText.destroy();
             }
         });
+    // add credit in loading scene
+    try { addSpikeCredit(this); } catch (e) { }
 
         this.load
             .image('title', 'images/title.png')
@@ -511,6 +572,9 @@ class AttractScene extends Phaser.Scene {
         // Configurable dark overlay to dim the background while UI is visible
         const overlayAlpha = (typeof CONFIG.attractOverlayAlpha === 'number') ? CONFIG.attractOverlayAlpha : 0.35;
         this.attractOverlay = this.add.rectangle(400, 300, 800, 600, 0x000000, overlayAlpha).setDepth(0.1);
+
+            // credit (place in attract mode bottom-right like other non-game scenes)
+            try { addSpikeCredit(this); } catch (e) { }
 
         // Title image (loaded from images/title.png)
         this.titleImage = this.add.image(400, -120, 'title').setOrigin(0.5);
@@ -945,6 +1009,9 @@ class TopTenScene extends Phaser.Scene {
             fill: '#ffff00',
             fontFamily: GAME_FONT
         }).setOrigin(0.5);
+
+        // credit
+        try { addSpikeCredit(this); } catch (e) { }
 
         // Panel behind Top Ten title
         this.topTitlePanel = this.add.graphics();
@@ -1447,6 +1514,9 @@ class LevelSelectScene extends Phaser.Scene {
             fontFamily: GAME_FONT
         }).setOrigin(0.5).setDepth(1);
 
+        // credit
+        try { addSpikeCredit(this); } catch (e) { }
+
         // Difficulties configuration and selectable UI
         this.difficulties = [
             { name: t.beginner, mult: 0.8, y: 250 },
@@ -1850,7 +1920,15 @@ class GameScene extends Phaser.Scene {
                 if (!obj || !obj.active) return;
                 if (this.dynamites && this.dynamites.contains(obj)) {
                     this.bounceAndExplode(obj);
+                    return;
                 }
+                // If a rolling boulder hits the world bounds, attempt to split it (acts like hitting solid ground)
+                try {
+                    if (this.boulders && this.boulders.contains && this.boulders.contains(obj)) {
+                        this.trySplitRollingBoulder(obj, null);
+                        return;
+                    }
+                } catch (e) { }
             });
         }
 
@@ -1941,18 +2019,7 @@ class GameScene extends Phaser.Scene {
         const offsetX = 0;
         const offsetY = 0;
 
-        // Tile sprite mapping: 0=wall, 1=hole, 2=sand, 3=floor, 4=stone, 5=hole2
-        const TILE_FRAMES = {
-            wall: 0,
-            hole: 1,
-            sand: 2,
-            sand1: 2, sand2: 2, sand3: 2, sand4: 2, sand5: 2,
-            sand6: 2, sand7: 2, sand8: 2, sand9: 2, sand10: 2,
-            floor: 3,
-            stone: 4,
-            hole2: 5,
-            sandPile: 4  // sandPile uses stone texture
-        };
+        // Tile frames are defined centrally in data/module/constants.js (TILE_FRAMES)
 
         const resolveTokenMap = (val) => {
             try {
@@ -2017,7 +2084,7 @@ class GameScene extends Phaser.Scene {
                 if (validRow && validCol && validRotation && validFlip) {
                     return {
                         type: 'wall',
-                        wallFrame: row * 6 + col,
+                        wallFrame: row * WALL_TILE_COLS + col,
                         wallRotation: rotationCode,
                         wallFlip: flipChar
                     };
@@ -2036,7 +2103,7 @@ class GameScene extends Phaser.Scene {
                 if (validRow && validCol && validRotation) {
                     return {
                         type: 'wall',
-                        wallFrame: row * 6 + col,
+                        wallFrame: row * WALL_TILE_COLS + col,
                         wallRotation: rotationCode,
                         wallFlip: '0'
                     };
@@ -2104,7 +2171,9 @@ class GameScene extends Phaser.Scene {
             };
         };
 
-        const wallMaxFrame = getTextureMaxNumericFrame(this, 'wall_tiles', 6);
+    const wallMaxFrame = getTextureMaxNumericFrame(this, 'wall_tiles', WALL_TILE_COLS);
+
+    // No local helper: use global resolveContactSpec to obtain per-type spec
 
         const mapSymbolToCell = (value) => {
             if (typeof value === 'string') {
@@ -2194,6 +2263,7 @@ class GameScene extends Phaser.Scene {
                     // Force tile to display exactly as a square cell of CONFIG.tileSize
                     // (avoids gaps when native tile frame height differs from width)
                     tileSprite.setDisplaySize(CONFIG.tileSize, CONFIG.tileSize);
+                    try { tileSprite.setData && tileSprite.setData('type', normalizedTileType); } catch (e) { }
 
                     if (type === 'wall') {
                         if (wallFlip === 'h') {
@@ -2208,10 +2278,34 @@ class GameScene extends Phaser.Scene {
 
                     if (type === 'wall' && this.walls) {
                         this.walls.add(tileSprite);
+                        // assign contact spec according to config (contactType, radiusMultiplier, proximityTiles)
+                        try {
+                            const spec = resolveContactSpec('wall');
+                            tileSprite.setData && tileSprite.setData('contactType', spec.contactType);
+                            tileSprite.setData && tileSprite.setData('contactSpec', spec);
+                            tileSprite.setData && tileSprite.setData('type', 'wall');
+                        } catch (e) { }
                         coverSprite = tileSprite;
                         if (tileSprite.body) {
-                            // Use the actual display size of the sprite for physics body
-                            tileSprite.body.setSize(Math.floor(tileSprite.displayWidth || tileSprite.width), Math.floor(tileSprite.displayHeight || tileSprite.height));
+                            // Prefer a center-based circular body for tile objects so contact feels like it happens at tile center
+                            try {
+                                const tw = Math.floor(tileSprite.displayWidth || tileSprite.width);
+                                const th = Math.floor(tileSprite.displayHeight || tileSprite.height);
+                                const spec = resolveContactSpec('wall');
+                                let radius;
+                                if (spec && typeof spec.radiusPixels === 'number') {
+                                    radius = Math.floor(spec.radiusPixels);
+                                } else {
+                                    const multiplier = (spec && spec.radiusMultiplier) ? spec.radiusMultiplier : 0.45;
+                                    radius = Math.floor(Math.min(tw, th) * multiplier);
+                                }
+                                tileSprite.body.setCircle(radius);
+                                const offsetX = Math.floor((tw / 2) - radius);
+                                const offsetY = Math.floor((th / 2) - radius);
+                                tileSprite.body.setOffset(offsetX, offsetY);
+                            } catch (e) {
+                                tileSprite.body.setSize(Math.floor(tileSprite.displayWidth || tileSprite.width), Math.floor(tileSprite.displayHeight || tileSprite.height));
+                            }
                         }
                     }
                 }
@@ -2243,17 +2337,58 @@ class GameScene extends Phaser.Scene {
                         'objects',
                         frame
                     );
-                    // Keep item at original sprite size
+                    // Keep item at original sprite size and prefer a circular body centered on the item so pickups/poles behave by center contact
                     if (itemSprite.body) {
-                        itemSprite.body.setSize(itemSprite.displayWidth || itemSprite.width, itemSprite.displayHeight || itemSprite.height);
+                        try {
+                            const iw = Math.floor(itemSprite.displayWidth || itemSprite.width);
+                            const ih = Math.floor(itemSprite.displayHeight || itemSprite.height);
+                            const spec = resolveContactSpec(type === 'gem' ? 'gem' : 'item');
+                            let radius;
+                            if (spec && typeof spec.radiusPixels === 'number') {
+                                radius = Math.floor(spec.radiusPixels);
+                            } else {
+                                const multiplier = (spec && spec.radiusMultiplier) ? spec.radiusMultiplier : 0.45;
+                                radius = Math.floor(Math.min(iw, ih) * multiplier);
+                            }
+                            itemSprite.body.setCircle(radius);
+                            const offsetX = Math.floor((iw / 2) - radius);
+                            const offsetY = Math.floor((ih / 2) - radius);
+                            itemSprite.body.setOffset(offsetX, offsetY);
+                        } catch (e) {
+                            itemSprite.body.setSize(itemSprite.displayWidth || itemSprite.width, itemSprite.displayHeight || itemSprite.height);
+                        }
                     }
                     // Apply object scale multiplier so items adapt to configuration
                     const objectScaleFactor = CONFIG.objectSize / OBJECT_NATIVE_SIZE;
                     itemSprite.setScale(objectScaleFactor);
                     if (itemSprite.body) {
-                        itemSprite.body.setSize(Math.floor(itemSprite.displayWidth || itemSprite.width), Math.floor(itemSprite.displayHeight || itemSprite.height));
+                        // Recalculate body after scaling; try circular again using configured multiplier
+                        try {
+                            const iw = Math.floor(itemSprite.displayWidth || itemSprite.width);
+                            const ih = Math.floor(itemSprite.displayHeight || itemSprite.height);
+                            const spec = resolveContactSpec(type === 'gem' ? 'gem' : 'item');
+                            let radius;
+                            if (spec && typeof spec.radiusPixels === 'number') {
+                                radius = Math.floor(spec.radiusPixels);
+                            } else {
+                                const multiplier = (spec && spec.radiusMultiplier) ? spec.radiusMultiplier : 0.45;
+                                radius = Math.floor(Math.min(iw, ih) * multiplier);
+                            }
+                            itemSprite.body.setCircle(radius);
+                            const offsetX = Math.floor((iw / 2) - radius);
+                            const offsetY = Math.floor((ih / 2) - radius);
+                            itemSprite.body.setOffset(offsetX, offsetY);
+                        } catch (e) {
+                            itemSprite.body.setSize(Math.floor(itemSprite.displayWidth || itemSprite.width), Math.floor(itemSprite.displayHeight || itemSprite.height));
+                        }
                     }
                     itemSprite.setData('type', type);
+                    // contact type/spec from config for items
+                    try {
+                        const specItem = resolveContactSpec(type === 'gem' ? 'gem' : 'item');
+                        itemSprite.setData && itemSprite.setData('contactType', specItem.contactType);
+                        itemSprite.setData && itemSprite.setData('contactSpec', specItem);
+                    } catch (e) { }
                     itemSprite.setData('gridX', x);
                     itemSprite.setData('gridY', y);
                     if (type === 'key' || type === 'wooden') {
@@ -2419,8 +2554,27 @@ class GameScene extends Phaser.Scene {
         if (this.player.body) {
             const w = this.player.displayWidth || this.player.width;
             const h = this.player.displayHeight || this.player.height;
-            this.player.body.setSize(Math.floor(w * 0.7), Math.floor(h * 0.7));
-            this.player.body.setOffset(Math.floor(w * 0.15), Math.floor(h * 0.15));
+            // Use a circular body centered on the sprite so contact feels like it's at the object's center.
+            // Radius chosen smaller than sprite to avoid overly generous collisions.
+            try {
+                    const specPlayer = resolveContactSpec('player');
+                    let radius;
+                    if (specPlayer && typeof specPlayer.radiusPixels === 'number') {
+                        radius = Math.floor(specPlayer.radiusPixels);
+                    } else {
+                        const playerMultiplier = (specPlayer && specPlayer.radiusMultiplier) ? specPlayer.radiusMultiplier : 0.35;
+                        radius = Math.floor(Math.min(w, h) * playerMultiplier);
+                    }
+                    this.player.body.setCircle(radius);
+                    // center the circle inside the display sprite
+                    const offsetX = Math.floor((w / 2) - radius);
+                    const offsetY = Math.floor((h / 2) - radius);
+                    this.player.body.setOffset(offsetX, offsetY);
+            } catch (e) {
+                // Fallback to rectangular body if setCircle isn't available
+                this.player.body.setSize(Math.floor(w * 0.7), Math.floor(h * 0.7));
+                this.player.body.setOffset(Math.floor(w * 0.15), Math.floor(h * 0.15));
+            }
         }
 
         // Create a small '1P' label that follows player1 in 2-player mode
@@ -2468,8 +2622,23 @@ class GameScene extends Phaser.Scene {
                 if (this.player2.body) {
                     const w2 = this.player2.displayWidth || this.player2.width;
                     const h2 = this.player2.displayHeight || this.player2.height;
-                    this.player2.body.setSize(Math.floor(w2 * 0.7), Math.floor(h2 * 0.7));
-                    this.player2.body.setOffset(Math.floor(w2 * 0.15), Math.floor(h2 * 0.15));
+                    try {
+                        const specPlayer2 = resolveContactSpec('player');
+                        let radius2;
+                        if (specPlayer2 && typeof specPlayer2.radiusPixels === 'number') {
+                            radius2 = Math.floor(specPlayer2.radiusPixels);
+                        } else {
+                            const playerMultiplier2 = (specPlayer2 && specPlayer2.radiusMultiplier) ? specPlayer2.radiusMultiplier : 0.35;
+                            radius2 = Math.floor(Math.min(w2, h2) * playerMultiplier2);
+                        }
+                        this.player2.body.setCircle(radius2);
+                        const offsetX2 = Math.floor((w2 / 2) - radius2);
+                        const offsetY2 = Math.floor((h2 / 2) - radius2);
+                        this.player2.body.setOffset(offsetX2, offsetY2);
+                    } catch (e) {
+                        this.player2.body.setSize(Math.floor(w2 * 0.7), Math.floor(h2 * 0.7));
+                        this.player2.body.setOffset(Math.floor(w2 * 0.15), Math.floor(h2 * 0.15));
+                    }
                 }
                 // Create a small '2P' label that follows player2
                 try {
@@ -2485,6 +2654,96 @@ class GameScene extends Phaser.Scene {
                     try { this.player2.setTint(0xff0000); } catch (e) { }
                 } catch (e) { /* ignore */ }
             }
+        } catch (e) { }
+    }
+
+    // Recalculate render depth for layered sprites so depth corresponds to world Y position.
+    // Sprites with larger Y (lower on screen) will be drawn above sprites with smaller Y.
+    updateLayerDepths() {
+        const setDepthFromY = (spr) => {
+            try {
+                if (!spr || !spr.active) return;
+                // Keep UI/labels with intentionally large depths untouched
+                if (spr.depth && spr.depth >= 2000) return;
+                // Use rounded Y to avoid tiny jitter depth changes
+                spr.setDepth(Math.round(spr.y));
+            } catch (e) { }
+        };
+
+        // Groups to include in Y-based layering
+        const groups = [
+            this.walls, this.doors, this.items, this.gems, this.rocks,
+            this.boulders, this.ghosts, this.bats, this.dynamites, this.shards,
+            this.hole2Exits, this.planks
+        ];
+
+        groups.forEach(g => {
+            try {
+                if (!g) return;
+                if (g.getChildren && typeof g.getChildren === 'function') {
+                    g.getChildren().forEach(setDepthFromY);
+                } else if (Array.isArray(g)) {
+                    g.forEach(setDepthFromY);
+                }
+            } catch (e) { }
+        });
+
+        // Finally set players so they get ordered relative to objects
+        try { if (this.player && this.player.active) this.player.setDepth(Math.round(this.player.y)); } catch (e) { }
+        try { if (this.player2 && this.player2.active) this.player2.setDepth(Math.round(this.player2.y)); } catch (e) { }
+
+        // If the player is moving upwards, allow certain objects (configured as 'center-front')
+        // to render behind the player even when the player's Y is above them. This enables
+        // the player to come alongside an object near its center and appear in front.
+        try {
+            const forceFrontWhenMovingUp = (playerObj) => {
+                try {
+                    if (!playerObj || !playerObj.active) return;
+                    if (!this.lastMoveDir || Number(this.lastMoveDir.y) >= 0) return;
+                    const px = Number(playerObj.x) || 0;
+                    const py = Number(playerObj.y) || 0;
+                    const tile = Number(CONFIG.tileSize) || 64;
+                    // Default proximity in pixels; may be overridden per-object via contactSpec.proximityTiles
+                    const defaultProx = tile * 0.9;
+
+                    const groupsToCheck = [this.items, this.hole2Exits, this.walls, this.doors, this.gems];
+                    for (const g of groupsToCheck) {
+                        if (!g) continue;
+                        const children = (g.getChildren && typeof g.getChildren === 'function') ? g.getChildren() : (Array.isArray(g) ? g : []);
+                        for (const obj of children) {
+                            try {
+                                if (!obj || !obj.active) continue;
+                                const ctype = (obj.getData && obj.getData('contactType')) || (obj.contactType || null);
+                                if (!ctype || String(ctype).toLowerCase() !== 'center-front') continue;
+                                // determine proximity threshold from object's contactSpec if present
+                                let prox = defaultProx;
+                                try {
+                                    const objType = (obj.getData && obj.getData('type')) ? obj.getData('type') : null;
+                                    const specForObj = objType ? resolveContactSpec(objType) : (obj.getData && obj.getData('contactSpec')) ? obj.getData('contactSpec') : null;
+                                    if (specForObj) {
+                                        if (typeof specForObj.proximityPixels === 'number') {
+                                            prox = Number(specForObj.proximityPixels);
+                                        } else if (typeof specForObj.proximityTiles === 'number') {
+                                            prox = Number(specForObj.proximityTiles) * tile;
+                                        }
+                                    }
+                                } catch (e) { }
+                                const dx = Math.abs((Number(obj.x) || 0) - px);
+                                const dy = Math.abs((Number(obj.y) || 0) - py);
+                                if (dx <= prox && dy <= prox) {
+                                    // put player slightly above the object depth so it renders in front
+                                    try { playerObj.setDepth((obj.depth || Math.round(obj.y)) + 2); } catch (e) { }
+                                    return;
+                                }
+                            } catch (e) { }
+                        }
+                    }
+                } catch (e) { }
+            };
+
+            // apply for player1 and player2 if present
+            try { forceFrontWhenMovingUp(this.player); } catch (e) { }
+            try { forceFrontWhenMovingUp(this.player2); } catch (e) { }
         } catch (e) { }
     }
 
@@ -2694,12 +2953,59 @@ class GameScene extends Phaser.Scene {
         rock.setScale(finalScale);
         rock.setData('destructible', true);
         rock.setData('size', size);
-        rock.setData('isFalling', true);
+        // Create a soft shadow (ellipse) underneath the rock
+        try {
+            const shadowWidth = Math.max(12, 28 * finalScale);
+            const shadowHeight = Math.max(6, 8 * finalScale);
+            const rockShadow = this.add.ellipse(
+                jitteredX,
+                jitteredY + (6 * finalScale),
+                shadowWidth,
+                shadowHeight,
+                0x000000,
+                0.42
+            ).setOrigin(0.5);
+            // Put shadow just below the rock (rocks set very high depth while falling)
+            try { rockShadow.setDepth((rock.depth || Math.round(jitteredY)) - 1); } catch (e) { }
+            rock.setData('shadow', rockShadow);
+            if (rock.once) {
+                rock.once('destroy', () => {
+                    try { if (rockShadow && rockShadow.destroy) rockShadow.destroy(); } catch (e) { }
+                });
+            }
+        } catch (e) { }
+    rock.setData('isFalling', true);
+    // Durante la caduta la roccia deve essere in primo piano rispetto agli oggetti sotto
+    try {
+        // Compute a depth that is above all in-game world objects but below UI/HUD elements.
+        // We consider HUD/UI elements to be at depth >= 2000 (convention in this project).
+        const HUD_DEPTH_THRESHOLD = 2000;
+        let maxWorldDepth = 0;
+        try {
+            const children = this.children && this.children.list ? this.children.list : [];
+            for (let i = 0; i < children.length; i++) {
+                const ch = children[i];
+                if (!ch || typeof ch.depth === 'undefined') continue;
+                const d = Number(ch.depth) || 0;
+                if (d >= HUD_DEPTH_THRESHOLD) continue; // skip HUD/overlay
+                if (d > maxWorldDepth) maxWorldDepth = d;
+            }
+        } catch (e) { }
+        // place the falling rock above all world objects
+        const fallingDepth = Math.max( (Math.round(maxWorldDepth) + 4), 3000 );
+        rock.setDepth(fallingDepth);
+        // ensure shadow renders just below the rock while falling
+        try {
+            const sh = rock.getData && rock.getData('shadow');
+            if (sh && sh.setDepth) {
+                sh.setDepth((rock.depth || fallingDepth) - 1);
+            }
+        } catch (e) { }
+    } catch (e) { }
         rock.setData('burstOnLanding', this.shouldCurrentStoneBurstOnLanding());
 
-        // Rotazione casuale in partenza
+        // Rotazione casuale in partenza (calcolata prima della caduta; la roccia NON ruoterà durante la discesa)
         const startAngle = Phaser.Math.Between(0, 360);
-        const endAngle = Phaser.Math.Between(0, 360);
         rock.setAngle(startAngle);
 
         // Effetto di apparizione con zoom da grosso a piccolo (caduta)
@@ -2709,7 +3015,6 @@ class GameScene extends Phaser.Scene {
             targets: rock,
             scale: finalScale,
             alpha: 1,
-            angle: endAngle,
             duration: 400,
             ease: 'Cubic.easeOut', // Effetto di caduta naturale
             onComplete: () => {
@@ -2721,6 +3026,21 @@ class GameScene extends Phaser.Scene {
                     rock.body.setSize(Math.floor(rock.displayWidth || rock.width), Math.floor(rock.displayHeight || rock.height));
                 }
                 rock.setData('isFalling', false);
+                // Ripristina la depth in base alla Y così il layering torna naturale
+                try { 
+                    rock.setDepth(Math.round(rock.y)); 
+                    // update shadow to remain just under the rock
+                    try {
+                        const sh = rock.getData && rock.getData('shadow');
+                        if (sh && sh.active) {
+                            sh.x = rock.x;
+                            sh.y = rock.y + (6 * (rock.scaleY || 1));
+                            try { sh.setDepth((rock.depth || Math.round(rock.y)) - 1); } catch (e) { }
+                        }
+                    } catch (e) { }
+                } catch (e) { }
+
+                // No angular deceleration for static rocks (they don't rotate during or after the fall)
 
                 // Effetto terremoto del pavimento all'impatto della stone
                 const impactIntensity = size === 'large' ? 0.008 : (size === 'medium' ? 0.005 : 0.003);
@@ -2760,17 +3080,8 @@ class GameScene extends Phaser.Scene {
             }
         });
 
-        // Se è un livello caotico, aggiungi movimento casuale
-        if (rockConfig.chaotic) {
-            this.tweens.add({
-                targets: rock,
-                angle: rock.angle + Phaser.Math.Between(-180, 180),
-                duration: Phaser.Math.Between(2000, 4000),
-                yoyo: true,
-                repeat: -1,
-                ease: 'Sine.easeInOut'
-            });
-        }
+        // For static rocks we do not apply a rotation tween even in 'chaotic' mode,
+        // so their angle remains the precomputed one during fall and after landing.
     }
 
     spawnGem() {
@@ -2942,10 +3253,31 @@ class GameScene extends Phaser.Scene {
         // Match gem sizing/animation so the exit pulses similarly
         const hole2ScaleFactor = CONFIG.objectSize / OBJECT_NATIVE_SIZE;
         hole2Exit.setScale(hole2ScaleFactor);
+        try {
+            const specExit = resolveContactSpec('exit');
+            hole2Exit.setData && hole2Exit.setData('contactType', specExit.contactType);
+            hole2Exit.setData && hole2Exit.setData('contactSpec', specExit);
+            hole2Exit.setData && hole2Exit.setData('type', 'exit');
+        } catch (e) { }
         hole2Exit.setData('gridX', gridX);
         hole2Exit.setData('gridY', gridY);
         if (hole2Exit.body) {
-            hole2Exit.body.setSize(Math.floor(hole2Exit.displayWidth || hole2Exit.width), Math.floor(hole2Exit.displayHeight || hole2Exit.height));
+            try {
+                const specExit = resolveContactSpec('exit');
+                const iw = Math.floor(hole2Exit.displayWidth || hole2Exit.width);
+                const ih = Math.floor(hole2Exit.displayHeight || hole2Exit.height);
+                let radius;
+                if (specExit && typeof specExit.radiusPixels === 'number') {
+                    radius = Math.floor(specExit.radiusPixels);
+                } else {
+                    const mult = (specExit && specExit.radiusMultiplier) ? specExit.radiusMultiplier : 0.62;
+                    radius = Math.floor(Math.min(iw, ih) * mult);
+                }
+                hole2Exit.body.setCircle(radius);
+                hole2Exit.body.setOffset(Math.floor((iw / 2) - radius), Math.floor((ih / 2) - radius));
+            } catch (e) {
+                hole2Exit.body.setSize(Math.floor(hole2Exit.displayWidth || hole2Exit.width), Math.floor(hole2Exit.displayHeight || hole2Exit.height));
+            }
         }
         if (hole2Exit.refreshBody) {
             hole2Exit.refreshBody();
@@ -3114,6 +3446,16 @@ class GameScene extends Phaser.Scene {
         this.physics.add.collider(this.boulders, this.rocks, (boulder, rock) => {
             this.trySplitRollingBoulder(boulder, rock);
         });
+        if (this.walls) {
+            this.physics.add.collider(this.boulders, this.walls, (boulder, wall) => {
+                this.trySplitRollingBoulder(boulder, wall);
+            });
+        }
+        if (this.doors) {
+            this.physics.add.collider(this.boulders, this.doors, (boulder, door) => {
+                this.trySplitRollingBoulder(boulder, door);
+            });
+        }
         this.physics.add.collider(this.boulders, this.boulders, (boulderA, boulderB) => {
             this.trySplitRollingBoulder(boulderA, boulderB);
             this.trySplitRollingBoulder(boulderB, boulderA);
@@ -4420,6 +4762,12 @@ class GameScene extends Phaser.Scene {
             }
         } catch (e) { }
 
+        // Update depth ordering based on Y so player appears behind objects when above them
+        // and in front when below them (depth = y). This gives a simple top-down layering.
+        try {
+            if (this.updateLayerDepths) this.updateLayerDepths();
+        } catch (e) { }
+
         // Update floating player labels (1P / 2P) so they follow each player
         try {
             const labelOffsetY = -6;
@@ -4806,13 +5154,7 @@ class GameScene extends Phaser.Scene {
         const worldY = this.mapOffsetY + gridY * CONFIG.tileSize + CONFIG.tileSize / 2;
         const revealType = revealCell.type;
 
-        const TILE_FRAMES = {
-            hole: 1,
-            sand: 2,
-            floor: 3,
-            stone: 4,
-            hole2: 5
-        };
+        // Use central TILE_FRAMES from constants.js
 
         const createItemFromType = (itemType) => {
             if (!this.items) return;
@@ -4842,7 +5184,7 @@ class GameScene extends Phaser.Scene {
         };
 
         if (revealType === 'wall') {
-            const revealWallMaxFrame = getTextureMaxNumericFrame(this, 'wall_tiles', 6);
+        const revealWallMaxFrame = getTextureMaxNumericFrame(this, 'wall_tiles', WALL_TILE_COLS);
             const clampedRevealWallFrame = Phaser.Math.Clamp(Number(revealCell.wallFrame) || 0, 0, revealWallMaxFrame);
             const wallSprite = this.add.sprite(worldX, worldY, 'wall_tiles', clampedRevealWallFrame);
             wallSprite.setDisplaySize(CONFIG.tileSize, CONFIG.tileSize);
@@ -5776,15 +6118,35 @@ class GameScene extends Phaser.Scene {
                     // re-enable body if it exists (respawnPlayer will reposition/enable visuals)
                     try { if (pl.body) pl.body.setEnable(true); } catch (e) { }
 
-                    // Ensure player's scale is restored after respawn (respawnPlayer doesn't modify scale)
+                    // Ensure the player is returned to the level's playerStart after falling
                     try {
-                        const restoreScale = () => {
+                        this.time.delayedCall(220, () => {
                             try {
-                                const desired = (Number(CONFIG.playerSize) || Number(CONFIG.objectSize) || OBJECT_NATIVE_SIZE) / OBJECT_NATIVE_SIZE;
-                                if (pl && pl.setScale) pl.setScale(desired);
+                                if (Number(GAME_STATE.players) === 2) {
+                                    // multiplayer: check per-player lives
+                                    const p1 = Number(GAME_STATE.livesP1) || 0;
+                                    const p2 = Number(GAME_STATE.livesP2) || 0;
+                                    if (pl === this.player && p1 > 0) this.respawnPlayer(this.player);
+                                    else if (pl === this.player2 && p2 > 0) this.respawnPlayer(this.player2);
+                                } else {
+                                    // single-player: respawn if lives remain
+                                    if ((Number(GAME_STATE.lives) || 0) > 0) this.respawnPlayer(pl);
+                                }
+                            } catch (e) { }
+                        });
+                    } catch (e) { }
+
+                    // Ensure player's display size is restored after respawn (respawnPlayer doesn't modify display size)
+                    try {
+                        const restoreDisplaySize = () => {
+                            try {
+                                const playerDisplaySize = Number(CONFIG.playerSize) || Number(CONFIG.objectSize) || OBJECT_NATIVE_SIZE;
+                                if (pl && pl.setDisplaySize) pl.setDisplaySize(playerDisplaySize, playerDisplaySize);
+                                // also reset scale to 1 to avoid compounded scaling
+                                if (pl && pl.setScale) pl.setScale(1);
                             } catch (e) { }
                         };
-                        this.time.delayedCall(620, restoreScale);
+                        this.time.delayedCall(620, restoreDisplaySize);
                     } catch (e) { }
                 }
             });
@@ -6270,6 +6632,19 @@ class GameScene extends Phaser.Scene {
         const finalScale = this.getRollingStoneScale(size);
 
         boulder.setScale(finalScale);
+        // create a soft shadow underneath the rolling boulder
+        try {
+            const shW = Math.max(14, 28 * finalScale);
+            const shH = Math.max(6, 8 * finalScale);
+            const bShadow = this.add.ellipse(boulder.x, boulder.y + (6 * finalScale), shW, shH, 0x000000, 0.42).setOrigin(0.5);
+            try { bShadow.setDepth(Math.round(boulder.y) - 1); } catch (e) { }
+            boulder.setData('shadow', bShadow);
+            if (boulder.once) {
+                boulder.once('destroy', () => {
+                    try { if (bShadow && bShadow.destroy) bShadow.destroy(); } catch (e) { }
+                });
+            }
+        } catch (e) { }
         boulder.setAngle(Phaser.Math.Between(0, 360));
         boulder.setVelocity(vx, vy);
         boulder.setData('size', size);
@@ -6291,6 +6666,10 @@ class GameScene extends Phaser.Scene {
         boulder.setData('rollingSpinSign', Math.random() < 0.5 ? -1 : 1);
         boulder.setData('rollingSpeed', initialSpeed);
         boulder.setData('rollingBaseScale', finalScale);
+    // rotation tracking: count full rotations (in degrees accumulated)
+    boulder.setData('rollingRotationsCount', 0);
+    boulder.setData('rollingRotationAccum', 0);
+    boulder.setData('rollingLastAngle', boulder.angle || 0);
 
         if (boulder.body) {
             boulder.body.setAllowGravity(false);
@@ -6319,8 +6698,21 @@ class GameScene extends Phaser.Scene {
             : 1;
         if (splitGeneration >= maxSplitGeneration) return;
 
-        const sourceSize = boulder.getData('size') || 'medium';
-        const nextSize = sourceSize === 'large' ? 'medium' : 'small';
+        const sourceSize = String(boulder.getData('size') || 'medium');
+        // Ensure split pieces are progressively smaller. Define a size order
+        // and pick the next smaller size. If already at smallest, don't split.
+        const sizeOrder = ['large', 'medium', 'small'];
+        let nextSize = null;
+        const idx = sizeOrder.indexOf(sourceSize);
+        if (idx === -1) {
+            // Unknown size: fallback to 'small' pieces
+            nextSize = 'small';
+        } else if (idx < sizeOrder.length - 1) {
+            nextSize = sizeOrder[idx + 1];
+        } else {
+            // Already smallest size: do not split further
+            return;
+        }
 
         const splitRange = Array.isArray(dynamicBoulders?.splitPiecesRange)
             ? dynamicBoulders.splitPiecesRange
@@ -6408,6 +6800,10 @@ class GameScene extends Phaser.Scene {
 
     attachBoulderSmokeTrail(boulder) {
         if (!boulder || !boulder.active) return;
+        // If this boulder has already been stopped due to rotations, don't attach smoke
+        try {
+            if (boulder.getData && boulder.getData('rollingStopped')) return;
+        } catch (e) { }
 
         const smokeEvent = this.time.addEvent({
             delay: 34,
@@ -6533,6 +6929,67 @@ class GameScene extends Phaser.Scene {
 
             const spinSign = Number(boulder.getData('rollingSpinSign')) || 1;
             boulder.setAngularVelocity(spinSign * Phaser.Math.Clamp(targetSpeed * 4.6, 95, 980));
+
+            // Update shadow position/size for this rolling boulder
+            try {
+                const sh = boulder.getData && boulder.getData('shadow');
+                if (sh && sh.active) {
+                    const baseScale = Number(boulder.getData('rollingBaseScale')) || 1;
+                    // place shadow slightly below the boulder and scale it by baseScale
+                    sh.x = boulder.x;
+                    sh.y = boulder.y + (6 * baseScale);
+                    if (sh.setDisplaySize) {
+                        sh.setDisplaySize(Math.max(14, 28 * baseScale), Math.max(6, 8 * baseScale));
+                    } else {
+                        sh.width = Math.max(14, 28 * baseScale);
+                        sh.height = Math.max(6, 8 * baseScale);
+                    }
+                    try { sh.setDepth(Math.round(boulder.y) - 1); } catch (e) { }
+                }
+            } catch (e) { }
+
+            // Rotation counting: accumulate absolute angular change and stop after configured full rotations
+            try {
+                const dynamicBouldersCfg = this.levelConfig?.dynamicBoulders || {};
+                const stopAfter = Number(dynamicBouldersCfg?.stopAfterRotations);
+                if (Number.isFinite(stopAfter) && stopAfter > 0 && !boulder.getData('rollingStopped')) {
+                    const lastAng = Number(boulder.getData('rollingLastAngle')) || 0;
+                    const curAng = Number(boulder.angle) || 0;
+                    let delta = curAng - lastAng;
+                    // normalize to -180..180
+                    delta = ((delta + 180) % 360) - 180;
+                    let accum = Number(boulder.getData('rollingRotationAccum')) || 0;
+                    accum += Math.abs(delta);
+                    let rotations = Number(boulder.getData('rollingRotationsCount')) || 0;
+                    if (accum >= 360) {
+                        const inc = Math.floor(accum / 360);
+                        rotations += inc;
+                        accum = accum % 360;
+                    }
+                    boulder.setData('rollingRotationAccum', accum);
+                    boulder.setData('rollingRotationsCount', rotations);
+                    boulder.setData('rollingLastAngle', curAng);
+
+                    if (rotations >= stopAfter) {
+                        // stop the boulder movement and rotation
+                        try {
+                            boulder.setVelocity(0, 0);
+                            if (boulder.body) {
+                                boulder.body.setVelocity(0, 0);
+                                boulder.body.angularVelocity = 0;
+                            }
+                            boulder.setAngularVelocity(0);
+                        } catch (e) { }
+                        boulder.setData('rollingStopped', true);
+                        // remove any smoke trail event attached to this boulder
+                        try {
+                            const ev = boulder.getData && boulder.getData('smokeTrailEvent');
+                            if (ev && ev.remove) ev.remove(false);
+                            boulder.setData && boulder.setData('smokeTrailEvent', null);
+                        } catch (e) { }
+                    }
+                }
+            } catch (e) { }
         });
     }
 
@@ -6732,7 +7189,7 @@ class BonusScene extends Phaser.Scene {
         let firstRailTopY = null;
         let lastRailX = null;
 
-        const wallMaxFrame = getTextureMaxNumericFrame(this, 'wall_tiles', 6);
+    const wallMaxFrame = getTextureMaxNumericFrame(this, 'wall_tiles', WALL_TILE_COLS);
 
         const parseWallToken = (token) => {
             const tokenStr = String(token || '').trim().toLowerCase();

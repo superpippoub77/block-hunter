@@ -32,3 +32,24 @@ export const OBJECT_FRAMES = {
 // Wooden plank: temporarily reuse the wall frame (index 12). Replace with a dedicated asset later.
 //OBJECT_FRAMES.wooden = OBJECT_FRAMES.wall;
 //OBJECT_FRAMES.cart = OBJECT_FRAMES.stones;
+
+// Tile frames mapping (tiles spritesheet: 6 frames per row, native tile size 64x48)
+export const TILE_FRAMES = {
+    wall: 0,
+    hole: 1,
+    sand: 2,
+    sand1: 2, sand2: 2, sand3: 2, sand4: 2, sand5: 2,
+    sand6: 2, sand7: 2, sand8: 2, sand9: 2, sand10: 2,
+    floor: 3,
+    stone: 4,
+    hole2: 5,
+    sandPile: 4
+};
+
+// Number of columns in the wall tiles sprite (used to compute wall frame indices)
+export const WALL_TILE_COLS = 6;
+
+// Placeholder for possible named wall-frames mapping (kept empty for now).
+export const WALLS_FRAMES = {
+    // e.g. doorFrame: 5
+};
