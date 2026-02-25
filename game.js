@@ -283,6 +283,171 @@ function addSpikeCredit(scene, opts = {}) {
 // ============================================================================
 // PRELOAD SCENE
 // ============================================================================
+// CRT overlay scene - renders a non-blocking full-screen CRT effect that stays
+// active across scenes. Configurable via CONFIG.crt in `data/config.json`.
+class CrtScene extends Phaser.Scene {
+    constructor() {
+        super('CrtScene');
+        this._enabled = false;
+    }
+
+    init() {
+        try {
+            const c = (typeof CONFIG === 'object' && CONFIG.crt) ? CONFIG.crt : null;
+            this._enabled = !!(c && c.enabled);
+        } catch (e) { this._enabled = false; }
+    }
+
+    create() {
+        if (!this._enabled) return;
+        // Keep this scene above others so the CRT overlays the whole game.
+        try { this.scene.bringToTop(); } catch (e) { }
+
+        const w = CONFIG.width || (this.scale && this.scale.width) || 800;
+        const h = CONFIG.height || (this.scale && this.scale.height) || 600;
+        const cfg = CONFIG.crt || {};
+
+        // --- scanlines texture (tiny repeating texture) ---
+        const spacing = Math.max(2, Number(cfg.scanlineSpacing) || 3);
+        const scanAlpha = (typeof cfg.scanlineAlpha === 'number') ? cfg.scanlineAlpha : 0.12;
+        if (!this.textures.exists('crt_scanlines')) {
+            try {
+                const cvs = this.textures.createCanvas('crt_scanlines_tmp', 1, spacing);
+                const ctx = cvs.getContext();
+                ctx.clearRect(0, 0, 1, spacing);
+                for (let y = 0; y < spacing; y++) {
+                    if ((y % 2) === 0) {
+                        ctx.fillStyle = `rgba(0,0,0,${scanAlpha})`;
+                        ctx.fillRect(0, y, 1, 1);
+                    }
+                }
+                this.textures.addCanvas('crt_scanlines', cvs.canvas);
+                this.textures.remove('crt_scanlines_tmp');
+            } catch (e) { }
+        }
+
+        this.scanlines = this.add.tileSprite(0, 0, w, h, 'crt_scanlines').setOrigin(0).setScrollFactor(0).setDepth(10000).setBlendMode(Phaser.BlendModes.MULTIPLY);
+        this.scanlines.setAlpha(scanAlpha);
+
+        // --- vignette texture (radial gradient) ---
+        const vignAlpha = (typeof cfg.vignetteAlpha === 'number') ? cfg.vignetteAlpha : 0.36;
+        const createVignette = (width, height) => {
+            try {
+                const keyTmp = 'crt_vignette_tmp';
+                if (this.textures.exists('crt_vignette')) this.textures.remove('crt_vignette');
+                const cvs = this.textures.createCanvas(keyTmp, width, height);
+                const ctx = cvs.getContext();
+                const cx = width / 2, cy = height / 2;
+                const rInner = Math.min(width, height) * 0.18;
+                const rOuter = Math.max(width, height) * 0.75;
+                const grad = ctx.createRadialGradient(cx, cy, rInner, cx, cy, rOuter);
+                grad.addColorStop(0, 'rgba(0,0,0,0)');
+                grad.addColorStop(1, `rgba(0,0,0,${vignAlpha})`);
+                ctx.fillStyle = grad;
+                ctx.fillRect(0, 0, width, height);
+                this.textures.addCanvas('crt_vignette', cvs.canvas);
+                this.textures.remove(keyTmp);
+            } catch (e) { }
+        };
+        createVignette(w, h);
+        this.vignette = this.add.image(0, 0, 'crt_vignette').setOrigin(0).setScrollFactor(0).setDepth(10001);
+
+        // --- noise tile (low-res canvas updated each frame) ---
+        if (cfg.noiseEnabled !== false) {
+            const noiseW = Math.max(64, Math.floor(w / 4));
+            const noiseH = Math.max(48, Math.floor(h / 4));
+            this._noiseKey = `crt_noise_${noiseW}x${noiseH}`;
+            if (!this.textures.exists(this._noiseKey)) {
+                try {
+                    const cvs = this.textures.createCanvas(this._noiseKey + '_tmp', noiseW, noiseH);
+                    const ctx = cvs.getContext();
+                    ctx.fillStyle = 'rgba(0,0,0,0)';
+                    ctx.fillRect(0, 0, noiseW, noiseH);
+                    this.textures.addCanvas(this._noiseKey, cvs.canvas);
+                    this.textures.remove(this._noiseKey + '_tmp');
+                } catch (e) { }
+            }
+            this.noise = this.add.tileSprite(0, 0, w, h, this._noiseKey).setOrigin(0).setScrollFactor(0).setDepth(10002).setBlendMode(Phaser.BlendModes.ADD);
+            this.noise.setAlpha(cfg.noiseIntensity || 0.06);
+        }
+
+        // Flicker config
+        this._flick = {
+            enabled: cfg.flickerEnabled !== false,
+            speed: Number(cfg.flickerSpeed) || 80,
+            intensity: Number(cfg.flickerIntensity) || 0.06
+        };
+
+        // Non-blocking: ensure input passes through
+        try { this.input.enabled = false; } catch (e) { }
+
+        // Keep responsive on resize
+        this.scale.on('resize', (gameSize) => {
+            try {
+                const nw = gameSize.width || w;
+                const nh = gameSize.height || h;
+                if (this.scanlines) {
+                    this.scanlines.setSize(nw, nh);
+                }
+                if (this.vignette) {
+                    createVignette(nw, nh);
+                    this.vignette.setTexture('crt_vignette');
+                    this.vignette.setDisplaySize(nw, nh);
+                }
+                if (this.noise) {
+                    const noiseW2 = Math.max(64, Math.floor(nw / 4));
+                    const noiseH2 = Math.max(48, Math.floor(nh / 4));
+                    const newKey = `crt_noise_${noiseW2}x${noiseH2}`;
+                    if (!this.textures.exists(newKey)) {
+                        const cvs2 = this.textures.createCanvas(newKey + '_tmp', noiseW2, noiseH2);
+                        const ctx2 = cvs2.getContext();
+                        ctx2.fillStyle = 'rgba(0,0,0,0)';
+                        ctx2.fillRect(0, 0, noiseW2, noiseH2);
+                        this.textures.addCanvas(newKey, cvs2.canvas);
+                        this.textures.remove(newKey + '_tmp');
+                    }
+                    this._noiseKey = newKey;
+                    this.noise.setTexture(this._noiseKey);
+                    this.noise.setDisplaySize(nw, nh);
+                }
+            } catch (e) { }
+        });
+    }
+
+    update(time, delta) {
+        if (!this._enabled) return;
+        const cfg = CONFIG.crt || {};
+        // flicker: vary scanline alpha slightly
+        if (this._flick.enabled && this.scanlines) {
+            const f = Math.sin(time / this._flick.speed) * this._flick.intensity;
+            this.scanlines.setAlpha((cfg.scanlineAlpha || 0.12) + f);
+        }
+        // update noise canvas
+        if (this.noise && this._noiseKey) {
+            try {
+                const tx = this.textures.get(this._noiseKey);
+                const cvs = tx && tx.getSourceImage ? tx.getSourceImage() : null;
+                if (cvs && cvs.getContext) {
+                    const ctx = cvs.getContext();
+                    const w = cvs.width, h = cvs.height;
+                    const img = ctx.getImageData(0, 0, w, h);
+                    const d = img.data;
+                    for (let i = 0; i < d.length; i += 4) {
+                        const v = (Math.random() * 255) | 0;
+                        d[i] = d[i + 1] = d[i + 2] = v;
+                        d[i + 3] = 160; // semi-transparent
+                    }
+                    ctx.putImageData(img, 0, 0);
+                    this.textures.get(this._noiseKey).refresh();
+                    // scroll noise a bit for subtle movement
+                    this.noise.tilePositionX += delta * 0.02;
+                    this.noise.tilePositionY += delta * 0.01;
+                }
+            } catch (e) { }
+        }
+    }
+}
+
 class PreloadScene extends Phaser.Scene {
     constructor() {
         super('PreloadScene');
@@ -8243,7 +8408,7 @@ async function inizialization() {
                     debug: false
                 }
             },
-            scene: [PreloadScene, AttractScene, TopTenScene, ConfigScene, LevelSelectScene, GameScene, BonusScene, GameOverScene]
+            scene: [CrtScene, PreloadScene, AttractScene, TopTenScene, ConfigScene, LevelSelectScene, GameScene, BonusScene, GameOverScene]
         };
 
         // Copy game state keys to GAME_STATE (topScores will be loaded from server if available)
