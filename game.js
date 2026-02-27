@@ -403,8 +403,8 @@ class PreloadScene extends Phaser.Scene {
             .spritesheet('objects', 'images/obj_game.png', defaultFrame)
             // Front walking animation spritesheet (1 row, 7 frames, 172x135 each)
             // Bat flying animation spritesheet (1 row, 6 frames)
-            .spritesheet('bat', 'images/batpng.png', defaultFrame)
-            // Ghost animation spritesheet (1 row, 5 frames)
+            .spritesheet('bat', 'images/bat.png', defaultFrame)
+            // Ghost animation spritesheet (1 row, 10 frames)
             .spritesheet('ghost', 'images/ghost.png', defaultFrame)
             .spritesheet('player_front', 'images/player_front.png', {
                 frameWidth: 139,
@@ -425,6 +425,8 @@ class PreloadScene extends Phaser.Scene {
                 frameWidth: 139,
                 frameHeight: 135
             })
+            // Old miner skeleton (10 frames: 0..9)
+            .spritesheet('old_miner', 'images/old_miner.png', defaultFrame)
             .audio('intro_bgm', 'data/music/intro.mp3')
             .audio('game_bgm', 'data/music/game.mp3')
             .audio('step_sfx', 'data/music/step.mp3')
@@ -1814,22 +1816,58 @@ class GameScene extends Phaser.Scene {
                 repeat: -1
             });
         }
-        if (!this.anims.exists('bat_fly')) {
+        // Bat animations: spritesheet has 10 frames (0..9)
+        // 0..4 = start/arrival (takeoff/landing), 5..9 = flight
+        if (!this.anims.exists('bat_fly_start')) {
             this.anims.create({
-                key: 'bat_fly',
-                frames: this.anims.generateFrameNumbers('bat', { start: 0, end: 5 }),
+                key: 'bat_fly_start',
+                frames: this.anims.generateFrameNumbers('bat', { start: 0, end: 9 }),
+                frameRate: 12,
+                repeat: 0
+            });
+        }
+        if (!this.anims.exists('bat_fly_loop')) {
+            this.anims.create({
+                key: 'bat_fly_loop',
+                frames: this.anims.generateFrameNumbers('bat', { start: 5, end: 9 }),
                 frameRate: 12,
                 repeat: -1
             });
         }
+        if (!this.anims.exists('bat_fly_loop_rev')) {
+            const f = this.anims.generateFrameNumbers('bat', { start: 5, end: 9 });
+            const fr = f.slice().reverse();
+            this.anims.create({ key: 'bat_fly_loop_rev', frames: fr, frameRate: 12, repeat: -1 });
+        }
+        if (!this.anims.exists('bat_stop')) {
+            const sf = this.anims.generateFrameNumbers('bat', { start: 0, end: 4 });
+            const sfr = sf.slice().reverse();
+            this.anims.create({ key: 'bat_stop', frames: sfr, frameRate: 12, repeat: 0 });
+        }
         if (!this.anims.exists('ghost_float')) {
             this.anims.create({
                 key: 'ghost_float',
-                frames: this.anims.generateFrameNumbers('ghost', { start: 0, end: 4 }),
+                frames: this.anims.generateFrameNumbers('ghost', { start: 0, end: 9 }),
                 frameRate: 10,
                 yoyo: true,
                 repeat: -1
             });
+        }
+
+        // Miner (old_miner) skeleton: 10 frames (0..9)
+        // Frame 0 = idle/still. When active: right movement uses frames 1..9, left movement uses 9..1.
+        if (!this.anims.exists('miner_walk')) {
+            this.anims.create({
+                key: 'miner_walk',
+                frames: this.anims.generateFrameNumbers('old_miner', { start: 1, end: 9 }),
+                frameRate: 10,
+                repeat: -1
+            });
+        }
+        if (!this.anims.exists('miner_walk_rev')) {
+            const mf = this.anims.generateFrameNumbers('old_miner', { start: 1, end: 9 });
+            const mfr = mf.slice().reverse();
+            this.anims.create({ key: 'miner_walk_rev', frames: mfr, frameRate: 10, repeat: -1 });
         }
 
         // Background selection: prefer level-specific `background` if provided in JSON,
@@ -2356,6 +2394,7 @@ class GameScene extends Phaser.Scene {
                     case 'w': return { type: 'wall', wallFrame: 0, wallRotation: 0 };
                     case 'f': return { type: 'floor', wallFrame: 0, wallRotation: 0 };
                     case 'm': return { type: 'skeleton', wallFrame: 0, wallRotation: 0 };
+                    case '#': return { type: 'wall', wallFrame: 0, wallRotation: 0, invisible: true };
                     case 'h': return { type: 'hole', wallFrame: 0, wallRotation: 0 };
                     case 's': return { type: 'sand', wallFrame: 0, wallRotation: 0 };
                     case 'g': return { type: 'gem', wallFrame: 0, wallRotation: 0 };
@@ -2422,6 +2461,7 @@ class GameScene extends Phaser.Scene {
                     wallRotation = cell.wallRotation || 0;
                     wallFlip = cell.wallFlip || '0';
                     hiddenReveal = cell.hiddenReveal || null;
+                    var tileInvisible = !!cell.invisible;
                 } else {
                     // Fallback to old random generation
                     // Border walls
@@ -2471,6 +2511,11 @@ class GameScene extends Phaser.Scene {
                     tileSprite.setDisplaySize(CONFIG.tileSize, CONFIG.tileSize);
                     try { tileSprite.setData && tileSprite.setData('type', normalizedTileType); } catch (e) { }
 
+                    // If the tile was marked 'invisible' in the map (e.g. '#'), hide its graphic
+                    if (type === 'wall' && tileInvisible) {
+                        try { tileSprite.setVisible(false); } catch (e) { }
+                    }
+
                     if (type === 'wall') {
                         if (wallFlip === 'h') {
                             tileSprite.setFlipX(true);
@@ -2505,10 +2550,16 @@ class GameScene extends Phaser.Scene {
                                     const multiplier = (spec && spec.radiusMultiplier) ? spec.radiusMultiplier : 0.45;
                                     radius = Math.floor(Math.min(tw, th) * multiplier);
                                 }
-                                tileSprite.body.setCircle(radius);
-                                const offsetX = Math.floor((tw / 2) - radius);
-                                const offsetY = Math.floor((th / 2) - radius);
-                                tileSprite.body.setOffset(offsetX, offsetY);
+                                if (tileInvisible) {
+                                    // For invisible walls, use a full-tile rectangular body so collision covers entire cell
+                                    tileSprite.body.setSize(tw, th);
+                                    tileSprite.body.setOffset(0, 0);
+                                } else {
+                                    tileSprite.body.setCircle(radius);
+                                    const offsetX = Math.floor((tw / 2) - radius);
+                                    const offsetY = Math.floor((th / 2) - radius);
+                                    tileSprite.body.setOffset(offsetX, offsetY);
+                                }
                             } catch (e) {
                                 tileSprite.body.setSize(Math.floor(tileSprite.displayWidth || tileSprite.width), Math.floor(tileSprite.displayHeight || tileSprite.height));
                             }
@@ -2537,6 +2588,8 @@ class GameScene extends Phaser.Scene {
                     else if (type === 'wooden') frame = OBJECT_FRAMES.wooden;
                     else if (type === 'cart') frame = OBJECT_FRAMES.cart;
                     else if (type === 'helmet') frame = OBJECT_FRAMES.helmet;
+                    // Keep map token visuals as `objects` until revealed; actual skeleton (old_miner)
+                    // will be spawned when the tile is revealed.
                     const itemSprite = this.items.create(
                         offsetX + x * CONFIG.tileSize + CONFIG.tileSize / 2,
                         offsetY + y * CONFIG.tileSize + CONFIG.tileSize / 2,
@@ -3686,10 +3739,46 @@ class GameScene extends Phaser.Scene {
         }
         bat.setData('speed', this.getBatSpeedForLevel());
         bat.setData('nextStealAt', 0);
-        if (bat.anims) {
-            bat.play('bat_fly', true);
+        // per-level bat rest configuration (defaults)
+        const flightsBeforeRest = Number(this.levelConfig?.batFlightsBeforeRest) || 4;
+        const restSeconds = Number(this.levelConfig?.batRestSeconds) || 2;
+        const restInterval = Number(this.levelConfig?.batRestIntervalSeconds) || 0;
+        bat.setData('flightsBeforeRest', flightsBeforeRest);
+        bat.setData('restSeconds', restSeconds);
+        if (restInterval > 0) bat.setData('restInterval', restInterval);
+
+        // Start with takeoff animation if available, then pick loop based on velocity
+        if (bat.anims && this.anims.exists('bat_fly_start')) {
+            bat.play('bat_fly_start', true);
+            const onStart = (anim) => {
+                if (!bat || !bat.active) return;
+                if (!anim || anim.key !== 'bat_fly_start') return;
+                try { bat.off('animationcomplete', onStart); } catch (e) { }
+                this.setBatRandomVelocity(bat);
+                try {
+                    const vx = bat.body && bat.body.velocity ? (bat.body.velocity.x || 0) : 0;
+                    if (vx < 0) {
+                        if (this.anims.exists('bat_fly_loop_rev')) bat.play('bat_fly_loop_rev');
+                    } else {
+                        if (this.anims.exists('bat_fly_loop')) bat.play('bat_fly_loop');
+                    }
+                } catch (e) { }
+            };
+            bat.on('animationcomplete', onStart);
+        } else {
+            this.setBatRandomVelocity(bat);
         }
-        this.setBatRandomVelocity(bat);
+
+        // schedule periodic rest if configured for this level
+        if (restInterval > 0) {
+            try {
+                const t = this.time.delayedCall(restInterval * 1000, () => {
+                    if (!bat || !bat.active) return;
+                    this.enterBatRest(bat);
+                });
+                bat.setData('restIntervalTimer', t);
+            } catch (e) { }
+        }
 
         if (!this.batDirectionTimer) {
             this.batDirectionTimer = this.time.addEvent({
@@ -3710,11 +3799,134 @@ class GameScene extends Phaser.Scene {
 
     setBatRandomVelocity(bat) {
         if (!bat || !bat.active) return;
-        const speed = Number(bat.getData('speed')) || 90;
+        if (bat.getData('isResting')) return;
+
+        const speed = Number(bat.getData('speed')) || this.getBatSpeedForLevel();
         const dx = Phaser.Math.FloatBetween(-1, 1);
         const dy = Phaser.Math.FloatBetween(-1, 1);
         const len = Math.hypot(dx, dy) || 1;
         bat.setVelocity((dx / len) * speed, (dy / len) * speed);
+
+        // mirror depending on X velocity
+        try {
+            const vx = bat.body && bat.body.velocity ? (bat.body.velocity.x || 0) : 0;
+            const threshold = 2;
+            if (vx < -threshold) bat.setFlipX(true);
+            else if (vx > threshold) bat.setFlipX(false);
+        } catch (e) { }
+
+        // count flights and possibly enter resting sequence
+        let fc = Number(bat.getData('flightCount')) || 0;
+        fc++;
+        bat.setData('flightCount', fc);
+        const flightsBeforeRest = Number(bat.getData('flightsBeforeRest')) || 4;
+
+        // if a per-bat interval is configured, skip flight-count based rest
+        if (Number.isFinite(bat.getData('restInterval')) && bat.getData('restInterval') > 0) {
+            // ensure correct loop animation
+            try {
+                const vx = bat.body && bat.body.velocity ? (bat.body.velocity.x || 0) : 0;
+                if (vx < 0) {
+                    if (this.anims.exists('bat_fly_loop_rev')) bat.play('bat_fly_loop_rev', true);
+                } else {
+                    if (this.anims.exists('bat_fly_loop')) bat.play('bat_fly_loop', true);
+                }
+            } catch (e) { }
+        } else if (fc >= flightsBeforeRest) {
+            this.enterBatRest(bat);
+        } else {
+            try {
+                const vx = bat.body && bat.body.velocity ? (bat.body.velocity.x || 0) : 0;
+                if (vx < 0) {
+                    if (this.anims.exists('bat_fly_loop_rev')) bat.play('bat_fly_loop_rev', true);
+                } else {
+                    if (this.anims.exists('bat_fly_loop')) bat.play('bat_fly_loop', true);
+                }
+            } catch (e) { }
+        }
+    }
+
+    enterBatRest(bat) {
+        if (!bat || !bat.active) return;
+        if (bat.getData('isResting')) return;
+
+        try {
+            const intTimer = bat.getData('restIntervalTimer');
+            if (intTimer && intTimer.remove) intTimer.remove(false);
+            bat.setData('restIntervalTimer', null);
+        } catch (e) { }
+
+        try { if (bat.anims && bat.anims.isPlaying) bat.anims.stop(); } catch (e) { }
+        try { bat.off && bat.off('animationcomplete'); } catch (e) { }
+
+        const doRestComplete = () => {
+            if (!bat || !bat.active) return;
+            try { if (bat.anims && bat.anims.isPlaying) bat.anims.stop(); } catch (e) { }
+            try { bat.setVelocity(0, 0); } catch (e) { }
+            try { bat.setFrame(0); } catch (e) { }
+            bat.setData('isResting', true);
+
+            const restSeconds = Number(bat.getData('restSeconds')) || 2;
+            const t = this.time.delayedCall(restSeconds * 1000, () => {
+                if (!bat || !bat.active) return;
+                bat.setData('isResting', false);
+                bat.setData('flightCount', 0);
+
+                if (this.anims.exists('bat_fly_start')) {
+                    const onStartResume = (anim2) => {
+                        if (!anim2 || anim2.key !== 'bat_fly_start') return;
+                        try { bat.off('animationcomplete', onStartResume); } catch (e) { }
+                        this.setBatRandomVelocity(bat);
+                        try {
+                            const vx2 = bat.body && bat.body.velocity ? (bat.body.velocity.x || 0) : 0;
+                            if (vx2 < 0) {
+                                if (this.anims.exists('bat_fly_loop_rev')) bat.play('bat_fly_loop_rev');
+                            } else {
+                                if (this.anims.exists('bat_fly_loop')) bat.play('bat_fly_loop');
+                            }
+                        } catch (e) { }
+                        try {
+                            const restInterval = Number(bat.getData('restInterval'));
+                            if (Number.isFinite(restInterval) && restInterval > 0) {
+                                const t2 = this.time.delayedCall(restInterval * 1000, () => {
+                                    if (!bat || !bat.active) return;
+                                    this.enterBatRest(bat);
+                                });
+                                bat.setData('restIntervalTimer', t2);
+                            }
+                        } catch (e) { }
+                    };
+                    bat.play('bat_fly_start', true);
+                    bat.on('animationcomplete', onStartResume);
+                } else {
+                    this.setBatRandomVelocity(bat);
+                    try {
+                        const restInterval = Number(bat.getData('restInterval'));
+                        if (Number.isFinite(restInterval) && restInterval > 0) {
+                            const t2 = this.time.delayedCall(restInterval * 1000, () => {
+                                if (!bat || !bat.active) return;
+                                this.enterBatRest(bat);
+                            });
+                            bat.setData('restIntervalTimer', t2);
+                        }
+                    } catch (e) { }
+                }
+            });
+            bat.setData('restTimer', t);
+        };
+
+        if (this.anims.exists('bat_stop')) {
+            const onStop = (anim) => {
+                if (!anim || anim.key !== 'bat_stop') return;
+                try { bat.off('animationcomplete', onStop); } catch (e) { }
+                doRestComplete();
+            };
+            bat.play('bat_stop', true);
+            bat.on('animationcomplete', onStop);
+        } else {
+            try { bat.setVelocity(0, 0); } catch (e) { }
+            doRestComplete();
+        }
     }
 
     startBatGemCarryAndDrop(bat) {
@@ -4022,7 +4234,30 @@ class GameScene extends Phaser.Scene {
         const dx = Phaser.Math.FloatBetween(-1, 1);
         const dy = Phaser.Math.FloatBetween(-1, 1);
         const len = Math.hypot(dx, dy) || 1;
-        ghost.setVelocity((dx / len) * speed, (dy / len) * speed);
+        const vx = (dx / len) * speed;
+        const vy = (dy / len) * speed;
+        ghost.setVelocity(vx, vy);
+
+        // Mirror sprite horizontally based on horizontal velocity so animation is "a specchio"
+        try {
+            // Prefer horizontal component to decide facing; fall back to last known direction
+            if (Math.abs(vx) >= Math.abs(vy)) {
+                ghost.setFlipX(vx < 0);
+            } else {
+                const last = Number(ghost.getData('lastVx')) || 1;
+                ghost.setFlipX(last < 0);
+            }
+            ghost.setData('lastVx', vx);
+        } catch (e) { }
+
+        // Ensure float animation is playing
+        try {
+            if (this.anims.exists('ghost_float')) {
+                if (!ghost.anims || !ghost.anims.currentAnim) {
+                    ghost.play('ghost_float');
+                }
+            }
+        } catch (e) { }
     }
 
     updateGhostPerspective() {
@@ -4051,11 +4286,33 @@ class GameScene extends Phaser.Scene {
             try {
                 // Mirror the ghost sprite when moving left so animation appears mirrored
                 const vx = ghost.body && ghost.body.velocity ? (ghost.body.velocity.x || 0) : 0;
-                const threshold = 2; // small deadzone
+                const vy = ghost.body && ghost.body.velocity ? (ghost.body.velocity.y || 0) : 0;
+                const threshold = 2; // small deadzone for deciding facing
                 if (vx < -threshold) {
                     ghost.setFlipX(true);
                 } else if (vx > threshold) {
                     ghost.setFlipX(false);
+                }
+
+                // If ghost is essentially stopped, hold frame 0 and stop animation.
+                // Otherwise ensure float animation is playing.
+                const speedNow = Math.hypot(vx, vy);
+                const stopThreshold = 6; // pixels/sec under which ghost is considered stopped
+                if (speedNow <= stopThreshold) {
+                    try {
+                        if (ghost.anims && ghost.anims.isPlaying) ghost.anims.stop();
+                        ghost.setFrame(0);
+                        ghost.setData('isStopped', true);
+                    } catch (e) { }
+                } else {
+                    try {
+                        if (ghost.getData('isStopped')) {
+                            ghost.setData('isStopped', false);
+                            if (this.anims.exists('ghost_float')) ghost.play('ghost_float');
+                        } else if (this.anims.exists('ghost_float') && !(ghost.anims && ghost.anims.isPlaying)) {
+                            ghost.play('ghost_float');
+                        }
+                    } catch (e) { }
                 }
             } catch (e) { }
         });
@@ -5080,7 +5337,7 @@ class GameScene extends Phaser.Scene {
                 }
             } else {
                 nextFacing = velocityY < 0 ? 'back' : 'front';
-                this.playerVerticalFacing = nextFacing;
+                    return; // Early return for wall reveal
             }
             this.playerFacing = nextFacing;
 
@@ -5108,7 +5365,7 @@ class GameScene extends Phaser.Scene {
                 this.player.setFlipX(false);
             } else if (facing === 'back_left') {
                 this.player.setTexture('player_back_right', 0);
-                this.player.setFlipX(true);
+                        return; // Early return after spawning miner
             } else if (facing === 'right') {
                 this.player.setTexture('player_right', 0);
                 this.player.setFlipX(false);
@@ -5434,8 +5691,44 @@ class GameScene extends Phaser.Scene {
             return;
         }
 
-        if (revealType === 'key' || revealType === 'pepita' || revealType === 'dynamite' || revealType === 'skeleton' || revealType === 'cart') {
+        if (revealType === 'key' || revealType === 'pepita' || revealType === 'dynamite' || revealType === 'cart') {
             createItemFromType(revealType);
+            this.tiles[gridY][gridX].type = 'floor';
+            return;
+        }
+
+        // Special-case: spawn the actual `old_miner` sprite when a hidden skeleton is revealed.
+        if (revealType === 'skeleton') {
+            if (this.textures && this.textures.exists && this.textures.exists('old_miner')) {
+                const miner = this.items.create(worldX, worldY, 'old_miner', 0);
+                const objectScaleFactor = CONFIG.objectSize / OBJECT_NATIVE_SIZE;
+                miner.setScale(objectScaleFactor);
+                if (miner.body) {
+                    miner.body.setSize(Math.floor(miner.displayWidth || miner.width), Math.floor(miner.displayHeight || miner.height));
+                }
+                miner.setData('type', 'skeleton');
+                miner.setData('gridX', gridX);
+                miner.setData('gridY', gridY);
+                this.tiles[gridY][gridX].type = 'floor';
+
+                // Play walk animation immediately if appropriate; default to facing player
+                try {
+                    const playerX = (this.player && typeof this.player.x === 'number') ? this.player.x : null;
+                    const faceRight = (playerX === null) ? true : (playerX <= worldX);
+                    if (faceRight) {
+                        if (this.anims.exists('miner_walk')) miner.play('miner_walk');
+                        miner.setFlipX(false);
+                    } else {
+                        if (this.anims.exists('miner_walk_rev')) miner.play('miner_walk_rev');
+                        miner.setFlipX(false);
+                    }
+                } catch (e) { /* ignore animation play errors */ }
+
+                return;
+            }
+
+            // Fallback: create generic object if old_miner texture not available
+            createItemFromType('skeleton');
             this.tiles[gridY][gridX].type = 'floor';
             return;
         }
@@ -7602,7 +7895,8 @@ class BonusScene extends Phaser.Scene {
         this.bonusSpawnY = startY;
 
         // Rider (miner) visible on top of the cart
-        this.cartRider = this.add.sprite(this.cart.x, this.cart.y - this.cart.displayHeight * 0.55, 'player_front', 0);
+        // Use the new old_miner skeleton sprite; default to frame 0 (idle) until activated
+        this.cartRider = this.add.sprite(this.cart.x, this.cart.y - this.cart.displayHeight * 0.55, 'old_miner', 0);
         const riderScale = Math.max(0.34, (Number(CONFIG.playerSize) || Number(CONFIG.objectSize) || OBJECT_NATIVE_SIZE) / 220);
         this.riderBaseScale = riderScale;
         this.cartRider.setScale(riderScale);
@@ -7973,7 +8267,36 @@ class BonusScene extends Phaser.Scene {
             this.cartRider.setPosition(this.cart.x, this.cart.y - riderOffsetY);
             const crouchScaleY = isCrouching ? this.riderBaseScale * 0.72 : this.riderBaseScale;
             this.cartRider.setScale(this.riderBaseScale, crouchScaleY);
-            this.cartRider.setFlipX((Number(this.cart.body?.velocity?.x) || 0) < 0);
+            // We use reversed animation for left-facing movement, so avoid horizontal flip here
+            this.cartRider.setFlipX(false);
+
+            // Play miner animation when cart is moving, otherwise hold frame 0
+            try {
+                const vx = Number(this.cart.body?.velocity?.x) || 0;
+                const speedNow = Math.abs(vx);
+                const moveThreshold = 6;
+                if (speedNow > moveThreshold) {
+                    if (vx >= 0) {
+                        if (this.anims.exists('miner_walk') && !(this.cartRider.anims && this.cartRider.anims.isPlaying)) {
+                            this.cartRider.play('miner_walk');
+                        } else if (this.cartRider.anims && this.cartRider.anims.currentAnim && this.cartRider.anims.currentAnim.key !== 'miner_walk') {
+                            this.cartRider.play('miner_walk');
+                        }
+                    } else {
+                        if (this.anims.exists('miner_walk_rev') && !(this.cartRider.anims && this.cartRider.anims.isPlaying)) {
+                            this.cartRider.play('miner_walk_rev');
+                        } else if (this.cartRider.anims && this.cartRider.anims.currentAnim && this.cartRider.anims.currentAnim.key !== 'miner_walk_rev') {
+                            this.cartRider.play('miner_walk_rev');
+                        }
+                    }
+                } else {
+                    // stopped: ensure animation stopped and frame 0 shown
+                    try {
+                        if (this.cartRider.anims && this.cartRider.anims.isPlaying) this.cartRider.anims.stop();
+                        this.cartRider.setFrame(0);
+                    } catch (e) { }
+                }
+            } catch (e) { }
         }
 
         const canJump = this.cart.body?.blocked?.down || this.cart.body?.touching?.down;
