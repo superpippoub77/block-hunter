@@ -4,7 +4,14 @@
     "X": "w00",
     "x": "w00"
   },
-  "background": 1,
+  "background": [
+    {
+      "src": 1,
+      "parallaxBgFactor": 0.96,
+      "parallaxBgAlpha": 1.0
+    }
+  ],
+  "foreground": [],
   "map": {
     "cols": 12,
     "rows": 12,

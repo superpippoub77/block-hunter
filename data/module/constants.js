@@ -17,10 +17,9 @@ export const OBJECT_FRAMES = {
     stones: 7,
     key: 8,
     sand_pile: 9,
-    ghost: 10,
     pepita: 11,
     wall: 12,
-    wooden: 12,
+    wooden: 10,
     hole1: 13,
     hole2: 14,
     exit: 14,
@@ -35,14 +34,20 @@ export const OBJECT_FRAMES = {
 
 // Tile frames mapping (tiles spritesheet: 6 frames per row, native tile size 64x48)
 export const TILE_FRAMES = {
-    wall: 0,
+    // New tiles.png row mapping (single row: sand, hole, hole_cover, water, mud, back_level)
+    sand: 0,
     hole: 1,
-    sand: 2,
-    sand1: 2, sand2: 2, sand3: 2, sand4: 2, sand5: 2,
-    sand6: 2, sand7: 2, sand8: 2, sand9: 2, sand10: 2,
-    floor: 3,
+    hole_cover: 2,
+    water: 3,
+    mud: 4,
+    back: 5,
+    // legacy aliases
+    sand1: 0, sand2: 0, sand3: 0, sand4: 0, sand5: 0,
+    sand6: 0, sand7: 0, sand8: 0, sand9: 0, sand10: 0,
+    // keep floor and stone aliases for compatibility (map 'floor' will use sand frame if unspecified)
+    floor: 0,
     stone: 4,
-    hole2: 5,
+    hole2: 1,
     sandPile: 4
 };
 

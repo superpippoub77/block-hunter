@@ -4,15 +4,27 @@
     "X": "w00",
     "x": "w00"
   },
-  "background": "images/level1.png",
-  "foreground": "images/foreground.png",
+  "background": [
+    {
+      "src": "images/level1.png",
+      "parallaxBgFactor": 0.96,
+      "parallaxBgAlpha": 1.0
+    }
+  ],
+  "foreground": [
+    {
+      "src": "images/foreground.png",
+      "parallaxFgFactor": 0.8,
+      "parallaxFgAlpha": 0.8
+    }
+  ],
   "map": {
     "cols": 12,
     "rows": 12,
     "timer": 120,
     "tiles": [
-      ["","","","","","","h","","","","c","exit"],
-      ["","","","","","p","","","","","",""],
+      ["","","","dynamite","","","h","","","","c","exit"],
+      ["","","","","","p","","wooden","heart","h","",""],
       ["","","#","x/m","d","x","x","x","","","",""],
       ["ghost","#","","f","f","f","f","f","x","","g",""],
       ["","","#","f","f","f","f","f","x","","","x/g"],

@@ -1493,7 +1493,7 @@ class ConfigScene extends Phaser.Scene {
         const objectNames = [
             ['dynamite', 'heart', 'stone', 'player'],
             ['dynamite_chest', 'door', 'gem', 'stones'],
-            ['key', 'sand_pile', 'ghost', 'pepita'],
+            ['key', 'sand_pile', 'wooden', 'pepita'],
             ['wall', 'hole1', 'hole2', 'explosion']
         ];
 
@@ -2024,82 +2024,160 @@ class GameScene extends Phaser.Scene {
             this.player.body.setCollideWorldBounds(true);
         }
 
-        // Resize and position background to cover the world, then let it scroll
-        if (this.gameBg) {
-            const bgWidth = Math.max(worldWidth, CONFIG.width);
-            const bgHeight = Math.max(worldHeight, CONFIG.height);
-            // Use top-left origin so BG aligns exactly to the map origin and matches FG sizing/positioning
-            try { this.gameBg.setOrigin(0, 0); } catch (e) { }
-            this.gameBg.setDisplaySize(bgWidth, bgHeight);
-            this.gameBg.setPosition(worldX, worldY);
-            // Use configured parallax factor for background so it matches parallaxBgFactor
-            this.gameBg.setScrollFactor(parallaxBgFactor);
+        // Resize and position background(s) to cover the world, then let them scroll.
+        // Support level-specific multi-layer backgrounds: levelData.background can be
+        // a single value or an array of entries. Each entry may be a string/number or
+        // an object with `src`, `parallaxBgFactor`, and `parallaxBgAlpha`.
+        const ensureBgEntrySrc = (entry) => {
+            if (entry && typeof entry === 'object') return entry.src;
+            return entry;
+        };
+
+        const bgWidth = Math.max(worldWidth, CONFIG.width);
+        const bgHeight = Math.max(worldHeight, CONFIG.height);
+
+        if (this.levelData && this.levelData.background != null) {
+            const specs = Array.isArray(this.levelData.background) ? this.levelData.background : [this.levelData.background];
+            this.gameBgs = [];
+            specs.forEach((entry, idx) => {
+                const src = ensureBgEntrySrc(entry);
+                let key = 'game_bg';
+                let dynamic = false;
+
+                if (typeof src === 'number' || (/^\d+$/.test(String(src)))) {
+                    key = `game_bg_${src}`;
+                } else if (typeof src === 'string') {
+                    if (this.textures.exists(src)) {
+                        key = src;
+                    } else {
+                        dynamic = true;
+                        key = `game_bg_level_${GAME_STATE.currentLevel}_bg_${idx}`;
+                    }
+                }
+
+                const parallaxFactor = (entry && typeof entry === 'object' && typeof entry.parallaxBgFactor === 'number')
+                    ? entry.parallaxBgFactor
+                    : ((typeof CONFIG.parallaxBgFactor === 'number') ? CONFIG.parallaxBgFactor : 0.96);
+
+                const alphaVal = (entry && typeof entry === 'object' && typeof entry.parallaxBgAlpha === 'number')
+                    ? Number(entry.parallaxBgAlpha)
+                    : (typeof CONFIG.parallaxBgAlpha === 'number' ? Number(CONFIG.parallaxBgAlpha) : 1);
+
+                const createBgImage = (textureKey) => {
+                    try {
+                        const img = this.add.image(worldX, worldY, textureKey);
+                        try { img.setOrigin(0, 0); } catch (e) { }
+                        img.setDisplaySize(bgWidth, bgHeight);
+                        img.setPosition(worldX, worldY);
+                        try { img.setDepth(-1000 - idx); } catch (e) { }
+                        try { img.setScrollFactor(parallaxFactor); } catch (e) { }
+                        try { img.setAlpha(Phaser.Math.Clamp(alphaVal, 0, 1)); } catch (e) { }
+                        this.gameBgs.push(img);
+                    } catch (e) { }
+                };
+
+                if (dynamic) {
+                    try {
+                        if (!this.textures.exists(key)) {
+                            this.load.image(key, src);
+                            this.load.once('complete', () => { try { if (this.textures.exists(key)) createBgImage(key); } catch (e) { } });
+                            this.load.start();
+                        } else {
+                            createBgImage(key);
+                        }
+                    } catch (e) { }
+                } else {
+                    if (this.textures.exists(key)) createBgImage(key);
+                }
+            });
+
+            // set primary refs for compatibility with existing code
+            if (this.gameBgs && this.gameBgs.length) this.gameBg = this.gameBgs[0];
+        } else {
+            if (this.gameBg) {
+                try { this.gameBg.setOrigin(0, 0); } catch (e) { }
+                this.gameBg.setDisplaySize(bgWidth, bgHeight);
+                this.gameBg.setPosition(worldX, worldY);
+                this.gameBg.setScrollFactor(parallaxBgFactor);
+            }
         }
 
-        // Foreground: create a parallax foreground image that sits above the game world.
+        // Foreground: support multi-layer foregrounds similar to backgrounds.
         try {
-            // Foreground parallax factor (moves slower than background by default)
-            const parallaxFgFactor = (typeof CONFIG.parallaxFgFactor === 'number')
+            const parallaxFgDefault = (typeof CONFIG.parallaxFgFactor === 'number')
                 ? CONFIG.parallaxFgFactor
                 : Math.max(0, (parallaxBgFactor || 0.96) * 0.88);
 
-            // Helper to instantiate the FG once the texture key is available
-            const createForegroundWithKey = (fgKey) => {
+            const defaultFgKey = 'game_fg';
+
+            const ensureFgEntrySrc = (entry) => { if (entry && typeof entry === 'object') return entry.src; return entry; };
+
+            const specs = (this.levelData && this.levelData.foreground != null)
+                ? (Array.isArray(this.levelData.foreground) ? this.levelData.foreground : [this.levelData.foreground])
+                : null;
+
+            this.gameFgs = [];
+
+            const createForegroundWithKey = (fgKey, entry, idx) => {
                 try {
                     if (!this.textures.exists(fgKey)) return;
-                    // Use top-left origin so FG aligns to the map origin
-                    this.gameFg = this.add.image(worldX, worldY, fgKey);
-                    this.gameFg.setOrigin(0, 0);
-                    // Match FG size to world extents so it covers the level
+                    const img = this.add.image(worldX, worldY, fgKey);
+                    img.setOrigin(0, 0);
                     const fgWidth = Math.max(worldWidth, CONFIG.width);
                     const fgHeight = Math.max(worldHeight, CONFIG.height);
-                    this.gameFg.setDisplaySize(fgWidth, fgHeight);
-                    this.gameFg.setPosition(worldX, worldY);
-                    // Place the foreground above world objects but below HUD by default
-                    try { this.gameFg.setDepth(3000); } catch (e) { }
-                    // Apply configurable alpha/transparency so the background is still visible
-                    try {
-                        const fgAlpha = (typeof CONFIG.parallaxFgAlpha === 'number') ? Number(CONFIG.parallaxFgAlpha) : 0.92;
-                        this.gameFg.setAlpha(Phaser.Math.Clamp(fgAlpha, 0, 1));
-                    } catch (e) { }
-                    // Use a scroll factor < background so the FG moves more slowly (parallax)
-                    this.gameFg.setScrollFactor(parallaxFgFactor);
+                    img.setDisplaySize(fgWidth, fgHeight);
+                    img.setPosition(worldX, worldY);
+                    try { img.setDepth(3000 + idx); } catch (e) { }
+
+                    const fgAlpha = (entry && typeof entry === 'object' && typeof entry.parallaxFgAlpha === 'number')
+                        ? Number(entry.parallaxFgAlpha)
+                        : (typeof CONFIG.parallaxFgAlpha === 'number' ? Number(CONFIG.parallaxFgAlpha) : 0.92);
+                    try { img.setAlpha(Phaser.Math.Clamp(fgAlpha, 0, 1)); } catch (e) { }
+
+                    const parallaxFactor = (entry && typeof entry === 'object' && typeof entry.parallaxFgFactor === 'number')
+                        ? entry.parallaxFgFactor
+                        : parallaxFgDefault;
+                    img.setScrollFactor(parallaxFactor);
+
+                    this.gameFgs.push(img);
+                    this.gameFg = this.gameFgs.length ? this.gameFgs[this.gameFgs.length - 1] : img;
                 } catch (e) { /* ignore failures creating FG */ }
             };
 
-            // Determine which FG to use: level override -> loaded key -> dynamic load -> default 'game_fg'
-            const defaultFgKey = 'game_fg';
-            const levelFgSpec = (this.levelData && typeof this.levelData.foreground === 'string') ? this.levelData.foreground.trim() : null;
+            if (specs && specs.length) {
+                specs.forEach((entry, idx) => {
+                    const src = ensureFgEntrySrc(entry);
+                    let key = defaultFgKey;
+                    let dynamic = false;
 
-            if (levelFgSpec) {
-                // If the specified string matches an already-loaded texture key, use it directly
-                if (this.textures.exists(levelFgSpec)) {
-                    createForegroundWithKey(levelFgSpec);
-                } else {
-                    // Treat the spec as a URL/path and load it dynamically into a unique key
-                    const generatedKey = `game_fg_level_${GAME_STATE.currentLevel}`;
-                    // If already loaded under the generated key, use it
-                    if (this.textures.exists(generatedKey)) {
-                        createForegroundWithKey(generatedKey);
-                    } else {
-                        try {
-                            // Start a one-off dynamic load for the requested foreground image
-                            this.load.image(generatedKey, levelFgSpec);
-                            this.load.once('complete', () => {
-                                try { createForegroundWithKey(generatedKey); } catch (e) { }
-                            });
-                            this.load.start();
-                        } catch (e) {
-                            // If dynamic load fails, fall back to default FG if available
-                            if (this.textures.exists(defaultFgKey)) createForegroundWithKey(defaultFgKey);
+                    if (typeof src === 'number' || (/^\d+$/.test(String(src)))) {
+                        key = `game_fg_level_${src}`;
+                    } else if (typeof src === 'string') {
+                        if (this.textures.exists(src)) {
+                            key = src;
+                        } else {
+                            dynamic = true;
+                            key = `game_fg_level_${GAME_STATE.currentLevel}_fg_${idx}`;
                         }
                     }
-                }
+
+                    if (dynamic) {
+                        try {
+                            if (!this.textures.exists(key)) {
+                                this.load.image(key, src);
+                                this.load.once('complete', () => { try { if (this.textures.exists(key)) createForegroundWithKey(key, entry, idx); } catch (e) { } });
+                                this.load.start();
+                            } else {
+                                createForegroundWithKey(key, entry, idx);
+                            }
+                        } catch (e) { }
+                    } else {
+                        if (this.textures.exists(key)) createForegroundWithKey(key, entry, idx);
+                    }
+                });
             } else {
                 // No level override: use the default game_fg texture if present
-                if (this.textures.exists(defaultFgKey)) {
-                    createForegroundWithKey(defaultFgKey);
-                }
+                if (this.textures.exists(defaultFgKey)) createForegroundWithKey(defaultFgKey, null, 0);
             }
         } catch (e) { }
 
@@ -2283,7 +2361,7 @@ class GameScene extends Phaser.Scene {
                 return { type: 'empty', wallFrame: 0, wallRotation: 0 };
             }
 
-            if (normalizedValue === 'floor' || normalizedValue === 'f') {
+            if (normalizedValue === 'floor') {
                 return { type: 'floor', wallFrame: 0, wallRotation: 0 };
             }
             if (normalizedValue === 'empty') {
@@ -2369,6 +2447,17 @@ class GameScene extends Phaser.Scene {
             // Support multi-character tokens like 'exit' which should map to hole2 (the exit frame)
             if (typeof value === 'string') {
                 const vnorm = value.trim().toLowerCase();
+                if (vnorm === 'bck' || vnorm === 'back' || vnorm === 'back_level') {
+                    return { type: 'back', wallFrame: 0, wallRotation: 0 };
+                }
+                if (vnorm === 'hc' || vnorm === 'hole_cover') {
+                    return { type: 'hole_cover', wallFrame: 0, wallRotation: 0 };
+                }
+            }
+
+            // Support multi-character tokens like 'exit' which should map to hole2 (the exit frame)
+            if (typeof value === 'string') {
+                const vnorm = value.trim().toLowerCase();
                 if (vnorm === 'exit' || vnorm === 'hole2') {
                     return { type: 'hole2', wallFrame: 0, wallRotation: 0 };
                 }
@@ -2376,8 +2465,10 @@ class GameScene extends Phaser.Scene {
 
             if (value.length === 1) {
                 switch (value) {
-                    case 'w': return { type: 'wall', wallFrame: 0, wallRotation: 0 };
-                    case 'f': return { type: 'floor', wallFrame: 0, wallRotation: 0 };
+                    // single-letter 'w' treated as water here; wall tokens like w12 are handled earlier
+                    case 'w': return { type: 'water', wallFrame: 0, wallRotation: 0 };
+                    // 'f' is mud (fango) per new mapping
+                    case 'f': return { type: 'mud', wallFrame: 0, wallRotation: 0 };
                     case 'm': return { type: 'skeleton', wallFrame: 0, wallRotation: 0 };
                     case '#': return { type: 'wall', wallFrame: 0, wallRotation: 0, invisible: true };
                     case 'h': return { type: 'hole', wallFrame: 0, wallRotation: 0 };
@@ -2550,6 +2641,32 @@ class GameScene extends Phaser.Scene {
                             }
                         }
                     }
+
+                        // If map explicitly specified a hole_cover token, create a persistent plank overlay
+                        if (type === 'hole_cover') {
+                            try {
+                                // mark tile as floor so player can walk on it
+                                type = 'floor';
+                                // create plank overlay visually
+                                const worldX = offsetX + x * CONFIG.tileSize + CONFIG.tileSize / 2;
+                                const worldY = offsetY + y * CONFIG.tileSize + CONFIG.tileSize / 2;
+                                let plank = null;
+                                if (this.textures && this.textures.exists('wooden_plank')) {
+                                    plank = this.add.image(worldX, worldY, 'wooden_plank');
+                                    plank.setDisplaySize(Math.round(CONFIG.tileSize * 0.98), Math.round(CONFIG.tileSize * 0.4));
+                                } else {
+                                    plank = this.add.sprite(worldX, worldY, 'objects', (OBJECT_FRAMES.wooden || OBJECT_FRAMES.cart));
+                                    plank.setScale((Number(CONFIG.objectSize) || OBJECT_NATIVE_SIZE) / OBJECT_NATIVE_SIZE);
+                                }
+                                plank.setDepth(3000);
+                                this.planks.add(plank);
+                                coverSprite = plank;
+                                // if tile sprite exists, set its frame to hole_cover for visual consistency
+                                try { if (tileSprite && tileSprite.setFrame) tileSprite.setFrame(TILE_FRAMES.hole_cover); } catch (e) { }
+                                // mark as covered
+                                try { if (tileSprite && tileSprite.setData) tileSprite.setData('covered', true); } catch (e) { }
+                            } catch (e) { }
+                        }
                 }
 
                 if (type === 'door' && this.doors) {
@@ -2640,6 +2757,9 @@ class GameScene extends Phaser.Scene {
                         this.applyKeyFloatingEffect(itemSprite);
                     }
                     coverSprite = itemSprite;
+                    if (type === 'dynamite') {
+                        try { this.levelHasDynamite = true; } catch (e) { }
+                    }
 
                     if (type === 'key' && this.keySpawnPositions) {
                         this.keySpawnPositions.push({ x: itemSprite.x, y: itemSprite.y });
@@ -2703,6 +2823,14 @@ class GameScene extends Phaser.Scene {
         this.mapCols = mapCols;
         this.mapOffsetX = offsetX;
         this.mapOffsetY = offsetY;
+
+        // If the level contains dynamite items in the map, grant extra dynamite sticks
+        try {
+            if (this.levelHasDynamite) {
+                GAME_STATE.dynamiteCount = (Number(GAME_STATE.dynamiteCount) || 0) + 50;
+                if (this.updateUI) this.updateUI();
+            }
+        } catch (e) { }
 
         // Foreground resizing/positioning removed here to keep logic simple.
         // The foreground will be created and positioned once the world bounds
@@ -4332,6 +4460,33 @@ class GameScene extends Phaser.Scene {
             f: Phaser.Input.Keyboard.KeyCodes.F
         });
 
+        // Build arrays of action keys based on config for both players
+        const toKeyCode = (name) => {
+            try {
+                const n = String(name || '').toUpperCase();
+                if (!n) return null;
+                if (Phaser.Input.Keyboard.KeyCodes[n] !== undefined) return Phaser.Input.Keyboard.KeyCodes[n];
+                return Phaser.Input.Keyboard.KeyCodes[n];
+            } catch (e) { return null; }
+        };
+
+        try {
+            const p1ActionNames = Array.isArray(p1action) ? p1action : (p1action ? [p1action] : ['Z']);
+            this.p1ActionKeys = p1ActionNames.map((nm) => {
+                const kc = toKeyCode(nm) || Phaser.Input.Keyboard.KeyCodes.Z;
+                return this.input.keyboard.addKey(kc);
+            });
+        } catch (e) { this.p1ActionKeys = []; }
+
+        try {
+            const p2action = Array.isArray(p2cfg.action) ? p2cfg.action : (p2cfg.action ? p2cfg.action : ['M','N']);
+            const p2ActionNames = Array.isArray(p2action) ? p2action : [p2action];
+            this.p2ActionKeys = p2ActionNames.map((nm) => {
+                const kc = toKeyCode(nm) || Phaser.Input.Keyboard.KeyCodes.F;
+                return this.input.keyboard.addKey(kc);
+            });
+        } catch (e) { this.p2ActionKeys = []; }
+
         this.lastDynamiteTime = 0;
         this.lastStepSoundTime = 0;
     }
@@ -4541,6 +4696,22 @@ class GameScene extends Phaser.Scene {
 
         this.topStatsObjects = [];
         this.refreshHudIcons();
+        // Action hint text shown when player is near a locked door and has a key
+        try {
+            if (!this.actionHint || !this.actionHint.destroy) {
+                this.actionHint = this.add.text(camW / 2, camH - 48, '', {
+                    fontSize: '14px',
+                    fill: '#ffff00',
+                    fontFamily: GAME_FONT,
+                    backgroundColor: 'rgba(0,0,0,0.6)',
+                    padding: { x: 8, y: 6 }
+                }).setOrigin(0.5);
+                this.actionHint.setScrollFactor(0);
+                this.actionHint.setDepth(HUD_DEPTH + 1);
+                this.actionHint.setVisible(false);
+                this.hudContainer.add(this.actionHint);
+            }
+        } catch (e) { }
         this.createObjectivePointerUI();
         // Ensure HUD elements are laid out according to current camera size
         if (this.updateHudLayout) this.updateHudLayout();
@@ -5186,9 +5357,11 @@ class GameScene extends Phaser.Scene {
             speed *= 2;
         }
 
-        // Check tile under player and trigger sand slow effect when stepping on sand
+        // Check tile under player and trigger tile-specific effects (sand, water, mud, back)
         const tile = this.getTileAt(this.player.x, this.player.y);
-        if (tile && tile.type === 'sand') {
+        if (tile && tile.type) {
+            // Sand slow
+            if (tile.type === 'sand') {
             try {
                 if (!this.playerSandActive) {
                     this.playerSandActive = true;
@@ -5212,6 +5385,45 @@ class GameScene extends Phaser.Scene {
                     }, [], this);
                 }
             } catch (e) { /* ignore sand effect errors */ }
+            }
+
+            // Water: deduct dynamite once per tile when stepped on
+            if (tile.type === 'water') {
+                try {
+                    if (!tile.waterTriggered) {
+                        tile.waterTriggered = true;
+                        GAME_STATE.dynamiteCount = Math.max(0, (Number(GAME_STATE.dynamiteCount) || 0) - 10);
+                        this.refreshHudIcons && this.refreshHudIcons();
+                        // small popup
+                        this.showScorePopup && this.showScorePopup(-10, this.player.x, this.player.y);
+                    }
+                } catch (e) { }
+            }
+
+            // Mud: freeze player for 3 seconds
+            if (tile.type === 'mud') {
+                try {
+                    if (!this.playerMudActive) {
+                        this.playerMudActive = true;
+                        // stop movement
+                        try { if (this.player.body) { this.player.body.setVelocity(0, 0); this.player.body.setEnable(false); } } catch (e) { }
+                        // small visual
+                        try { if (!this.playerMudHalo) { this.playerMudHalo = this.add.circle(this.player.x, this.player.y, (this.player.displayWidth || 16) * 0.8, 0x663300, 0.28).setDepth(900); } } catch (e) { }
+                        if (this.playerMudTimer) { try { this.playerMudTimer.remove(false); } catch (e) { } }
+                        this.playerMudTimer = this.time.delayedCall(3000, () => {
+                            this.playerMudActive = false;
+                            try { if (this.player.body) this.player.body.setEnable(true); } catch (e) { }
+                            try { if (this.playerMudHalo) { this.playerMudHalo.destroy(); this.playerMudHalo = null; } } catch (e) { }
+                            this.playerMudTimer = null;
+                        }, [], this);
+                    }
+                } catch (e) { }
+            }
+
+            // Back level token: return to previous level
+            if (tile.type === 'back') {
+                try { this.goToPreviousLevel(); } catch (e) { }
+            }
         }
 
         this.player.setVelocity(velocityX * speed, velocityY * speed);
@@ -5447,13 +5659,12 @@ class GameScene extends Phaser.Scene {
             this.toggleHeadlamp();
         }
 
-        // Action keys: Player1 Z, Player2 F (try to place plank or open door)
+        // Action keys: try placing plank first, otherwise open nearby door when action pressed
         try {
-            if (this.keys && this.keys.z && Phaser.Input.Keyboard.JustDown(this.keys.z)) {
-                // try placing plank for player1
+            const p1ActionPressed = Array.isArray(this.p1ActionKeys) && this.p1ActionKeys.some(k => Phaser.Input.Keyboard.JustDown(k));
+            if (p1ActionPressed) {
                 const used = this.placePlankFor(this.player);
                 if (!used) {
-                    // open nearby door for player1
                     const doors = this.doors?.children?.entries || [];
                     for (const door of doors) {
                         if (!door || !door.active) continue;
@@ -5467,12 +5678,8 @@ class GameScene extends Phaser.Scene {
             }
         } catch (e) { }
         try {
-            // Accept legacy F or new N / M keys for player2 action (place plank / open door)
-            const p2ActionF = this.p2Keys && this.p2Keys.f;
-            const p2ActionN = this.p2Keys && this.p2Keys.n;
-            const p2ActionM = this.p2Keys && this.p2Keys.m;
-            if ((p2ActionF && Phaser.Input.Keyboard.JustDown(p2ActionF)) || (p2ActionN && Phaser.Input.Keyboard.JustDown(p2ActionN)) || (p2ActionM && Phaser.Input.Keyboard.JustDown(p2ActionM))) {
-                // try placing plank for player2
+            const p2ActionPressed = Array.isArray(this.p2ActionKeys) && this.p2ActionKeys.some(k => Phaser.Input.Keyboard.JustDown(k));
+            if (p2ActionPressed) {
                 const used2 = this.placePlankFor(this.player2);
                 if (!used2) {
                     const doors = this.doors?.children?.entries || [];
@@ -5499,6 +5706,8 @@ class GameScene extends Phaser.Scene {
 
         // Check proximity to doors for opening
         this.checkDoorProximity();
+        // Check proximity to holes for placing planks (show action hint if player has planks)
+        this.checkHoleProximity();
 
         // Update headlamp cone to follow player/camera direction
         if (this.isRoomDark && this.headlampEnabled) {
@@ -5533,27 +5742,101 @@ class GameScene extends Phaser.Scene {
     checkDoorProximity() {
         if (!this.doors || !this.player) return;
         const doors = this.doors.children?.entries || [];
+        // Do not auto-open doors; require pressing the configured 'action' button.
         for (const door of doors) {
-            if (!door || !door.active) continue;
+            try { if (!door || !door.active) continue; } catch (e) { continue; }
+            // reset proximity flags for both players
+            try { door.setData && door.setData('playerNearbyP1', false); } catch (e) { }
+            try { door.setData && door.setData('playerNearbyP2', false); } catch (e) { }
             if (!door.getData('locked')) continue;
             if (door.getData('opening')) continue;
-            // In 2-player mode, check player1's keys; otherwise check global keys
-            if (Number(GAME_STATE.players) === 2) {
-                if ((Number(GAME_STATE.keysP1) || 0) <= 0) continue;
-            } else {
-                if ((Number(GAME_STATE.keysCount) || 0) <= 0) continue;
-            }
 
-            const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, door.x, door.y);
-            if (dist <= CONFIG.tileSize * 1.1) {
-                this.tryOpenDoor(this.player, door);
-                break;
-            }
+            // Player 1 proximity & key check
+            try {
+                const hasKeyP1 = (Number(GAME_STATE.players) === 2) ? ((Number(GAME_STATE.keysP1) || 0) > 0) : ((Number(GAME_STATE.keysCount) || 0) > 0);
+                if (hasKeyP1 && this.player) {
+                    const dist1 = Phaser.Math.Distance.Between(this.player.x, this.player.y, door.x, door.y);
+                    if (dist1 <= CONFIG.tileSize * 1.1) {
+                        try { door.setData && door.setData('playerNearbyP1', true); } catch (e) { }
+                    }
+                }
+            } catch (e) { }
+
+            // Player 2 proximity & key check (if present)
+            try {
+                if (this.player2) {
+                    const hasKeyP2 = (Number(GAME_STATE.keysP2) || 0) > 0;
+                    if (hasKeyP2) {
+                        const dist2 = Phaser.Math.Distance.Between(this.player2.x, this.player2.y, door.x, door.y);
+                        if (dist2 <= CONFIG.tileSize * 1.1) {
+                            try { door.setData && door.setData('playerNearbyP2', true); } catch (e) { }
+                        }
+                    }
+                }
+            } catch (e) { }
         }
     }
 
+    checkHoleProximity() {
+        // Determine if player(s) are adjacent to a hole and have wooden planks available
+        try {
+            this.holeNearbyP1 = false;
+            this.holeNearbyP2 = false;
+            this.holeNearbyTileP1 = null;
+            this.holeNearbyTileP2 = null;
+
+            const checkNearby = (player) => {
+                if (!player || !player.active) return null;
+                const px = player.x;
+                const py = player.y;
+                const gridX = Math.floor((px - this.mapOffsetX) / CONFIG.tileSize);
+                const gridY = Math.floor((py - this.mapOffsetY) / CONFIG.tileSize);
+                for (let dy = -1; dy <= 1; dy++) {
+                    for (let dx = -1; dx <= 1; dx++) {
+                        const gx = gridX + dx;
+                        const gy = gridY + dy;
+                        if (gy < 0 || gy >= (this.tiles?.length || 0)) continue;
+                        if (gx < 0 || gx >= (this.tiles[0]?.length || 0)) continue;
+                        const t = this.tiles[gy][gx];
+                        if (!t) continue;
+                        if (t.type === 'hole') {
+                            // If hole already covered (has coverSprite), ignore
+                            if (t.coverSprite && t.coverSprite.active) continue;
+                            const worldX = this.mapOffsetX + gx * CONFIG.tileSize + CONFIG.tileSize / 2;
+                            const worldY = this.mapOffsetY + gy * CONFIG.tileSize + CONFIG.tileSize / 2;
+                            const dist = Phaser.Math.Distance.Between(px, py, worldX, worldY);
+                            if (dist <= CONFIG.tileSize * 1.2) return t;
+                        }
+                    }
+                }
+                return null;
+            };
+
+            // Player 1
+            if (this.player) {
+                const tileP1 = checkNearby(this.player);
+                const hasWoodP1 = (Number(GAME_STATE.players) === 2) ? ((Number(GAME_STATE.woodenP1) || 0) > 0) : ((Number(GAME_STATE.woodenCount) || 0) > 0);
+                if (tileP1 && hasWoodP1) {
+                    this.holeNearbyP1 = true;
+                    this.holeNearbyTileP1 = tileP1;
+                }
+            }
+
+            // Player 2
+            if (this.player2) {
+                const tileP2 = checkNearby(this.player2);
+                const hasWoodP2 = (Number(GAME_STATE.woodenP2) || 0) > 0;
+                if (tileP2 && hasWoodP2) {
+                    this.holeNearbyP2 = true;
+                    this.holeNearbyTileP2 = tileP2;
+                }
+            }
+        } catch (e) { /* ignore proximity errors */ }
+    }
+
     onPlayerDoorCollide(player, door) {
-        this.tryOpenDoor(player, door);
+        // Do not auto-open on collision; opening must be triggered by pressing 'action' when nearby.
+        try { if (door && door.setData) door.setData('playerNearby', true); } catch (e) { }
     }
 
     getTileAt(x, y) {
@@ -5672,13 +5955,14 @@ class GameScene extends Phaser.Scene {
                 this.setupDoor(door);
                 this.hasDoorInMap = true;
             }
-            this.tiles[gridY][gridX].type = 'floor';
+            this.tiles[gridY][gridX].type = 'empty';
+            this.tiles[gridY][gridX].sprite = null;
             return;
         }
-
         if (revealType === 'key' || revealType === 'pepita' || revealType === 'dynamite' || revealType === 'cart' || revealType === 'skeleton') {
             createItemFromType(revealType);
-            this.tiles[gridY][gridX].type = 'floor';
+            this.tiles[gridY][gridX].type = 'empty';
+            this.tiles[gridY][gridX].sprite = null;
             return;
         }
 
@@ -5699,7 +5983,8 @@ class GameScene extends Phaser.Scene {
                 });
                 this.gemsRemaining = (Number(this.gemsRemaining) || 0) + 1;
             }
-            this.tiles[gridY][gridX].type = 'floor';
+            this.tiles[gridY][gridX].type = 'empty';
+            this.tiles[gridY][gridX].sprite = null;
             return;
         }
 
@@ -5708,7 +5993,8 @@ class GameScene extends Phaser.Scene {
                 this.hole2ExitPositions = [];
             }
             this.hole2ExitPositions.push({ x: worldX, y: worldY, gridX, gridY });
-            this.tiles[gridY][gridX].type = 'floor';
+            this.tiles[gridY][gridX].type = 'empty';
+            this.tiles[gridY][gridX].sprite = null;
 
             if (this.hole2ExitsActive && (Number(this.gemsRemaining) || 0) <= 0) {
                 this.spawnHole2ExitAt(worldX, worldY, gridX, gridY);
@@ -6388,31 +6674,42 @@ class GameScene extends Phaser.Scene {
         }
         door.setData('opening', true);
         door.setData('locked', false);
-        if (door.disableBody) {
-            door.disableBody(true, true);
-        } else {
-            door.setVisible(false);
-            if (door.body) {
-                door.body.enable = false;
+        try {
+            // Replace door visually with hole1 frame while opened (row 4, col 2)
+            if (typeof door.setFrame === 'function') {
+                door.setFrame(OBJECT_FRAMES.hole1);
             }
-        }
+            if (door.body) {
+                // disable collisions while open
+                try { door.body.enable = false; } catch (e) { }
+            }
+            if (door.disableBody) {
+                try { door.disableBody(true, true); } catch (e) { }
+            }
+        } catch (e) { }
 
         // Respawn key and re-close door after 10 seconds
         this.time.delayedCall(10000, () => {
             if (!door) return;
-            if (door.enableBody) {
-                door.enableBody(false, door.x, door.y, true, true);
-                if (door.refreshBody) {
-                    door.refreshBody();
+            try {
+                // Restore door frame and re-enable collisions when re-closing
+                if (typeof door.setFrame === 'function') {
+                    door.setFrame(OBJECT_FRAMES.door);
                 }
-            } else {
-                door.setVisible(true);
-                if (door.body) {
-                    door.body.enable = true;
+                if (door.enableBody) {
+                    door.enableBody(false, door.x, door.y, true, true);
+                    if (door.refreshBody) {
+                        door.refreshBody();
+                    }
+                } else {
+                    door.setVisible(true);
+                    if (door.body) {
+                        try { door.body.enable = true; } catch (e) { }
+                    }
                 }
-            }
-            door.setData('locked', true);
-            door.setData('opening', false);
+                door.setData('locked', true);
+                door.setData('opening', false);
+            } catch (e) { }
 
             this.respawnKey();
         });
@@ -6653,7 +6950,8 @@ class GameScene extends Phaser.Scene {
                                 GAME_STATE.woodenCount = Math.max(0, (Number(GAME_STATE.woodenCount) || 0) - 1);
                             }
                             tt.type = 'floor';
-                            try { if (tt.sprite && tt.sprite.setFrame) tt.sprite.setFrame(3); } catch (e) { }
+                            try { if (tt.sprite && tt.sprite.setFrame) tt.sprite.setFrame(TILE_FRAMES.hole_cover); } catch (e) { }
+                            try { if (tt.sprite && tt.sprite.setData) tt.sprite.setData('covered', true); } catch (e) { }
 
                             // create visual plank overlay - prefer runtime wooden_plank texture if present
                             try {
@@ -6704,9 +7002,10 @@ class GameScene extends Phaser.Scene {
                 if (!this.tiles[gy] || !this.tiles[gy][gx]) continue;
                 const tt = this.tiles[gy][gx];
                 if (!tt) continue;
-                // mark as floor and add overlay if not already
+                // mark as floor, set hole_cover frame and add overlay if not already
                 tt.type = 'floor';
-                try { if (tt.sprite && tt.sprite.setFrame) tt.sprite.setFrame(3); } catch (e) { }
+                try { if (tt.sprite && tt.sprite.setFrame) tt.sprite.setFrame(TILE_FRAMES.hole_cover); } catch (e) { }
+                try { if (tt.sprite && tt.sprite.setData) tt.sprite.setData('covered', true); } catch (e) { }
                 if (!tt.coverSprite) {
                     const worldX = (this.mapOffsetX || 0) + gx * CONFIG.tileSize + CONFIG.tileSize / 2;
                     const worldY = (this.mapOffsetY || 0) + gy * CONFIG.tileSize + CONFIG.tileSize / 2;
@@ -7468,6 +7767,63 @@ class GameScene extends Phaser.Scene {
         } catch (e) { }
 
         this.refreshHudIcons();
+
+        // Update action hint: show when player1 or player2 is near a locked door and has a key
+        try {
+            let hintShown = false;
+            const doors = this.doors?.children?.entries || [];
+            for (const door of doors) {
+                if (!door || !door.active) continue;
+                if (!door.getData || !door.getData('locked')) continue;
+                if (door.getData('opening')) continue;
+                // Prefer player1 hint if both nearby
+                if (door.getData('playerNearbyP1')) {
+                    // show P1 action label
+                    const actionNames = (CONFIG.controlPanel?.player1?.action) || ['Z'];
+                    const label = Array.isArray(actionNames) ? String(actionNames[0]) : String(actionNames);
+                    if (this.actionHint && this.actionHint.setText) {
+                        this.actionHint.setText(`Premi [${label}] per aprire`);
+                        this.actionHint.setVisible(true);
+                    }
+                    hintShown = true;
+                    break;
+                } else if (door.getData('playerNearbyP2')) {
+                    const actionNames2 = (CONFIG.controlPanel?.player2?.action) || ['M'];
+                    const label2 = Array.isArray(actionNames2) ? String(actionNames2[0]) : String(actionNames2);
+                    if (this.actionHint && this.actionHint.setText) {
+                        this.actionHint.setText(`Premi [${label2}] per aprire`);
+                        this.actionHint.setVisible(true);
+                    }
+                    hintShown = true;
+                    break;
+                }
+            }
+
+            // If no door hint shown, check for nearby holes where player can place a plank
+            if (!hintShown) {
+                try {
+                    if (this.holeNearbyP1) {
+                        const actionNames = (CONFIG.controlPanel?.player1?.action) || ['Z'];
+                        const label = Array.isArray(actionNames) ? String(actionNames[0]) : String(actionNames);
+                        if (this.actionHint && this.actionHint.setText) {
+                            this.actionHint.setText(`Premi [${label}] per coprire la buca`);
+                            this.actionHint.setVisible(true);
+                        }
+                        hintShown = true;
+                    } else if (this.holeNearbyP2) {
+                        const actionNames2 = (CONFIG.controlPanel?.player2?.action) || ['M'];
+                        const label2 = Array.isArray(actionNames2) ? String(actionNames2[0]) : String(actionNames2);
+                        if (this.actionHint && this.actionHint.setText) {
+                            this.actionHint.setText(`Premi [${label2}] per coprire la buca`);
+                            this.actionHint.setVisible(true);
+                        }
+                        hintShown = true;
+                    }
+                } catch (e) { }
+            }
+
+            if (!hintShown && this.actionHint) this.actionHint.setVisible(false);
+        } catch (e) { }
     }
 
     refreshHudIcons() {
@@ -7524,35 +7880,45 @@ class GameScene extends Phaser.Scene {
             return txt;
         };
 
-        // Cuori: show per-player hearts in multiplayer, otherwise single hearts
+        // Cuori: show single heart icon + numeric count (per-player in 2P)
         if (Number(GAME_STATE.players) === 2) {
             const p1Lives = Number(GAME_STATE.livesP1) || 0;
-            for (let i = 0; i < p1Lives; i++) addIcon(OBJECT_FRAMES.heart);
+            addIcon(OBJECT_FRAMES.heart);
+            addCountText(p1Lives, '#ff8888');
             x += sectionGap;
             const p2Lives = Number(GAME_STATE.livesP2) || 0;
-            for (let i = 0; i < p2Lives; i++) addIcon(OBJECT_FRAMES.heart);
+            addIcon(OBJECT_FRAMES.heart);
+            addCountText(p2Lives, '#ff8888');
         } else {
-            for (let i = 0; i < (Number(GAME_STATE.lives) || 0); i++) addIcon(OBJECT_FRAMES.heart);
+            const lives = Number(GAME_STATE.lives) || 0;
+            addIcon(OBJECT_FRAMES.heart);
+            addCountText(lives, '#ff8888');
         }
         x += sectionGap;
 
-        // Keys and wooden planks: show per-player stacks in 2-player mode, otherwise global
+        // Keys and wooden planks: show icon + numeric count (per-player in 2P)
         if (Number(GAME_STATE.players) === 2) {
-            // Player 1 inventory
             const p1Keys = Number(GAME_STATE.keysP1) || 0;
-            for (let i = 0; i < p1Keys; i++) addIcon(OBJECT_FRAMES.key);
+            addIcon(OBJECT_FRAMES.key);
+            addCountText(p1Keys, '#ffffff');
             const p1Wood = Number(GAME_STATE.woodenP1) || 0;
-            for (let i = 0; i < p1Wood; i++) addIcon(OBJECT_FRAMES.wooden);
+            addIcon(OBJECT_FRAMES.wooden);
+            addCountText(p1Wood, '#ffffff');
             x += sectionGap;
-            // Player 2 inventory
             const p2Keys = Number(GAME_STATE.keysP2) || 0;
-            for (let i = 0; i < p2Keys; i++) addIcon(OBJECT_FRAMES.key);
+            addIcon(OBJECT_FRAMES.key);
+            addCountText(p2Keys, '#ffffff');
             const p2Wood = Number(GAME_STATE.woodenP2) || 0;
-            for (let i = 0; i < p2Wood; i++) addIcon(OBJECT_FRAMES.wooden);
+            addIcon(OBJECT_FRAMES.wooden);
+            addCountText(p2Wood, '#ffffff');
             x += sectionGap;
         } else {
-            for (let i = 0; i < (Number(GAME_STATE.keysCount) || 0); i++) addIcon(OBJECT_FRAMES.key);
-            for (let i = 0; i < (Number(GAME_STATE.woodenCount) || 0); i++) addIcon(OBJECT_FRAMES.wooden);
+            const keys = Number(GAME_STATE.keysCount) || 0;
+            addIcon(OBJECT_FRAMES.key);
+            addCountText(keys, '#ffffff');
+            const wood = Number(GAME_STATE.woodenCount) || 0;
+            addIcon(OBJECT_FRAMES.wooden);
+            addCountText(wood, '#ffffff');
             x += sectionGap;
         }
 
