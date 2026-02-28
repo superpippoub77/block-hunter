@@ -425,8 +425,7 @@ class PreloadScene extends Phaser.Scene {
                 frameWidth: 139,
                 frameHeight: 135
             })
-            // Old miner skeleton (10 frames: 0..9)
-            .spritesheet('old_miner', 'images/old_miner.png', defaultFrame)
+            
             .audio('intro_bgm', 'data/music/intro.mp3')
             .audio('game_bgm', 'data/music/game.mp3')
             .audio('step_sfx', 'data/music/step.mp3')
@@ -1854,21 +1853,7 @@ class GameScene extends Phaser.Scene {
             });
         }
 
-        // Miner (old_miner) skeleton: 10 frames (0..9)
-        // Frame 0 = idle/still. When active: right movement uses frames 1..9, left movement uses 9..1.
-        if (!this.anims.exists('miner_walk')) {
-            this.anims.create({
-                key: 'miner_walk',
-                frames: this.anims.generateFrameNumbers('old_miner', { start: 1, end: 9 }),
-                frameRate: 10,
-                repeat: -1
-            });
-        }
-        if (!this.anims.exists('miner_walk_rev')) {
-            const mf = this.anims.generateFrameNumbers('old_miner', { start: 1, end: 9 });
-            const mfr = mf.slice().reverse();
-            this.anims.create({ key: 'miner_walk_rev', frames: mfr, frameRate: 10, repeat: -1 });
-        }
+        // Note: miner sprites are not animated here (no dedicated walk animations)
 
         // Background selection: prefer level-specific `background` if provided in JSON,
         // otherwise fallback to master-level image (game_bg_1..game_bg_5) or default 'game_bg'.
@@ -2588,7 +2573,7 @@ class GameScene extends Phaser.Scene {
                     else if (type === 'wooden') frame = OBJECT_FRAMES.wooden;
                     else if (type === 'cart') frame = OBJECT_FRAMES.cart;
                     else if (type === 'helmet') frame = OBJECT_FRAMES.helmet;
-                    // Keep map token visuals as `objects` until revealed; actual skeleton (old_miner)
+                    // Keep map token visuals as `objects` until revealed; actual skeleton
                     // will be spawned when the tile is revealed.
                     const itemSprite = this.items.create(
                         offsetX + x * CONFIG.tileSize + CONFIG.tileSize / 2,
@@ -5691,44 +5676,8 @@ class GameScene extends Phaser.Scene {
             return;
         }
 
-        if (revealType === 'key' || revealType === 'pepita' || revealType === 'dynamite' || revealType === 'cart') {
+        if (revealType === 'key' || revealType === 'pepita' || revealType === 'dynamite' || revealType === 'cart' || revealType === 'skeleton') {
             createItemFromType(revealType);
-            this.tiles[gridY][gridX].type = 'floor';
-            return;
-        }
-
-        // Special-case: spawn the actual `old_miner` sprite when a hidden skeleton is revealed.
-        if (revealType === 'skeleton') {
-            if (this.textures && this.textures.exists && this.textures.exists('old_miner')) {
-                const miner = this.items.create(worldX, worldY, 'old_miner', 0);
-                const objectScaleFactor = CONFIG.objectSize / OBJECT_NATIVE_SIZE;
-                miner.setScale(objectScaleFactor);
-                if (miner.body) {
-                    miner.body.setSize(Math.floor(miner.displayWidth || miner.width), Math.floor(miner.displayHeight || miner.height));
-                }
-                miner.setData('type', 'skeleton');
-                miner.setData('gridX', gridX);
-                miner.setData('gridY', gridY);
-                this.tiles[gridY][gridX].type = 'floor';
-
-                // Play walk animation immediately if appropriate; default to facing player
-                try {
-                    const playerX = (this.player && typeof this.player.x === 'number') ? this.player.x : null;
-                    const faceRight = (playerX === null) ? true : (playerX <= worldX);
-                    if (faceRight) {
-                        if (this.anims.exists('miner_walk')) miner.play('miner_walk');
-                        miner.setFlipX(false);
-                    } else {
-                        if (this.anims.exists('miner_walk_rev')) miner.play('miner_walk_rev');
-                        miner.setFlipX(false);
-                    }
-                } catch (e) { /* ignore animation play errors */ }
-
-                return;
-            }
-
-            // Fallback: create generic object if old_miner texture not available
-            createItemFromType('skeleton');
             this.tiles[gridY][gridX].type = 'floor';
             return;
         }
@@ -7895,8 +7844,7 @@ class BonusScene extends Phaser.Scene {
         this.bonusSpawnY = startY;
 
         // Rider (miner) visible on top of the cart
-        // Use the new old_miner skeleton sprite; default to frame 0 (idle) until activated
-        this.cartRider = this.add.sprite(this.cart.x, this.cart.y - this.cart.displayHeight * 0.55, 'old_miner', 0);
+        this.cartRider = this.add.sprite(this.cart.x, this.cart.y - this.cart.displayHeight * 0.55, 'objects', OBJECT_FRAMES.wall);
         const riderScale = Math.max(0.34, (Number(CONFIG.playerSize) || Number(CONFIG.objectSize) || OBJECT_NATIVE_SIZE) / 220);
         this.riderBaseScale = riderScale;
         this.cartRider.setScale(riderScale);
@@ -8270,32 +8218,10 @@ class BonusScene extends Phaser.Scene {
             // We use reversed animation for left-facing movement, so avoid horizontal flip here
             this.cartRider.setFlipX(false);
 
-            // Play miner animation when cart is moving, otherwise hold frame 0
+            // No miner animations: keep the cart rider as the static `objects` sprite
             try {
-                const vx = Number(this.cart.body?.velocity?.x) || 0;
-                const speedNow = Math.abs(vx);
-                const moveThreshold = 6;
-                if (speedNow > moveThreshold) {
-                    if (vx >= 0) {
-                        if (this.anims.exists('miner_walk') && !(this.cartRider.anims && this.cartRider.anims.isPlaying)) {
-                            this.cartRider.play('miner_walk');
-                        } else if (this.cartRider.anims && this.cartRider.anims.currentAnim && this.cartRider.anims.currentAnim.key !== 'miner_walk') {
-                            this.cartRider.play('miner_walk');
-                        }
-                    } else {
-                        if (this.anims.exists('miner_walk_rev') && !(this.cartRider.anims && this.cartRider.anims.isPlaying)) {
-                            this.cartRider.play('miner_walk_rev');
-                        } else if (this.cartRider.anims && this.cartRider.anims.currentAnim && this.cartRider.anims.currentAnim.key !== 'miner_walk_rev') {
-                            this.cartRider.play('miner_walk_rev');
-                        }
-                    }
-                } else {
-                    // stopped: ensure animation stopped and frame 0 shown
-                    try {
-                        if (this.cartRider.anims && this.cartRider.anims.isPlaying) this.cartRider.anims.stop();
-                        this.cartRider.setFrame(0);
-                    } catch (e) { }
-                }
+                if (this.cartRider.anims && this.cartRider.anims.isPlaying) this.cartRider.anims.stop();
+                this.cartRider.setFrame(OBJECT_FRAMES.wall);
             } catch (e) { }
         }
 
