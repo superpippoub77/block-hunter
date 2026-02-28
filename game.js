@@ -4625,6 +4625,12 @@ class GameScene extends Phaser.Scene {
         const camW = (cam && cam.width) ? cam.width : (this.scale.width || CONFIG.width);
         const camH = (cam && cam.height) ? cam.height : (this.scale.height || CONFIG.height);
 
+        // Top HUD background overlay (semi-transparent) to improve readability
+        try {
+            this.hudTopBg = this.add.rectangle(camW / 2, 18, camW, 36, 0x000000, 0.45).setOrigin(0.5, 0.5);
+            this.hudContainer.add(this.hudTopBg);
+        } catch (e) { this.hudTopBg = null; }
+
         this.scoreText = this.add.text(10, 10, `${t.score_label}: ${GAME_STATE.score}`, {
             fontSize: '16px',
             fill: '#ffffff',
@@ -4651,6 +4657,11 @@ class GameScene extends Phaser.Scene {
             fill: '#ffffff',
             fontFamily: GAME_FONT
         }).setOrigin(0, 0.5);
+        // Bottom HUD background overlay (semi-transparent) behind timer/pepitas
+        try {
+            this.hudBottomBg = this.add.rectangle(camW / 2, pepitaY, camW, 40, 0x000000, 0.45).setOrigin(0.5, 0.5);
+            this.hudContainer.add(this.hudBottomBg);
+        } catch (e) { this.hudBottomBg = null; }
         this.hudContainer.add(this.timerLabel);
         const timerLabelWidth = Number(this.timerLabel?.width) || 52;
         const pepitaStartX = 10 + timerLabelWidth + 8;
@@ -4785,9 +4796,24 @@ class GameScene extends Phaser.Scene {
         if (this.levelText) {
             this.levelText.setX(camW - 10);
         }
+        // reposition top HUD background
+        try {
+            if (this.hudTopBg) {
+                this.hudTopBg.setPosition(camW / 2, 18);
+                this.hudTopBg.setDisplaySize(camW, 36);
+            }
+        } catch (e) { }
         if (this.timerLabel) {
             this.timerLabel.setY(camH - 16);
         }
+        // reposition bottom HUD background
+        try {
+            const pepitaY = camH - 16;
+            if (this.hudBottomBg) {
+                this.hudBottomBg.setPosition(camW / 2, pepitaY);
+                this.hudBottomBg.setDisplaySize(camW, 40);
+            }
+        } catch (e) { }
         // reposition pepitas and disabled overlays
         if (this.timerPepitas && this.timerPepitas.length > 0) {
             const timerLabelWidth = Number(this.timerLabel?.width) || 52;
