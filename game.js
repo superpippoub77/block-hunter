@@ -290,6 +290,14 @@ class PreloadScene extends Phaser.Scene {
 
     // Load title, background, tiles, objects, and all level JSON files
     preload() {
+        // Clear any stored state at game start to ensure a clean session
+        try {
+            if (window && window.sessionStorage) sessionStorage.clear();
+        } catch (e) { }
+        try {
+            if (window && window.localStorage) localStorage.clear();
+        } catch (e) { }
+
         this.add.rectangle(400, 300, 800, 600, 0x000000, 1).setDepth(0);
         const loadingText = this.add.text(400, 300, 'loading', {
             fontSize: '28px',
@@ -2557,6 +2565,7 @@ class GameScene extends Phaser.Scene {
                 }
 
                 // Object tiles are rendered without floor underneath
+                // Treat all in-map object tokens as 'empty' so no floor tile is drawn
                 const tileType = (type === 'door'
                     || type === 'key'
                     || type === 'pepita'
@@ -2564,7 +2573,10 @@ class GameScene extends Phaser.Scene {
                     || type === 'gem'
                     || type === 'cart'
                     || type === 'skeleton'
-                    || type === 'hole2')
+                    || type === 'hole2'
+                    || type === 'heart'
+                    || type === 'helmet'
+                    || type === 'wooden')
                     ? 'empty'
                     : type;
                 const normalizedTileType = (tileType === 'bat' || tileType === 'ghost') ? 'floor' : tileType;
@@ -2647,24 +2659,15 @@ class GameScene extends Phaser.Scene {
                             try {
                                 // mark tile as floor so player can walk on it
                                 type = 'floor';
-                                // create plank overlay visually
-                                const worldX = offsetX + x * CONFIG.tileSize + CONFIG.tileSize / 2;
-                                const worldY = offsetY + y * CONFIG.tileSize + CONFIG.tileSize / 2;
-                                let plank = null;
-                                if (this.textures && this.textures.exists('wooden_plank')) {
-                                    plank = this.add.image(worldX, worldY, 'wooden_plank');
-                                    plank.setDisplaySize(Math.round(CONFIG.tileSize * 0.98), Math.round(CONFIG.tileSize * 0.4));
+                                // Use tiles.png hole_cover frame instead of creating a separate plank image
+                                if (tileSprite && tileSprite.setFrame) {
+                                    try { tileSprite.setFrame(TILE_FRAMES.hole_cover); } catch (e) { }
+                                    try { tileSprite.setData && tileSprite.setData('covered', true); } catch (e) { }
+                                    coverSprite = tileSprite;
                                 } else {
-                                    plank = this.add.sprite(worldX, worldY, 'objects', (OBJECT_FRAMES.wooden || OBJECT_FRAMES.cart));
-                                    plank.setScale((Number(CONFIG.objectSize) || OBJECT_NATIVE_SIZE) / OBJECT_NATIVE_SIZE);
+                                    // fallback: create no extra overlay, still mark covered on data container
+                                    try { coverSprite = null; } catch (e) { }
                                 }
-                                plank.setDepth(3000);
-                                this.planks.add(plank);
-                                coverSprite = plank;
-                                // if tile sprite exists, set its frame to hole_cover for visual consistency
-                                try { if (tileSprite && tileSprite.setFrame) tileSprite.setFrame(TILE_FRAMES.hole_cover); } catch (e) { }
-                                // mark as covered
-                                try { if (tileSprite && tileSprite.setData) tileSprite.setData('covered', true); } catch (e) { }
                             } catch (e) { }
                         }
                 }
@@ -6953,23 +6956,15 @@ class GameScene extends Phaser.Scene {
                             try { if (tt.sprite && tt.sprite.setFrame) tt.sprite.setFrame(TILE_FRAMES.hole_cover); } catch (e) { }
                             try { if (tt.sprite && tt.sprite.setData) tt.sprite.setData('covered', true); } catch (e) { }
 
-                            // create visual plank overlay - prefer runtime wooden_plank texture if present
+                            // Use tiles.png hole_cover frame for visual cover instead of separate plank image
                             try {
-                                const worldX = (this.mapOffsetX || 0) + gx * CONFIG.tileSize + CONFIG.tileSize / 2;
-                                const worldY = (this.mapOffsetY || 0) + gy * CONFIG.tileSize + CONFIG.tileSize / 2;
-                                let plank = null;
-                                if (this.textures && this.textures.exists('wooden_plank')) {
-                                    plank = this.add.image(worldX, worldY, 'wooden_plank');
-                                    // size it relative to objectSize
-                                    const scale = (Number(CONFIG.objectSize) || OBJECT_NATIVE_SIZE) / OBJECT_NATIVE_SIZE;
-                                    plank.setDisplaySize(Math.round(CONFIG.tileSize * 0.98), Math.round(CONFIG.tileSize * 0.4));
+                                if (tt.sprite && tt.sprite.setFrame) {
+                                    tt.sprite.setFrame(TILE_FRAMES.hole_cover);
+                                    tt.sprite.setData && tt.sprite.setData('covered', true);
+                                    tt.coverSprite = tt.sprite;
                                 } else {
-                                    plank = this.add.sprite(worldX, worldY, 'objects', (OBJECT_FRAMES.wooden || OBJECT_FRAMES.cart));
-                                    plank.setScale((Number(CONFIG.objectSize) || OBJECT_NATIVE_SIZE) / OBJECT_NATIVE_SIZE);
+                                    tt.coverSprite = null;
                                 }
-                                plank.setDepth((tt.sprite && tt.sprite.depth) ? tt.sprite.depth + 1 : 3000);
-                                this.planks.add(plank);
-                                tt.coverSprite = plank;
                             } catch (e) { }
 
                             // persist placed plank for this level
@@ -7006,21 +7001,8 @@ class GameScene extends Phaser.Scene {
                 tt.type = 'floor';
                 try { if (tt.sprite && tt.sprite.setFrame) tt.sprite.setFrame(TILE_FRAMES.hole_cover); } catch (e) { }
                 try { if (tt.sprite && tt.sprite.setData) tt.sprite.setData('covered', true); } catch (e) { }
-                if (!tt.coverSprite) {
-                    const worldX = (this.mapOffsetX || 0) + gx * CONFIG.tileSize + CONFIG.tileSize / 2;
-                    const worldY = (this.mapOffsetY || 0) + gy * CONFIG.tileSize + CONFIG.tileSize / 2;
-                    let plank = null;
-                    if (this.textures && this.textures.exists('wooden_plank')) {
-                        plank = this.add.image(worldX, worldY, 'wooden_plank');
-                        plank.setDisplaySize(Math.round(CONFIG.tileSize * 0.98), Math.round(CONFIG.tileSize * 0.4));
-                    } else {
-                        plank = this.add.sprite(worldX, worldY, 'objects', (OBJECT_FRAMES.wooden || OBJECT_FRAMES.cart));
-                        plank.setScale((Number(CONFIG.objectSize) || OBJECT_NATIVE_SIZE) / OBJECT_NATIVE_SIZE);
-                    }
-                    plank.setDepth((tt.sprite && tt.sprite.depth) ? tt.sprite.depth + 1 : 3000);
-                    this.planks.add(plank);
-                    tt.coverSprite = plank;
-                }
+                // Do not create a separate wooden_plank overlay. Use the tile frame as the cover.
+                try { tt.coverSprite = (tt.sprite ? tt.sprite : null); } catch (e) { tt.coverSprite = null; }
             }
         } catch (e) { }
     }
