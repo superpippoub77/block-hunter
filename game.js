@@ -3,6 +3,8 @@
 // ============================================================================
 
 import { OBJECT_FRAMES, TILE_FRAMES, WALL_TILE_COLS } from './data/module/constants.js';
+import { createLanguageCarousel } from './module/languageCarousel.js';
+import { createCreditsManager } from './module/creditsManager.js';
 
 // Global configuration (populated from /data/config.json)
 const CONFIG = {};
@@ -756,71 +758,20 @@ class AttractScene extends Phaser.Scene {
         // If you want to re-enable it later, restore the legend block here.
 
         // Panels and UI elements (HUD placed on top using HUD_DEPTH)
-        this.coinText = this.add.text(400, 520, '', {
-            fontSize: '24px',
-            fill: '#ffee00ff',
-            fontFamily: GAME_FONT
-        }).setOrigin(0.5).setDepth(HUD_DEPTH).setScrollFactor(0);
-        // no coinPanel graphic: remove decorative frame under the coin text
-        this.coinPanel = null;
-        this.player1Text = this.add.text(150, 550, '', {
-            fontSize: '18px',
-            fill: '#666666',
-            fontFamily: GAME_FONT
-        }).setOrigin(0.5).setDepth(HUD_DEPTH).setScrollFactor(0);
-        // no player1Panel graphic: remove decorative frame under the player1 text
-        this.player1Panel = null;
-        this.player2Text = this.add.text(650, 550, '', {
-            fontSize: '18px',
-            fill: '#666666',
-            fontFamily: GAME_FONT
-        }).setOrigin(0.5).setDepth(HUD_DEPTH).setScrollFactor(0);
-        // no player2Panel graphic: remove decorative frame under the player2 text
-        this.player2Panel = null;
+        try {
+            this.creditManager = createCreditsManager(this, { gameState: GAME_STATE, config: CONFIG, hudDepth: HUD_DEPTH, font: GAME_FONT, x: 400 });
+        } catch (e) {
+            // fallback: create minimal texts directly
+            this.coinText = this.add.text(400, 520, '', { fontSize: '24px', fill: '#ffee00ff', fontFamily: GAME_FONT }).setOrigin(0.5).setDepth(HUD_DEPTH).setScrollFactor(0);
+            this.coinPanel = null;
+            this.player1Text = this.add.text(150, 550, '', { fontSize: '18px', fill: '#666666', fontFamily: GAME_FONT }).setOrigin(0.5).setDepth(HUD_DEPTH).setScrollFactor(0);
+            this.player1Panel = null;
+            this.player2Text = this.add.text(650, 550, '', { fontSize: '18px', fill: '#666666', fontFamily: GAME_FONT }).setOrigin(0.5).setDepth(HUD_DEPTH).setScrollFactor(0);
+            this.player2Panel = null;
+        }
 
-        // Language selector with flags
-        this.flagSprite = this.add.sprite(400, 560, 'flags', this.currentLangIndex).setOrigin(0.5).setDepth(HUD_DEPTH).setScrollFactor(0);
-        this.tweens.add({
-            targets: this.flagSprite,
-            scaleX: 1.05,
-            scaleY: 0.98,
-            angle: -2,
-            duration: 400,
-            yoyo: true,
-            repeat: -1,
-            ease: 'Sine.easeInOut'
-        });
-        this.tweens.add({
-            targets: this.flagSprite,
-            y: 558,
-            duration: 600,
-            yoyo: true,
-            repeat: -1,
-            ease: 'Sine.easeInOut',
-            delay: 200
-        });
-        this.leftArrow = this.add.text(320, 560, '◄', {
-            fontSize: '24px',
-            fill: '#ffffff',
-            fontFamily: GAME_FONT
-        }).setOrigin(0.5).setInteractive().setDepth(HUD_DEPTH).setScrollFactor(0).on('pointerdown', () => this.changeLanguage(-1));
-        this.rightArrow = this.add.text(480, 560, '►', {
-            fontSize: '24px',
-            fill: '#ffffff',
-            fontFamily: GAME_FONT
-        }).setOrigin(0.5).setInteractive().setDepth(HUD_DEPTH).setScrollFactor(0).on('pointerdown', () => this.changeLanguage(1));
-
-        // helper to pulse an arrow and temporarily change color to yellow
-        this.pulseArrow = (arrow) => {
-            if (!arrow) return;
-            try {
-                const original = (arrow.style && arrow.style.fill) || '#ffffff';
-                arrow.setStyle && arrow.setStyle({ fill: '#ffff00' });
-                this.tweens.add({ targets: arrow, scaleX: 1.6, scaleY: 1.6, duration: 120, yoyo: true, ease: 'Sine.easeOut', onComplete: () => {
-                    try { arrow.setStyle && arrow.setStyle({ fill: original }); } catch (e) { }
-                }});
-            } catch (e) { }
-        };
+        // Language selector with flags (use shared language carousel module)
+        this.carousel = createLanguageCarousel(this, { languages: this.languages, index: this.currentLangIndex, x: 400, y: 560, hudDepth: HUD_DEPTH, font: GAME_FONT });
 
         // Signature text for attract mode
         // signature text removed from bottom-center in AttractScene (keep credit via addSpikeCredit)
@@ -848,9 +799,25 @@ class AttractScene extends Phaser.Scene {
     }
 
     setupInput() {
-        // Coin insert
-        this.input.keyboard.on('keydown-FIVE', () => this.insertCoin());
-        this.input.keyboard.on('keydown-SIX', () => this.insertCoin());
+        // Coin insert (route to creditManager if available)
+        this.input.keyboard.on('keydown-FIVE', () => {
+            try {
+                if (this.creditManager && typeof this.creditManager.insertCoin === 'function') {
+                    this.creditManager.insertCoin();
+                } else {
+                    this.insertCoin();
+                }
+            } catch (e) { this.insertCoin(); }
+        });
+        this.input.keyboard.on('keydown-SIX', () => {
+            try {
+                if (this.creditManager && typeof this.creditManager.insertCoin === 'function') {
+                    this.creditManager.insertCoin();
+                } else {
+                    this.insertCoin();
+                }
+            } catch (e) { this.insertCoin(); }
+        });
 
         // Start game
         this.input.keyboard.on('keydown-ONE', () => this.startGame(1));
@@ -897,6 +864,14 @@ class AttractScene extends Phaser.Scene {
     }
 
     insertCoin() {
+        // prefer creditManager implementation if present
+        try {
+            if (this.creditManager && typeof this.creditManager.insertCoin === 'function') {
+                this.creditManager.insertCoin({ volume: 0.45 });
+                return;
+            }
+        } catch (e) { }
+
         if (this.sound) {
             this.sound.play('coin_sfx', { volume: 0.45 });
         }
