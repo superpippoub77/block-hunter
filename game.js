@@ -2455,6 +2455,7 @@ class GameScene extends Phaser.Scene {
                     case 'm': return { type: 'skeleton', wallFrame: 0, wallRotation: 0 };
                     case '#': return { type: 'wall', wallFrame: 0, wallRotation: 0, invisible: true };
                     case 'h': return { type: 'hole', wallFrame: 0, wallRotation: 0 };
+                    case '.': return { type: 'hole', wallFrame: 0, wallRotation: 0, noTile: true };
                     case 's': return { type: 'sand', wallFrame: 0, wallRotation: 0 };
                     case 'g': return { type: 'gem', wallFrame: 0, wallRotation: 0 };
                     case '-': return { type: 'empty', wallFrame: 0, wallRotation: 0 };
@@ -2511,6 +2512,7 @@ class GameScene extends Phaser.Scene {
                 let wallRotation = 0;
                 let wallFlip = '0';
                 let hiddenReveal = null;
+                let tileNoTile = false;
 
                 // If we have map data from JSON, use it
                 if (mapData && mapData[y] && mapData[y][x] !== undefined) {
@@ -2521,6 +2523,7 @@ class GameScene extends Phaser.Scene {
                     wallFlip = cell.wallFlip || '0';
                     hiddenReveal = cell.hiddenReveal || null;
                     var tileInvisible = !!cell.invisible;
+                    tileNoTile = !!cell.noTile;
                 } else {
                     // Fallback to old random generation
                     // Border walls
@@ -2541,7 +2544,7 @@ class GameScene extends Phaser.Scene {
 
                 // Object tiles are rendered without floor underneath
                 // Treat all in-map object tokens as 'empty' so no floor tile is drawn
-                const tileType = (type === 'door'
+                const tileType = (tileNoTile || type === 'door'
                     || type === 'key'
                     || type === 'pepita'
                     || type === 'dynamite'
@@ -2786,7 +2789,9 @@ class GameScene extends Phaser.Scene {
                     });
                 }
 
-                this.tiles[y][x] = { type: normalizedTileType, sprite: tileSprite };
+                // Store logical type (for game logic) and sprite separately. Use original
+                // `type` as the tile `type` so holes are recognized even when no tile is drawn.
+                this.tiles[y][x] = { type: type, sprite: tileSprite };
                 if (hiddenReveal) {
                     this.tiles[y][x].hiddenReveal = hiddenReveal;
                     this.tiles[y][x].coverType = type;
