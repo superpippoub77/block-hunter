@@ -14,7 +14,7 @@
   "dynamiteSize": 40,
   "shardSpeed": 150,
   "dynamiteLifetime": 5000,
-  "enableImpactShake": false,
+  "enableImpactShake": true,
   "sandSlowFactor": 0.5,
   "sandSlowDuration": 10000,
   "shardLifetime": 2000,

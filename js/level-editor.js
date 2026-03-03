@@ -22,10 +22,14 @@ const OBJECT_FRAMES = {
 const STORAGE_KEY = 'blockHunterLevelEditorState';
 const WALL_TOKEN_REGEX = /^w(\d)(\d)(\d)([hv0])$/i;
 
+// Available numeric level backgrounds discovered from images/level<N>.png
+const AVAILABLE_BG_LEVELS = [1,2,3,4,5,6];
+
 const BASE_PALETTE_ITEMS = [
     { token: '-', label: 'vuoto' },
     { token: 'f', label: 'floor' },
     { token: 'h', label: 'hole1' },
+    { token: '.', label: 'hole (.)' },
     { token: 's', label: 'hole2' },
     { token: 'g', label: 'gem marker' },
     { token: 'd', label: 'door' },
@@ -94,6 +98,14 @@ const DEFAULT_LEVEL = {
     ,
     background: 1,
     backgroundEnabled: true
+    ,
+    rain: {
+        enabled: false,
+        intensity: 1,
+        frequency: 180,
+        wind: 0,
+        direction: 'down'
+    }
 };
 
 function el(id) {
@@ -256,9 +268,12 @@ class LevelEditorScene extends Phaser.Scene {
 
         // preload possible game backgrounds so the editor can offer them
         this.load.image('game_bg', 'images/game_bg.png');
-        for (let i = 1; i <= 5; i++) {
-            this.load.image(`game_bg_${i}`, `images/level${i}.png`);
-        }
+        // load all discovered numeric level backgrounds
+        try {
+            (AVAILABLE_BG_LEVELS || []).forEach((n) => {
+                this.load.image(`game_bg_${String(n)}`, `images/level${String(n)}.png`);
+            });
+        } catch (e) { /* ignore */ }
     }
 
     create() {
@@ -311,12 +326,14 @@ class LevelEditorScene extends Phaser.Scene {
 
         addOption('', '(default)');
         // prefer numbered level backgrounds if textures exist
-        for (let i = 1; i <= 5; i++) {
-            const key = `game_bg_${i}`;
-            if (this.textures.exists(key)) {
-                addOption(String(i), `level${i}`);
-            }
-        }
+        try {
+            (AVAILABLE_BG_LEVELS || []).forEach((n) => {
+                const key = `game_bg_${String(n)}`;
+                if (this.textures.exists(key)) {
+                    addOption(String(n), `level${String(n)}`);
+                }
+            });
+        } catch (e) { /* ignore */ }
         // add generic game_bg if present and not already represented
         if (this.textures.exists('game_bg')) {
             addOption('game_bg', 'game_bg');
@@ -769,6 +786,7 @@ class LevelEditorScene extends Phaser.Scene {
             case 'f': return { kind: 'tile', texture: 'tiles', frame: 3 };
             case 'h': return { kind: 'tile', texture: 'tiles', frame: 1 };
             case 's': return { kind: 'tile', texture: 'tiles', frame: 5 };
+            case '.': return { kind: 'tile', texture: 'tiles', frame: 1 };
             case 'g': return { kind: 'obj', frame: OBJECT_FRAMES.gem };
             case 'd': return { kind: 'obj', frame: OBJECT_FRAMES.door };
             case 'k': return { kind: 'obj', frame: OBJECT_FRAMES.key };
@@ -1027,6 +1045,8 @@ function drawMiniMapToken(scene, ctx, token, x, y, size, opts = {}) {
             return drawMiniMapFrame(scene, ctx, 'tiles', 3, x, y, size, { alpha: opts.alpha });
         case 'h':
             return drawMiniMapFrame(scene, ctx, 'tiles', 1, x, y, size, { alpha: opts.alpha });
+        case '.':
+            return drawMiniMapFrame(scene, ctx, 'tiles', 1, x, y, size, { alpha: opts.alpha });
         case 's':
             return drawMiniMapFrame(scene, ctx, 'tiles', 5, x, y, size, { alpha: opts.alpha });
         case 'g':
@@ -1235,6 +1255,17 @@ function readLevelFromForm() {
     // include background enabled flag
     level.backgroundEnabled = !!el('showBackground')?.checked;
 
+    // rain/weather
+    level.rain = {
+        enabled: !!el('rainEnabled')?.checked,
+        intensity: parseNumber(el('rainIntensity')?.value, 1),
+        frequency: parseNumber(el('rainFrequency')?.value, 180),
+        wind: parseNumber(el('rainWind')?.value, 0),
+        direction: String(el('rainDirection')?.value || 'down'),
+        interval: parseNumber(el('rainInterval')?.value, 5),
+        duration: parseNumber(el('rainDuration')?.value, 0)
+    };
+
     const bgRaw = String(el('levelBackground')?.value ?? '').trim();
     if (bgRaw) {
         if (/^\d+$/.test(bgRaw)) {
@@ -1274,6 +1305,13 @@ function applyLevelToForm(levelData) {
     el('levelBackground').value = data.background ? String(data.background) : '';
     if (el('showBackground')) el('showBackground').checked = data.backgroundEnabled !== undefined ? !!data.backgroundEnabled : true;
     if (el('autoGridFromBg')) el('autoGridFromBg').checked = true;
+    if (el('rainEnabled')) el('rainEnabled').checked = !!data.rain?.enabled;
+    if (el('rainIntensity')) el('rainIntensity').value = data.rain?.intensity ?? 1;
+    if (el('rainFrequency')) el('rainFrequency').value = data.rain?.frequency ?? 180;
+    if (el('rainWind')) el('rainWind').value = data.rain?.wind ?? 0;
+    if (el('rainDirection')) el('rainDirection').value = data.rain?.direction ?? 'down';
+    if (el('rainInterval')) el('rainInterval').value = data.rain?.interval ?? 5;
+    if (el('rainDuration')) el('rainDuration').value = data.rain?.duration ?? 0;
 
     el('srEnabled').value = String(!!staticRocks.enabled);
     el('srDynamicSize').value = staticRocks.dynamicSize === null ? 'null' : JSON.stringify(staticRocks.dynamicSize);
@@ -1415,6 +1453,9 @@ function bindUI() {
         'srDynamicSize', 'srRotation', 'srChaotic', 'dbEnabled', 'dbSplitOnImpact',
         'dbDirections', 'dbSizes', 'dbSplitRange', 'dbMaxSplitGen', 'extraRootJson'
     ];
+
+    // include rain controls for realtime preview updates
+    realtimeFields.push('rainEnabled', 'rainIntensity', 'rainFrequency', 'rainWind', 'rainDirection', 'rainInterval', 'rainDuration');
 
     realtimeFields.forEach((id) => {
         const input = el(id);

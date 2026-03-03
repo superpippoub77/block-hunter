@@ -234,6 +234,7 @@
                         <option value="3">level3</option>
                         <option value="4">level4</option>
                         <option value="5">level5</option>
+                        <option value="6">level6</option>
                     </select>
                 </div>
                 <div style="margin-top:6px; display:flex; align-items:center; gap:8px;">
@@ -250,6 +251,44 @@
                     <div>
                         <label for="batCount">Bat</label>
                         <input id="batCount" type="number" min="0" value="2">
+                    </div>
+                </div>
+                <div style="margin-top:8px;">
+                    <label style="display:block; font-size:9px; color:#b6caef; margin-bottom:4px;">Weather / Rain</label>
+                    <label style="display:flex; align-items:center; gap:8px; margin-bottom:6px;"><input id="rainEnabled" type="checkbox" style="width:auto; margin-right:6px;">Abilita pioggia</label>
+                    <div class="grid2">
+                        <div>
+                            <label for="rainIntensity">Intensità (0.1 - 5)</label>
+                            <input id="rainIntensity" type="number" step="0.1" min="0.1" max="5" value="1">
+                        </div>
+                        <div>
+                            <label for="rainFrequency">Frequenza (ms)</label>
+                            <input id="rainFrequency" type="number" min="20" value="180">
+                        </div>
+                    </div>
+                    <div class="grid2" style="margin-top:6px;">
+                        <div>
+                            <label for="rainWind">Vento X (neg = sinistra, pos = destra)</label>
+                            <input id="rainWind" type="number" step="1" min="-500" max="500" value="0">
+                        </div>
+                        <div>
+                            <label for="rainDirection">Direzione</label>
+                            <select id="rainDirection">
+                                <option value="down">down</option>
+                                <option value="left">left</option>
+                                <option value="right">right</option>
+                                <option value="random">random</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label for="rainInterval">Intervallo (s)</label>
+                            <input id="rainInterval" type="number" step="0.5" min="0" value="5">
+                        </div>
+                        <div>
+                            <label for="rainDuration">Durata (s, 0 = continuo)</label>
+                            <input id="rainDuration" type="number" step="0.5" min="0" value="0">
+                        </div>
+                        </div>
                     </div>
                 </div>
                 <div class="grid2" style="margin-top:6px;">

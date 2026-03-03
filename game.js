@@ -345,6 +345,16 @@ class PreloadScene extends Phaser.Scene {
                         }
                         dotIndex = (dotIndex + 1) % 3;
                     } catch (e) { }
+                    // restart bat sound if missing (branch without bat_fly_start)
+                    try {
+                        const sfx3 = bat.getData && bat.getData('sfx');
+                        if (!sfx3 && this.sound && this.sound.add) {
+                            const sfxNew2 = this.sound.add('bat_sfx', { loop: true, volume: 0.7 });
+                            sfxNew2.play();
+                            bat.setData('sfx', sfxNew2);
+                            try { bat.on && bat.on('destroy', () => { try { sfxNew2.stop && sfxNew2.stop(); sfxNew2.destroy && sfxNew2.destroy(); } catch (e) { } }); } catch (e) { }
+                        }
+                    } catch (e) { }
                 }
             });
             // List of recently loaded files shown under the loading text
@@ -445,7 +455,9 @@ class PreloadScene extends Phaser.Scene {
             .audio('level_completed_sfx', 'data/music/level_completed.mp3')
             .audio('coin_sfx', 'data/music/coin.mp3')
             .audio('select_sfx', 'data/music/select.mp3')
-            .audio('ghost_sfx', 'data/music/ghost.mp3');
+            .audio('ghost_sfx', 'data/music/ghost.mp3')
+            .audio('bat_sfx', 'data/music/bat.mp3')
+            .audio('rain_sfx', 'data/music/rain.mp3');
 
         // Load all level JSON files (50 levels)
         // Carica solo i livelli con sottolivello 0-4 per ogni decade
@@ -1877,6 +1889,8 @@ class GameScene extends Phaser.Scene {
             .setScrollFactor(parallaxBgFactor)
             .setDepth(-1000);
 
+        
+
         // If the level requested a background image path that wasn't preloaded, load it dynamically
         if (pendingDynamicBg) {
             try {
@@ -1938,6 +1952,157 @@ class GameScene extends Phaser.Scene {
                 ...this.levelData,
                 dynamicBoulders: mergedDynamicBoulders
             };
+        }
+
+        // --- Rain / weather effect (configurable from level JSON)
+        try {
+            const rainCfg = (this.levelData && (this.levelData.rain || (this.levelData.weather && this.levelData.weather.rain))) || null;
+            const clearRain = () => {
+                try {
+                    if (this.rainEmitter) { try { this.rainEmitter.stop && this.rainEmitter.stop(); } catch (e) { } this.rainEmitter = null; }
+                    if (this.rainParticles) { try { this.rainParticles.destroy && this.rainParticles.destroy(); } catch (e) { } this.rainParticles = null; }
+                    if (this.rainTimer) { try { this.rainTimer.remove(false); } catch (e) { } this.rainTimer = null; }
+                    if (this.rainMasterTimer) { try { this.rainMasterTimer.remove(false); } catch (e) { } this.rainMasterTimer = null; }
+                    if (this.rainBurstTimer) { try { this.rainBurstTimer.remove(false); } catch (e) { } this.rainBurstTimer = null; }
+                    if (this.rainGroup) { try { this.rainGroup.clear(true, true); } catch (e) { } this.rainGroup = null; }
+                    try {
+                        if (this.rainSfx) { try { this.rainSfx.stop && this.rainSfx.stop(); } catch (e) { } try { this.rainSfx.destroy && this.rainSfx.destroy(); } catch (e) { } this.rainSfx = null; }
+                    } catch (e) { }
+                    this.rainActive = false;
+                    this.currentRain = null;
+                } catch (e) { }
+            };
+
+            if (rainCfg && (rainCfg.enabled === true || String(rainCfg.enabled) === 'true')) {
+                const intensity = Phaser.Math.Clamp(Number(rainCfg.intensity) || 1, 0.1, 5); // 0.1..5
+                const frequency = Phaser.Math.Clamp(Number(rainCfg.frequency) || 180, 20, 2000); // ms between emissions
+
+                if (!this.textures.exists('raindrop')) {
+                    const g = this.add.graphics({ x: 0, y: 0 });
+                    g.fillStyle(0xa6daff, 1);
+                    g.fillRect(0, 0, 2, 12);
+                    try { g.generateTexture('raindrop', 2, 12); } catch (e) { }
+                    g.destroy();
+                }
+
+                try {
+                    console.log('Rain config', rainCfg);
+                    const qty = Math.max(1, Math.round(1 + intensity * 2));
+                    const windX = Phaser.Math.Clamp(Number(rainCfg.wind) || 0, -500, 500);
+                    const gameW = CONFIG.width || (this.scale && this.scale.width) || 800;
+                    const gameH = CONFIG.height || (this.scale && this.scale.height) || 600;
+
+                    // simple custom rain: spawn images and tween them down
+                    this.rainGroup = this.rainGroup || this.add.group();
+
+                    const directionMode = String(rainCfg.direction || 'down');
+
+                    const spawnDrop = () => {
+                        const x = Phaser.Math.Between(0, gameW);
+                        const startY = -10 - Phaser.Math.Between(0, 80);
+                        const drop = this.add.image(x, startY, 'raindrop').setOrigin(0.5).setScrollFactor(0).setDepth(1000).setAlpha(0.95);
+                        const speedY = Phaser.Math.Between(400 * intensity, 700 * intensity); // px/s
+                        const travel = gameH - startY + 30;
+                        const duration = Math.max(200, Math.round((travel / speedY) * 1000));
+                        let windOffset = 0;
+                        if (directionMode === 'random') {
+                            windOffset = Phaser.Math.Between(-300, 300);
+                        } else if (directionMode === 'left') {
+                            const mag = Math.max(50, Math.abs(Number(rainCfg.wind) || 200));
+                            windOffset = -mag + Phaser.Math.Between(-30, 30);
+                        } else if (directionMode === 'right') {
+                            const mag = Math.max(50, Math.abs(Number(rainCfg.wind) || 200));
+                            windOffset = mag + Phaser.Math.Between(-30, 30);
+                        } else {
+                            // down (default) — windX influences horizontal drift
+                            windOffset = windX + Phaser.Math.Between(-30, 30);
+                        }
+
+                        this.tweens.add({
+                            targets: drop,
+                            x: drop.x + windOffset,
+                            y: gameH + 30,
+                            duration: duration,
+                            ease: 'Linear',
+                            onComplete: () => { try { drop.destroy(); } catch (e) { } }
+                        });
+                        this.rainGroup.add(drop);
+                    };
+
+                    // Handle continuous mode or burst mode (interval/duration)
+                    const intervalSec = Math.max(0, Number(rainCfg.interval) || 0);
+                    const durationSec = Math.max(0, Number(rainCfg.duration) || 0);
+
+                    if (durationSec > 0 && intervalSec > 0) {
+                        // Master timer that starts bursts every `intervalSec`
+                        this.rainMasterTimer = this.time.addEvent({
+                            delay: intervalSec * 1000,
+                            loop: true,
+                            callback: () => {
+                                // start burst emitter that spawns every `frequency` ms
+                                const burst = this.time.addEvent({
+                                    delay: frequency,
+                                    loop: true,
+                                    callback: () => {
+                                        for (let i = 0; i < qty; i++) spawnDrop();
+                                    }
+                                });
+                                this.rainBurstTimer = burst;
+                                // start rain audio for the burst
+                                try {
+                                    if (this.sound && this.sound.add) {
+                                        if (!this.rainSfx) {
+                                            this.rainSfx = this.sound.add('rain_sfx', { loop: true, volume: 0.6 });
+                                        }
+                                        try { this.rainSfx.play(); } catch (e) { }
+                                    }
+                                } catch (e) { }
+                                // schedule burst stop after durationSec
+                                this.time.addEvent({ delay: durationSec * 1000, callback: () => {
+                                    try { burst.remove(false); } catch (e) { }
+                                    if (this.rainBurstTimer === burst) this.rainBurstTimer = null;
+                                    // stop rain audio at end of burst
+                                    try {
+                                        if (this.rainSfx) {
+                                            try { this.rainSfx.stop && this.rainSfx.stop(); } catch (e) { }
+                                            try { this.rainSfx.destroy && this.rainSfx.destroy(); } catch (e) { }
+                                            this.rainSfx = null;
+                                        }
+                                    } catch (e) { }
+                                } });
+                            }
+                        });
+                        this.rainActive = true;
+                        this.currentRain = { intensity, frequency, wind: windX, direction: directionMode, interval: intervalSec, duration: durationSec };
+                        console.log('Rain master timer started', { qty, frequency, intervalSec, durationSec, windX });
+                    } else {
+                        // continuous spawning at `frequency` ms
+                        this.rainTimer = this.time.addEvent({
+                            delay: frequency,
+                            loop: true,
+                            callback: () => {
+                                for (let i = 0; i < qty; i++) spawnDrop();
+                            }
+                        });
+                        this.rainActive = true;
+                        this.currentRain = { intensity, frequency, wind: windX, direction: directionMode, interval: 0, duration: 0 };
+                        try {
+                            if (this.sound && this.sound.add && !this.rainSfx) {
+                                this.rainSfx = this.sound.add('rain_sfx', { loop: true, volume: 0.6 });
+                                this.rainSfx.play();
+                            }
+                        } catch (e) { }
+                        console.log('Rain continuous timer started', { qty, frequency, windX });
+                    }
+                } catch (e) {
+                    console.warn('Rain emitter failed', e);
+                    clearRain();
+                }
+            } else {
+                clearRain();
+            }
+        } catch (e) {
+            // ignore
         }
 
         // Create groups
@@ -3864,6 +4029,17 @@ class GameScene extends Phaser.Scene {
         } else {
             this.setBatRandomVelocity(bat);
         }
+        // play looping bat sound on spawn and attach to bat
+        try {
+            if (this.sound && this.sound.add) {
+                try {
+                    const sfx = this.sound.add('bat_sfx', { loop: true, volume: 0.7 });
+                    sfx.play();
+                    bat.setData('sfx', sfx);
+                    try { bat.on && bat.on('destroy', () => { try { sfx.stop && sfx.stop(); sfx.destroy && sfx.destroy(); } catch (e) { } }); } catch (e) { }
+                } catch (e) { }
+            }
+        } catch (e) { }
 
         // schedule periodic rest if configured for this level
         if (restInterval > 0) {
@@ -3962,6 +4138,16 @@ class GameScene extends Phaser.Scene {
             try { bat.setFrame(0); } catch (e) { }
             bat.setData('isResting', true);
 
+            // stop bat sound while resting
+            try {
+                const sfx = bat.getData && bat.getData('sfx');
+                if (sfx) {
+                    try { sfx.stop && sfx.stop(); } catch (e) { }
+                    try { sfx.destroy && sfx.destroy(); } catch (e) { }
+                    bat.setData('sfx', null);
+                }
+            } catch (e) { }
+
             const restSeconds = Number(bat.getData('restSeconds')) || 2;
             const t = this.time.delayedCall(restSeconds * 1000, () => {
                 if (!bat || !bat.active) return;
@@ -3989,6 +4175,16 @@ class GameScene extends Phaser.Scene {
                                     this.enterBatRest(bat);
                                 });
                                 bat.setData('restIntervalTimer', t2);
+                            }
+                        } catch (e) { }
+                        // restart bat sound if missing
+                        try {
+                            const sfx2 = bat.getData && bat.getData('sfx');
+                            if (!sfx2 && this.sound && this.sound.add) {
+                                const sfxNew = this.sound.add('bat_sfx', { loop: true, volume: 0.7 });
+                                sfxNew.play();
+                                bat.setData('sfx', sfxNew);
+                                try { bat.on && bat.on('destroy', () => { try { sfxNew.stop && sfxNew.stop(); sfxNew.destroy && sfxNew.destroy(); } catch (e) { } }); } catch (e) { }
                             }
                         } catch (e) { }
                     };
@@ -5435,11 +5631,41 @@ class GameScene extends Phaser.Scene {
             }
         }
 
-        this.player.setVelocity(velocityX * speed, velocityY * speed);
-        // apply velocity for player2 if present
+        // Apply velocities, with sliding when rain is active
+        try {
+            const desiredVX = velocityX * speed;
+            const desiredVY = velocityY * speed;
+            if (this.rainActive && this.currentRain) {
+                const intensity = Number(this.currentRain.intensity) || 1;
+                let traction = 0.35 / intensity; // higher intensity -> lower traction
+                traction = Phaser.Math.Clamp(traction, 0.03, 1);
+                const curVX = (this.player.body && this.player.body.velocity) ? this.player.body.velocity.x : 0;
+                const curVY = (this.player.body && this.player.body.velocity) ? this.player.body.velocity.y : 0;
+                const newVX = Phaser.Math.Linear(curVX, desiredVX, traction);
+                const newVY = Phaser.Math.Linear(curVY, desiredVY, traction);
+                this.player.setVelocity(newVX, newVY);
+            } else {
+                this.player.setVelocity(desiredVX, desiredVY);
+            }
+        } catch (e) { try { this.player.setVelocity(velocityX * speed, velocityY * speed); } catch (e2) { } }
+
+        // apply velocity for player2 if present (same sliding effect)
         try {
             if (this.player2 && this.player2.active) {
-                this.player2.setVelocity(p2VelocityX * speed, p2VelocityY * speed);
+                const desired2X = p2VelocityX * speed;
+                const desired2Y = p2VelocityY * speed;
+                if (this.rainActive && this.currentRain) {
+                    const intensity2 = Number(this.currentRain.intensity) || 1;
+                    let traction2 = 0.35 / intensity2;
+                    traction2 = Phaser.Math.Clamp(traction2, 0.03, 1);
+                    const cur2X = (this.player2.body && this.player2.body.velocity) ? this.player2.body.velocity.x : 0;
+                    const cur2Y = (this.player2.body && this.player2.body.velocity) ? this.player2.body.velocity.y : 0;
+                    const new2X = Phaser.Math.Linear(cur2X, desired2X, traction2);
+                    const new2Y = Phaser.Math.Linear(cur2Y, desired2Y, traction2);
+                    this.player2.setVelocity(new2X, new2Y);
+                } else {
+                    this.player2.setVelocity(desired2X, desired2Y);
+                }
             }
         } catch (e) { }
 
@@ -6443,6 +6669,13 @@ class GameScene extends Phaser.Scene {
         if (this.levelStats) {
             this.levelStats.batsCaught = (Number(this.levelStats.batsCaught) || 0) + 1;
         }
+        try {
+            const sfx = bat.getData && bat.getData('sfx');
+            if (sfx) {
+                try { sfx.stop && sfx.stop(); } catch (e) { }
+                try { sfx.destroy && sfx.destroy(); } catch (e) { }
+            }
+        } catch (e) { }
         bat.destroy();
         this.explodeDynamite(dynamite);
     }
