@@ -550,8 +550,16 @@ class LevelEditorScene extends Phaser.Scene {
             container.setInteractive(new Phaser.Geom.Rectangle(-58, -24, 116, 48), Phaser.Geom.Rectangle.Contains);
             this.input.setDraggable(container);
 
-            container.on('pointerdown', () => {
+            container.on('pointerdown', (pointer) => {
                 this.lastBrushToken = container.getData('token');
+                try {
+                    // start drag immediately so a single press allows dragging
+                    if (this.input && typeof this.input.startDrag === 'function') {
+                        this.input.startDrag(container, pointer);
+                    }
+                } catch (e) {
+                    // ignore if startDrag not available
+                }
             });
 
             container.on('dragstart', () => {
@@ -843,12 +851,12 @@ class LevelEditorScene extends Phaser.Scene {
                 const cx = x + this.cellSize / 2;
                 const cy = y + this.cellSize / 2;
 
-                const bg = this.add.rectangle(cx, cy, this.cellSize - 1, this.cellSize - 1, 0x0f1f3e, 0.65)
-                    .setStrokeStyle(1, 0x304f83, 0.8);
+                const bg = this.add.rectangle(cx, cy, this.cellSize, this.cellSize, 0x0f1f3e, 0)
+                    .setStrokeStyle(1, 0x304f83, 0.35);
                 this.gridLayer.add(bg);
 
                 const cell = this.cells[row][col];
-                this.addTokenVisual(this.gridLayer, cell.base, cx, cy, this.cellSize - 8);
+                this.addTokenVisual(this.gridLayer, cell.base, cx, cy, this.cellSize);
 
                 if (cell.reveal) {
                     const tag = this.add.text(
@@ -882,7 +890,7 @@ class LevelEditorScene extends Phaser.Scene {
         if (this.selectedCell) {
             const sx = this.gridOffsetX + this.selectedCell.col * this.cellSize + this.cellSize / 2;
             const sy = this.gridOffsetY + this.selectedCell.row * this.cellSize + this.cellSize / 2;
-            const s = this.add.rectangle(sx, sy, this.cellSize - 2, this.cellSize - 2, 0x4db6ff, 0.16)
+            const s = this.add.rectangle(sx, sy, this.cellSize, this.cellSize, 0x4db6ff, 0.12)
                 .setStrokeStyle(2, 0xffdd77, 1);
             this.selectionLayer.add(s);
         }
