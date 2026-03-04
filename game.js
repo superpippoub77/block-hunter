@@ -6867,6 +6867,7 @@ class GameScene extends Phaser.Scene {
 
         if (type === 'key') {
             this.addScore(5, item.x, item.y);
+            try { if (this.sound) this.sound.play('coin_sfx', { volume: 0.45 }); } catch (e) { }
             // Award key to the collecting player in 2-player mode, otherwise to global inventory
             if (Number(GAME_STATE.players) === 2) {
                 if (player === this.player) {
