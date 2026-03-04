@@ -2463,10 +2463,15 @@ class GameScene extends Phaser.Scene {
         // Flag set when exit(s) are unlocked/visible and can be used to complete the level
         this.exitUnlocked = false;
 
-        // Spawn static rocks solo se non disabilitato da config
-        if (!CONFIG.disableStaticRocks) {
-            this.spawnStaticRocks();
-        }
+        // Spawn static rocks only when not disabled globally and not disabled by level JSON
+        try {
+            const disabledGlobally = (CONFIG.disableStaticRocks === true);
+            const lvlStatic = this.levelConfig && this.levelConfig.staticRocks;
+            const disabledByLevel = (lvlStatic === false) || (lvlStatic && typeof lvlStatic === 'object' && lvlStatic.enabled === false);
+            if (!disabledGlobally && !disabledByLevel) {
+                this.spawnStaticRocks();
+            }
+        } catch (e) { /* ignore errors determining staticRocks */ }
 
         // Spawn ghosts (count from level JSON, e.g. "ghost": 3)
         this.spawnGhosts();
