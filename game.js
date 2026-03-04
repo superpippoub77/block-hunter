@@ -1137,7 +1137,7 @@ class TopTenScene extends Phaser.Scene {
         });
 
         this.time.delayedCall(CONFIG.topTenTimeout, () => {
-            this.scene.start('AttractScene');
+            this.scene.start('CreditsScene');
         });
 
         // --- Add attract-style UI (credits, player panels, language flag)
@@ -1323,6 +1323,59 @@ class TopTenScene extends Phaser.Scene {
             if (GAME_STATE.credits >= 2) drawTextPanel(this.player2Panel, this.player2Text, { paddingX: 10, paddingY: 6 });
             else this.player2Panel.clear();
         }
+    }
+}
+
+// CREDITS SCENE
+// ---------------------------------------------------------------------------
+class CreditsScene extends Phaser.Scene {
+    constructor() {
+        super('CreditsScene');
+    }
+
+    create() {
+        const t = TRANSLATIONS[GAME_STATE.language] || {};
+        // Background
+        this.add.image(400, 300, 'bg').setDisplaySize(800, 600);
+        // Overlay panel
+        try {
+            const overlayAlpha = (typeof CONFIG.attractOverlayAlpha === 'number') ? CONFIG.attractOverlayAlpha : 0.35;
+            this.add.rectangle((CONFIG.width || 800) / 2, (CONFIG.height || 600) / 2, (CONFIG.width || 800), (CONFIG.height || 600), 0x000000, overlayAlpha).setDepth(0.1);
+        } catch (e) { }
+
+        const title = this.add.text(400, 80, 'SVILUPPATORI', { fontSize: '26px', fill: '#ffff00', fontFamily: GAME_FONT }).setOrigin(0.5);
+        this.titlePanel = this.add.graphics();
+        drawTextPanel(this.titlePanel, title, { paddingX: 18, paddingY: 10, radius: 8 });
+
+        // Developer entries (customize as needed)
+        const lines = [
+            'Project: Block Hunter',
+            'Version: 1.0.0',
+            '',
+            'Lead developer: Mario Rossi',
+            'Gameplay & Tools: Anna Bianchi',
+            'Graphics: Luca Verdi',
+            'Music & SFX: Studio Sound',
+            '',
+            'Website: https://example.com',
+            'Contact: devs@example.com'
+        ];
+
+        let y = 150;
+        lines.forEach((ln) => {
+            const txt = this.add.text(400, y, ln, { fontSize: '18px', fill: '#ffffff', fontFamily: GAME_FONT }).setOrigin(0.5);
+            y += 28;
+        });
+
+        // Duration then return to attract
+        const secs = Number(CONFIG.creditsTimeout) || 6000;
+        this.time.delayedCall(secs, () => {
+            this.scene.start('AttractScene');
+        });
+
+        // Allow skip via key/button
+        this.input.keyboard.once('keydown-ONE', () => this.scene.start('AttractScene'));
+        this.input.keyboard.once('keydown-SPACE', () => this.scene.start('AttractScene'));
     }
 }
 
@@ -1884,10 +1937,21 @@ class GameScene extends Phaser.Scene {
         // Parallax configuration: allow overriding with CONFIG values
         const parallaxBgFactor = (typeof CONFIG.parallaxBgFactor === 'number') ? CONFIG.parallaxBgFactor : 0.96;
 
-        this.gameBg = this.add.image(CONFIG.width / 2, CONFIG.height / 2, selectedBgKey)
-            .setDisplaySize(CONFIG.width, CONFIG.height)
-            .setScrollFactor(parallaxBgFactor)
-            .setDepth(-1000);
+        // Only create the generic gameBg here when the level JSON does NOT
+        // provide its own background (to avoid duplicating a level-specific
+        // background that will be created later once the level data is available).
+        const _levelFileForBgCheck = (typeof getLevelFileName === 'function') ? getLevelFileName(GAME_STATE.currentLevel) : null;
+        const _cachedLevelJson = _levelFileForBgCheck ? this.cache.json.get(_levelFileForBgCheck) : null;
+        const _levelHasBgInCache = !!(_cachedLevelJson && _cachedLevelJson.background != null);
+
+        if (!_levelHasBgInCache) {
+            this.gameBg = this.add.image(CONFIG.width / 2, CONFIG.height / 2, selectedBgKey)
+                .setDisplaySize(CONFIG.width, CONFIG.height)
+                .setScrollFactor(parallaxBgFactor)
+                .setDepth(-1000);
+        } else {
+            this.gameBg = null;
+        }
 
         
 
@@ -1953,6 +2017,57 @@ class GameScene extends Phaser.Scene {
                 dynamicBoulders: mergedDynamicBoulders
             };
         }
+
+        // Per-level music: if the level JSON provides a `music` field, stop
+        // the default BGM and load/play the specified track (searching under
+        // `data/music/` by default).
+        try {
+            const lvlMusic = this.levelData && (this.levelData.music || this.levelData.backgroundMusic || null);
+            if (lvlMusic) {
+                const raw = String(lvlMusic).trim();
+                if (raw.length) {
+                    // Stop default game bgm if playing
+                    try { const g = this.sound.get('game_bgm'); if (g && g.isPlaying) g.stop(); } catch (e) { }
+
+                    // Resolve source path: prefer absolute/explicit paths, but
+                    // if the value looks like just a filename or starts with
+                    // 'music/' prefix, normalize to 'data/music/...'
+                    let srcPath = raw;
+                    const hasDataPrefix = /^data\//i.test(raw);
+                    const hasSlash = /\//.test(raw);
+                    const hasExt = /\.[a-zA-Z0-9]{2,5}$/.test(raw);
+                    if (!hasDataPrefix) {
+                        if (!hasSlash) {
+                            srcPath = `data/music/${raw}${hasExt ? '' : '.mp3'}`;
+                        } else if (/^music\//i.test(raw)) {
+                            srcPath = `data/${raw}`; // e.g. 'music/track.mp3' -> 'data/music/track.mp3'
+                        } else {
+                            // keep provided path (could be 'assets/...')
+                            srcPath = raw;
+                        }
+                    }
+
+                    const musicKey = `level_music_${GAME_STATE.currentLevel}`;
+                    try {
+                        const existing = this.sound.get(musicKey);
+                        if (existing) {
+                            playLoopAudioSafely(this, musicKey, 0.28);
+                        } else {
+                            // Dynamically load and play the audio file
+                            this.load.audio(musicKey, srcPath);
+                            this.load.once('complete', () => {
+                                try { playLoopAudioSafely(this, musicKey, 0.28); } catch (e) { }
+                            });
+                            this.load.start();
+                        }
+                    } catch (e) {
+                        // Fallback: try playing default BGM
+                        try { playLoopAudioSafely(this, 'game_bgm', 0.28); } catch (e2) { }
+                    }
+                }
+            }
+        } catch (e) { }
+        
 
         // --- Rain / weather effect (configurable from level JSON)
         try {
@@ -9079,7 +9194,7 @@ async function inizialization() {
                     debug: false
                 }
             },
-            scene: [PreloadScene, AttractScene, TopTenScene, ConfigScene, LevelSelectScene, GameScene, BonusScene, GameOverScene]
+            scene: [PreloadScene, AttractScene, TopTenScene, CreditsScene, ConfigScene, LevelSelectScene, GameScene, BonusScene, GameOverScene]
         };
 
         // Copy game state keys to GAME_STATE (topScores will be loaded from server if available)

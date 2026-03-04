@@ -16,6 +16,10 @@
     "score": 133
   },
   {
+    "name": "AAA",
+    "score": 30
+  },
+  {
     "name": "JJJ",
     "score": 10
   },
@@ -33,10 +37,6 @@
   },
   {
     "name": "DDD",
-    "score": 0
-  },
-  {
-    "name": "EEE",
     "score": 0
   }
 ]
