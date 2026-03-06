@@ -1861,12 +1861,56 @@ function buildDomPalette() {
         });
     });
 
+    // expand objects group by default
+    try {
+        if (objectsContainer) objectsContainer.style.display = 'block';
+        // also highlight the header
+        const objHead = document.querySelector('.accordion h3[data-group="objects"]');
+        if (objHead) objHead.style.background = '#0b2a44';
+    } catch (e) { /* ignore */ }
+
     function makePaletteItem(labelText, token) {
         const d = document.createElement('div');
         d.className = 'palette-item';
         d.draggable = true;
         d.dataset.token = token;
-        d.textContent = `${labelText} (${token})`;
+        // build content: canvas preview + label
+        const previewSize = 36;
+        const canvas = document.createElement('canvas');
+        canvas.width = previewSize;
+        canvas.height = previewSize;
+        canvas.style.width = `${previewSize}px`;
+        canvas.style.height = `${previewSize}px`;
+        canvas.style.flex = '0 0 auto';
+        canvas.style.marginRight = '8px';
+
+        const txt = document.createElement('div');
+        txt.style.flex = '1 1 auto';
+        txt.textContent = `${labelText} (${token})`;
+        d.style.display = 'flex';
+        d.style.alignItems = 'center';
+        d.appendChild(canvas);
+        d.appendChild(txt);
+
+        // try to draw using Phaser textures if scene is ready
+        try {
+            const scene = getScene();
+            const ctx = canvas.getContext('2d');
+            if (scene && ctx) {
+                ctx.imageSmoothingEnabled = false;
+                const drawn = drawMiniMapToken(scene, ctx, token, 0, 0, previewSize, { alpha: 1 });
+                if (!drawn) {
+                    // fallback: fill with color
+                    ctx.fillStyle = tokenToMiniMapColor(token);
+                    ctx.fillRect(0, 0, previewSize, previewSize);
+                    ctx.fillStyle = '#fff';
+                    ctx.font = '10px monospace';
+                    ctx.fillText(token, 2, 12);
+                }
+            }
+        } catch (e) {
+            // ignore drawing errors
+        }
 
         d.addEventListener('dragstart', (ev) => {
             try { ev.dataTransfer.setData('text/plain', token); } catch (e) { /* ignore */ }
