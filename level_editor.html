@@ -118,6 +118,18 @@
             margin-bottom: 8px;
             color: #8fd8ff;
         }
+        .section h2 {
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .section .section-body {
+            display: block;
+        }
+
+        .section.collapsed .section-body {
+            display: none;
+        }
 
         .grid2,
         .grid3 {
@@ -242,6 +254,12 @@
 
         <aside class="panel">
             <h1>BLOCK HUNTER LEVEL EDITOR</h1>
+            <div style="display:flex; gap:8px; margin-bottom:8px;">
+                <button id="exportTopBtn" type="button">Esporta JSON</button>
+                <button id="copyTopBtn" type="button">Copia JSON</button>
+                <input id="importTopFile" type="file" accept="application/json,.json" style="display:none;">
+                <button id="importTopBtn" type="button">Importa JSON</button>
+            </div>
 
             <div class="section">
                 <h2>Griglia</h2>

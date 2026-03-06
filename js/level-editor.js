@@ -1450,6 +1450,19 @@ function exportJsonToFile(levelData) {
     URL.revokeObjectURL(url);
 }
 
+function importLevelFromText(text, filename) {
+    try {
+        const parsed = JSON.parse(text);
+        applyLevelToForm(parsed);
+        const scene = getScene();
+        scene?.loadFromJson(parsed);
+        scene?.updateEditorBackgroundImage?.();
+        setStatus(`Import completato: ${filename || 'clipboard/file'}`);
+    } catch (error) {
+        setStatus(`Errore import: ${error.message}`, true);
+    }
+}
+
 // --- Background / Foreground DOM editors ---
 function readBackgroundLayersFromDOM() {
     if (typeof document === 'undefined') return null;
@@ -1701,18 +1714,61 @@ function bindUI() {
 
         try {
             const text = await file.text();
-            const parsed = JSON.parse(text);
-            applyLevelToForm(parsed);
-            const scene = getScene();
-            scene?.loadFromJson(parsed);
-            scene?.updateEditorBackgroundImage?.();
-            setStatus(`Import completato: ${file.name}`);
+            importLevelFromText(text, file.name);
         } catch (error) {
             setStatus(`Errore import: ${error.message}`, true);
         } finally {
             target.value = '';
         }
     });
+
+    // Top-level import/export buttons (header)
+    const exportTop = el('exportTopBtn');
+    const copyTop = el('copyTopBtn');
+    const importTop = el('importTopBtn');
+    const importTopFile = el('importTopFile');
+
+    if (exportTop) {
+        exportTop.addEventListener('click', () => {
+            try {
+                const level = readLevelFromForm();
+                exportJsonToFile(level);
+                setStatus('JSON esportato con successo.');
+            } catch (error) {
+                setStatus(`Errore export: ${error.message}`, true);
+            }
+        });
+    }
+    if (copyTop) {
+        copyTop.addEventListener('click', async () => {
+            try {
+                const level = readLevelFromForm();
+                await navigator.clipboard.writeText(JSON.stringify(level, null, 2));
+                setStatus('JSON copiato negli appunti.');
+            } catch (error) {
+                setStatus(`Errore copia: ${error.message}`, true);
+            }
+        });
+    }
+    if (importTop) {
+        importTop.addEventListener('click', () => {
+            if (importTopFile) importTopFile.click();
+        });
+    }
+    if (importTopFile) {
+        importTopFile.addEventListener('change', async (ev) => {
+            const file = ev.target?.files?.[0];
+            if (!file) return;
+            try {
+                const text = await file.text();
+                importLevelFromText(text, file.name);
+            } catch (e) {
+                setStatus(`Errore import: ${e.message}`, true);
+            } finally {
+                ev.target.value = '';
+            }
+        });
+    }
 
     const realtimeFields = [
         'playerRow', 'playerCol', 'gridCols', 'gridRows', 'mapTimer', 'revealMode',
@@ -1794,10 +1850,44 @@ window.addEventListener('level-editor-ready', () => {
     // Build DOM palette (left column) and wire drag/drop handlers
     try { buildDomPalette(); } catch (e) { /* ignore */ }
     try { setupDomDragAndDrop(); } catch (e) { /* ignore */ }
+    try { setupRightAccordion(); } catch (e) { /* ignore */ }
     bindUI();
     drawMiniMapPreview(scene);
     setStatus('Editor pronto.');
 });
+
+// Convert right-panel sections into accordions and bind toggles
+function setupRightAccordion() {
+    if (typeof document === 'undefined') return;
+    const panel = document.querySelector('.panel');
+    if (!panel) return;
+    const sections = Array.from(panel.querySelectorAll('.section'));
+    sections.forEach((sec) => {
+        const h2 = sec.querySelector('h2');
+        if (!h2) return;
+        // wrap all nodes after h2 into .section-body
+        let body = sec.querySelector('.section-body');
+        if (!body) {
+            body = document.createElement('div');
+            body.className = 'section-body';
+            // move nodes after h2 into body
+            let node = h2.nextSibling;
+            const toMove = [];
+            while (node) {
+                toMove.push(node);
+                node = node.nextSibling;
+            }
+            toMove.forEach(n => body.appendChild(n));
+            sec.appendChild(body);
+        }
+        // default: expanded
+        sec.classList.remove('collapsed');
+        // toggle on click
+        h2.addEventListener('click', () => {
+            sec.classList.toggle('collapsed');
+        });
+    });
+}
 
 // hook add bg/fg buttons if present
 window.addEventListener('load', () => {
