@@ -251,6 +251,8 @@ class LevelEditorScene extends Phaser.Scene {
         this.cols = 12;
         this.rows = 12;
         this.cellSize = 48;
+        this.baseCellSize = 48; // cell size without zoom
+        this.zoom = 1;
         this.gridOffsetX = 18;
         this.gridOffsetY = 18;
         // these will be computed from the actual canvas size on create / resize
@@ -425,7 +427,9 @@ class LevelEditorScene extends Phaser.Scene {
         this.gridAreaWidth = availW;
         this.gridAreaHeight = availH;
 
-        this.cellSize = clamp(Math.floor(Math.min(this.gridAreaWidth / this.cols, this.gridAreaHeight / this.rows)), 20, 64);
+        // compute base cell size (without zoom) and apply current zoom
+        this.baseCellSize = clamp(Math.floor(Math.min(this.gridAreaWidth / this.cols, this.gridAreaHeight / this.rows)), 20, 64);
+        this.cellSize = clamp(Math.floor(this.baseCellSize * this.zoom), 8, 256);
 
         // compute actual grid pixel dimensions
         const gridW = this.cellSize * this.cols;
@@ -452,6 +456,25 @@ class LevelEditorScene extends Phaser.Scene {
         if (!skipBgUpdate) {
             try { this.updateEditorBackgroundImage(); } catch (e) { /* ignore */ }
         }
+    }
+
+    // Recompute layout when zoom changes without resetting cells
+    setZoom(zoom) {
+        const z = Math.max(0.2, Math.min(4, Number(zoom) || 1));
+        this.zoom = z;
+        // recompute display cellSize from baseCellSize
+        this.cellSize = clamp(Math.floor(this.baseCellSize * this.zoom), 8, 256);
+        // recompute grid offsets using previously computed gridAreaWidth/Height
+        const gridW = this.cellSize * this.cols;
+        const gridH = this.cellSize * this.rows;
+        const totalW = Math.max(200, Math.floor(this.scale.width || this.sys.game.config.width || 1000));
+        const totalH = Math.max(100, Math.floor(this.scale.height || this.sys.game.config.height || 700));
+        const padding = 18;
+        this.gridOffsetX = Math.max(padding, Math.floor((Math.max(64, totalW - (this.paletteArea?.width || 360) - padding * 3) - gridW) / 2) + padding);
+        this.gridOffsetY = Math.max(padding, Math.floor((totalH - gridH) / 2));
+        // update background image and re-render
+        try { this.updateEditorBackgroundImage(); } catch (e) {}
+        this.renderGrid();
     }
 
     onResize(width, height) {
@@ -1708,6 +1731,18 @@ function bindUI() {
         input.addEventListener('input', () => drawMiniMapPreview(getScene()));
         input.addEventListener('change', () => drawMiniMapPreview(getScene()));
     });
+    
+    // zoom slider
+    const zoomSlider = el('zoomSlider');
+    if (zoomSlider) {
+        zoomSlider.addEventListener('input', () => {
+            const scene = getScene();
+            if (!scene) return;
+            const z = parseFloat(zoomSlider.value) || 1;
+            try { scene.setZoom(z); } catch (e) {}
+            drawMiniMapPreview(scene);
+        });
+    }
 
     // background select and toggle
     const bgSelect = el('levelBackground');
