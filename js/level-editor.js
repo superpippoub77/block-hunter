@@ -1476,6 +1476,12 @@ function readLevelFromForm() {
         }
     }
 
+    // music (optional)
+    try {
+        const mu = String(el('levelMusic')?.value || '').trim();
+        if (mu) level.music = mu;
+    } catch (e) { /* ignore */ }
+
     return { ...level, ...extra, map: level.map, playerStart: level.playerStart };
 }
 
@@ -1566,6 +1572,12 @@ function applyLevelToForm(levelData) {
     // Populate background/foreground layer editors if present
     try { applyBackgroundLayersToDOM(data.background); } catch (e) {}
     try { applyForegroundLayersToDOM(data.foreground); } catch (e) {}
+
+    // music
+    try {
+        if (el('levelMusic')) el('levelMusic').value = data.music ? String(data.music) : '';
+        try { if (window.__editorMusicAudio && data.music) { window.__editorMusicAudio.src = String(data.music); } } catch (e) {}
+    } catch (e) {}
 
     const knownKeys = new Set([
         'id', 'map', 'playerStart', 'staticRocks', 'dynamicBoulders', 'speed', 'escapeRoute',
@@ -1951,6 +1963,39 @@ function bindUI() {
         input.addEventListener('input', () => drawMiniMapPreview(getScene()));
         input.addEventListener('change', () => drawMiniMapPreview(getScene()));
     });
+    
+    // Music controls: preview/play selected track from data/music
+    try {
+        window.__editorMusicAudio = window.__editorMusicAudio || new Audio();
+        const audio = window.__editorMusicAudio;
+        audio.loop = true;
+        const playBtn = el('playMusicBtn');
+        const stopBtn = el('stopMusicBtn');
+        const musicSel = el('levelMusic');
+        const vol = el('musicVolume');
+
+        if (musicSel) {
+            musicSel.addEventListener('change', () => {
+                try {
+                    const v = String(musicSel.value || '').trim();
+                    if (v) audio.src = v;
+                    setStatus(`Musica selezionata: ${v || '(none)'}`);
+                } catch (e) { /* ignore */ }
+            });
+        }
+        if (playBtn) playBtn.addEventListener('click', async () => {
+            try {
+                const src = String(musicSel?.value || '').trim();
+                if (!src) { setStatus('Nessuna traccia selezionata.', true); return; }
+                if (!audio.src || audio.src.indexOf(src) === -1) audio.src = src;
+                audio.volume = parseFloat(vol?.value ?? 0.6) || 0.6;
+                await audio.play();
+                setStatus('Musica in riproduzione...');
+            } catch (e) { setStatus(`Errore riproduzione: ${e.message}`, true); }
+        });
+        if (stopBtn) stopBtn.addEventListener('click', () => { try { audio.pause(); audio.currentTime = 0; setStatus('Musica fermata.'); } catch (e) {} });
+        if (vol) vol.addEventListener('input', () => { try { audio.volume = parseFloat(vol.value) || 0; } catch (e) {} });
+    } catch (e) { /* ignore music UI errors */ }
     
     // zoom slider
     const zoomSlider = el('zoomSlider');

@@ -544,6 +544,42 @@
             </div>
 
             <div class="section">
+                <h2>Musica</h2>
+                <div style="margin-top:6px;">
+                    <label for="levelMusic">Background Music (data/music)</label>
+                    <select id="levelMusic">
+                        <option value="">(none)</option>
+                        <option value="data/music/intro.mp3">intro.mp3</option>
+                        <option value="data/music/game.mp3">game.mp3</option>
+                        <option value="data/music/intro.mp3_old">intro.mp3_old</option>
+                        <option value="data/music/rolling_stones.mp3">rolling_stones.mp3</option>
+                        <option value="data/music/rolling_stones.mp3_old">rolling_stones.mp3_old</option>
+                        <option value="data/music/rolling_stones.mp3_old2">rolling_stones.mp3_old2</option>
+                        <option value="data/music/wood_ambient.mp3">wood_ambient.mp3</option>
+                        <option value="data/music/level_completed.mp3">level_completed.mp3</option>
+                        <option value="data/music/rain.mp3">rain.mp3</option>
+                        <option value="data/music/step.mp3">step.mp3</option>
+                        <option value="data/music/stone.mp3">stone.mp3</option>
+                        <option value="data/music/explosion.mp3">explosion.mp3</option>
+                        <option value="data/music/gem.mp3">gem.mp3</option>
+                        <option value="data/music/gameover.mp3">gameover.mp3</option>
+                        <option value="data/music/ghost.mp3">ghost.mp3</option>
+                        <option value="data/music/bat.mp3">bat.mp3</option>
+                        <option value="data/music/select.mp3">select.mp3</option>
+                        <option value="data/music/coin.mp3">coin.mp3</option>
+                    </select>
+                </div>
+                <div style="display:flex; gap:6px; margin-top:8px;">
+                    <button id="playMusicBtn" type="button">Play</button>
+                    <button id="stopMusicBtn" type="button">Stop</button>
+                    <label style="display:flex; align-items:center; gap:6px; width:100%;">
+                        Volume
+                        <input id="musicVolume" type="range" min="0" max="1" step="0.01" value="0.6" style="flex:1;">
+                    </label>
+                </div>
+            </div>
+
+            <div class="section">
                 <h2>JSON</h2>
                 <label for="extraRootJson">Extra root params (JSON object opzionale)</label>
                 <textarea id="extraRootJson" placeholder='{"scoreRules": null}'>{}</textarea>
