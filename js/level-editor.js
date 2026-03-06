@@ -359,8 +359,56 @@ class LevelEditorScene extends Phaser.Scene {
 
     updateEditorBackgroundImage() {
         const show = !!el('showBackground')?.checked;
-        const val = String(el('levelBackground')?.value ?? '').trim();
-        const key = this.getBackgroundKeyFromValue(val);
+        // First prefer active bg row from DOM (radio). Fallback to single select value.
+        let key = null;
+        try {
+            const activeRadio = document.querySelector('#bgLayersContainer input.bg-active-radio:checked');
+            if (activeRadio) {
+                const row = activeRadio.closest('.bg-layer');
+                if (row) {
+                    const sel = row.querySelector('select.bg-src');
+                    let src = '';
+                    if (sel) {
+                        const v = String(sel.value || '').trim();
+                        src = v ? `images/${v}` : '';
+                    } else {
+                        src = String(row.querySelector('.bg-src')?.value || '').trim();
+                    }
+                    if (src) {
+                        // create a stable key for this src
+                        const safeKey = `editor_bg_${src.replace(/[^a-z0-9_.-]+/gi, '_')}`;
+                        // if texture exists, use it; otherwise load dynamically
+                        if (this.textures.exists(safeKey)) {
+                            key = safeKey;
+                        } else {
+                            try {
+                                // start loader for this key
+                                this.load.image(safeKey, src);
+                                this.load.once('complete', () => {
+                                    try {
+                                        if (!this.editorBgImage) this.editorBgImage = this.add.image(0, 0, safeKey).setDepth(-500);
+                                        this.editorBgImage.setTexture(safeKey);
+                                        this.editorBgImage.setDisplaySize(this.cellSize * this.cols, this.cellSize * this.rows);
+                                        this.editorBgImage.setPosition(this.gridOffsetX + (this.cellSize * this.cols) / 2, this.gridOffsetY + (this.cellSize * this.rows) / 2);
+                                        this.editorBgImage.setVisible(show);
+                                    } catch (e) { /* ignore */ }
+                                });
+                                this.load.start();
+                                // fallthrough: keep key so it will be applied if/when ready
+                                key = safeKey;
+                            } catch (e) {
+                                // ignore loader errors and fallback
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (e) { /* ignore DOM access issues */ }
+
+        if (!key) {
+            const val = String(el('levelBackground')?.value ?? '').trim();
+            key = this.getBackgroundKeyFromValue(val);
+        }
 
         if (!show || !key) {
             if (this.editorBgImage) {
@@ -1119,6 +1167,15 @@ function drawMiniMapPreview(scene) {
     const height = canvas.height;
     ctx.imageSmoothingEnabled = false;
     ctx.clearRect(0, 0, width, height);
+    // compute map rectangle first so bg/fg images can be clipped to it
+    const rows = scene.rows || 1;
+    const cols = scene.cols || 1;
+    const cell = Math.max(2, Math.floor(Math.min(width / cols, height / rows)));
+    const mapW = cell * cols;
+    const mapH = cell * rows;
+    const offX = Math.floor((width - mapW) / 2);
+    const offY = Math.floor((height - mapH) / 2);
+
     // draw layered background images (support multiple bg layers from DOM or select)
     const showBg = !!el('showBackground')?.checked;
     // try layers from DOM editor first
@@ -1160,8 +1217,12 @@ function drawMiniMapPreview(scene) {
         const alpha = Number.isFinite(layer.parallaxBgAlpha) ? layer.parallaxBgAlpha : 1.0;
         try {
             ctx.save();
+            // clip to map rectangle so image stays inside blue mini-map
+            ctx.beginPath();
+            ctx.rect(offX, offY, mapW, mapH);
+            ctx.clip();
             ctx.globalAlpha = alpha;
-            ctx.drawImage(img, 0, 0, width, height);
+            ctx.drawImage(img, offX, offY, mapW, mapH);
             ctx.restore();
         } catch (e) {
             return false;
@@ -1172,14 +1233,6 @@ function drawMiniMapPreview(scene) {
     if (showBg && Array.isArray(bgLayers) && bgLayers.length > 0) {
         bgLayers.forEach((ly) => drawLayerImage(ly));
     }
-
-    const rows = scene.rows || 1;
-    const cols = scene.cols || 1;
-    const cell = Math.max(2, Math.floor(Math.min(width / cols, height / rows)));
-    const mapW = cell * cols;
-    const mapH = cell * rows;
-    const offX = Math.floor((width - mapW) / 2);
-    const offY = Math.floor((height - mapH) / 2);
 
     // only clear with solid color when there are no background layers
     if (!showBg || !Array.isArray(bgLayers) || bgLayers.length === 0) {
@@ -1292,8 +1345,12 @@ function drawMiniMapPreview(scene) {
             if (!entry.loaded) return;
             try {
                 ctx.save();
+                // clip to map rectangle so fg stays inside mini-map
+                ctx.beginPath();
+                ctx.rect(offX, offY, mapW, mapH);
+                ctx.clip();
                 ctx.globalAlpha = Number.isFinite(ly.parallaxFgAlpha) ? ly.parallaxFgAlpha : 1.0;
-                ctx.drawImage(entry.img, 0, 0, width, height);
+                ctx.drawImage(entry.img, offX, offY, mapW, mapH);
                 ctx.restore();
             } catch (e) { /* ignore */ }
         });
@@ -1972,6 +2029,16 @@ function setupRightAccordion() {
     sections.forEach((sec) => {
         const h2 = sec.querySelector('h2');
         if (!h2) return;
+        // add +/- indicator
+        let ind = h2.querySelector('.section-indicator');
+        if (!ind) {
+            ind = document.createElement('span');
+            ind.className = 'section-indicator';
+            ind.style.marginRight = '8px';
+            ind.style.fontFamily = 'monospace';
+            ind.style.fontWeight = 'bold';
+            h2.prepend(ind);
+        }
         // wrap all nodes after h2 into .section-body
         let body = sec.querySelector('.section-body');
         if (!body) {
@@ -1989,9 +2056,12 @@ function setupRightAccordion() {
         }
         // default: expanded
         sec.classList.remove('collapsed');
-        // toggle on click
+        // set initial indicator state
+        try { ind.textContent = sec.classList.contains('collapsed') ? '+' : '-'; } catch (e) {}
+        // toggle on click and update indicator
         h2.addEventListener('click', () => {
             sec.classList.toggle('collapsed');
+            try { ind.textContent = sec.classList.contains('collapsed') ? '+' : '-'; } catch (e) {}
         });
     });
 }
@@ -2086,10 +2156,25 @@ function buildDomPalette() {
     // accordion toggles
     const accHeads = Array.from(document.querySelectorAll('.accordion h3'));
     accHeads.forEach((h) => {
+        // add +/- indicator
+        let ind = h.querySelector('.accordion-indicator');
+        if (!ind) {
+            ind = document.createElement('span');
+            ind.className = 'accordion-indicator';
+            ind.style.marginRight = '8px';
+            ind.style.fontFamily = 'monospace';
+            ind.style.fontWeight = 'bold';
+            h.prepend(ind);
+        }
+        // set initial state based on content visibility
+        const content = h.nextElementSibling;
+        try { ind.textContent = (content && (content.style.display === 'block' || getComputedStyle(content).display !== 'none')) ? '-' : '+'; } catch (e) {}
         h.addEventListener('click', () => {
             const content = h.nextElementSibling;
             if (!content) return;
-            content.style.display = content.style.display === 'block' ? 'none' : 'block';
+            const isNowVisible = content.style.display === 'block' ? false : true;
+            content.style.display = isNowVisible ? 'block' : 'none';
+            try { ind.textContent = isNowVisible ? '-' : '+'; } catch (e) {}
         });
     });
 
