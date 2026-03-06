@@ -226,8 +226,8 @@
                     </div>
                 </div>
                 <div style="margin-top:6px;">
-                    <label for="levelBackground">Background</label>
-                    <select id="levelBackground">
+                    <label for="levelBackground">Background (selezione singola o multipla)</label>
+                    <select id="levelBackground" multiple size="4">
                         <option value="">(default)</option>
                         <option value="1" selected>level1</option>
                         <option value="2">level2</option>
@@ -235,6 +235,14 @@
                         <option value="4">level4</option>
                         <option value="5">level5</option>
                         <option value="6">level6</option>
+                    </select>
+                </div>
+
+                <div style="margin-top:6px;">
+                    <label for="levelForeground">Foreground (opzionale, singola o multipla)</label>
+                    <select id="levelForeground" multiple size="3">
+                        <option value="">(none)</option>
+                        <option value="game_fg">foreground</option>
                     </select>
                 </div>
                 <div style="margin-top:6px; display:flex; align-items:center; gap:8px;">
@@ -295,10 +303,12 @@
                     <div>
                         <label for="ghostSpeed">Ghost Speed</label>
                         <input id="ghostSpeed" type="number" min="0" value="80">
+                        <input id="ghostSpeedRange" type="range" min="0" max="200" step="1" value="80">
                     </div>
                     <div>
                         <label for="batSpeed">Bat Speed</label>
                         <input id="batSpeed" type="number" min="0" value="90">
+                        <input id="batSpeedRange" type="range" min="0" max="200" step="1" value="90">
                     </div>
                 </div>
                 <div style="margin-top:6px;">
@@ -389,8 +399,13 @@
                     </div>
                 </div>
                 <div style="margin-top:6px;">
-                    <label for="dbDirections">directions (CSV)</label>
-                    <input id="dbDirections" type="text" value="top,bottom,left,right">
+                    <label for="dbDirections">directions (seleziona multiplo)</label>
+                    <select id="dbDirections" multiple size="4">
+                        <option value="top">top</option>
+                        <option value="bottom">bottom</option>
+                        <option value="left">left</option>
+                        <option value="right">right</option>
+                    </select>
                 </div>
                 <div style="margin-top:6px;">
                     <label for="dbSizes">sizes (JSON o null)</label>

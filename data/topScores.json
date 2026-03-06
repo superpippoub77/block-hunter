@@ -8,6 +8,11 @@
     "score": 370
   },
   {
+    "name": "BAA",
+    "score": 325,
+    "level": 1
+  },
+  {
     "name": "AAA",
     "score": 180
   },
@@ -33,10 +38,6 @@
   },
   {
     "name": "CCC",
-    "score": 0
-  },
-  {
-    "name": "DDD",
     "score": 0
   }
 ]

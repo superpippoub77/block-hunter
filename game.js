@@ -452,6 +452,8 @@ class PreloadScene extends Phaser.Scene {
             .audio('stone_sfx', 'data/music/stone.mp3')
             .audio('explosion_sfx', 'data/music/explosion.mp3')
             .audio('gem_sfx', 'data/music/gem.mp3')
+            .audio('rolling_sfx', 'data/music/rolling_stones.mp3')
+            .audio('gameover_sfx', 'data/music/gameover.mp3')
             .audio('level_completed_sfx', 'data/music/level_completed.mp3')
             .audio('coin_sfx', 'data/music/coin.mp3')
             .audio('select_sfx', 'data/music/select.mp3')
@@ -1091,6 +1093,13 @@ class TopTenScene extends Phaser.Scene {
             });
 
             // Score text with falling effect
+            const levelLabel = (typeof entry.level !== 'undefined') ? `LV${Number(entry.level) + 1}` : '';
+            const levelText = this.add.text(420, y, levelLabel, {
+                fontSize: '20px',
+                fill: '#ffcc00',
+                fontFamily: GAME_FONT
+            }).setOrigin(0.5, 0);
+
             const scoreText = this.add.text(550, y, entry.score.toString(), {
                 fontSize: '24px',
                 fill: '#00ff00',
@@ -1114,13 +1123,34 @@ class TopTenScene extends Phaser.Scene {
             });
 
             // Falling animation for score
-            this.tweens.add({
-                targets: scoreText,
-                y: y,
-                duration: 600,
-                ease: 'Bounce.easeOut',
-                delay: delay + 50 // Slightly delayed for cascading effect
-            });
+                this.tweens.add({
+                    targets: scoreText,
+                    y: y,
+                    duration: 600,
+                    ease: 'Bounce.easeOut',
+                    delay: delay + 50 // Slightly delayed for cascading effect
+                });
+
+                // Falling animation for level
+                if (levelText) {
+                    levelText.y = -50;
+                    this.tweens.add({
+                        targets: levelText,
+                        y: y,
+                        duration: 600,
+                        ease: 'Bounce.easeOut',
+                        delay: delay + 25
+                    });
+                    this.tweens.add({
+                        targets: levelText,
+                        angle: -0.5,
+                        duration: 800,
+                        yoyo: true,
+                        repeat: -1,
+                        ease: 'Sine.easeInOut',
+                        delay: delay + 600
+                    });
+                }
 
             // Subtle wobble after landing
             this.tweens.add({
@@ -2087,6 +2117,14 @@ class GameScene extends Phaser.Scene {
                     this.currentRain = null;
                 } catch (e) { }
             };
+
+            // Ensure rain is cleaned up if the scene is shutdown/destroyed
+            try {
+                if (this.events && this.events.on) {
+                    this.events.on('shutdown', clearRain);
+                    this.events.on('destroy', clearRain);
+                }
+            } catch (e) { }
 
             if (rainCfg && (rainCfg.enabled === true || String(rainCfg.enabled) === 'true')) {
                 const intensity = Phaser.Math.Clamp(Number(rainCfg.intensity) || 1, 0.1, 5); // 0.1..5
@@ -3388,13 +3426,39 @@ class GameScene extends Phaser.Scene {
     }
 
     spawnStaticRocks() {
-        const spawnDelay = Math.max(200, 1200 - GAME_STATE.currentLevel * 40); // Più veloce nei livelli avanzati
+        // Determine spawn interval: allow per-level override via
+        // `levelConfig.staticRocks.spawnInterval` (ms) or `spawnRate` (per second).
+        const staticCfg = this.levelConfig?.staticRocks || {};
+        let spawnDelay = Math.max(200, 1200 - GAME_STATE.currentLevel * 40); // default faster on higher levels
+        try {
+            if (Number.isFinite(Number(staticCfg.spawnInterval)) && Number(staticCfg.spawnInterval) > 0) {
+                spawnDelay = Math.max(80, Number(staticCfg.spawnInterval));
+            } else if (Number.isFinite(Number(staticCfg.spawnRate)) && Number(staticCfg.spawnRate) > 0) {
+                spawnDelay = Math.max(80, Math.round(1000 / Number(staticCfg.spawnRate)));
+            }
+        } catch (e) { }
+
+        // Determine how many rocks to spawn each tick: support `spawnCounts` array or `spawnCount` number
+        const chooseStaticSpawnCount = () => {
+            try {
+                if (Array.isArray(staticCfg.spawnCounts) && staticCfg.spawnCounts.length > 0) {
+                    const pick = Phaser.Utils.Array.GetRandom(staticCfg.spawnCounts);
+                    return Math.max(1, Math.floor(Number(pick) || 1));
+                } else if (Number.isFinite(Number(staticCfg.spawnCount)) && Number(staticCfg.spawnCount) > 0) {
+                    return Math.max(1, Math.floor(Number(staticCfg.spawnCount)));
+                }
+            } catch (e) { }
+            return 1;
+        };
 
         // Spawn continuo
         this.rockSpawnTimer = this.time.addEvent({
             delay: spawnDelay,
             callback: () => {
-                this.spawnSingleRock();
+                const count = chooseStaticSpawnCount();
+                for (let i = 0; i < count; i++) {
+                    this.spawnSingleRock();
+                }
             },
             callbackScope: this,
             loop: true
@@ -4236,6 +4300,21 @@ class GameScene extends Phaser.Scene {
                 }
             } catch (e) { }
         }
+
+        // Ensure bat rolling/flapping sound is playing while bat is flying
+        try {
+            if (bat.getData && !bat.getData('isResting')) {
+                let sfx = bat.getData && bat.getData('sfx');
+                if (!sfx && this.sound && this.sound.add) {
+                    try {
+                        sfx = this.sound.add('bat_sfx', { loop: true, volume: 0.7 });
+                        try { sfx.play(); } catch (e) { }
+                        try { bat.setData && bat.setData('sfx', sfx); } catch (e) { }
+                        try { bat.on && bat.on('destroy', () => { try { sfx.stop && sfx.stop(); sfx.destroy && sfx.destroy(); } catch (e) { } }); } catch (e) { }
+                    } catch (e) { }
+                }
+            }
+        } catch (e) { }
     }
 
     enterBatRest(bat) {
@@ -5617,6 +5696,9 @@ class GameScene extends Phaser.Scene {
     }
 
     update(time, delta) {
+        // If the game is over, stop processing gameplay inputs/updates
+        if (GAME_STATE.isGameOver) return;
+
         if (!this.player || !this.player.active) return;
 
         // Player movement
@@ -7704,15 +7786,93 @@ class GameScene extends Phaser.Scene {
             this.batDirectionTimer = null;
         }
         this.deactivateCompanionHelper();
+        // stop most game audio (rain, per-boulder rolling sounds, bat sfx, etc.)
+        try { if (this._stopAllAudio) this._stopAllAudio(); } catch (e) { }
         const gameMusic = this.sound.get('game_bgm');
         if (gameMusic && gameMusic.isPlaying) {
             gameMusic.stop();
         }
-        this.scene.start('GameOverScene');
+        // mark game over to disable further gameplay input/actions
+        try { GAME_STATE.isGameOver = true; } catch (e) { }
+
+        // Play game over sound if available, otherwise fall back
+        try {
+            if (this.sound) {
+                // prefer explicit gameover sound
+                if (this.cache && this.cache.audio && this.cache.audio.exists('gameover_sfx')) {
+                    try { this.sound.play('gameover_sfx', { volume: 0.6 }); } catch (e) { }
+                } else if (this.sound.get('explosion_sfx')) {
+                    try { this.sound.play('explosion_sfx', { volume: 0.6 }); } catch (e) { }
+                } else if (this.sound.get('level_completed_sfx')) {
+                    try { this.sound.play('level_completed_sfx', { volume: 0.6 }); } catch (e) { }
+                }
+            }
+        } catch (e) { }
+
+        this.scene.launch('GameOverScene');
+    }
+
+    _stopAllAudio() {
+        try {
+            // Rain
+            try { if (this.rainSfx) { try { this.rainSfx.stop && this.rainSfx.stop(); } catch (e) {} try { this.rainSfx.destroy && this.rainSfx.destroy(); } catch (e) {} this.rainSfx = null; } } catch (e) {}
+            try { if (this.rainBurstTimer) { this.rainBurstTimer.remove && this.rainBurstTimer.remove(false); } } catch (e) {} this.rainBurstTimer = null;
+            try { if (this.rainTimer) { this.rainTimer.remove && this.rainTimer.remove(false); } } catch (e) {} this.rainTimer = null;
+            try { if (this.rainMasterTimer) { this.rainMasterTimer.remove && this.rainMasterTimer.remove(false); } } catch (e) {} this.rainMasterTimer = null;
+            try { if (this.rainEmitter) { this.rainEmitter.stop && this.rainEmitter.stop(); } } catch (e) {} this.rainEmitter = null;
+            try { if (this.rainParticles) { this.rainParticles.destroy && this.rainParticles.destroy(); } } catch (e) {} this.rainParticles = null;
+
+            // Boulders: stop per-instance rolling sounds
+            try {
+                const boulders = this.boulders?.children?.entries || [];
+                boulders.forEach((b) => {
+                    try {
+                        const s = b.getData && b.getData('rollingSound');
+                        if (s) { try { s.stop && s.stop(); } catch (e) {} try { s.destroy && s.destroy(); } catch (e) {} b.setData && b.setData('rollingSound', null); }
+                    } catch (e) { }
+                });
+            } catch (e) { }
+
+            // Bats: stop per-bat sfx
+            try {
+                const bats = this.bats?.children?.entries || [];
+                bats.forEach((bat) => {
+                    try {
+                        const s = bat.getData && bat.getData('sfx');
+                        if (s) { try { s.stop && s.stop(); } catch (e) {} try { s.destroy && s.destroy(); } catch (e) {} bat.setData && bat.setData('sfx', null); }
+                    } catch (e) { }
+                });
+            } catch (e) { }
+
+            // Stop/destroy other sounds managed by Phaser (except we will allow explicit gameover_sfx to be played afterwards)
+            try {
+                if (this.sound && Array.isArray(this.sound.sounds)) {
+                    // clone list to avoid mutation while iterating
+                    const all = this.sound.sounds.slice();
+                    all.forEach((s) => {
+                        try {
+                            if (!s || !s.key) return;
+                            if (s.key === 'gameover_sfx') return;
+                            try { s.stop && s.stop(); } catch (e) {}
+                            try { s.destroy && s.destroy(); } catch (e) {}
+                        } catch (e) { }
+                    });
+                }
+            } catch (e) { }
+        } catch (e) { }
     }
 
     startBoulderSpawning() {
-        const spawnInterval = 3000 / (this.levelConfig.speed * GAME_STATE.difficulty);
+        // Default spawn interval scales with level speed and difficulty
+        let spawnInterval = 3000 / (this.levelConfig.speed * GAME_STATE.difficulty);
+        try {
+            const dyn = this.levelConfig?.dynamicBoulders || {};
+            if (Number.isFinite(Number(dyn.spawnInterval)) && Number(dyn.spawnInterval) > 0) {
+                spawnInterval = Math.max(60, Number(dyn.spawnInterval));
+            } else if (Number.isFinite(Number(dyn.spawnRate)) && Number(dyn.spawnRate) > 0) {
+                spawnInterval = Math.max(60, Math.round(1000 / Number(dyn.spawnRate)));
+            }
+        } catch (e) { }
 
         this.boulderTimer = this.time.addEvent({
             delay: spawnInterval,
@@ -7779,6 +7939,20 @@ class GameScene extends Phaser.Scene {
         }
         boulder.setBounce(0.9);
         this.attachBoulderSmokeTrail(boulder);
+
+        // Start per-boulder rolling sound (robust: add instance and store on boulder)
+        try {
+            if (this.sound && this.cache && this.cache.audio && this.cache.audio.exists('rolling_sfx')) {
+                const rollSnd = this.sound.add('rolling_sfx');
+                try { rollSnd.play({ loop: true, volume: Math.min(0.6, 0.18 + (finalScale * 0.12)) }); } catch (e) { try { rollSnd.play(); } catch (e2) { } }
+                try { boulder.setData && boulder.setData('rollingSound', rollSnd); } catch (e) { }
+                if (boulder.once) {
+                    boulder.once('destroy', () => {
+                        try { const s = boulder.getData && boulder.getData('rollingSound'); if (s && s.stop) s.stop(); if (s && s.destroy) s.destroy(); } catch (e) { }
+                    });
+                }
+            }
+        } catch (e) { }
 
         return boulder;
     }
@@ -8027,6 +8201,21 @@ class GameScene extends Phaser.Scene {
 
             boulder.setVelocity(nextVx, nextVy);
             boulder.setData('rollingSpeed', targetSpeed);
+
+            // If the boulder has effectively stopped (explicit flag or very low speed),
+            // stop and destroy its rolling sound instance so audio ceases.
+            try {
+                const isStoppedFlag = Boolean(boulder.getData && boulder.getData('rollingStopped'));
+                const currentRollSound = boulder.getData && boulder.getData('rollingSound');
+                const stopThreshold = 8; // px/s threshold below which we consider it stopped for audio
+                if (isStoppedFlag || adjustedSpeed <= stopThreshold) {
+                    if (currentRollSound) {
+                        try { currentRollSound.stop && currentRollSound.stop(); } catch (e) { }
+                        try { currentRollSound.destroy && currentRollSound.destroy(); } catch (e) { }
+                        try { boulder.setData && boulder.setData('rollingSound', null); } catch (e) { }
+                    }
+                }
+            } catch (e) { }
 
             const spinSign = Number(boulder.getData('rollingSpinSign')) || 1;
             boulder.setAngularVelocity(spinSign * Phaser.Math.Clamp(targetSpeed * 4.6, 95, 980));
@@ -8874,7 +9063,7 @@ class BonusScene extends Phaser.Scene {
 
         GAME_STATE.lives = Math.max(0, (Number(GAME_STATE.lives) || 0) - 1);
         if ((Number(GAME_STATE.lives) || 0) <= 0) {
-            this.scene.start('GameOverScene');
+            this.scene.launch('GameOverScene');
             return;
         }
 
@@ -9058,7 +9247,7 @@ class GameOverScene extends Phaser.Scene {
         // build final name from nameChars, pad with 'A' if needed
         const name = (this.nameChars || ['A','A','A']).slice(0,3).map((c) => (typeof c === 'string' && c.length ? c[0] : 'A')).join('').toUpperCase();
 
-        GAME_STATE.topScores.push({ name, score: GAME_STATE.score });
+        GAME_STATE.topScores.push({ name, score: GAME_STATE.score, level: Number(GAME_STATE.currentLevel) || 0 });
         GAME_STATE.topScores.sort((a, b) => b.score - a.score);
         GAME_STATE.topScores = GAME_STATE.topScores.slice(0, 10);
 

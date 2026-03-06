@@ -26,20 +26,24 @@ const WALL_TOKEN_REGEX = /^w(\d)(\d)(\d)([hv0])$/i;
 const AVAILABLE_BG_LEVELS = [1,2,3,4,5,6];
 
 const BASE_PALETTE_ITEMS = [
-    { token: '-', label: 'vuoto' },
-    { token: 'f', label: 'floor' },
-    { token: 'h', label: 'hole1' },
-    { token: '.', label: 'hole (.)' },
-    { token: 's', label: 'hole2' },
-    { token: 'g', label: 'gem marker' },
-    { token: 'd', label: 'door' },
-    { token: 'k', label: 'key' },
-    { token: 'p', label: 'pepita' },
-    { token: 'l', label: 'cuore' },
+    { token: '-', label: 'vuoto (-)' },
+    { token: '.', label: 'vuoto (.)' },
+    { token: '#', label: 'vuoto (#)' },
+    // tiles
+    { token: 'f', label: 'floor (f)' },
+    { token: 'h', label: 'hole1 (h)' },
+    { token: 's', label: 'hole2 / sand (s)' },
+    // objects
+    { token: 'g', label: 'gem (g)' },
+    { token: 'd', label: 'door (d)' },
+    { token: 'k', label: 'key (k)' },
+    { token: 'p', label: 'pepita / gem pickup (p)' },
+    { token: 'l', label: 'cuore / life (l)' },
     { token: 'helmet', label: 'helmet' },
-    { token: 'b', label: 'dyn chest' },
-    { token: 'c', label: 'cart' },
-    { token: 'm', label: 'skeleton' },
+    { token: 'b', label: 'dynamite chest (b)' },
+    { token: 'c', label: 'cart / stones (c)' },
+    { token: 'm', label: 'skeleton / wall (m)' },
+    { token: 'stones', label: 'stones (stones)' },
     { token: 'ghost', label: 'ghost spawn' },
     { token: 'bat', label: 'bat spawn' }
 ];
@@ -783,10 +787,11 @@ class LevelEditorScene extends Phaser.Scene {
 
         switch (normalized) {
             case '-': return { kind: 'empty' };
+            case '.': return { kind: 'empty' };
+            case '#': return { kind: 'empty' };
             case 'f': return { kind: 'tile', texture: 'tiles', frame: 3 };
             case 'h': return { kind: 'tile', texture: 'tiles', frame: 1 };
             case 's': return { kind: 'tile', texture: 'tiles', frame: 5 };
-            case '.': return { kind: 'tile', texture: 'tiles', frame: 1 };
             case 'g': return { kind: 'obj', frame: OBJECT_FRAMES.gem };
             case 'd': return { kind: 'obj', frame: OBJECT_FRAMES.door };
             case 'k': return { kind: 'obj', frame: OBJECT_FRAMES.key };
@@ -1230,7 +1235,13 @@ function readLevelFromForm() {
         },
         dynamicBoulders: {
             enabled: parseBool(el('dbEnabled')?.value, true),
-            directions: String(el('dbDirections')?.value || '').split(',').map((x) => x.trim()).filter(Boolean),
+            directions: (function(){
+                const elDirs = el('dbDirections');
+                if (elDirs && elDirs.options) {
+                    return Array.from(elDirs.options).filter(o=>o.selected).map(o=>o.value).filter(Boolean);
+                }
+                return String(el('dbDirections')?.value || '').split(',').map((x) => x.trim()).filter(Boolean);
+            })(),
             sizes: dbSizes,
             splitOnImpact: parseBool(el('dbSplitOnImpact')?.value, false),
             splitPiecesRange: splitRange,
@@ -1266,13 +1277,22 @@ function readLevelFromForm() {
         duration: parseNumber(el('rainDuration')?.value, 0)
     };
 
-    const bgRaw = String(el('levelBackground')?.value ?? '').trim();
-    if (bgRaw) {
-        if (/^\d+$/.test(bgRaw)) {
-            level.background = Number(bgRaw);
-        } else {
-            level.background = bgRaw;
-        }
+    // background can be single or multiple
+    const bgEl = el('levelBackground');
+    if (bgEl && bgEl.options) {
+        const selected = Array.from(bgEl.options).filter(o => o.selected).map(o => (o.value === '' ? null : (/^\d+$/.test(o.value) ? Number(o.value) : o.value)));
+        const real = selected.filter(v => v !== null);
+        if (real.length === 1) level.background = real[0];
+        else if (real.length > 1) level.background = real;
+    }
+
+    // foreground (optional) can be single or multiple
+    const fgEl = el('levelForeground');
+    if (fgEl && fgEl.options) {
+        const selectedF = Array.from(fgEl.options).filter(o => o.selected).map(o => (o.value === '' ? null : o.value));
+        const realF = selectedF.filter(v => v !== null);
+        if (realF.length === 1) level.foreground = realF[0];
+        else if (realF.length > 1) level.foreground = realF;
     }
 
     return { ...level, ...extra, map: level.map, playerStart: level.playerStart };
@@ -1293,10 +1313,35 @@ function applyLevelToForm(levelData) {
     el('batCount').value = data.bat ?? DEFAULT_LEVEL.bat;
     el('ghostSpeed').value = data.ghostSpeed ?? DEFAULT_LEVEL.ghostSpeed;
     el('batSpeed').value = data.batSpeed ?? DEFAULT_LEVEL.batSpeed;
+    try { if (el('ghostSpeedRange')) el('ghostSpeedRange').value = el('ghostSpeed').value; } catch (e) {}
+    try { if (el('batSpeedRange')) el('batSpeedRange').value = el('batSpeed').value; } catch (e) {}
     el('objectiveLabel').value = data.objectiveLabel ?? DEFAULT_LEVEL.objectiveLabel;
     el('lightMode').value = data.light ?? DEFAULT_LEVEL.light;
     el('escapeRoute').value = String(!!data.escapeRoute);
-    el('levelBackground').value = data.background ? String(data.background) : '';
+    // set background select (support single value or array)
+    try {
+        const bgEl = el('levelBackground');
+        if (bgEl && bgEl.options) {
+            const vals = Array.isArray(data.background) ? data.background : (data.background !== undefined && data.background !== null ? [data.background] : []);
+            Array.from(bgEl.options).forEach(o => {
+                o.selected = vals.length === 0 ? (o.value === String(data.background)) : vals.some(v => String(v) === o.value);
+            });
+        } else {
+            el('levelBackground').value = data.background ? String(data.background) : '';
+        }
+    } catch (e) { el('levelBackground').value = data.background ? String(data.background) : ''; }
+    // set foreground select (support single value or array)
+    try {
+        const fgEl = el('levelForeground');
+        if (fgEl && fgEl.options) {
+            const vals = Array.isArray(data.foreground) ? data.foreground : (data.foreground !== undefined && data.foreground !== null ? [data.foreground] : []);
+            Array.from(fgEl.options).forEach(o => {
+                o.selected = vals.length === 0 ? (o.value === String(data.foreground)) : vals.some(v => String(v) === o.value);
+            });
+        } else {
+            if (el('levelForeground')) el('levelForeground').value = data.foreground ? String(data.foreground) : '';
+        }
+    } catch (e) { if (el('levelForeground')) el('levelForeground').value = data.foreground ? String(data.foreground) : ''; }
 
     el('playerRow').value = data.playerStart?.row ?? DEFAULT_LEVEL.playerStart.row;
     el('playerCol').value = data.playerStart?.col ?? DEFAULT_LEVEL.playerStart.col;
@@ -1321,7 +1366,15 @@ function applyLevelToForm(levelData) {
 
     el('dbEnabled').value = String(!!dynamicBoulders.enabled);
     el('dbSplitOnImpact').value = String(!!dynamicBoulders.splitOnImpact);
-    el('dbDirections').value = Array.isArray(dynamicBoulders.directions) ? dynamicBoulders.directions.join(',') : 'top,bottom,left,right';
+    try {
+        const dirsEl = el('dbDirections');
+        if (dirsEl && dirsEl.options) {
+            const vals = Array.isArray(dynamicBoulders.directions) ? dynamicBoulders.directions : (dynamicBoulders.directions ? String(dynamicBoulders.directions).split(',').map(s=>s.trim()) : []);
+            Array.from(dirsEl.options).forEach(o => { o.selected = vals.includes(o.value); });
+        } else {
+            el('dbDirections').value = Array.isArray(dynamicBoulders.directions) ? dynamicBoulders.directions.join(',') : 'top,bottom,left,right';
+        }
+    } catch (e) { el('dbDirections').value = Array.isArray(dynamicBoulders.directions) ? dynamicBoulders.directions.join(',') : 'top,bottom,left,right'; }
     el('dbSizes').value = dynamicBoulders.sizes === null ? 'null' : JSON.stringify(dynamicBoulders.sizes, null, 2);
     const range = Array.isArray(dynamicBoulders.splitPiecesRange) && dynamicBoulders.splitPiecesRange.length >= 2
         ? dynamicBoulders.splitPiecesRange
@@ -1472,6 +1525,19 @@ function bindUI() {
             scene?.updateEditorBackgroundImage?.();
             drawMiniMapPreview(scene);
         });
+    }
+    // sync range sliders with numeric inputs for speeds
+    const ghostRange = el('ghostSpeedRange');
+    const ghostNum = el('ghostSpeed');
+    if (ghostRange && ghostNum) {
+        ghostRange.addEventListener('input', () => { ghostNum.value = ghostRange.value; drawMiniMapPreview(getScene()); });
+        ghostNum.addEventListener('input', () => { ghostRange.value = ghostNum.value; drawMiniMapPreview(getScene()); });
+    }
+    const batRange = el('batSpeedRange');
+    const batNum = el('batSpeed');
+    if (batRange && batNum) {
+        batRange.addEventListener('input', () => { batNum.value = batRange.value; drawMiniMapPreview(getScene()); });
+        batNum.addEventListener('input', () => { batRange.value = batNum.value; drawMiniMapPreview(getScene()); });
     }
     const showBg = el('showBackground');
     if (showBg) {

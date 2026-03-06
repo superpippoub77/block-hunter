@@ -455,7 +455,9 @@
     "dynamicSize": null,
     "rotation": null,
     "chaotic": null,
-    "shardBurstCount": 30
+    "shardBurstCount": 30,
+    "spawnCounts": [1, 2, 5],
+    "spawnInterval": 900
   },
   "dynamicBoulders": {
     "enabled": true,
@@ -470,6 +472,8 @@
     ],
     "maxSplitGeneration": 1,
     "stopAfterRotations": 4
+    ,"spawnCounts": [1,2,4],
+    "spawnInterval": 1400
   },
   "music": "data/music/wood_ambient.mp3",
   "speed": 1,
