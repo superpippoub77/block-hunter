@@ -1083,10 +1083,20 @@ class TopTenScene extends Phaser.Scene {
         this.topTitlePanel = this.add.graphics();
         drawTextPanel(this.topTitlePanel, topTitle, { paddingX: 18, paddingY: 10, radius: 8 });
 
+        // Column headers (localized if possible)
+        const nameColLabel = t.name_label || t.name || t.player_name || 'Name';
+        const levelColLabel = t.level_label || t.levelLabel || 'Lev';
+        const scoreColLabel = t.score_label || t.scoreLabel || 'Score';
+
+        const headerStyle = { fontSize: '18px', fill: '#bfeaff', fontFamily: GAME_FONT };
+        this.add.text(150, 130, nameColLabel, headerStyle).setOrigin(0, 0.5);
+        this.add.text(420, 130, levelColLabel, headerStyle).setOrigin(0.5, 0.5);
+        this.add.text(650, 130, scoreColLabel, headerStyle).setOrigin(1, 0.5);
+
         let y = 150;
         GAME_STATE.topScores.forEach((entry, i) => {
             // Name text with falling effect
-            const nameText = this.add.text(250, y, `${i + 1}. ${entry.name}`, {
+            const nameText = this.add.text(150, y, `${i + 1}. ${entry.name}`, {
                 fontSize: '24px',
                 fill: '#ffffff',
                 fontFamily: GAME_FONT
@@ -1100,7 +1110,7 @@ class TopTenScene extends Phaser.Scene {
                 fontFamily: GAME_FONT
             }).setOrigin(0.5, 0);
 
-            const scoreText = this.add.text(550, y, entry.score.toString(), {
+            const scoreText = this.add.text(650, y, entry.score.toString(), {
                 fontSize: '24px',
                 fill: '#00ff00',
                 fontFamily: GAME_FONT
@@ -1382,13 +1392,13 @@ class CreditsScene extends Phaser.Scene {
             'Project: Block Hunter',
             'Version: 1.0.0',
             '',
-            'Lead developer: Mario Rossi',
-            'Gameplay & Tools: Anna Bianchi',
-            'Graphics: Luca Verdi',
+            'Lead developer: Filippo Morano',
+            'Gameplay & Tools: Filippo Morano',
+            'Graphics: Filippo Morano',
             'Music & SFX: Studio Sound',
             '',
-            'Website: https://example.com',
-            'Contact: devs@example.com'
+            'Website: https://filippomorano.com',
+            'Contact: devs@filippomorano.com'
         ];
 
         let y = 150;

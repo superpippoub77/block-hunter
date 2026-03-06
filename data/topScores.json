@@ -1,11 +1,13 @@
 [
   {
     "name": "WAA",
-    "score": 384
+    "score": 384,
+    "level": 2
   },
   {
     "name": "ZAA",
-    "score": 370
+    "score": 370,
+"level": 2
   },
   {
     "name": "BAA",
@@ -14,30 +16,37 @@
   },
   {
     "name": "AAA",
-    "score": 180
+    "score": 180,
+    "level": 1
   },
   {
     "name": "XAA",
-    "score": 133
+    "score": 133,
+    "level": 1
   },
   {
     "name": "AAA",
-    "score": 30
+    "score": 30,
+    "level": 0
   },
   {
     "name": "JJJ",
-    "score": 10
+    "score": 10,
+    "level": 0
   },
   {
     "name": "AAA",
-    "score": 0
+    "score": 0,
+    "level": 0
   },
   {
     "name": "BBB",
-    "score": 0
+    "score": 0,
+    "level": 0
   },
   {
     "name": "CCC",
-    "score": 0
+    "score": 0,
+    "level": 0
   }
 ]

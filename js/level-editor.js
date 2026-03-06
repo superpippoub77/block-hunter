@@ -527,6 +527,11 @@ class LevelEditorScene extends Phaser.Scene {
     }
 
     createPalette() {
+        // If DOM palette exists, skip drawing the in-canvas palette to avoid duplication.
+        if (typeof document !== 'undefined' && document.getElementById('domPalette-tiles')) {
+            return;
+        }
+
         this.paletteLayer.removeAll(true);
         this.paletteItems = [];
 
@@ -1278,21 +1283,32 @@ function readLevelFromForm() {
     };
 
     // background can be single or multiple
-    const bgEl = el('levelBackground');
-    if (bgEl && bgEl.options) {
-        const selected = Array.from(bgEl.options).filter(o => o.selected).map(o => (o.value === '' ? null : (/^\d+$/.test(o.value) ? Number(o.value) : o.value)));
-        const real = selected.filter(v => v !== null);
-        if (real.length === 1) level.background = real[0];
-        else if (real.length > 1) level.background = real;
+    // Prefer structured background layers UI if present
+    const bgList = readBackgroundLayersFromDOM();
+    if (bgList && bgList.length) {
+        level.background = bgList;
+    } else {
+        const bgEl = el('levelBackground');
+        if (bgEl && bgEl.options) {
+            const selected = Array.from(bgEl.options).filter(o => o.selected).map(o => (o.value === '' ? null : (/^\d+$/.test(o.value) ? Number(o.value) : o.value)));
+            const real = selected.filter(v => v !== null);
+            if (real.length === 1) level.background = real[0];
+            else if (real.length > 1) level.background = real;
+        }
     }
 
     // foreground (optional) can be single or multiple
-    const fgEl = el('levelForeground');
-    if (fgEl && fgEl.options) {
-        const selectedF = Array.from(fgEl.options).filter(o => o.selected).map(o => (o.value === '' ? null : o.value));
-        const realF = selectedF.filter(v => v !== null);
-        if (realF.length === 1) level.foreground = realF[0];
-        else if (realF.length > 1) level.foreground = realF;
+    const fgList = readForegroundLayersFromDOM();
+    if (fgList && fgList.length) {
+        level.foreground = fgList;
+    } else {
+        const fgEl = el('levelForeground');
+        if (fgEl && fgEl.options) {
+            const selectedF = Array.from(fgEl.options).filter(o => o.selected).map(o => (o.value === '' ? null : o.value));
+            const realF = selectedF.filter(v => v !== null);
+            if (realF.length === 1) level.foreground = realF[0];
+            else if (realF.length > 1) level.foreground = realF;
+        }
     }
 
     return { ...level, ...extra, map: level.map, playerStart: level.playerStart };
@@ -1382,6 +1398,10 @@ function applyLevelToForm(levelData) {
     el('dbSplitRange').value = `${range[0]},${range[1]}`;
     el('dbMaxSplitGen').value = dynamicBoulders.maxSplitGeneration ?? 1;
 
+    // Populate background/foreground layer editors if present
+    try { applyBackgroundLayersToDOM(data.background); } catch (e) {}
+    try { applyForegroundLayersToDOM(data.foreground); } catch (e) {}
+
     const knownKeys = new Set([
         'id', 'map', 'playerStart', 'staticRocks', 'dynamicBoulders', 'speed', 'escapeRoute',
         'objectiveLabel', 'enemies', 'collectibles', 'traps', 'spawnPoints', 'timeLimit',
@@ -1405,6 +1425,178 @@ function exportJsonToFile(levelData) {
     a.download = `${fileNameBase}.json`;
     a.click();
     URL.revokeObjectURL(url);
+}
+
+// --- Background / Foreground DOM editors ---
+function readBackgroundLayersFromDOM() {
+    if (typeof document === 'undefined') return null;
+    const container = el('bgLayersContainer');
+    if (!container) return null;
+    const layers = [];
+    const items = Array.from(container.querySelectorAll('.bg-layer'));
+    items.forEach((it) => {
+        let src = '';
+        const sel = it.querySelector('select.bg-src');
+        if (sel) {
+            const v = String(sel.value || '').trim();
+            src = v ? `images/${v}` : '';
+        } else {
+            src = String(it.querySelector('.bg-src')?.value || '').trim();
+        }
+        if (!src) return; // skip empty
+        const factor = parseNumber(it.querySelector('.bg-factor')?.value, 1.0);
+        const alpha = parseNumber(it.querySelector('.bg-alpha')?.value, 1.0);
+        layers.push({ src, parallaxBgFactor: factor, parallaxBgAlpha: alpha });
+    });
+    return layers;
+}
+
+function readForegroundLayersFromDOM() {
+    if (typeof document === 'undefined') return null;
+    const container = el('fgLayersContainer');
+    if (!container) return null;
+    const layers = [];
+    const items = Array.from(container.querySelectorAll('.fg-layer'));
+    items.forEach((it) => {
+        let src = '';
+        const sel = it.querySelector('select.fg-src');
+        if (sel) {
+            const v = String(sel.value || '').trim();
+            src = v ? `images/${v}` : '';
+        } else {
+            src = String(it.querySelector('.fg-src')?.value || '').trim();
+        }
+        if (!src) return;
+        const factor = parseNumber(it.querySelector('.fg-factor')?.value, 1.0);
+        const alpha = parseNumber(it.querySelector('.fg-alpha')?.value, 1.0);
+        layers.push({ src, parallaxFgFactor: factor, parallaxFgAlpha: alpha });
+    });
+    return layers;
+}
+
+function applyBackgroundLayersToDOM(bg) {
+    const container = el('bgLayersContainer');
+    if (!container) return;
+    container.innerHTML = '';
+    ensureBgHeader();
+    if (!bg) return;
+    const arr = Array.isArray(bg) ? bg : (bg ? [bg] : []);
+    arr.forEach((layer, idx) => {
+        const src = layer?.src || String(layer || '').trim();
+        const factor = layer?.parallaxBgFactor ?? 1.0;
+        const alpha = layer?.parallaxBgAlpha ?? 1.0;
+        container.appendChild(createBgLayerElement(src, factor, alpha, idx));
+    });
+}
+
+function applyForegroundLayersToDOM(fg) {
+    const container = el('fgLayersContainer');
+    if (!container) return;
+    container.innerHTML = '';
+    ensureFgHeader();
+    if (!fg) return;
+    const arr = Array.isArray(fg) ? fg : (fg ? [fg] : []);
+    arr.forEach((layer, idx) => {
+        const src = layer?.src || String(layer || '').trim();
+        const factor = layer?.parallaxFgFactor ?? 1.0;
+        const alpha = layer?.parallaxFgAlpha ?? 1.0;
+        container.appendChild(createFgLayerElement(src, factor, alpha, idx));
+    });
+}
+
+function createBgLayerElement(src, factor, alpha, idx) {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'bg-layer';
+    wrapper.style.display = 'grid';
+    wrapper.style.gridTemplateColumns = '1fr 60px 60px 40px';
+    wrapper.style.gap = '6px';
+    wrapper.style.marginBottom = '6px';
+    // first column: select of available bg images (fallback to text input)
+    let inp;
+    const masterSelect = el('bgImageSelect');
+    if (masterSelect) {
+        const sel = document.createElement('select'); sel.className = 'bg-src'; sel.classList.add('bg-src'); sel.style.width = '100%';
+        // copy options from masterSelect
+        Array.from(masterSelect.options).forEach((o) => {
+            const opt = document.createElement('option'); opt.value = o.value; opt.textContent = o.textContent; sel.appendChild(opt);
+        });
+        // set value from src (strip images/ prefix if present)
+        const current = String(src || '').replace(/^images\//, '');
+        if (current) try { sel.value = current; } catch (e) {}
+        inp = sel;
+    } else {
+        inp = document.createElement('input'); inp.className = 'bg-src'; inp.placeholder = 'src (es. images/bg_10.png)'; inp.value = src || '';
+    }
+    const f = document.createElement('input'); f.className = 'bg-factor'; f.type = 'number'; f.step = '0.1'; f.value = String(factor);
+    const a = document.createElement('input'); a.className = 'bg-alpha'; a.type = 'number'; a.step = '0.05'; a.value = String(alpha);
+    const del = document.createElement('button'); del.type = 'button'; del.textContent = '✖'; del.title = 'Rimuovi'; del.addEventListener('click', () => { wrapper.remove(); });
+
+    wrapper.appendChild(inp); wrapper.appendChild(f); wrapper.appendChild(a); wrapper.appendChild(del);
+    return wrapper;
+}
+
+function createFgLayerElement(src, factor, alpha, idx) {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'fg-layer';
+    wrapper.style.display = 'grid';
+    wrapper.style.gridTemplateColumns = '1fr 60px 60px 40px';
+    wrapper.style.gap = '6px';
+    wrapper.style.marginBottom = '6px';
+    let inp;
+    const masterSelect = el('fgImageSelect');
+    if (masterSelect) {
+        const sel = document.createElement('select'); sel.className = 'fg-src'; sel.style.width = '100%';
+        Array.from(masterSelect.options).forEach((o) => {
+            const opt = document.createElement('option'); opt.value = o.value; opt.textContent = o.textContent; sel.appendChild(opt);
+        });
+        const current = String(src || '').replace(/^images\//, '');
+        if (current) try { sel.value = current; } catch (e) {}
+        inp = sel;
+    } else {
+        inp = document.createElement('input'); inp.className = 'fg-src'; inp.placeholder = 'src (es. images/foreground2.png)'; inp.value = src || '';
+    }
+    const f = document.createElement('input'); f.className = 'fg-factor'; f.type = 'number'; f.step = '0.1'; f.value = String(factor);
+    const a = document.createElement('input'); a.className = 'fg-alpha'; a.type = 'number'; a.step = '0.05'; a.value = String(alpha);
+    const del = document.createElement('button'); del.type = 'button'; del.textContent = '✖'; del.title = 'Rimuovi'; del.addEventListener('click', () => { wrapper.remove(); });
+
+    wrapper.appendChild(inp); wrapper.appendChild(f); wrapper.appendChild(a); wrapper.appendChild(del);
+    return wrapper;
+}
+
+function ensureBgHeader() {
+    const container = el('bgLayersContainer');
+    if (!container) return;
+    if (container.querySelector('.bg-header')) return;
+    const header = document.createElement('div');
+    header.className = 'bg-header';
+    header.style.display = 'grid';
+    header.style.gridTemplateColumns = '1fr 60px 60px 40px';
+    header.style.gap = '6px';
+    header.style.marginBottom = '6px';
+    const h1 = document.createElement('div'); h1.textContent = 'Image'; h1.style.color = '#9fb8df';
+    const h2 = document.createElement('div'); h2.textContent = 'Fac'; h2.style.color = '#9fb8df';
+    const h3 = document.createElement('div'); h3.textContent = 'Alp'; h3.style.color = '#9fb8df';
+    const h4 = document.createElement('div'); h4.textContent = '';
+    header.appendChild(h1); header.appendChild(h2); header.appendChild(h3); header.appendChild(h4);
+    container.appendChild(header);
+}
+
+function ensureFgHeader() {
+    const container = el('fgLayersContainer');
+    if (!container) return;
+    if (container.querySelector('.fg-header')) return;
+    const header = document.createElement('div');
+    header.className = 'fg-header';
+    header.style.display = 'grid';
+    header.style.gridTemplateColumns = '1fr 60px 60px 40px';
+    header.style.gap = '6px';
+    header.style.marginBottom = '6px';
+    const h1 = document.createElement('div'); h1.textContent = 'Image'; h1.style.color = '#9fb8df';
+    const h2 = document.createElement('div'); h2.textContent = 'Fac'; h2.style.color = '#9fb8df';
+    const h3 = document.createElement('div'); h3.textContent = 'Alp'; h3.style.color = '#9fb8df';
+    const h4 = document.createElement('div'); h4.textContent = '';
+    header.appendChild(h1); header.appendChild(h2); header.appendChild(h3); header.appendChild(h4);
+    container.appendChild(header);
 }
 
 function bindUI() {
@@ -1564,7 +1756,174 @@ window.addEventListener('level-editor-ready', () => {
     if (scene) {
         scene.loadFromJson(DEFAULT_LEVEL);
     }
+    // Build DOM palette (left column) and wire drag/drop handlers
+    try { buildDomPalette(); } catch (e) { /* ignore */ }
+    try { setupDomDragAndDrop(); } catch (e) { /* ignore */ }
     bindUI();
     drawMiniMapPreview(scene);
     setStatus('Editor pronto.');
 });
+
+// hook add bg/fg buttons if present
+window.addEventListener('load', () => {
+    try {
+        const addBg = el('addBgLayerBtn');
+        if (addBg) addBg.addEventListener('click', () => {
+            const container = el('bgLayersContainer');
+            if (!container) return;
+            ensureBgHeader();
+            container.appendChild(createBgLayerElement('', 1.0, 1.0, Date.now()));
+        });
+    } catch (e) {}
+    try {
+        const addFg = el('addFgLayerBtn');
+        if (addFg) addFg.addEventListener('click', () => {
+            const container = el('fgLayersContainer');
+            if (!container) return;
+            ensureFgHeader();
+            container.appendChild(createFgLayerElement('', 1.0, 1.0, Date.now()));
+        });
+    } catch (e) {}
+    try {
+        const addBgFrom = el('addBgFromSelectBtn');
+        const bgSelect = el('bgImageSelect');
+        if (addBgFrom && bgSelect) addBgFrom.addEventListener('click', () => {
+            const val = String(bgSelect.value || '').trim();
+            if (!val) return;
+            const container = el('bgLayersContainer');
+            if (!container) return;
+            ensureBgHeader();
+            container.appendChild(createBgLayerElement(`images/${val}`, 1.0, 1.0, Date.now()));
+        });
+    } catch (e) {}
+    try {
+        const addFgFrom = el('addFgFromSelectBtn');
+        const fgSelect = el('fgImageSelect');
+        if (addFgFrom && fgSelect) addFgFrom.addEventListener('click', () => {
+            const val = String(fgSelect.value || '').trim();
+            if (!val) return;
+            const container = el('fgLayersContainer');
+            if (!container) return;
+            ensureFgHeader();
+            container.appendChild(createFgLayerElement(`images/${val}`, 1.0, 1.0, Date.now()));
+        });
+    } catch (e) {}
+});
+
+// Build left DOM palette inside #domPalette-* containers. Creates simple accordion groups
+function buildDomPalette() {
+    if (typeof document === 'undefined') return;
+    const tilesContainer = el('domPalette-tiles');
+    const objectsContainer = el('domPalette-objects');
+    const wallsContainer = el('domPalette-walls');
+    if (!tilesContainer && !objectsContainer && !wallsContainer) return;
+
+    // classify tokens
+    const tileKeys = new Set(['-', '.', '#', 'f', 'h', 's']);
+    const wallKeys = new Set(WALL_PALETTE_ITEMS.map(i => normalizeToken(i.token)));
+
+    // populate tiles
+    PALETTE_ITEMS.forEach((it) => {
+        const tokenNorm = normalizeToken(it.token);
+        if (tileKeys.has(it.token) || tileKeys.has(tokenNorm)) {
+            if (!tilesContainer) return;
+            const elItem = makePaletteItem(it.label || it.token, tokenNorm);
+            tilesContainer.appendChild(elItem);
+        }
+    });
+
+    // populate objects (exclude walls and tile keys)
+    PALETTE_ITEMS.forEach((it) => {
+        const tokenNorm = normalizeToken(it.token);
+        if (wallKeys.has(tokenNorm)) return;
+        if (tileKeys.has(it.token) || tileKeys.has(tokenNorm)) return;
+        if (!objectsContainer) return;
+        const elItem = makePaletteItem(it.label || it.token, tokenNorm);
+        objectsContainer.appendChild(elItem);
+    });
+
+    // populate walls
+    if (wallsContainer) {
+        WALL_PALETTE_ITEMS.forEach((it) => {
+            const tokenNorm = normalizeToken(it.token);
+            const elItem = makePaletteItem(it.label || it.token, tokenNorm);
+            wallsContainer.appendChild(elItem);
+        });
+    }
+
+    // accordion toggles
+    const accHeads = Array.from(document.querySelectorAll('.accordion h3'));
+    accHeads.forEach((h) => {
+        h.addEventListener('click', () => {
+            const content = h.nextElementSibling;
+            if (!content) return;
+            content.style.display = content.style.display === 'block' ? 'none' : 'block';
+        });
+    });
+
+    function makePaletteItem(labelText, token) {
+        const d = document.createElement('div');
+        d.className = 'palette-item';
+        d.draggable = true;
+        d.dataset.token = token;
+        d.textContent = `${labelText} (${token})`;
+
+        d.addEventListener('dragstart', (ev) => {
+            try { ev.dataTransfer.setData('text/plain', token); } catch (e) { /* ignore */ }
+            const scene = getScene();
+            if (scene) scene.lastBrushToken = token;
+        });
+
+        d.addEventListener('click', () => {
+            const scene = getScene();
+            if (scene) {
+                scene.lastBrushToken = token;
+                setStatus(`Brush selezionato: ${token}`);
+            }
+        });
+
+        return d;
+    }
+}
+
+// Setup dragover/drop handlers on #editor-game to place tokens into the Phaser grid
+function setupDomDragAndDrop() {
+    if (typeof document === 'undefined') return;
+    const target = document.getElementById('editor-game');
+    if (!target) return;
+
+    target.addEventListener('dragover', (ev) => {
+        ev.preventDefault();
+        try { ev.dataTransfer.dropEffect = 'copy'; } catch (e) {}
+    });
+
+    target.addEventListener('drop', (ev) => {
+        ev.preventDefault();
+        const token = (ev.dataTransfer && (ev.dataTransfer.getData('text/plain') || ev.dataTransfer.getData('Text'))) || null;
+        if (!token) {
+            setStatus('Nessun token nel drop', true);
+            return;
+        }
+
+        const rect = target.getBoundingClientRect();
+        const x = ev.clientX - rect.left;
+        const y = ev.clientY - rect.top;
+        const scene = getScene();
+        if (!scene) {
+            setStatus('Editor non pronto', true);
+            return;
+        }
+        const cell = scene.getGridCellFromPointer(x, y);
+        if (!cell) {
+            setStatus('Drop fuori dalla griglia', true);
+            return;
+        }
+
+        scene.placeToken(cell.col, cell.row, token);
+        scene.selectedCell = cell;
+        scene.updateSelectedCellInfo();
+        scene.renderGrid();
+        drawMiniMapPreview(scene);
+        setStatus(`Token ${token} posato in ${cell.row},${cell.col}`);
+    });
+}
