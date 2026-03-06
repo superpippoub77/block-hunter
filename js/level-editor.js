@@ -1119,29 +1119,58 @@ function drawMiniMapPreview(scene) {
     const height = canvas.height;
     ctx.imageSmoothingEnabled = false;
     ctx.clearRect(0, 0, width, height);
-
-    // draw background image in preview if enabled
+    // draw layered background images (support multiple bg layers from DOM or select)
     const showBg = !!el('showBackground')?.checked;
-    const bgVal = String(el('levelBackground')?.value ?? '').trim();
-    if (showBg && bgVal) {
-        // map bgVal to texture key like in editor
-        let bgKey = null;
-        if (/^\d+$/.test(bgVal)) {
-            const k = `game_bg_${bgVal}`;
-            bgKey = scene.textures.exists(k) ? k : null;
-        } else if (scene.textures.exists(bgVal)) {
-            bgKey = bgVal;
-        } else if (scene.textures.exists('game_bg')) {
-            bgKey = 'game_bg';
-        }
-        if (bgKey) {
-            // attempt to draw the full background covering the preview area
-            const frame = scene?.textures?.getFrame(bgKey, 0);
-            const sourceImage = frame?.source?.image;
-            if (frame && sourceImage) {
-                ctx.drawImage(sourceImage, 0, 0, width, height);
+    // try layers from DOM editor first
+    const domBgLayers = readBackgroundLayersFromDOM();
+    let bgLayers = null;
+    if (Array.isArray(domBgLayers) && domBgLayers.length > 0) bgLayers = domBgLayers;
+    else {
+        // fallback: read from single select value
+        const bgVal = String(el('levelBackground')?.value ?? '').trim();
+        if (bgVal && showBg) {
+            // prefer numbered levels textures
+            if (/^\d+$/.test(bgVal)) {
+                bgLayers = [{ src: `images/level${bgVal}.png`, parallaxBgFactor: 1.0, parallaxBgAlpha: 1.0 }];
+            } else {
+                bgLayers = [{ src: String(bgVal), parallaxBgFactor: 1.0, parallaxBgAlpha: 1.0 }];
             }
         }
+    }
+
+    // simple image cache to avoid reloading
+    window.__levelEditorImageCache = window.__levelEditorImageCache || {};
+    const drawLayerImage = (layer) => {
+        if (!layer || !layer.src) return false;
+        const src = String(layer.src || '').trim();
+        if (!src) return false;
+        const cache = window.__levelEditorImageCache;
+        if (!cache[src]) {
+            const img = new Image();
+            try { img.crossOrigin = 'anonymous'; } catch (e) {}
+            cache[src] = { img, loaded: false };
+            img.onload = () => { cache[src].loaded = true; drawMiniMapPreview(scene); };
+            img.onerror = () => { cache[src].loaded = false; };
+            img.src = src;
+            return false;
+        }
+        const entry = cache[src];
+        if (!entry.loaded) return false;
+        const img = entry.img;
+        const alpha = Number.isFinite(layer.parallaxBgAlpha) ? layer.parallaxBgAlpha : 1.0;
+        try {
+            ctx.save();
+            ctx.globalAlpha = alpha;
+            ctx.drawImage(img, 0, 0, width, height);
+            ctx.restore();
+        } catch (e) {
+            return false;
+        }
+        return true;
+    };
+
+    if (showBg && Array.isArray(bgLayers) && bgLayers.length > 0) {
+        bgLayers.forEach((ly) => drawLayerImage(ly));
     }
 
     const rows = scene.rows || 1;
@@ -1152,24 +1181,46 @@ function drawMiniMapPreview(scene) {
     const offX = Math.floor((width - mapW) / 2);
     const offY = Math.floor((height - mapH) / 2);
 
-    ctx.fillStyle = '#060d1f';
-    ctx.fillRect(0, 0, width, height);
+    // only clear with solid color when there are no background layers
+    if (!showBg || !Array.isArray(bgLayers) || bgLayers.length === 0) {
+        ctx.fillStyle = '#060d1f';
+        ctx.fillRect(0, 0, width, height);
+    }
 
     for (let row = 0; row < rows; row++) {
         for (let col = 0; col < cols; col++) {
             const cellData = scene.cells?.[row]?.[col];
             const base = cellData?.base || '-';
+            const normBase = normalizeToken(base);
+            const isEmptyToken = normBase === '-' || normBase === '.' || normBase === '#';
             const reveal = cellData?.reveal;
 
             const x = offX + col * cell;
             const y = offY + row * cell;
-            ctx.fillStyle = '#0f1f3e';
-            ctx.fillRect(x, y, cell, cell);
+            // If the base token is an empty token, don't draw a tile so the background remains fully visible.
+            if (isEmptyToken) {
+                // nothing to draw for empty cells (background shows through)
+            } else {
+                // If there are no background layers, draw a solid cell background.
+                if (!showBg || !Array.isArray(bgLayers) || bgLayers.length === 0) {
+                    ctx.fillStyle = '#0f1f3e';
+                    ctx.fillRect(x, y, cell, cell);
+                }
 
-            const rendered = drawMiniMapToken(scene, ctx, base, x, y, cell);
-            if (!rendered) {
-                ctx.fillStyle = tokenToMiniMapColor(base);
-                ctx.fillRect(x, y, cell, cell);
+                const rendered = drawMiniMapToken(scene, ctx, base, x, y, cell);
+                if (!rendered) {
+                    // if a background image is present, draw semi-transparent tile color
+                    if (showBg && Array.isArray(bgLayers) && bgLayers.length > 0) {
+                        ctx.save();
+                        ctx.globalAlpha = 0.85;
+                        ctx.fillStyle = tokenToMiniMapColor(base);
+                        ctx.fillRect(x, y, cell, cell);
+                        ctx.restore();
+                    } else {
+                        ctx.fillStyle = tokenToMiniMapColor(base);
+                        ctx.fillRect(x, y, cell, cell);
+                    }
+                }
             }
 
             if (reveal) {
@@ -1213,6 +1264,40 @@ function drawMiniMapPreview(scene) {
     ctx.strokeStyle = '#7cc7ff';
     ctx.lineWidth = 1.5;
     ctx.strokeRect(offX + 0.5, offY + 0.5, mapW - 1, mapH - 1);
+
+    // draw foreground layers over the map (from DOM or fallback)
+    const domFg = readForegroundLayersFromDOM();
+    let fgLayers = null;
+    if (Array.isArray(domFg) && domFg.length > 0) fgLayers = domFg;
+    else {
+        const fgVal = String(el('levelForeground')?.value ?? '').trim();
+        if (fgVal) fgLayers = [{ src: fgVal, parallaxFgFactor: 1.0, parallaxFgAlpha: 1.0 }];
+    }
+    if (Array.isArray(fgLayers) && fgLayers.length > 0) {
+        fgLayers.forEach((ly) => {
+            if (!ly || !ly.src) return;
+            const src = String(ly.src || '').trim();
+            const cache = window.__levelEditorImageCache || {};
+            if (!cache[src]) {
+                const img = new Image();
+                try { img.crossOrigin = 'anonymous'; } catch (e) {}
+                cache[src] = { img, loaded: false };
+                img.onload = () => { cache[src].loaded = true; drawMiniMapPreview(scene); };
+                img.onerror = () => { cache[src].loaded = false; };
+                img.src = src;
+                window.__levelEditorImageCache = cache;
+                return;
+            }
+            const entry = cache[src];
+            if (!entry.loaded) return;
+            try {
+                ctx.save();
+                ctx.globalAlpha = Number.isFinite(ly.parallaxFgAlpha) ? ly.parallaxFgAlpha : 1.0;
+                ctx.drawImage(entry.img, 0, 0, width, height);
+                ctx.restore();
+            } catch (e) { /* ignore */ }
+        });
+    }
 }
 
 function readLevelFromForm() {
@@ -1521,8 +1606,17 @@ function applyBackgroundLayersToDOM(bg) {
         const src = layer?.src || String(layer || '').trim();
         const factor = layer?.parallaxBgFactor ?? 1.0;
         const alpha = layer?.parallaxBgAlpha ?? 1.0;
-        container.appendChild(createBgLayerElement(src, factor, alpha, idx));
+        const elRow = createBgLayerElement(src, factor, alpha, idx);
+        container.appendChild(elRow);
     });
+    // If no radio is selected, default to the first background layer
+    try {
+        const anyChecked = !!container.querySelector('input.bg-active-radio:checked');
+        if (!anyChecked) {
+            const firstRadio = container.querySelector('input.bg-active-radio');
+            if (firstRadio) firstRadio.checked = true;
+        }
+    } catch (e) { /* ignore */ }
 }
 
 function applyForegroundLayersToDOM(fg) {
@@ -1544,10 +1638,21 @@ function createBgLayerElement(src, factor, alpha, idx) {
     const wrapper = document.createElement('div');
     wrapper.className = 'bg-layer';
     wrapper.style.display = 'grid';
-    wrapper.style.gridTemplateColumns = '1fr 60px 60px 40px';
+    wrapper.style.gridTemplateColumns = '30px 1fr 60px 60px 40px';
     wrapper.style.gap = '6px';
     wrapper.style.marginBottom = '6px';
-    // first column: select of available bg images (fallback to text input)
+    // radio to select this layer as active background
+    const radio = document.createElement('input');
+    radio.type = 'radio';
+    radio.name = 'bgActive';
+    radio.className = 'bg-active-radio';
+    radio.title = 'Usa come background principale';
+    radio.addEventListener('change', () => {
+        try { setStatus('Background principale impostato.'); } catch (e) {}
+        try { const scene = getScene(); scene?.updateEditorBackgroundImage?.(); } catch (e) {}
+    });
+
+    // second column: select of available bg images (fallback to text input)
     let inp;
     const masterSelect = el('bgImageSelect');
     if (masterSelect) {
@@ -1567,6 +1672,7 @@ function createBgLayerElement(src, factor, alpha, idx) {
     const a = document.createElement('input'); a.className = 'bg-alpha'; a.type = 'number'; a.step = '0.05'; a.value = String(alpha);
     const del = document.createElement('button'); del.type = 'button'; del.textContent = '✖'; del.title = 'Rimuovi'; del.addEventListener('click', () => { wrapper.remove(); });
 
+    wrapper.appendChild(radio);
     wrapper.appendChild(inp); wrapper.appendChild(f); wrapper.appendChild(a); wrapper.appendChild(del);
     return wrapper;
 }
@@ -1606,14 +1712,15 @@ function ensureBgHeader() {
     const header = document.createElement('div');
     header.className = 'bg-header';
     header.style.display = 'grid';
-    header.style.gridTemplateColumns = '1fr 60px 60px 40px';
+    header.style.gridTemplateColumns = '30px 1fr 60px 60px 40px';
     header.style.gap = '6px';
     header.style.marginBottom = '6px';
+    const h0 = document.createElement('div'); h0.textContent = ''; h0.style.color = '#9fb8df';
     const h1 = document.createElement('div'); h1.textContent = 'Image'; h1.style.color = '#9fb8df';
-    const h2 = document.createElement('div'); h2.textContent = 'Fac'; h2.style.color = '#9fb8df';
-    const h3 = document.createElement('div'); h3.textContent = 'Alp'; h3.style.color = '#9fb8df';
+    const h2 = document.createElement('div'); h2.textContent = 'Factor'; h2.style.color = '#9fb8df';
+    const h3 = document.createElement('div'); h3.textContent = 'Alpha'; h3.style.color = '#9fb8df';
     const h4 = document.createElement('div'); h4.textContent = '';
-    header.appendChild(h1); header.appendChild(h2); header.appendChild(h3); header.appendChild(h4);
+    header.appendChild(h0); header.appendChild(h1); header.appendChild(h2); header.appendChild(h3); header.appendChild(h4);
     container.appendChild(header);
 }
 
