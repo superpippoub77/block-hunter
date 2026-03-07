@@ -252,7 +252,7 @@ class LevelEditorScene extends Phaser.Scene {
         this.rows = 12;
         this.cellSize = 48;
         this.baseCellSize = 48; // cell size without zoom
-        this.zoom = 1;
+        this.zoom = 2; // default start zoom (2x) to show enlarged map
         this.gridOffsetX = 18;
         this.gridOffsetY = 18;
         this.gridPadding = 18; // fixed padding used for layout and scrolling math
@@ -285,7 +285,8 @@ class LevelEditorScene extends Phaser.Scene {
 
     create() {
         this.input.mouse?.disableContextMenu();
-        this.cameras.main.setBackgroundColor('#091022');
+        // Darker background to increase tile visibility
+        this.cameras.main.setBackgroundColor('#03050a');
 
         this.gridLayer = this.add.container(0, 0);
         this.paletteLayer = this.add.container(0, 0);
