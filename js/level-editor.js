@@ -2110,6 +2110,12 @@ function bindUI() {
         const stopBtn = el('stopMusicBtn');
         const musicSel = el('levelMusic');
         const vol = el('musicVolume');
+        const previewBtn = el('previewMusicBtn');
+
+        // preview audio instance (separate from main player)
+        window.__editorMusicPreviewAudio = window.__editorMusicPreviewAudio || new Audio();
+        const pAudio = window.__editorMusicPreviewAudio;
+        pAudio.loop = false;
 
         if (musicSel) {
             musicSel.addEventListener('change', () => {
@@ -2131,7 +2137,34 @@ function bindUI() {
             } catch (e) { setStatus(`Errore riproduzione: ${e.message}`, true); }
         });
         if (stopBtn) stopBtn.addEventListener('click', () => { try { audio.pause(); audio.currentTime = 0; setStatus('Musica fermata.'); } catch (e) {} });
-        if (vol) vol.addEventListener('input', () => { try { audio.volume = parseFloat(vol.value) || 0; } catch (e) {} });
+        if (vol) vol.addEventListener('input', () => { try { audio.volume = parseFloat(vol.value) || 0; pAudio.volume = parseFloat(vol.value) || 0; } catch (e) {} });
+
+        if (previewBtn) {
+            previewBtn.addEventListener('click', async () => {
+                try {
+                    const src = String(musicSel?.value || '').trim();
+                    if (!src) { setStatus('Nessuna traccia selezionata per preview.', true); return; }
+                    // toggle: if preview playing, stop it
+                    if (!pAudio.paused && !pAudio.ended) {
+                        try { clearTimeout(pAudio._previewTimeout); } catch (e) {}
+                        pAudio.pause(); pAudio.currentTime = 0;
+                        setStatus('Preview fermata.');
+                        return;
+                    }
+                    if (!pAudio.src || pAudio.src.indexOf(src) === -1) pAudio.src = src;
+                    pAudio.volume = parseFloat(vol?.value ?? 0.6) || 0.6;
+                    pAudio.currentTime = 0;
+                    await pAudio.play();
+                    setStatus('Preview in riproduzione...');
+                    // auto-stop preview after 6s if still playing
+                    try { clearTimeout(pAudio._previewTimeout); } catch (e) {}
+                    pAudio._previewTimeout = setTimeout(() => {
+                        try { pAudio.pause(); pAudio.currentTime = 0; setStatus('Preview terminata.'); } catch (e) {}
+                    }, 6000);
+                    pAudio.addEventListener('ended', () => { try { clearTimeout(pAudio._previewTimeout); setStatus('Preview terminata.'); } catch (e) {} }, { once: true });
+                } catch (e) { setStatus(`Errore preview: ${e.message}`, true); }
+            });
+        }
     } catch (e) { /* ignore music UI errors */ }
     
     // zoom slider

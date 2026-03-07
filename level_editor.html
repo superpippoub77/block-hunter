@@ -91,13 +91,16 @@
             user-select: none;
         }
 
-        .palette-item:active { cursor: grabbing; }
+        .palette-item:active {
+            cursor: grabbing;
+        }
 
         .panel {
             padding: 12px;
             overflow: auto;
             background: #0a1020;
         }
+
         .section {
             border: 1px solid #273859;
             border-radius: 6px;
@@ -111,6 +114,7 @@
             margin-bottom: 8px;
             color: #8fd8ff;
         }
+
         .section h2 {
             cursor: pointer;
             user-select: none;
@@ -204,11 +208,13 @@
             width: 100%;
             height: 300px;
             display: block;
-            background: #02040a; /* darker preview background for better tile contrast */
+            background: #02040a;
+            /* darker preview background for better tile contrast */
             border: 1px solid #1b2b44;
             border-radius: 4px;
             image-rendering: pixelated;
         }
+
         /* map scrollbars overlayed on editor area */
         .editor-scrollbar {
             position: absolute;
@@ -216,15 +222,18 @@
             -webkit-appearance: none;
             appearance: none;
             height: 14px;
-            background: rgba(20,34,56,0.6);
-            border: 1px solid rgba(60,100,160,0.6);
+            background: rgba(20, 34, 56, 0.6);
+            border: 1px solid rgba(60, 100, 160, 0.6);
             border-radius: 6px;
         }
+
         #hScroll {
             left: 0px;
-            right: 452px; /* leave right panel space */
+            right: 452px;
+            /* leave right panel space */
             bottom: 6px;
         }
+
         #vScroll {
             top: 0px;
             right: -12px;
@@ -234,6 +243,7 @@
             writing-mode: vertical-rl;
             transform: none;
         }
+
         /* small credit shown on non-game scenes */
         .spike-credit {
             position: fixed;
@@ -307,9 +317,12 @@
                     <button id="applyGridBtn" type="button">Applica Griglia</button>
                     <button id="clearGridBtn" type="button">Svuota</button>
                 </div>
-                <div class="tiny">Drag & Drop dalla palette nel canvas. Ruota la tile selezionata con ←/→ o rotella mouse. Premi `h` per ribaltare orizzontalmente, `v` per ribaltare verticalmente. Premi Canc per svuotare la cella selezionata. Palette wall: 24 frame (4 righe x 6 colonne).</div>
+                <div class="tiny">Drag & Drop dalla palette nel canvas. Ruota la tile selezionata con ←/→ o rotella
+                    mouse. Premi `h` per ribaltare orizzontalmente, `v` per ribaltare verticalmente. Premi Canc per
+                    svuotare la cella selezionata. Palette wall: 24 frame (4 righe x 6 colonne).</div>
                 <div class="tiny" id="selectedCellInfo">Cella selezionata: nessuna</div>
-                <label style="margin-top:8px;"><input id="revealMode" type="checkbox" style="width:auto; margin-right:6px;">Modalità reveal (A/B)</label>
+                <label style="margin-top:8px;"><input id="revealMode" type="checkbox"
+                        style="width:auto; margin-right:6px;">Modalità reveal (A/B)</label>
             </div>
 
             <div class="section">
@@ -318,7 +331,9 @@
                     <canvas id="miniMapPreview" width="360" height="300"></canvas>
                 </div>
                 <div class="tiny">La preview si aggiorna in tempo reale mentre modifichi la griglia.</div>
-                <label style="margin-top:6px; display:block;"><input id="showBackground" type="checkbox" style="width:auto; margin-right:6px;" checked>Mostra background nella preview e nella mappa</label>
+                <label style="margin-top:6px; display:block;"><input id="showBackground" type="checkbox"
+                        style="width:auto; margin-right:6px;" checked>Mostra background nella preview e nella
+                    mappa</label>
             </div>
 
             <div class="section">
@@ -353,7 +368,8 @@
                         <option value="game_fg">foreground</option>
                     </select>
                     <div style="margin-top:8px;">
-                        <label style="display:block; font-size:9px; color:#b6caef; margin-bottom:4px;">Background layers (aggiungi/rimuovi)</label>
+                        <label style="display:block; font-size:9px; color:#b6caef; margin-bottom:4px;">Background layers
+                            (aggiungi/rimuovi)</label>
                         <div style="display:flex; gap:6px; margin-bottom:6px; align-items:center;">
                             <select id="bgImageSelect" style="flex:1;">
                                 <option value="">-- scegli immagine background --</option>
@@ -370,10 +386,12 @@
                             <button id="addBgFromSelectBtn" type="button">Aggiungi</button>
                         </div>
                         <div id="bgLayersContainer"></div>
-                        <button id="addBgLayerBtn" type="button" style="margin-top:6px;">Aggiungi Background Layer</button>
+                        <button id="addBgLayerBtn" type="button" style="margin-top:6px;">Aggiungi Background
+                            Layer</button>
                     </div>
                     <div style="margin-top:8px;">
-                        <label style="display:block; font-size:9px; color:#b6caef; margin-bottom:4px;">Foreground layers (aggiungi/rimuovi)</label>
+                        <label style="display:block; font-size:9px; color:#b6caef; margin-bottom:4px;">Foreground layers
+                            (aggiungi/rimuovi)</label>
                         <div style="display:flex; gap:6px; margin-bottom:6px; align-items:center;">
                             <select id="fgImageSelect" style="flex:1;">
                                 <option value="">-- scegli immagine foreground --</option>
@@ -384,7 +402,8 @@
                             <button id="addFgFromSelectBtn" type="button">Aggiungi</button>
                         </div>
                         <div id="fgLayersContainer"></div>
-                        <button id="addFgLayerBtn" type="button" style="margin-top:6px;">Aggiungi Foreground Layer</button>
+                        <button id="addFgLayerBtn" type="button" style="margin-top:6px;">Aggiungi Foreground
+                            Layer</button>
                     </div>
                 </div>
                 <div style="margin-top:6px; display:flex; align-items:center; gap:8px;">
@@ -404,8 +423,10 @@
                     </div>
                 </div>
                 <div style="margin-top:8px;">
-                    <label style="display:block; font-size:9px; color:#b6caef; margin-bottom:4px;">Weather / Rain</label>
-                    <label style="display:flex; align-items:center; gap:8px; margin-bottom:6px;"><input id="rainEnabled" type="checkbox" style="width:auto; margin-right:6px;">Abilita pioggia</label>
+                    <label style="display:block; font-size:9px; color:#b6caef; margin-bottom:4px;">Weather /
+                        Rain</label>
+                    <label style="display:flex; align-items:center; gap:8px; margin-bottom:6px;"><input id="rainEnabled"
+                            type="checkbox" style="width:auto; margin-right:6px;">Abilita pioggia</label>
                     <div class="grid2">
                         <div>
                             <label for="rainIntensity">Intensità (0.1 - 5)</label>
@@ -438,9 +459,11 @@
                             <label for="rainDuration">Durata (s, 0 = continuo)</label>
                             <input id="rainDuration" type="number" step="0.5" min="0" value="0">
                         </div>
-                        </div>
                     </div>
                 </div>
+            </div>
+            <div class="section">
+                <h2>Nemici</h2>
                 <div class="grid2" style="margin-top:6px;">
                     <div>
                         <label for="ghostSpeed">Ghost Speed</label>
@@ -567,29 +590,35 @@
 
             <div class="section">
                 <h2>Musica</h2>
-                <div style="margin-top:6px;">
-                    <label for="levelMusic">Background Music (data/music)</label>
-                    <select id="levelMusic">
-                        <option value="">(none)</option>
-                        <option value="data/music/intro.mp3">intro.mp3</option>
-                        <option value="data/music/game.mp3">game.mp3</option>
-                        <option value="data/music/intro.mp3_old">intro.mp3_old</option>
-                        <option value="data/music/rolling_stones.mp3">rolling_stones.mp3</option>
-                        <option value="data/music/rolling_stones.mp3_old">rolling_stones.mp3_old</option>
-                        <option value="data/music/rolling_stones.mp3_old2">rolling_stones.mp3_old2</option>
-                        <option value="data/music/wood_ambient.mp3">wood_ambient.mp3</option>
-                        <option value="data/music/level_completed.mp3">level_completed.mp3</option>
-                        <option value="data/music/rain.mp3">rain.mp3</option>
-                        <option value="data/music/step.mp3">step.mp3</option>
-                        <option value="data/music/stone.mp3">stone.mp3</option>
-                        <option value="data/music/explosion.mp3">explosion.mp3</option>
-                        <option value="data/music/gem.mp3">gem.mp3</option>
-                        <option value="data/music/gameover.mp3">gameover.mp3</option>
-                        <option value="data/music/ghost.mp3">ghost.mp3</option>
-                        <option value="data/music/bat.mp3">bat.mp3</option>
-                        <option value="data/music/select.mp3">select.mp3</option>
-                        <option value="data/music/coin.mp3">coin.mp3</option>
-                    </select>
+                <div style="margin-top:6px; display:flex; gap:8px; align-items:center;">
+                    <div style="flex:1;">
+                        <label for="levelMusic">Background Music (data/music)</label>
+                        <select id="levelMusic">
+                            <option value="">(none)</option>
+                            <option value="data/music/intro.mp3">intro.mp3</option>
+                            <option value="data/music/game.mp3">game.mp3</option>
+                            <option value="data/music/intro.mp3_old">intro.mp3_old</option>
+                            <option value="data/music/rolling_stones.mp3">rolling_stones.mp3</option>
+                            <option value="data/music/rolling_stones.mp3_old">rolling_stones.mp3_old</option>
+                            <option value="data/music/rolling_stones.mp3_old2">rolling_stones.mp3_old2</option>
+                            <option value="data/music/wood_ambient.mp3">wood_ambient.mp3</option>
+                            <option value="data/music/level_completed.mp3">level_completed.mp3</option>
+                            <option value="data/music/rain.mp3">rain.mp3</option>
+                            <option value="data/music/step.mp3">step.mp3</option>
+                            <option value="data/music/stone.mp3">stone.mp3</option>
+                            <option value="data/music/explosion.mp3">explosion.mp3</option>
+                            <option value="data/music/gem.mp3">gem.mp3</option>
+                            <option value="data/music/gameover.mp3">gameover.mp3</option>
+                            <option value="data/music/ghost.mp3">ghost.mp3</option>
+                            <option value="data/music/bat.mp3">bat.mp3</option>
+                            <option value="data/music/select.mp3">select.mp3</option>
+                            <option value="data/music/coin.mp3">coin.mp3</option>
+                        </select>
+                    </div>
+                    <div style="flex:0 0 auto; display:flex; gap:6px; align-items:center;">
+                        <label style="display:none;">Preview</label>
+                        <button id="previewMusicBtn" type="button" title="Preview">Preview</button>
+                    </div>
                 </div>
                 <div style="display:flex; gap:6px; margin-top:8px;">
                     <button id="playMusicBtn" type="button">Play</button>
