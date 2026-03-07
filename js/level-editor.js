@@ -28,13 +28,18 @@ const WALL_TOKEN_REGEX = /^w(\d)(\d)(\d)([hv0])$/i;
 const AVAILABLE_BG_LEVELS = [1,2,3,4,5,6];
 
 const BASE_PALETTE_ITEMS = [
-    { token: '-', label: 'vuoto (-)' },
-    { token: '.', label: 'vuoto (.)' },
-    { token: '#', label: 'vuoto (#)' },
+    //{ token: '-', label: 'vuoto (-)' },
+    { token: '.', label: 'hole invisibile (.)' },
+    { token: '#', label: 'muro invisibile (#)' },
     // tiles
-    { token: 'f', label: 'floor (f)' },
-    { token: 'h', label: 'hole1 (h)' },
-    { token: 's', label: 'hole2 / sand (s)' },
+    //{ token: 'f', label: 'sabbia / floor (f)' },
+    { token: 'h', label: 'hole (h)' },
+    //{ token: 's', label: 'hole2 / sand (s)' },
+    // additional tile tokens
+    { token: 'sand', label: 'sabbia (sand)' },
+    { token: 'water', label: 'pozzanghera / water (water)' },
+    { token: 'mud', label: 'fango / mud (mud)' },
+    { token: 'back', label: 'back (torna al livello precedente) (back)' },
     // objects
     { token: 'g', label: 'gem (g)' },
     { token: 'd', label: 'door (d)' },
@@ -1221,12 +1226,22 @@ function drawMiniMapToken(scene, ctx, token, x, y, size, opts = {}) {
         case '-':
             return false;
         case 'f':
-            return drawMiniMapFrame(scene, ctx, 'tiles', 3, x, y, size, { alpha: opts.alpha });
+            // floor -> use sand frame
+            return drawMiniMapFrame(scene, ctx, 'tiles', 0, x, y, size, { alpha: opts.alpha });
+        case 'sand':
+            return drawMiniMapFrame(scene, ctx, 'tiles', 0, x, y, size, { alpha: opts.alpha });
         case 'h':
             return drawMiniMapFrame(scene, ctx, 'tiles', 1, x, y, size, { alpha: opts.alpha });
         case '.':
             return drawMiniMapFrame(scene, ctx, 'tiles', 1, x, y, size, { alpha: opts.alpha });
         case 's':
+            // legacy s token used as 'back' or hole2/sand depending on convention; keep mapping to back/frame5 for compatibility
+            return drawMiniMapFrame(scene, ctx, 'tiles', 5, x, y, size, { alpha: opts.alpha });
+        case 'water':
+            return drawMiniMapFrame(scene, ctx, 'tiles', 3, x, y, size, { alpha: opts.alpha });
+        case 'mud':
+            return drawMiniMapFrame(scene, ctx, 'tiles', 4, x, y, size, { alpha: opts.alpha });
+        case 'back':
             return drawMiniMapFrame(scene, ctx, 'tiles', 5, x, y, size, { alpha: opts.alpha });
         case 'g':
             return drawMiniMapFrame(scene, ctx, 'objects', OBJECT_FRAMES.gem, x, y, size, { alpha: opts.alpha });
@@ -2272,7 +2287,7 @@ function buildDomPalette() {
     if (!tilesContainer && !objectsContainer && !wallsContainer) return;
 
     // classify tokens
-    const tileKeys = new Set(['-', '.', '#', 'f', 'h', 's']);
+    const tileKeys = new Set(['-', '.', '#', 'f', 'h', 's', 'sand', 'water', 'mud', 'back']);
     const wallKeys = new Set(WALL_PALETTE_ITEMS.map(i => normalizeToken(i.token)));
 
     // populate tiles
