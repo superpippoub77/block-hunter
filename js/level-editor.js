@@ -1046,7 +1046,18 @@ class LevelEditorScene extends Phaser.Scene {
                 const cx = x + this.cellSize / 2;
                 const cy = y + this.cellSize / 2;
 
-                const bg = this.add.rectangle(cx, cy, this.cellSize, this.cellSize, 0x0f1f3e, 0)
+                // choose background color for invisible wall (#) and invisible tile (.)
+                const normBase = normalizeToken(this.cells[row][col].base);
+                let bgColor = 0x0f1f3e;
+                let bgAlpha = 0; // default transparent
+                if (normBase === '#') {
+                    bgColor = 0x8b4513; // brown for invisible wall
+                    bgAlpha = 1;
+                } else if (normBase === '.') {
+                    bgColor = 0x000000; // black for invisible tile
+                    bgAlpha = 1;
+                }
+                const bg = this.add.rectangle(cx, cy, this.cellSize, this.cellSize, bgColor, bgAlpha)
                     .setStrokeStyle(1, 0x304f83, 0.35);
                 this.gridLayer.add(bg);
 
@@ -1366,15 +1377,20 @@ function drawMiniMapPreview(scene) {
             const cellData = scene.cells?.[row]?.[col];
             const base = cellData?.base || '-';
             const normBase = normalizeToken(base);
-            const isEmptyToken = normBase === '-' || normBase === '.' || normBase === '#';
+            // treat '-' as empty (background shows through). For '.' and '#' draw explicit colors:
+            const isEmptyToken = normBase === '-';
             const reveal = cellData?.reveal;
 
             const x = offX + col * cell;
             const y = offY + row * cell;
-            // If the base token is an empty token, don't draw a tile so the background remains fully visible.
-            if (isEmptyToken) {
-                // nothing to draw for empty cells (background shows through)
-            } else {
+            // If the base token is an invisible wall (#) or invisible tile (.), draw a solid color
+            if (normBase === '#') {
+                ctx.fillStyle = '#8b4513'; // brown for invisible wall
+                ctx.fillRect(x, y, cell, cell);
+            } else if (normBase === '.') {
+                ctx.fillStyle = '#000000'; // black for invisible tile
+                ctx.fillRect(x, y, cell, cell);
+            } else if (!isEmptyToken) {
                 // If there are no background layers, draw a solid cell background.
                 if (!showBg || !Array.isArray(bgLayers) || bgLayers.length === 0) {
                     ctx.fillStyle = '#0f1f3e';
