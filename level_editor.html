@@ -98,13 +98,6 @@
             overflow: auto;
             background: #0a1020;
         }
-
-        .panel h1 {
-            font-size: 14px;
-            color: #9dccff;
-            margin-bottom: 10px;
-        }
-
         .section {
             border: 1px solid #273859;
             border-radius: 6px;
@@ -228,13 +221,13 @@
             border-radius: 6px;
         }
         #hScroll {
-            left: 12px;
+            left: 0px;
             right: 452px; /* leave right panel space */
-            bottom: 12px;
+            bottom: 6px;
         }
         #vScroll {
-            top: 12px;
-            right: 12px;
+            top: 0px;
+            right: -12px;
             height: calc(100% - 24px);
             width: 14px;
             -webkit-appearance: slider-vertical;
@@ -282,7 +275,7 @@
         </div>
 
         <aside class="panel">
-            <h1>BLOCK HUNTER LEVEL EDITOR</h1>
+            <h1>OPTIONS</h1>
             <div style="display:flex; gap:8px; margin-bottom:8px;">
                 <button id="exportTopBtn" type="button">Esporta JSON</button>
                 <button id="copyTopBtn" type="button">Copia JSON</button>
@@ -299,7 +292,7 @@
                     </div>
                     <div style="margin-top:8px;">
                         <label for="zoomSlider">Zoom mappa</label>
-                        <input id="zoomSlider" type="range" min="0.5" max="3" step="0.1" value="1">
+                        <input id="zoomSlider" type="range" min="0.5" max="3" step="0.1" value="1.5">
                     </div>
                     <div>
                         <label for="gridRows">Rows</label>

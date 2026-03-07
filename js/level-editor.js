@@ -2341,7 +2341,12 @@ function buildDomPalette() {
 
         const txt = document.createElement('div');
         txt.style.flex = '1 1 auto';
-        txt.textContent = `${labelText} (${token})`;
+        // Avoid appending the token in parentheses if the label already contains it
+        if (String(labelText || '').includes(`(${token})`)) {
+            txt.textContent = String(labelText || '');
+        } else {
+            txt.textContent = `${labelText} (${token})`;
+        }
         d.style.display = 'flex';
         d.style.alignItems = 'center';
         d.appendChild(canvas);
