@@ -2166,6 +2166,60 @@ function bindUI() {
             });
         }
     } catch (e) { /* ignore music UI errors */ }
+
+    // Populate levelMusic select dynamically from server /music folder
+    async function populateMusicOptions() {
+        try {
+            const resp = await fetch('/api/music');
+            if (!resp.ok) return;
+            const list = await resp.json();
+            const sel = el('levelMusic');
+            if (!sel) return;
+            // clear existing options and add (none)
+            sel.innerHTML = '';
+            const noneOpt = document.createElement('option'); noneOpt.value = ''; noneOpt.textContent = '(none)'; sel.appendChild(noneOpt);
+            list.forEach((p) => {
+                const name = String(p).split('/').pop();
+                const o = document.createElement('option'); o.value = p; o.textContent = name; sel.appendChild(o);
+            });
+        } catch (e) {
+            // ignore
+        }
+    }
+
+    try { populateMusicOptions(); } catch (e) {}
+
+    // Populate bg/fg image selects dynamically from server /images folder
+    async function populateImageOptions() {
+        try {
+            const resp = await fetch('/api/images');
+            if (!resp.ok) return;
+            const list = await resp.json();
+            const bgSel = el('bgImageSelect');
+            const fgSel = el('fgImageSelect');
+            if (bgSel) {
+                // keep a default placeholder option
+                bgSel.innerHTML = '';
+                const placeholder = document.createElement('option'); placeholder.value = ''; placeholder.textContent = '-- scegli immagine background --'; bgSel.appendChild(placeholder);
+                list.forEach((p) => {
+                    const name = String(p).split('/').pop();
+                    const o = document.createElement('option'); o.value = name; o.textContent = name; bgSel.appendChild(o);
+                });
+            }
+            if (fgSel) {
+                fgSel.innerHTML = '';
+                const placeholder = document.createElement('option'); placeholder.value = ''; placeholder.textContent = '-- scegli immagine foreground --'; fgSel.appendChild(placeholder);
+                list.forEach((p) => {
+                    const name = String(p).split('/').pop();
+                    const o = document.createElement('option'); o.value = name; o.textContent = name; fgSel.appendChild(o);
+                });
+            }
+        } catch (e) {
+            // ignore
+        }
+    }
+
+    try { populateImageOptions(); } catch (e) {}
     
     // zoom slider
     const zoomSlider = el('zoomSlider');

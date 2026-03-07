@@ -98,6 +98,50 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // API: list music files in /music folder
+  if (req.url && req.url.startsWith('/api/music')) {
+    if (req.method !== 'GET') {
+      res.writeHead(405, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ ok: false, error: 'method not allowed' }));
+      return;
+    }
+    const musicDir = path.join(ROOT_DIR, 'music');
+    fs.readdir(musicDir, (err, files) => {
+      if (err) {
+        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify([]));
+        return;
+      }
+      const audioExt = new Set(['.mp3', '.ogg', '.wav', '.m4a', '.aac']);
+      const list = (files || []).filter(f => audioExt.has(path.extname(f).toLowerCase())).map(f => path.posix.join('music', f));
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify(list));
+    });
+    return;
+  }
+
+  // API: list image files in /images folder
+  if (req.url && req.url.startsWith('/api/images')) {
+    if (req.method !== 'GET') {
+      res.writeHead(405, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ ok: false, error: 'method not allowed' }));
+      return;
+    }
+    const imagesDir = path.join(ROOT_DIR, 'images');
+    fs.readdir(imagesDir, (err, files) => {
+      if (err) {
+        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify([]));
+        return;
+      }
+      const imgExt = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg']);
+      const list = (files || []).filter(f => imgExt.has(path.extname(f).toLowerCase())).map(f => path.posix.join('images', f));
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify(list));
+    });
+    return;
+  }
+
   const filePath = safeResolvePath(req.url || "/");
 
   fs.stat(filePath, (statErr, stats) => {
