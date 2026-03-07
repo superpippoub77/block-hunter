@@ -216,6 +216,29 @@
             border-radius: 4px;
             image-rendering: pixelated;
         }
+        /* map scrollbars overlayed on editor area */
+        .editor-scrollbar {
+            position: absolute;
+            z-index: 2000;
+            -webkit-appearance: none;
+            appearance: none;
+            height: 14px;
+            background: rgba(20,34,56,0.6);
+            border: 1px solid rgba(60,100,160,0.6);
+            border-radius: 6px;
+        }
+        #hScroll {
+            left: 12px;
+            right: 452px; /* leave right panel space */
+            bottom: 12px;
+        }
+        #vScroll {
+            top: 12px;
+            bottom: 12px;
+            width: 14px;
+            right: 12px;
+            transform: rotate(270deg);
+        }
         /* small credit shown on non-game scenes */
         .spike-credit {
             position: fixed;
@@ -250,7 +273,11 @@
             <div class="tiny">Trascina un elemento sulla mappa centrale. Usa il clic per selezionare.</div>
         </aside>
 
-        <div id="editor-game"></div>
+        <div id="editor-game">
+            <!-- Overlay scrollbars for panning the grid -->
+            <input id="hScroll" class="editor-scrollbar" type="range" min="0" max="0" value="0">
+            <input id="vScroll" class="editor-scrollbar" type="range" min="0" max="0" value="0">
+        </div>
 
         <aside class="panel">
             <h1>BLOCK HUNTER LEVEL EDITOR</h1>

@@ -255,6 +255,7 @@ class LevelEditorScene extends Phaser.Scene {
         this.zoom = 1;
         this.gridOffsetX = 18;
         this.gridOffsetY = 18;
+        this.gridPadding = 18; // fixed padding used for layout and scrolling math
         // these will be computed from the actual canvas size on create / resize
         this.gridAreaWidth = 0;
         this.gridAreaHeight = 0;
@@ -293,6 +294,7 @@ class LevelEditorScene extends Phaser.Scene {
         this.resetGrid(this.cols, this.rows);
         this.createPalette();
         this.setupInputHandlers();
+        this.setupScrollbars();
         this.renderGrid();
 
         // populate background select with available backgrounds
@@ -504,6 +506,7 @@ class LevelEditorScene extends Phaser.Scene {
         if (!skipBgUpdate) {
             try { this.updateEditorBackgroundImage(); } catch (e) { /* ignore */ }
         }
+        try { this.updateScrollbars(); } catch (e) { /* ignore */ }
     }
 
     // Recompute layout when zoom changes without resetting cells
@@ -523,6 +526,69 @@ class LevelEditorScene extends Phaser.Scene {
         // update background image and re-render
         try { this.updateEditorBackgroundImage(); } catch (e) {}
         this.renderGrid();
+        // update scrollbar ranges after zooming/resizing cells
+        try { this.updateScrollbars(); } catch (e) { /* ignore */ }
+    }
+
+    setupScrollbars() {
+        // link DOM scroll inputs (created in HTML) to pan the grid
+        const h = el('hScroll');
+        const v = el('vScroll');
+        if (!h && !v) return;
+
+        const onH = () => {
+            try {
+                const val = Number(h.value) || 0;
+                const gridW = this.cellSize * this.cols;
+                const max = Math.max(0, gridW - (this.gridAreaWidth || 0));
+                const clamped = clamp(val, 0, max);
+                this.gridOffsetX = this.gridPadding - clamped;
+                this.renderGrid();
+            } catch (e) { /* ignore */ }
+        };
+
+        const onV = () => {
+            try {
+                const val = Number(v.value) || 0;
+                const gridH = this.cellSize * this.rows;
+                const max = Math.max(0, gridH - (this.gridAreaHeight || 0));
+                const clamped = clamp(val, 0, max);
+                this.gridOffsetY = this.gridPadding - clamped;
+                this.renderGrid();
+            } catch (e) { /* ignore */ }
+        };
+
+        if (h) {
+            h.addEventListener('input', onH);
+            h.addEventListener('change', onH);
+        }
+        if (v) {
+            v.addEventListener('input', onV);
+            v.addEventListener('change', onV);
+        }
+
+        // ensure initial ranges are set
+        this.updateScrollbars();
+    }
+
+    updateScrollbars() {
+        const h = el('hScroll');
+        const v = el('vScroll');
+        const gridW = this.cellSize * this.cols;
+        const gridH = this.cellSize * this.rows;
+        const maxX = Math.max(0, gridW - (this.gridAreaWidth || 0));
+        const maxY = Math.max(0, gridH - (this.gridAreaHeight || 0));
+        if (h) {
+            h.max = String(Math.floor(maxX));
+            // derive current scroll value from gridOffsetX
+            const scrollX = clamp(Math.floor(this.gridPadding - this.gridOffsetX), 0, Math.floor(maxX));
+            h.value = String(scrollX);
+        }
+        if (v) {
+            v.max = String(Math.floor(maxY));
+            const scrollY = clamp(Math.floor(this.gridPadding - this.gridOffsetY), 0, Math.floor(maxY));
+            v.value = String(scrollY);
+        }
     }
 
     onResize(width, height) {
@@ -666,17 +732,37 @@ class LevelEditorScene extends Phaser.Scene {
             });
 
             container.on('drag', (_pointer, dragX, dragY) => {
-                container.setPosition(dragX, dragY);
+                try {
+                    // snap visual while dragging to nearest cell center for precise placement
+                    const localX = dragX - this.gridOffsetX;
+                    const localY = dragY - this.gridOffsetY;
+                    const col = Math.floor(localX / this.cellSize);
+                    const row = Math.floor(localY / this.cellSize);
+                    if (col >= 0 && col < this.cols && row >= 0 && row < this.rows) {
+                        const snapX = this.gridOffsetX + col * this.cellSize + this.cellSize / 2;
+                        const snapY = this.gridOffsetY + row * this.cellSize + this.cellSize / 2;
+                        container.setPosition(snapX, snapY);
+                    } else {
+                        container.setPosition(dragX, dragY);
+                    }
+                } catch (e) {
+                    container.setPosition(dragX, dragY);
+                }
             });
 
             container.on('dragend', (pointer) => {
-                const cell = this.getGridCellFromPointer(pointer.worldX, pointer.worldY);
-                if (cell) {
-                    this.selectedCell = cell;
-                    this.placeToken(cell.col, cell.row, container.getData('token'));
-                    this.updateSelectedCellInfo();
-                    this.renderGrid();
-                }
+                try {
+                    // use the (possibly snapped) container position to determine target cell
+                    const worldX = container.x;
+                    const worldY = container.y;
+                    const cell = this.getGridCellFromPointer(worldX, worldY);
+                    if (cell) {
+                        this.selectedCell = cell;
+                        this.placeToken(cell.col, cell.row, container.getData('token'));
+                        this.updateSelectedCellInfo();
+                        this.renderGrid();
+                    }
+                } catch (e) { /* ignore */ }
                 container.setPosition(container.getData('originX'), container.getData('originY'));
                 container.setScale(1);
                 container.setAlpha(1);
