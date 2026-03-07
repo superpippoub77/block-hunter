@@ -1062,6 +1062,13 @@ class LevelEditorScene extends Phaser.Scene {
 
         const borderW = this.cols * this.cellSize;
         const borderH = this.rows * this.cellSize;
+        // ensure editor background (if present) matches current grid position/size so it scrolls with tiles
+        try {
+            if (this.editorBgImage) {
+                this.editorBgImage.setDisplaySize(borderW, borderH);
+                this.editorBgImage.setPosition(this.gridOffsetX + borderW / 2, this.gridOffsetY + borderH / 2);
+            }
+        } catch (e) { /* ignore background reposition errors */ }
         const border = this.add.rectangle(
             this.gridOffsetX + borderW / 2,
             this.gridOffsetY + borderH / 2,
