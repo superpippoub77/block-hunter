@@ -234,10 +234,12 @@
         }
         #vScroll {
             top: 12px;
-            bottom: 12px;
-            width: 14px;
             right: 12px;
-            transform: rotate(270deg);
+            height: calc(100% - 24px);
+            width: 14px;
+            -webkit-appearance: slider-vertical;
+            writing-mode: vertical-rl;
+            transform: none;
         }
         /* small credit shown on non-game scenes */
         .spike-credit {
@@ -275,8 +277,8 @@
 
         <div id="editor-game">
             <!-- Overlay scrollbars for panning the grid -->
-            <input id="hScroll" class="editor-scrollbar" type="range" min="0" max="0" value="0">
-            <input id="vScroll" class="editor-scrollbar" type="range" min="0" max="0" value="0">
+            <input id="hScroll" class="editor-scrollbar" type="range" min="0" max="0" value="0" step="1">
+            <input id="vScroll" class="editor-scrollbar" type="range" min="0" max="0" value="0" step="1">
         </div>
 
         <aside class="panel">
