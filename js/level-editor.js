@@ -10,10 +10,12 @@ const OBJECT_FRAMES = {
     key: 8,
     sand_pile: 9,
     ghost: 10,
+    wooden: 10, // wooden plank alias (reuses frame 10)
     pepita: 11,
     wall: 12,
     hole1: 13,
     hole2: 14,
+    exit: 14,
     explosion: 15,
     cart: 7,
     helmet: 3
@@ -39,6 +41,8 @@ const BASE_PALETTE_ITEMS = [
     { token: 'k', label: 'key (k)' },
     { token: 'p', label: 'pepita / gem pickup (p)' },
     { token: 'l', label: 'cuore / life (l)' },
+    { token: 'exit', label: 'uscita / exit (exit)' },
+    { token: 'wooden', label: 'asse / wooden (wooden)' },
     { token: 'helmet', label: 'helmet' },
     { token: 'b', label: 'dynamite chest (b)' },
     { token: 'c', label: 'cart / stones (c)' },
@@ -1232,6 +1236,14 @@ function drawMiniMapToken(scene, ctx, token, x, y, size, opts = {}) {
             return drawMiniMapFrame(scene, ctx, 'objects', OBJECT_FRAMES.key, x, y, size, { alpha: opts.alpha });
         case 'p':
             return drawMiniMapFrame(scene, ctx, 'objects', OBJECT_FRAMES.pepita, x, y, size, { alpha: opts.alpha });
+        case 'wooden':
+            return drawMiniMapFrame(scene, ctx, 'objects', OBJECT_FRAMES.wooden, x, y, size, { alpha: opts.alpha });
+        case 'exit':
+            return drawMiniMapFrame(scene, ctx, 'objects', OBJECT_FRAMES.exit, x, y, size, { alpha: opts.alpha });
+        case 'l':
+            return drawMiniMapFrame(scene, ctx, 'objects', OBJECT_FRAMES.heart, x, y, size, { alpha: opts.alpha });
+        case 'heart':
+            return drawMiniMapFrame(scene, ctx, 'objects', OBJECT_FRAMES.heart, x, y, size, { alpha: opts.alpha });
         case 'b':
             return drawMiniMapFrame(scene, ctx, 'objects', OBJECT_FRAMES.dynamite_chest, x, y, size, { alpha: opts.alpha });
         case 'c':
