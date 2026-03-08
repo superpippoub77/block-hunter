@@ -1407,15 +1407,128 @@ class CreditsScene extends Phaser.Scene {
             y += 28;
         });
 
-        // Duration then return to attract
-        const secs = Number(CONFIG.creditsTimeout) || 6000;
-        this.time.delayedCall(secs, () => {
+        // Duration then return to attract (we keep a timer so it can be reset on coin)
+        this.creditsTimeoutSecs = Number(CONFIG.creditsTimeout) || 6000;
+        this.creditsTimer = this.time.delayedCall(this.creditsTimeoutSecs, () => {
             this.scene.start('AttractScene');
         });
 
-        // Allow skip via key/button
-        this.input.keyboard.once('keydown-ONE', () => this.scene.start('AttractScene'));
+        // --- Add attract-style UI for Credits scene: language selector + insert coin/player activation
+        this.languages = ['it', 'fr', 'de', 'en', 'us', 'ja', 'es', 'zh'];
+        this.currentLangIndex = Math.max(0, this.languages.indexOf(GAME_STATE.language));
+        if (!GAME_STATE.language) GAME_STATE.language = this.languages[this.currentLangIndex];
+
+        // Coin/credits HUD
+        try {
+            this.coinText = this.add.text(400, 520, '', { fontSize: '24px', fill: '#ffee00ff', fontFamily: GAME_FONT }).setOrigin(0.5).setDepth(HUD_DEPTH).setScrollFactor(0);
+        } catch (e) { this.coinText = null; }
+        this.coinPanel = null;
+
+        try { this.player1Text = this.add.text(150, 550, '', { fontSize: '18px', fill: '#666666', fontFamily: GAME_FONT }).setOrigin(0.5).setDepth(HUD_DEPTH).setScrollFactor(0); } catch (e) { this.player1Text = null; }
+        this.player1Panel = null;
+        try { this.player2Text = this.add.text(650, 550, '', { fontSize: '18px', fill: '#666666', fontFamily: GAME_FONT }).setOrigin(0.5).setDepth(HUD_DEPTH).setScrollFactor(0); } catch (e) { this.player2Text = null; }
+        this.player2Panel = null;
+
+        // Flag sprite and arrows
+        try {
+            this.flagSprite = this.add.sprite(400, 560, 'flags', this.currentLangIndex).setOrigin(0.5).setDepth(HUD_DEPTH).setScrollFactor(0);
+            this.tweens.add({ targets: this.flagSprite, scaleX: 1.05, scaleY: 0.98, angle: -2, duration: 400, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+
+            this.leftArrow = this.add.text(320, 560, '◄', { fontSize: '24px', fill: '#ffffff', fontFamily: GAME_FONT }).setOrigin(0.5).setInteractive().setDepth(HUD_DEPTH).setScrollFactor(0).on('pointerdown', () => this.changeLangCredits(-1));
+            this.rightArrow = this.add.text(480, 560, '►', { fontSize: '24px', fill: '#ffffff', fontFamily: GAME_FONT }).setOrigin(0.5).setInteractive().setDepth(HUD_DEPTH).setScrollFactor(0).on('pointerdown', () => this.changeLangCredits(1));
+        } catch (e) { }
+
+        // Helper pulse for arrow feedback
+        this.pulseCreditsArrow = (arrow) => {
+            if (!arrow) return;
+            try {
+                const orig = (arrow.style && arrow.style.fill) || '#ffffff';
+                arrow.setStyle && arrow.setStyle({ fill: '#ffff00' });
+                this.tweens.add({ targets: arrow, scaleX: 1.6, scaleY: 1.6, duration: 120, yoyo: true, ease: 'Sine.easeOut', onComplete: () => {
+                    try { arrow.setStyle && arrow.setStyle({ fill: orig }); } catch (e) { }
+                }});
+            } catch (e) { }
+        };
+
+        // Input handlers for coin insert / language change in Credits
+        this.input.keyboard.on('keydown-FIVE', () => this.insertCoinCredits());
+        this.input.keyboard.on('keydown-SIX', () => this.insertCoinCredits());
+        this.input.keyboard.on('keydown-LEFT', () => this.changeLangCredits(-1));
+        this.input.keyboard.on('keydown-RIGHT', () => this.changeLangCredits(1));
+
+        // Allow starting the game from Credits if credits available
+        this.startGameFromCredits = (players) => {
+            if ((Number(GAME_STATE.credits) || 0) >= players) {
+                try { const intro = this.sound.get('intro_bgm'); if (intro && intro.isPlaying) intro.stop(); } catch (e) {}
+                GAME_STATE.credits = (Number(GAME_STATE.credits) || 0) - players;
+                GAME_STATE.players = Number(players) || 1;
+                GAME_STATE.score = GAME_STATE.score || 0;
+                GAME_STATE.lives = GAME_STATE.lives || 5;
+                GAME_STATE.dynamiteCount = GAME_STATE.dynamiteCount || 20;
+                GAME_STATE.keysCount = GAME_STATE.keysCount || 0;
+                GAME_STATE.woodenCount = GAME_STATE.woodenCount || 0;
+                GAME_STATE.keysP1 = 0; GAME_STATE.keysP2 = 0; GAME_STATE.woodenP1 = 0; GAME_STATE.woodenP2 = 0;
+                GAME_STATE.currentLevel = 0;
+                if (Number(GAME_STATE.players) === 2) { GAME_STATE.livesP1 = 5; GAME_STATE.livesP2 = 5; }
+                else { GAME_STATE.lives = 5; }
+                this.scene.start('LevelSelectScene');
+            } else {
+                this.scene.start('AttractScene');
+            }
+        };
+        this.input.keyboard.on('keydown-ONE', () => this.startGameFromCredits(1));
+        this.input.keyboard.on('keydown-TWO', () => this.startGameFromCredits(2));
+
+        // Space/Esc return to attract
         this.input.keyboard.once('keydown-SPACE', () => this.scene.start('AttractScene'));
+        this.input.keyboard.once('keydown-ESC', () => this.scene.start('AttractScene'));
+
+        // Implement language change for Credits scene
+        this.changeLangCredits = (dir) => {
+            if (this.sound) this.sound.play('select_sfx', { volume: 0.4 });
+            this.currentLangIndex = (this.currentLangIndex + dir + this.languages.length) % this.languages.length;
+            GAME_STATE.language = this.languages[this.currentLangIndex];
+            if (this.flagSprite) this.flagSprite.setFrame(this.currentLangIndex);
+            try {
+                const dirSign = (dir > 0) ? 1 : -1;
+                if (this.flagSprite) this.tweens.add({ targets: this.flagSprite, x: this.flagSprite.x + (dirSign * 28), angle: dirSign * 6, scaleX: 1.15, scaleY: 0.95, duration: 140, yoyo: true, ease: 'Cubic.easeOut', onComplete: () => { try { this.flagSprite.setAngle(0); this.flagSprite.setScale(1,1); } catch (e) {} } });
+            } catch (e) { }
+            try { if (dir > 0) this.pulseCreditsArrow && this.pulseCreditsArrow(this.rightArrow); else if (dir < 0) this.pulseCreditsArrow && this.pulseCreditsArrow(this.leftArrow); } catch (e) {}
+            loadTranslations(GAME_STATE.language, () => { this.updateCreditsUI(); });
+            this.resetCreditsTimer();
+        };
+
+        // Insert coin for Credits scene
+        this.insertCoinCredits = () => {
+            try { if (this.sound) this.sound.play('coin_sfx', { volume: 0.45 }); } catch (e) {}
+            GAME_STATE.credits = (Number(GAME_STATE.credits) || 0) + 1;
+            this.updateCreditsUI();
+            this.resetCreditsTimer();
+        };
+
+        // Update UI for Credits scene
+        this.updateCreditsUI = () => {
+            const t2 = TRANSLATIONS[GAME_STATE.language] || {};
+            const insertCoin = t2.insert_coin || 'INSERT COIN';
+            const credit = t2.credit || 'CREDIT';
+            const player1 = t2.player1 || 'PLAYER 1';
+            const player2 = t2.player2 || 'PLAYER 2';
+
+            if (this.coinText) {
+                if ((Number(GAME_STATE.credits) || 0) <= 0) this.coinText.setText(insertCoin);
+                else this.coinText.setText(credit + ' ' + (Number(GAME_STATE.credits) || 0));
+            }
+            if (this.player1Text) this.player1Text.setText((Number(GAME_STATE.credits) || 0) >= 1 ? player1 : player1).setStyle({ fill: (Number(GAME_STATE.credits) || 0) >= 1 ? '#00ff00' : '#666666' });
+            if (this.player2Text) this.player2Text.setText((Number(GAME_STATE.credits) || 0) >= 2 ? player2 : player2).setStyle({ fill: (Number(GAME_STATE.credits) || 0) >= 2 ? '#00ff00' : '#666666' });
+        };
+
+        this.resetCreditsTimer = () => {
+            try { if (this.creditsTimer) this.creditsTimer.remove(); } catch (e) {}
+            this.creditsTimer = this.time.delayedCall(this.creditsTimeoutSecs, () => { this.scene.start('AttractScene'); });
+        };
+
+        // Load translations and refresh UI initially
+        loadTranslations(GAME_STATE.language, () => { this.updateCreditsUI(); });
     }
 }
 
