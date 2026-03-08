@@ -5183,7 +5183,8 @@ class GameScene extends Phaser.Scene {
         dynamite.setVelocity(dirX * launchSpeed, dirY * launchSpeed);
         dynamite.setDamping(true);
         dynamite.setDrag(baseSpeed * 2.4, baseSpeed * 2.4);
-        dynamite.setBounce(1, 1);
+        // no bounce: explode where it lands
+        try { dynamite.setBounce(0, 0); } catch (e) {}
         dynamite.setCollideWorldBounds(true);
 
         this.time.delayedCall(380, () => {
@@ -6852,7 +6853,8 @@ class GameScene extends Phaser.Scene {
         dynamite.setVelocity(dirX * launchSpeed, dirY * launchSpeed);
         dynamite.setDamping(true);
         dynamite.setDrag(baseSpeed * 2.4, baseSpeed * 2.4);
-        dynamite.setBounce(1, 1);
+        // companion dynamite also should not bounce
+        try { dynamite.setBounce(0, 0); } catch (e) {}
         dynamite.setCollideWorldBounds(true);
         if (dynamite.body) {
             dynamite.body.onWorldBounds = true;
@@ -6929,27 +6931,8 @@ class GameScene extends Phaser.Scene {
         if (!dynamite || !dynamite.active) return;
         if (dynamite.getData('bounceExplode')) return;
         dynamite.setData('bounceExplode', true);
-
-        const vx = dynamite.body?.velocity?.x || 0;
-        const vy = dynamite.body?.velocity?.y || 0;
-        const len = Math.max(1, Math.hypot(vx, vy));
-        const nx = vx / len;
-        const ny = vy / len;
-
-        // Small hop and nudge before exploding
-        this.tweens.add({
-            targets: dynamite,
-            x: dynamite.x + nx * 8,
-            y: dynamite.y + ny * 8 - 4,
-            duration: 120,
-            yoyo: true,
-            ease: 'Sine.easeOut',
-            onComplete: () => {
-                if (dynamite.active) {
-                    this.explodeDynamite(dynamite);
-                }
-            }
-        });
+        // Immediately explode at current position (no bounce/hop)
+        try { this.explodeDynamite(dynamite); } catch (e) { }
     }
 
     applyExplosionSlow(x, y) {
