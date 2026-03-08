@@ -2781,8 +2781,25 @@ class GameScene extends Phaser.Scene {
             try {
                 if (typeof originalValue === 'string' && originalValue.length > 1 && originalValue.endsWith('.')) {
                     noTileFlag = true;
-                    // remove trailing dot for subsequent parsing
-                    if (typeof value === 'string' && value.endsWith('.')) value = value.slice(0, -1);
+                    // remove trailing dot for subsequent parsing of the resolved value
+                    if (typeof value === 'string' && value.endsWith('.')) {
+                        value = value.slice(0, -1);
+                    }
+                    // If mapping didn't resolve (e.g. tokenMap contains only the base key without '.'),
+                    // attempt to resolve using the base key as well so 'x.' can match a mapping for 'x'.
+                    try {
+                        const baseKey = originalValue.slice(0, -1);
+                        const map = (this.levelData && this.levelData.tokenMap) ? this.levelData.tokenMap : (CONFIG.tokenMap || {});
+                        const tryKeys = [baseKey, baseKey.toLowerCase(), baseKey.toUpperCase()];
+                        for (let k of tryKeys) {
+                            if (k && map[k] && String(map[k]).trim() !== String(baseKey)) {
+                                // use mapped value (may itself end with '.')
+                                value = String(map[k]);
+                                if (value.endsWith('.')) value = value.slice(0, -1);
+                                break;
+                            }
+                        }
+                    } catch (e) { }
                 }
             } catch (e) { }
 
@@ -2920,7 +2937,7 @@ class GameScene extends Phaser.Scene {
                     // 'f' is mud (fango) per new mapping
                     case 'f': return { type: 'mud', wallFrame: 0, wallRotation: 0, noTile: noTileFlag };
                     case 'm': return { type: 'skeleton', wallFrame: 0, wallRotation: 0, noTile: noTileFlag };
-                    case '#': return { type: 'wall', wallFrame: 0, wallRotation: 0, invisible: true, noTile: noTileFlag };
+                    // Removed special-case '#' token: no longer map '#' to invisible wall here.
                     case 'h': return { type: 'hole', wallFrame: 0, wallRotation: 0, noTile: noTileFlag };
                     case '.': return { type: 'hole', wallFrame: 0, wallRotation: 0, noTile: true };
                     case 's': return { type: 'sand', wallFrame: 0, wallRotation: 0, noTile: noTileFlag };
@@ -3011,8 +3028,15 @@ class GameScene extends Phaser.Scene {
                 }
 
                 // Object tiles are rendered without floor underneath
-                // Treat all in-map object tokens as 'empty' so no floor tile is drawn
-                const tileType = (tileNoTile || type === 'door'
+                // Normally treat object tokens as 'empty' so no floor tile is drawn.
+                // However, if the logical type is 'wall' we must still create a wall
+                // collision even when the token has a trailing '.' (noTile). In that
+                // case mark the wall as invisible so it blocks but doesn't render.
+                if (type === 'wall' && tileNoTile) {
+                    tileInvisible = true;
+                }
+
+                const tileType = ((tileNoTile && type !== 'wall') || type === 'door'
                     || type === 'key'
                     || type === 'pepita'
                     || type === 'dynamite'
@@ -3049,7 +3073,7 @@ class GameScene extends Phaser.Scene {
                     tileSprite.setDisplaySize(CONFIG.tileSize, CONFIG.tileSize);
                     try { tileSprite.setData && tileSprite.setData('type', normalizedTileType); } catch (e) { }
 
-                    // If the tile was marked 'invisible' in the map (e.g. '#'), hide its graphic
+                    // If the tile was marked 'invisible' in the map, hide its graphic
                     if (type === 'wall' && tileInvisible) {
                         try { tileSprite.setVisible(false); } catch (e) { }
                     }
@@ -3122,7 +3146,7 @@ class GameScene extends Phaser.Scene {
                         }
                 }
 
-                if (type === 'door' && this.doors) {
+                if (type === 'door' && !tileNoTile && this.doors) {
                     const door = this.doors.create(
                         offsetX + x * CONFIG.tileSize + CONFIG.tileSize / 2,
                         offsetY + y * CONFIG.tileSize + CONFIG.tileSize / 2,
@@ -3134,7 +3158,7 @@ class GameScene extends Phaser.Scene {
                     coverSprite = door;
                 }
 
-                if ((type === 'key' || type === 'pepita' || type === 'heart' || type === 'dynamite' || type === 'skeleton' || type === 'cart' || type === 'helmet' || type === 'wooden') && this.items) {
+                if (!tileNoTile && (type === 'key' || type === 'pepita' || type === 'heart' || type === 'dynamite' || type === 'skeleton' || type === 'cart' || type === 'helmet' || type === 'wooden') && this.items) {
                     let frame = OBJECT_FRAMES.wall;
                     if (type === 'key') frame = OBJECT_FRAMES.key;
                     else if (type === 'pepita') frame = OBJECT_FRAMES.pepita;
@@ -3219,7 +3243,7 @@ class GameScene extends Phaser.Scene {
                     }
                 }
 
-                if (type === 'gem') {
+                if (!tileNoTile && type === 'gem') {
                     if (!this.mapGemPositions) {
                         this.mapGemPositions = [];
                     }
@@ -3229,7 +3253,7 @@ class GameScene extends Phaser.Scene {
                     });
                 }
 
-                if (type === 'hole2') {
+                if (!tileNoTile && type === 'hole2') {
                     if (!this.hole2ExitPositions) {
                         this.hole2ExitPositions = [];
                     }
@@ -3241,7 +3265,7 @@ class GameScene extends Phaser.Scene {
                     });
                 }
 
-                if (type === 'ghost') {
+                if (!tileNoTile && type === 'ghost') {
                     if (!this.ghostSpawnPositions) {
                         this.ghostSpawnPositions = [];
                     }
@@ -3251,7 +3275,7 @@ class GameScene extends Phaser.Scene {
                     });
                 }
 
-                if (type === 'bat') {
+                if (!tileNoTile && type === 'bat') {
                     if (!this.batSpawnPositions) {
                         this.batSpawnPositions = [];
                     }
@@ -3263,7 +3287,14 @@ class GameScene extends Phaser.Scene {
 
                 // Store logical type (for game logic) and sprite separately. Use original
                 // `type` as the tile `type` so holes are recognized even when no tile is drawn.
-                this.tiles[y][x] = { type: type, sprite: tileSprite };
+                this.tiles[y][x] = { type: type, sprite: tileSprite, noTile: !!tileNoTile, invisible: !!tileInvisible };
+                // Diagnostic: when debug flag enabled and the source map token had a trailing dot,
+                // print the stored tile entry so we can verify `noTile`/type/hiddenReveal propagation.
+                try {
+                    if (CONFIG.debugTileGrid && mapData && mapData[y] && typeof mapData[y][x] === 'string' && mapData[y][x].endsWith('.')) {
+                        try { console.log('[DEBUG_TILE_ENTRY]', 'grid=', y, x, 'token=', mapData[y][x], 'tileObj=', this.tiles[y][x]); } catch (e) { }
+                    }
+                } catch (e) { }
                 if (hiddenReveal) {
                     this.tiles[y][x].hiddenReveal = hiddenReveal;
                     this.tiles[y][x].coverType = type;
@@ -3391,6 +3422,50 @@ class GameScene extends Phaser.Scene {
             }
             // Put debug overlay above tiles but below sprites (adjust depth if needed)
             this.tileGridDebug.setDepth(50);
+            // Hidden-tile color overlay (only when debug enabled)
+            try {
+                if (this.tileHiddenDebug) this.tileHiddenDebug.clear();
+                else this.tileHiddenDebug = this.add.graphics();
+                // Place the hidden-tile overlay just below the HUD so it's always visible
+                // above tiles/background but under UI elements.
+                this.tileHiddenDebug.setDepth(HUD_DEPTH - 1);
+                if (CONFIG.debugTileGrid) {
+                    for (let y = 0; y < mapRows; y++) {
+                        for (let x = 0; x < mapCols; x++) {
+                            const t = (this.tiles && this.tiles[y]) ? this.tiles[y][x] : null;
+                            if (!t) continue;
+                            // Highlight tiles that are logically hidden (either marked as hiddenReveal
+                            // and not yet revealed, or marked `noTile` which indicates a transparent
+                            // token like 'water.' / 'f.' where the logical cell exists but no tile drawn)
+                            if (!( (t.hiddenReveal && !t.hiddenRevealed) || t.noTile )) continue;
+                            const rectX = offsetX + x * CONFIG.tileSize;
+                            const rectY = offsetY + y * CONFIG.tileSize;
+                            // determine logical token to color: prefer hiddenReveal token if present,
+                            // otherwise fall back to tile type (useful for `noTile` cases)
+                            const hv = (t.hiddenReveal && t.hiddenReveal.type) ? String(t.hiddenReveal.type).toLowerCase() : String(t.type || '').toLowerCase();
+                            let color = null;
+                            if (hv.indexOf('hole') !== -1 || hv === 'h' || hv === '.') {
+                                color = 0x000000; // black for hidden holes
+                            } else if (hv.indexOf('water') !== -1) {
+                                color = 0x1f66ff; // blue for hidden water
+                            } else if (hv.indexOf('mud') !== -1 || hv === 'f') {
+                                color = 0x8b4513; // brown for hidden mud
+                            } else {
+                                // fallback: if tile type or cover indicates wall, use gray
+                                const tt = String(t.type || t.coverType || '').toLowerCase();
+                                if (tt === 'wall' || tt.startsWith('w')) color = 0x808080;
+                            }
+                            if (color !== null) {
+                                try {
+                                    // Use a lower alpha so the overlay is diagnostic but not fully opaque
+                                    this.tileHiddenDebug.fillStyle(color, 0.45);
+                                    this.tileHiddenDebug.fillRect(rectX, rectY, CONFIG.tileSize, CONFIG.tileSize);
+                                } catch (e) { }
+                            }
+                        }
+                    }
+                }
+            } catch (e) { }
             // Create/clear labels array
             try {
                 if (this.tileGridLabels && Array.isArray(this.tileGridLabels)) {

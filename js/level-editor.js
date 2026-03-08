@@ -259,8 +259,8 @@ class LevelEditorScene extends Phaser.Scene {
         super('LevelEditorScene');
         this.cols = 12;
         this.rows = 12;
-        this.cellSize = 48;
-        this.baseCellSize = 48; // cell size without zoom
+        this.cellSize = 64;
+        this.baseCellSize = 64; // cell size without zoom (overridable by slider)
         this.zoom = 2; // default start zoom (2x) to show enlarged map
         this.gridOffsetX = 18;
         this.gridOffsetY = 18;
@@ -302,6 +302,29 @@ class LevelEditorScene extends Phaser.Scene {
         this.selectionLayer = this.add.container(0, 0);
 
         this.resetGrid(this.cols, this.rows);
+        // initialize tile size slider (if present in DOM)
+        try {
+            const tileSlider = el('tileSizeSlider');
+            const tileValue = el('tileSizeValue');
+            if (tileSlider) {
+                // set initial display
+                tileValue && (tileValue.textContent = `${tileSlider.value} px`);
+                tileSlider.addEventListener('input', () => {
+                    try {
+                        tileValue && (tileValue.textContent = `${tileSlider.value} px`);
+                        const v = Number(tileSlider.value) || 64;
+                        // disable auto-grid-from-bg so changing tileSize doesn't recompute cols/rows
+                        try {
+                            const autoChk = el('autoGridFromBg');
+                            if (autoChk) autoChk.checked = false;
+                        } catch (e) { }
+                        this.setTileBaseSize(v);
+                        // update background but do NOT trigger auto-grid-from-bg when changing tile size
+                        try { this.updateEditorBackgroundImage(true); } catch (e) {}
+                    } catch (e) { }
+                });
+            }
+        } catch (e) { }
         this.createPalette();
         this.setupInputHandlers();
         this.setupScrollbars();
@@ -369,7 +392,7 @@ class LevelEditorScene extends Phaser.Scene {
         return this.textures.exists('game_bg') ? 'game_bg' : null;
     }
 
-    updateEditorBackgroundImage() {
+    updateEditorBackgroundImage(skipAutoGrid = false) {
         const show = !!el('showBackground')?.checked;
         // First prefer active bg row from DOM (radio). Fallback to single select value.
         let key = null;
@@ -429,28 +452,30 @@ class LevelEditorScene extends Phaser.Scene {
             return;
         }
 
-        // If an actual texture frame exists and the user requested auto-grid-from-bg,
-        // compute cols/rows from the natural background size assuming 64x64 cells.
-        try {
-            const autoChk = el('autoGridFromBg');
-            if (autoChk && autoChk.checked) {
-                const frame = this.textures.getFrame(key, 0);
-                if (frame && Number.isFinite(frame.cutWidth) && Number.isFinite(frame.cutHeight)) {
-                    const nCols = clamp(Math.floor(Number(frame.cutWidth) / 64), 4, 40);
-                    const nRows = clamp(Math.floor(Number(frame.cutHeight) / 64), 4, 40);
-                    if (nCols > 0 && nRows > 0 && (nCols !== this.cols || nRows !== this.rows)) {
-                        const colsEl = el('gridCols');
-                        const rowsEl = el('gridRows');
-                        if (colsEl) colsEl.value = String(nCols);
-                        if (rowsEl) rowsEl.value = String(nRows);
-                        // Apply grid but skip bg update inside resetGrid to avoid recursion
-                        try { this.resetGrid(nCols, nRows, true); } catch (e) { /* ignore */ }
+            // If an actual texture frame exists and the user requested auto-grid-from-bg,
+            // compute cols/rows from the natural background size assuming 64x64 cells.
+            // Passing `skipAutoGrid=true` prevents this behavior (useful when the user
+            // is only changing tile size and doesn't want cols/rows recomputed).
+            try {
+                const autoChk = el('autoGridFromBg');
+                if (!skipAutoGrid && autoChk && autoChk.checked) {
+                    const frame = this.textures.getFrame(key, 0);
+                    if (frame && Number.isFinite(frame.cutWidth) && Number.isFinite(frame.cutHeight)) {
+                        const nCols = clamp(Math.floor(Number(frame.cutWidth) / 64), 4, 40);
+                        const nRows = clamp(Math.floor(Number(frame.cutHeight) / 64), 4, 40);
+                        if (nCols > 0 && nRows > 0 && (nCols !== this.cols || nRows !== this.rows)) {
+                            const colsEl = el('gridCols');
+                            const rowsEl = el('gridRows');
+                            if (colsEl) colsEl.value = String(nCols);
+                            if (rowsEl) rowsEl.value = String(nRows);
+                            // Apply grid but skip bg update inside resetGrid to avoid recursion
+                            try { this.resetGrid(nCols, nRows, true); } catch (e) { /* ignore */ }
+                        }
                     }
                 }
+            } catch (e) {
+                // ignore any issues while probing textures
             }
-        } catch (e) {
-            // ignore any issues while probing textures
-        }
 
         const gridW = this.cellSize * this.cols;
         const gridH = this.cellSize * this.rows;
@@ -538,6 +563,24 @@ class LevelEditorScene extends Phaser.Scene {
         this.renderGrid();
         // update scrollbar ranges after zooming/resizing cells
         try { this.updateScrollbars(); } catch (e) { /* ignore */ }
+    }
+
+    setTileBaseSize(size) {
+        const s = clamp(Math.floor(Number(size) || 64), 8, 256);
+        this.baseCellSize = s;
+        // recompute cellSize using current zoom
+        this.cellSize = clamp(Math.floor(this.baseCellSize * this.zoom), 8, 256);
+        // recompute offsets similar to setZoom
+        const totalW = Math.max(200, Math.floor(this.scale.width || this.sys.game.config.width || 1000));
+        const totalH = Math.max(100, Math.floor(this.scale.height || this.sys.game.config.height || 700));
+        const padding = 18;
+        const gridW = this.cellSize * this.cols;
+        const gridH = this.cellSize * this.rows;
+        this.gridOffsetX = Math.max(padding, Math.floor((Math.max(64, totalW - (this.paletteArea?.width || 360) - padding * 3) - gridW) / 2) + padding);
+        this.gridOffsetY = Math.max(padding, Math.floor((totalH - gridH) / 2));
+        try { this.updateEditorBackgroundImage(); } catch (e) {}
+        this.renderGrid();
+        try { this.updateScrollbars(); } catch (e) { }
     }
 
     setupScrollbars() {
@@ -1570,6 +1613,21 @@ function readLevelFromForm() {
         batSpeed: parseNumber(el('batSpeed')?.value, 90)
     };
 
+    // tokenMap (optional mapping of shorthand tokens)
+    try {
+        const rawTokenMap = String(el('tokenMapJson')?.value ?? '').trim();
+        if (rawTokenMap) {
+            try {
+                const parsedMap = JSON.parse(rawTokenMap);
+                if (parsedMap && typeof parsedMap === 'object' && !Array.isArray(parsedMap)) {
+                    level.tokenMap = parsedMap;
+                }
+            } catch (e) {
+                // ignore parse errors and skip tokenMap
+            }
+        }
+    } catch (e) {}
+
     // include background enabled flag
     level.backgroundEnabled = !!el('showBackground')?.checked;
 
@@ -1582,6 +1640,15 @@ function readLevelFromForm() {
         direction: String(el('rainDirection')?.value || 'down'),
         interval: parseNumber(el('rainInterval')?.value, 5),
         duration: parseNumber(el('rainDuration')?.value, 0)
+    };
+
+    // fog (optional)
+    level.fog = {
+        enabled: !!el('fogEnabled')?.checked,
+        alpha: parseNumber(el('fogAlpha')?.value, 0.15),
+        layers: Math.max(1, parseNumber(el('fogLayers')?.value, 3)),
+        speed: String(el('fogSpeed')?.value || 'slow'),
+        direction: String(el('fogDirection')?.value || 'left')
     };
 
     // background can be single or multiple
@@ -1682,6 +1749,23 @@ function applyLevelToForm(levelData) {
     if (el('rainInterval')) el('rainInterval').value = data.rain?.interval ?? 5;
     if (el('rainDuration')) el('rainDuration').value = data.rain?.duration ?? 0;
 
+    // populate fog editor if present
+    try {
+        if (el('fogEnabled')) el('fogEnabled').checked = !!data.fog?.enabled;
+        if (el('fogAlpha')) el('fogAlpha').value = data.fog?.alpha ?? 0.15;
+        if (el('fogLayers')) el('fogLayers').value = data.fog?.layers ?? 3;
+        if (el('fogSpeed')) el('fogSpeed').value = data.fog?.speed ?? 'slow';
+        if (el('fogDirection')) el('fogDirection').value = data.fog?.direction ?? 'left';
+    } catch (e) {}
+
+    // populate tokenMap editor if present
+    try {
+        const tmEl = el('tokenMapJson');
+        if (tmEl) {
+            tmEl.value = data.tokenMap && typeof data.tokenMap === 'object' ? JSON.stringify(data.tokenMap, null, 2) : '{}';
+        }
+    } catch (e) {}
+
     el('srEnabled').value = String(!!staticRocks.enabled);
     el('srDynamicSize').value = staticRocks.dynamicSize === null ? 'null' : JSON.stringify(staticRocks.dynamicSize);
     el('srRotation').value = staticRocks.rotation === null ? 'null' : JSON.stringify(staticRocks.rotation);
@@ -1717,6 +1801,7 @@ function applyLevelToForm(levelData) {
     } catch (e) {}
 
     const knownKeys = new Set([
+        'tokenMap',
         'id', 'map', 'playerStart', 'staticRocks', 'dynamicBoulders', 'speed', 'escapeRoute',
         'objectiveLabel', 'enemies', 'collectibles', 'traps', 'spawnPoints', 'timeLimit',
         'scoreRules', 'light', 'ghost', 'bat', 'ghostSpeed', 'batSpeed'
@@ -2093,6 +2178,8 @@ function bindUI() {
 
     // include rain controls for realtime preview updates
     realtimeFields.push('rainEnabled', 'rainIntensity', 'rainFrequency', 'rainWind', 'rainDirection', 'rainInterval', 'rainDuration');
+    // fog realtime controls
+    realtimeFields.push('fogEnabled', 'fogAlpha', 'fogLayers', 'fogSpeed', 'fogDirection');
 
     realtimeFields.forEach((id) => {
         const input = el(id);

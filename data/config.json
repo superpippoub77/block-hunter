@@ -1,7 +1,7 @@
 {
   "width": 800,
   "height": 600,
-  "tileSize": 64,
+  "tileSize": 32,
   "objectSize": 64,
   "playerSize": 64,
   "gridWidth": 25,
