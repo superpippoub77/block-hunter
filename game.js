@@ -3279,6 +3279,88 @@ class GameScene extends Phaser.Scene {
         this.mapOffsetX = offsetX;
         this.mapOffsetY = offsetY;
 
+        // Decorative fog / mist support (per-level configurable)
+        try {
+            const fogCfg = (this.levelData && this.levelData.fog) ? this.levelData.fog : null;
+            if (fogCfg && fogCfg.enabled) {
+                const fogAlpha = (typeof fogCfg.alpha === 'number') ? fogCfg.alpha : 0.28;
+                // layers controls depth; density controls how many blobs per layer
+                const layers = Math.max(1, Number(fogCfg.layers) || 3);
+                const density = Math.max(2, Number(fogCfg.density) || 5);
+                const dirSign = (fogCfg.direction === 'right') ? 1 : -1;
+                const speedMode = (fogCfg.speed === 'fast') ? 'fast' : 'slow';
+                const baseDur = (speedMode === 'fast') ? 5000 : 14000;
+                this.fogBlobs = [];
+                // Map/world bounds for placement (allow margin so blobs appear off-screen too)
+                const mapW = Math.max( (this.mapCols || mapCols) * (CONFIG.tileSize || 64), this.sys.game.config.width || 800 );
+                const mapH = Math.max( (this.mapRows || mapRows) * (CONFIG.tileSize || 64), this.sys.game.config.height || 600 );
+                const margin = Math.max(200, Math.floor((CONFIG.tileSize || 64) * 2));
+                // ensure a soft fog texture exists (generate once per scene)
+                try {
+                    if (!this.textures.exists || !this.textures.exists('fog_blob')) {
+                        // generate a radial soft blob using graphics rendered to texture
+                        const genW = 256;
+                        const genH = 160;
+                        const g = this.add.graphics();
+                        // draw multiple concentric circles to simulate a soft gradient
+                        const cx = Math.floor(genW / 2);
+                        const cy = Math.floor(genH / 2);
+                        const maxR = Math.min(cx, cy);
+                        for (let r = maxR; r > 0; r -= 4) {
+                            const alpha = Phaser.Math.Clamp((maxR - r) / maxR, 0, 1);
+                            const a = 0.6 * (1 - alpha) * 0.9;
+                            g.fillStyle(0xffffff, a);
+                            g.fillCircle(cx, cy, r);
+                        }
+                        try {
+                            const rt = this.add.renderTexture(0, 0, genW, genH);
+                            rt.draw(g, 0, 0);
+                            rt.saveTexture('fog_blob');
+                            rt.destroy();
+                        } catch (e) { }
+                        try { g.destroy(); } catch (e) {}
+                    }
+                } catch (e) { }
+
+                // spawn multiple layers for parallax effect; outer layers are larger and slower
+                for (let layer = 0; layer < layers; layer++) {
+                    const blobsInLayer = density * (1 + Math.floor(layer * 0.5));
+                    // anchor fog to background parallax (so it doesn't follow camera directly)
+                    const scrollFactor = (typeof parallaxBgFactor === 'number') ? parallaxBgFactor : 0.96;
+                    for (let i = 0; i < blobsInLayer; i++) {
+                        try {
+                            // allow placement with margin so fog appears in various screen parts
+                            const px = (this.mapOffsetX || 0) + Phaser.Math.Between(-margin, mapW + margin);
+                            const py = (this.mapOffsetY || 0) + Phaser.Math.Between(-margin, mapH + margin);
+                            // larger sizes for more volumetric appearance; scale by layer so distant layers are bigger
+                            const minW = Math.floor((CONFIG.tileSize || 64) * (2.5 + layer * 0.8));
+                            const maxW = Math.floor((CONFIG.tileSize || 64) * (6.0 + layer * 1.2));
+                            const sizeW = Phaser.Math.Between(minW, maxW);
+                            const minH = Math.floor((CONFIG.tileSize || 64) * (1.4 + layer * 0.6));
+                            const maxH = Math.floor((CONFIG.tileSize || 64) * (3.8 + layer * 0.9));
+                            const sizeH = Phaser.Math.Between(minH, maxH);
+                            // Create a soft image blob using generated fog texture; anchor to background parallax
+                            // Place fog in front of the background (which uses -1000) but behind gameplay elements
+                            const blobDepth = -900 + (layer * 10);
+                            const blob = this.add.image(px, py, 'fog_blob').setOrigin(0.5).setDepth(blobDepth).setScrollFactor(scrollFactor);
+                            blob.setDisplaySize(sizeW, sizeH);
+                            // alpha scaled by layer and random noise for variety
+                            const layerAlpha = fogAlpha * (1 - (layer / Math.max(1, layers + 1)) );
+                            blob.setAlpha(Phaser.Math.Clamp(layerAlpha * (0.7 + Math.random() * 0.8), 0.02, 0.9));
+                            try { blob.setBlendMode && blob.setBlendMode(Phaser.BlendModes.SCREEN); } catch (e) { }
+                            // Drift: slower for distant layers, more pronounced for closer ones
+                            const driftBase = (dirSign * Phaser.Math.Between(40, 220)) * (1 + (i * 0.02));
+                            const driftX = driftBase * (1 + (layer * 0.3));
+                            const driftY = Phaser.Math.Between(-120, 120) * (1 - (layer / Math.max(1, layers)));
+                            const dur = Math.max(2000, Math.round(baseDur * (1 + (i * 0.05) + (layer * 0.2))));
+                            this.tweens.add({ targets: blob, x: blob.x + driftX, y: blob.y + driftY, duration: dur, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+                            this.fogBlobs.push(blob);
+                        } catch (e) { }
+                    }
+                }
+            }
+        } catch (e) { }
+
         // If the level contains dynamite items in the map, grant extra dynamite sticks
         try {
             if (this.levelHasDynamite) {
@@ -3377,6 +3459,8 @@ class GameScene extends Phaser.Scene {
         this.playerVerticalFacing = 'front';
         this.player.setFlipX(false);
         this.player.setCollideWorldBounds(true);
+        // Ensure player is rendered above decorative fog blobs
+        try { this.player.setDepth(2000); } catch (e) { }
         // Configure body size based on the sprite's actual display size
         if (this.player.body) {
             const w = this.player.displayWidth || this.player.width;
@@ -3446,6 +3530,8 @@ class GameScene extends Phaser.Scene {
                 this.player2VerticalFacing = 'front';
                 this.player2.setFlipX(false);
                 this.player2.setCollideWorldBounds(true);
+                // Ensure player2 is rendered above decorative fog blobs
+                try { this.player2.setDepth(2000); } catch (e) { }
                 if (this.player2.body) {
                     const w2 = this.player2.displayWidth || this.player2.width;
                     const h2 = this.player2.displayHeight || this.player2.height;
@@ -5946,6 +6032,68 @@ class GameScene extends Phaser.Scene {
             // Water: deduct dynamite once per tile when stepped on
             if (tile.type === 'water') {
                 try {
+                    // visual splash effect at player position
+                    try {
+                        // Only create a splash when the player is actively moving and not on cooldown
+                        const moving = this.player && this.player.body && (Math.abs((this.player.body.velocity && this.player.body.velocity.x) || 0) > 10 || Math.abs((this.player.body.velocity && this.player.body.velocity.y) || 0) > 10);
+                        if (moving && !this.playerWaterSplashCooldown) {
+                            const sx = Math.round(this.player.x || (offsetX + x * CONFIG.tileSize + CONFIG.tileSize/2));
+                            const sy = Math.round((this.player.y + ((this.player.displayHeight || CONFIG.playerSize || 16) / 2)));
+                            // create a few small droplet rectangles at player's feet to simulate a single splash
+                            const dropletQty = Phaser.Math.Between(4, 7);
+                            for (let di = 0; di < dropletQty; di++) {
+                                try {
+                                    const w = Phaser.Math.Between(1, 2);
+                                    const h = Phaser.Math.Between(4, 8);
+                                    const drop = this.add.rectangle(sx, sy, w, h, 0x88ccff, 1).setDepth(910).setOrigin(0.5);
+                                    drop.setAngle(Phaser.Math.Between(-40, 40));
+                                    const angle = Phaser.Math.DegToRad(Phaser.Math.Between(-120, -60));
+                                    const speed = Phaser.Math.Between(40, 100);
+                                    const tx = Math.round(sx + Math.cos(angle) * speed);
+                                    const ty = Math.round(sy + Math.sin(angle) * speed / 2);
+                                    const dur = Phaser.Math.Between(300, 520);
+                                    this.tweens.add({ targets: drop, x: tx, y: ty, alpha: 0, duration: dur, ease: 'Cubic.easeOut', onComplete: () => { try { drop.destroy(); } catch (e) { } } });
+                                } catch (e) { }
+                            }
+                            // subtle ripple ring at feet
+                            try {
+                                const ring = this.add.circle(sx, sy, 4, 0x3399ff, 0.28).setDepth(909);
+                                this.tweens.add({ targets: ring, scaleX: 6, scaleY: 4, alpha: 0, duration: 420, ease: 'Cubic.easeOut', onComplete: () => { try { ring.destroy(); } catch (e) { } } });
+                            } catch (e) { }
+
+                                // repeat the splash a few times (burst) and set cooldown so splash isn't continuous
+                                const bursts = 3;
+                                const interval = 120;
+                                for (let b = 0; b < bursts; b++) {
+                                    try {
+                                        this.time.delayedCall(b * interval, () => {
+                                            try {
+                                                // recreate droplets for this burst
+                                                const dropletQty2 = Phaser.Math.Between(3, 6);
+                                                for (let di2 = 0; di2 < dropletQty2; di2++) {
+                                                    try {
+                                                        const w = Phaser.Math.Between(1, 2);
+                                                        const h = Phaser.Math.Between(4, 8);
+                                                        const drop2 = this.add.rectangle(sx, sy, w, h, 0x88ccff, 1).setDepth(910).setOrigin(0.5);
+                                                        drop2.setAngle(Phaser.Math.Between(-40, 40));
+                                                        const angle2 = Phaser.Math.DegToRad(Phaser.Math.Between(-120, -60));
+                                                        const speed2 = Phaser.Math.Between(40, 100);
+                                                        const tx2 = Math.round(sx + Math.cos(angle2) * speed2);
+                                                        const ty2 = Math.round(sy + Math.sin(angle2) * speed2 / 2);
+                                                        const dur2 = Phaser.Math.Between(300, 520);
+                                                        this.tweens.add({ targets: drop2, x: tx2, y: ty2, alpha: 0, duration: dur2, ease: 'Cubic.easeOut', onComplete: () => { try { drop2.destroy(); } catch (e) { } } });
+                                                    } catch (e) { }
+                                                }
+                                                try { const ring2 = this.add.circle(sx, sy, 4, 0x3399ff, 0.28).setDepth(909); this.tweens.add({ targets: ring2, scaleX: 6, scaleY: 4, alpha: 0, duration: 420, ease: 'Cubic.easeOut', onComplete: () => { try { ring2.destroy(); } catch (e) { } } }); } catch (e) { }
+                                            } catch (e) { }
+                                        }, [], this);
+                                    } catch (e) { }
+                                }
+                                this.playerWaterSplashCooldown = true;
+                                try { this.time.delayedCall((bursts * interval) + 300, () => { this.playerWaterSplashCooldown = false; }, [], this); } catch (e) { this.playerWaterSplashCooldown = false; }
+                        }
+                    } catch (e) { }
+
                     if (!tile.waterTriggered) {
                         tile.waterTriggered = true;
                         GAME_STATE.dynamiteCount = Math.max(0, (Number(GAME_STATE.dynamiteCount) || 0) - 10);
@@ -5959,18 +6107,82 @@ class GameScene extends Phaser.Scene {
             // Mud: freeze player for 3 seconds
             if (tile.type === 'mud') {
                 try {
-                    if (!this.playerMudActive) {
+                    // don't re-trigger mud while immune (grace period after free)
+                    if (this.playerMudImmune) {
+                        // skip effect while immune
+                    } else if (!this.playerMudActive) {
                         this.playerMudActive = true;
                         // stop movement
                         try { if (this.player.body) { this.player.body.setVelocity(0, 0); this.player.body.setEnable(false); } } catch (e) { }
                         // small visual
                         try { if (!this.playerMudHalo) { this.playerMudHalo = this.add.circle(this.player.x, this.player.y, (this.player.displayWidth || 16) * 0.8, 0x663300, 0.28).setDepth(900); } } catch (e) { }
+                        // mud splash visual at player's feet (brown droplets)
+                        try {
+                            const mx = Math.round(this.player.x || (offsetX + x * CONFIG.tileSize + CONFIG.tileSize/2));
+                            const my = Math.round((this.player.y + ((this.player.displayHeight || CONFIG.playerSize || 16) / 2)));
+                            const mudQty = Phaser.Math.Between(5, 8);
+                            for (let mi = 0; mi < mudQty; mi++) {
+                                try {
+                                    const w = Phaser.Math.Between(1, 3);
+                                    const h = Phaser.Math.Between(3, 7);
+                                    const drop = this.add.rectangle(mx, my, w, h, 0x663300, 1).setDepth(900).setOrigin(0.5);
+                                    drop.setAngle(Phaser.Math.Between(-50, 50));
+                                    const angle = Phaser.Math.DegToRad(Phaser.Math.Between(-120, -60));
+                                    const speed = Phaser.Math.Between(20, 60);
+                                    const tx = Math.round(mx + Math.cos(angle) * speed);
+                                    const ty = Math.round(my + Math.sin(angle) * speed / 2);
+                                    const dur = Phaser.Math.Between(300, 650);
+                                    this.tweens.add({ targets: drop, x: tx, y: ty, alpha: 0, duration: dur, ease: 'Cubic.easeOut', onComplete: () => { try { drop.destroy(); } catch (e) { } } });
+                                } catch (e) { }
+                            }
+                            try { const ringMud = this.add.circle(mx, my, 3, 0x552200, 0.28).setDepth(899); this.tweens.add({ targets: ringMud, scaleX: 5, scaleY: 3, alpha: 0, duration: 420, ease: 'Cubic.easeOut', onComplete: () => { try { ringMud.destroy(); } catch (e) { } } }); } catch (e) { }
+                        } catch (e) { }
+                        // clear any previous mud timers / countdowns
                         if (this.playerMudTimer) { try { this.playerMudTimer.remove(false); } catch (e) { } }
-                        this.playerMudTimer = this.time.delayedCall(3000, () => {
+                        if (this.playerMudCountdownEvent) { try { this.playerMudCountdownEvent.remove(false); } catch (e) { } }
+                        if (this.playerMudCountdown) { try { this.playerMudCountdown.destroy(); } catch (e) { } this.playerMudCountdown = null; }
+
+                        const mudDur = Number(CONFIG.mudDuration) || 3000;
+                        // create visual countdown in seconds above player
+                        try {
+                            const secs = Math.max(1, Math.ceil(mudDur / 1000));
+                            this.playerMudCountdownSecs = secs;
+                            this.playerMudCountdown = this.add.text(this.player.x, this.player.y - ((this.player.displayHeight || 16) * 0.9), String(this.playerMudCountdownSecs), { fontSize: '18px', fill: '#ffffff', fontFamily: GAME_FONT }).setOrigin(0.5).setDepth(901);
+                            // update position each second and decrement
+                            this.playerMudCountdownEvent = this.time.addEvent({
+                                delay: 1000,
+                                repeat: secs - 1,
+                                callback: () => {
+                                    try {
+                                        this.playerMudCountdownSecs = Math.max(0, (this.playerMudCountdownSecs || 1) - 1);
+                                        if (this.playerMudCountdown) this.playerMudCountdown.setText(String(this.playerMudCountdownSecs));
+                                        // reposition to follow player
+                                        try { if (this.playerMudCountdown && this.player) this.playerMudCountdown.setPosition(this.player.x, this.player.y - ((this.player.displayHeight || 16) * 0.9)); } catch (e) {}
+                                    } catch (e) { }
+                                },
+                                callbackScope: this
+                            });
+                        } catch (e) { }
+
+                        this.playerMudTimer = this.time.delayedCall(mudDur, () => {
                             this.playerMudActive = false;
                             try { if (this.player.body) this.player.body.setEnable(true); } catch (e) { }
                             try { if (this.playerMudHalo) { this.playerMudHalo.destroy(); this.playerMudHalo = null; } } catch (e) { }
+                            // cleanup countdown visuals/events
+                            try { if (this.playerMudCountdownEvent) { this.playerMudCountdownEvent.remove(false); this.playerMudCountdownEvent = null; } } catch (e) { }
+                            try { if (this.playerMudCountdown) { this.playerMudCountdown.destroy(); this.playerMudCountdown = null; } } catch (e) { }
                             this.playerMudTimer = null;
+                            // give a short immunity so player can move off mud without being retriggered
+                            try { this.playerMudImmune = true; } catch (e) { }
+                            try {
+                                if (this.playerMudImmuneTimer) { try { this.playerMudImmuneTimer.remove(false); } catch (e) { } }
+                            } catch (e) { }
+                            try {
+                                this.playerMudImmuneTimer = this.time.delayedCall(1000, () => {
+                                    try { this.playerMudImmune = false; } catch (e) { }
+                                    try { this.playerMudImmuneTimer = null; } catch (e) { }
+                                }, [], this);
+                            } catch (e) { }
                         }, [], this);
                     }
                 } catch (e) { }

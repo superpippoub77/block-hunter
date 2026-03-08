@@ -17,6 +17,7 @@
   "enableImpactShake": true,
   "sandSlowFactor": 0.5,
   "sandSlowDuration": 10000,
+  "mudDuration": 3000,
   "shardLifetime": 2000,
   "doorCloseTime": 30000,
   "attractTimeout": 10000,
