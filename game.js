@@ -2774,7 +2774,24 @@ class GameScene extends Phaser.Scene {
 
         const parseSingleMapSymbol = (value) => {
             // apply tokenMap mappings first
+            const originalValue = value;
             value = resolveTokenMap(value);
+            // support trailing '.' to indicate transparency / no tile (e.g. 'f.' puddle effects but no tile drawn)
+            let noTileFlag = false;
+            try {
+                if (typeof originalValue === 'string' && originalValue.length > 1 && originalValue.endsWith('.')) {
+                    noTileFlag = true;
+                    // remove trailing dot for subsequent parsing
+                    if (typeof value === 'string' && value.endsWith('.')) value = value.slice(0, -1);
+                }
+            } catch (e) { }
+
+            // diagnostic log to help debug map tokens with trailing dot
+            try {
+                if (noTileFlag && typeof console !== 'undefined' && console.log) {
+                    console.log('[MAP_NO_TILE]', originalValue, '->', value);
+                }
+            } catch (e) { }
             // Treat null/undefined/empty-string as explicit empty tile
             if (value == null) {
                 return { type: 'empty', wallFrame: 0, wallRotation: 0 };
@@ -2787,23 +2804,23 @@ class GameScene extends Phaser.Scene {
 
             const normalizedValue = value.trim().toLowerCase();
             if (normalizedValue === '') {
-                return { type: 'empty', wallFrame: 0, wallRotation: 0 };
+                return { type: 'empty', wallFrame: 0, wallRotation: 0, noTile: noTileFlag };
             }
 
             if (normalizedValue === 'floor') {
-                return { type: 'floor', wallFrame: 0, wallRotation: 0 };
+                return { type: 'floor', wallFrame: 0, wallRotation: 0, noTile: noTileFlag };
             }
             if (normalizedValue === 'empty') {
-                return { type: 'empty', wallFrame: 0, wallRotation: 0 };
+                return { type: 'empty', wallFrame: 0, wallRotation: 0, noTile: noTileFlag };
             }
             if (normalizedValue === 'hole') {
-                return { type: 'hole', wallFrame: 0, wallRotation: 0 };
+                return { type: 'hole', wallFrame: 0, wallRotation: 0, noTile: noTileFlag };
             }
             if (normalizedValue === 'hole2') {
-                return { type: 'hole2', wallFrame: 0, wallRotation: 0 };
+                return { type: 'hole2', wallFrame: 0, wallRotation: 0, noTile: noTileFlag };
             }
             if (normalizedValue === 'wall' || normalizedValue === 'w') {
-                return { type: 'wall', wallFrame: 0, wallRotation: 0 };
+                return { type: 'wall', wallFrame: 0, wallRotation: 0, noTile: noTileFlag };
             }
 
             // Support full token wR C R F (row,col,rot,flip) where flip is h/v/0
@@ -2819,11 +2836,12 @@ class GameScene extends Phaser.Scene {
                 const validFlip = flipChar === 'h' || flipChar === 'v' || flipChar === '0';
                 if (validRow && validCol && validRotation && validFlip) {
                     return {
-                        type: 'wall',
-                        wallFrame: row * WALL_TILE_COLS + col,
-                        wallRotation: rotationCode,
-                        wallFlip: flipChar
-                    };
+                            type: 'wall',
+                            wallFrame: row * WALL_TILE_COLS + col,
+                            wallRotation: rotationCode,
+                            wallFlip: flipChar,
+                            noTile: noTileFlag
+                        };
                 }
             }
 
@@ -2841,7 +2859,8 @@ class GameScene extends Phaser.Scene {
                         type: 'wall',
                         wallFrame: row * WALL_TILE_COLS + col,
                         wallRotation: rotationCode,
-                        wallFlip: '0'
+                        wallFlip: '0',
+                        noTile: noTileFlag
                     };
                 }
             }
@@ -2859,7 +2878,8 @@ class GameScene extends Phaser.Scene {
                         type: 'wall',
                         wallFrame: baseCol,
                         wallRotation: rotationCode,
-                        wallFlip: '0'
+                        wallFlip: '0',
+                        noTile: noTileFlag
                     };
                 }
                 if (validBaseCol) {
@@ -2867,20 +2887,21 @@ class GameScene extends Phaser.Scene {
                         type: 'wall',
                         wallFrame: baseCol,
                         wallRotation: ((rotationCode % 4) + 4) % 4,
-                        wallFlip: '0'
+                        wallFlip: '0',
+                        noTile: noTileFlag
                     };
                 }
-                return { type: 'wall', wallFrame: 0, wallRotation: 0, wallFlip: '0' };
+                return { type: 'wall', wallFrame: 0, wallRotation: 0, wallFlip: '0', noTile: noTileFlag };
             }
 
             // Support multi-character tokens like 'exit' which should map to hole2 (the exit frame)
             if (typeof value === 'string') {
                 const vnorm = value.trim().toLowerCase();
                 if (vnorm === 'bck' || vnorm === 'back' || vnorm === 'back_level') {
-                    return { type: 'back', wallFrame: 0, wallRotation: 0 };
+                    return { type: 'back', wallFrame: 0, wallRotation: 0, noTile: noTileFlag };
                 }
                 if (vnorm === 'hc' || vnorm === 'hole_cover') {
-                    return { type: 'hole_cover', wallFrame: 0, wallRotation: 0 };
+                    return { type: 'hole_cover', wallFrame: 0, wallRotation: 0, noTile: noTileFlag };
                 }
             }
 
@@ -2888,37 +2909,38 @@ class GameScene extends Phaser.Scene {
             if (typeof value === 'string') {
                 const vnorm = value.trim().toLowerCase();
                 if (vnorm === 'exit' || vnorm === 'hole2') {
-                    return { type: 'hole2', wallFrame: 0, wallRotation: 0 };
+                    return { type: 'hole2', wallFrame: 0, wallRotation: 0, noTile: noTileFlag };
                 }
             }
 
             if (value.length === 1) {
                 switch (value) {
                     // single-letter 'w' treated as water here; wall tokens like w12 are handled earlier
-                    case 'w': return { type: 'water', wallFrame: 0, wallRotation: 0 };
+                    case 'w': return { type: 'water', wallFrame: 0, wallRotation: 0, noTile: noTileFlag };
                     // 'f' is mud (fango) per new mapping
-                    case 'f': return { type: 'mud', wallFrame: 0, wallRotation: 0 };
-                    case 'm': return { type: 'skeleton', wallFrame: 0, wallRotation: 0 };
-                    case '#': return { type: 'wall', wallFrame: 0, wallRotation: 0, invisible: true };
-                    case 'h': return { type: 'hole', wallFrame: 0, wallRotation: 0 };
+                    case 'f': return { type: 'mud', wallFrame: 0, wallRotation: 0, noTile: noTileFlag };
+                    case 'm': return { type: 'skeleton', wallFrame: 0, wallRotation: 0, noTile: noTileFlag };
+                    case '#': return { type: 'wall', wallFrame: 0, wallRotation: 0, invisible: true, noTile: noTileFlag };
+                    case 'h': return { type: 'hole', wallFrame: 0, wallRotation: 0, noTile: noTileFlag };
                     case '.': return { type: 'hole', wallFrame: 0, wallRotation: 0, noTile: true };
-                    case 's': return { type: 'sand', wallFrame: 0, wallRotation: 0 };
-                    case 'g': return { type: 'gem', wallFrame: 0, wallRotation: 0 };
-                    case '-': return { type: 'empty', wallFrame: 0, wallRotation: 0 };
-                    case 'l': return { type: 'heart', wallFrame: 0, wallRotation: 0 };
-                    case 'd': return { type: 'door', wallFrame: 0, wallRotation: 0 };
-                    case 'k': return { type: 'key', wallFrame: 0, wallRotation: 0 };
-                    case 'p': return { type: 'pepita', wallFrame: 0, wallRotation: 0 };
-                    case 'b': return { type: 'dynamite', wallFrame: 0, wallRotation: 0 };
-                    case 'c': return { type: 'cart', wallFrame: 0, wallRotation: 0 };
-                    default: return { type: value, wallFrame: 0, wallRotation: 0 };
+                    case 's': return { type: 'sand', wallFrame: 0, wallRotation: 0, noTile: noTileFlag };
+                    case 'g': return { type: 'gem', wallFrame: 0, wallRotation: 0, noTile: noTileFlag };
+                    case '-': return { type: 'empty', wallFrame: 0, wallRotation: 0, noTile: noTileFlag };
+                    case 'l': return { type: 'heart', wallFrame: 0, wallRotation: 0, noTile: noTileFlag };
+                    case 'd': return { type: 'door', wallFrame: 0, wallRotation: 0, noTile: noTileFlag };
+                    case 'k': return { type: 'key', wallFrame: 0, wallRotation: 0, noTile: noTileFlag };
+                    case 'p': return { type: 'pepita', wallFrame: 0, wallRotation: 0, noTile: noTileFlag };
+                    case 'b': return { type: 'dynamite', wallFrame: 0, wallRotation: 0, noTile: noTileFlag };
+                    case 'c': return { type: 'cart', wallFrame: 0, wallRotation: 0, noTile: noTileFlag };
+                    default: return { type: value, wallFrame: 0, wallRotation: 0, noTile: noTileFlag };
                 }
             }
 
             return {
                 type: value,
                 wallFrame: 0,
-                wallRotation: 0
+                wallRotation: 0,
+                noTile: noTileFlag
             };
         };
 
@@ -3007,6 +3029,10 @@ class GameScene extends Phaser.Scene {
                 let tileSprite = null;
                 let coverSprite = null;
 
+                // Diagnostic: log tile creation decisions
+                try {
+                    if (typeof console !== 'undefined' && console.log) console.log('[TILE_CREATE]', x, y, 'type=', type, 'tileNoTile=', tileNoTile, 'tileType=', tileType, 'normalized=', normalizedTileType);
+                } catch (e) { }
                 if (normalizedTileType !== 'empty') {
                     // Get frame index for this tile type
                     const frameIndex = normalizedTileType === 'wall'
