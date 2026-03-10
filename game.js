@@ -2629,6 +2629,8 @@ class GameScene extends Phaser.Scene {
         // Number of gems required to unlock the exit for this level.
         // Priority: levelData.requiredGems || levelData.gemsRequired || levelData.map.requiredGems -> fallback CONFIG.gemsPerLevel
         this.requiredGems = Number(this.levelData?.requiredGems ?? this.levelData?.gemsRequired ?? this.levelData?.map?.requiredGems ?? CONFIG.gemsPerLevel) || Number(CONFIG.gemsPerLevel);
+        // Preserve initial gem count so we can tell when "all gems" were collected
+        this.initialGems = Number(this.gemsRemaining) || 0;
         // Flag set when exit(s) are unlocked/visible and can be used to complete the level
         this.exitUnlocked = false;
 
@@ -2667,7 +2669,11 @@ class GameScene extends Phaser.Scene {
                 }
             }
         } else {
-            this.activateHole2Exits();
+            // No gems to spawn — consider exits active only when the "all collected" condition
+            // holds (initialGems is 0 so treated as already collected).
+            if ((Number(this.levelStats?.gemsCollected) || 0) >= Number(this.requiredGems || 0) || (Number(this.initialGems || 0) === 0)) {
+                this.activateHole2Exits();
+            }
         }
 
         // Setup collisions
@@ -7447,10 +7453,12 @@ class GameScene extends Phaser.Scene {
 
         this.gemsRemaining--;
 
-        // If collecting this gem reached the configured required amount, unlock the exit(s)
+        // If collecting this gem reached the configured required amount, or if all gems
+        // (initially present on the level) have now been collected, unlock the exit(s)
         try {
             const collected = Number(this.levelStats?.gemsCollected) || 0;
-            if (!this.exitUnlocked && collected >= Number(this.requiredGems || 0)) {
+            const allCollected = (Number(this.initialGems) || 0) > 0 ? (collected >= Number(this.initialGems)) : (collected >= 0);
+            if (!this.exitUnlocked && (collected >= Number(this.requiredGems || 0) || allCollected)) {
                 this.activateHole2Exits();
             }
         } catch (e) { /* ignore */ }
@@ -7463,9 +7471,14 @@ class GameScene extends Phaser.Scene {
             }
         }
 
-        // If there are no more gems to spawn, ensure exits are active as a fallback
+        // If there are no more gems to spawn, ensure exits are active only when
+        // the required amount or the "all collected" condition is met.
         if (!this.exitUnlocked) {
-            this.activateHole2Exits();
+            const collected = Number(this.levelStats?.gemsCollected) || 0;
+            const allCollected = (Number(this.initialGems) || 0) > 0 ? (collected >= Number(this.initialGems)) : (collected >= 0);
+            if (collected >= Number(this.requiredGems || 0) || allCollected) {
+                this.activateHole2Exits();
+            }
         }
     }
 
@@ -8986,7 +8999,8 @@ class GameScene extends Phaser.Scene {
 
         // Gemme: una sola icona + numero rimanente
         addIcon(OBJECT_FRAMES.gem);
-        addCountText(this.gemsRemaining, '#00ffff');
+        // Mostra il numero di gemme rimanenti insieme al minimo richiesto per sbloccare l'uscita
+        addCountText(String(this.gemsRemaining) + '/' + String(this.requiredGems), '#00ffff');
 
         // Centra l'intero blocco tra punteggio e livello
         const usedWidth = x - laneStart;
