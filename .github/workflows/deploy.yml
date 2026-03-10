@@ -1,35 +1,37 @@
-name: Deploy only index.html and folders to Aruba via FTP
+name: Deploy block-hunter to Aruba via FTP
 
 on:
   push:
     branches:
       - main
-  workflow_dispatch:  # Permette anche l'avvio manuale
+  workflow_dispatch:
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-    - name: Deploy to FTP server
-      uses: SamKirkland/FTP-Deploy-Action@v4.3.0
-      with:
-        server: ftp.filippomorano.com
-        username: ${{ secrets.FTP_USERNAME }}
-        password: ${{ secrets.FTP_PASSWORD }}
-        local-dir: ./
-        server-dir: /www.filippomorano.com/projects/block-hunter/
-        exclude: |
-          **/*
-          !index.html
-          !game.js
-          !css/**
-          !js/**
-          !data/**
-          !assets/**
-          !images/**
-          !docs/**
-          !.htaccess
+      - name: FTP Deploy
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.0
+        with:
+          server: ftp.filippomorano.com
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+
+          local-dir: ./
+          server-dir: /www.filippomorano.com/projects/block-hunter/
+
+          exclude: |
+            **/.git*
+            **/.github*
+            **/.vs/**
+            **/.vscode/**
+            **/node_modules/**
+            **/tools/**
+            README*
+            package.json
+            server.js
+            scripts/**
