@@ -124,7 +124,7 @@
     "wall": {
       "contactType": "center-front",
       "radiusMultiplier": 0.9,
-      "radiusPixels": 36,
+      "radiusPixels": 20,
       "proximityTiles": 0.75,
       "proximityPixels": 48
     },

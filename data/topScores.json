@@ -7,7 +7,12 @@
   {
     "name": "ZAA",
     "score": 370,
-"level": 2
+    "level": 2
+  },
+  {
+    "name": "AAA",
+    "score": 350,
+    "level": 0
   },
   {
     "name": "BAA",
@@ -16,8 +21,23 @@
   },
   {
     "name": "AAA",
+    "score": 310,
+    "level": 0
+  },
+  {
+    "name": "AAA",
+    "score": 250,
+    "level": 0
+  },
+  {
+    "name": "AAA",
     "score": 180,
     "level": 1
+  },
+  {
+    "name": "AAA",
+    "score": 170,
+    "level": 0
   },
   {
     "name": "XAA",
@@ -26,27 +46,7 @@
   },
   {
     "name": "AAA",
-    "score": 30,
-    "level": 0
-  },
-  {
-    "name": "JJJ",
-    "score": 10,
-    "level": 0
-  },
-  {
-    "name": "AAA",
-    "score": 0,
-    "level": 0
-  },
-  {
-    "name": "BBB",
-    "score": 0,
-    "level": 0
-  },
-  {
-    "name": "CCC",
-    "score": 0,
+    "score": 130,
     "level": 0
   }
 ]

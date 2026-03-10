@@ -313,14 +313,18 @@ class LevelEditorScene extends Phaser.Scene {
                     try {
                         tileValue && (tileValue.textContent = `${tileSlider.value} px`);
                         const v = Number(tileSlider.value) || 64;
-                        // disable auto-grid-from-bg so changing tileSize doesn't recompute cols/rows
+                        this.setTileBaseSize(v);
+                        // If auto-grid-from-bg is enabled, recompute cols/rows based on the
+                        // background image natural size and the new tile size. Otherwise
+                        // update background without auto-grid.
                         try {
                             const autoChk = el('autoGridFromBg');
-                            if (autoChk) autoChk.checked = false;
-                        } catch (e) { }
-                        this.setTileBaseSize(v);
-                        // update background but do NOT trigger auto-grid-from-bg when changing tile size
-                        try { this.updateEditorBackgroundImage(true); } catch (e) {}
+                            if (autoChk && autoChk.checked) {
+                                this.updateEditorBackgroundImage();
+                            } else {
+                                this.updateEditorBackgroundImage(true);
+                            }
+                        } catch (e) { try { this.updateEditorBackgroundImage(true); } catch(e){} }
                     } catch (e) { }
                 });
             }
@@ -458,11 +462,13 @@ class LevelEditorScene extends Phaser.Scene {
             // is only changing tile size and doesn't want cols/rows recomputed).
             try {
                 const autoChk = el('autoGridFromBg');
-                if (!skipAutoGrid && autoChk && autoChk.checked) {
+                    if (!skipAutoGrid && autoChk && autoChk.checked) {
                     const frame = this.textures.getFrame(key, 0);
                     if (frame && Number.isFinite(frame.cutWidth) && Number.isFinite(frame.cutHeight)) {
-                        const nCols = clamp(Math.floor(Number(frame.cutWidth) / 64), 4, 40);
-                        const nRows = clamp(Math.floor(Number(frame.cutHeight) / 64), 4, 40);
+                        // Use the configured tile size (pixel dimension) when computing cols/rows.
+                        const tileSizeInput = Number(el('tileSizeSlider')?.value) || 64;
+                        const nCols = clamp(Math.floor(Number(frame.cutWidth) / tileSizeInput), 4, 40);
+                        const nRows = clamp(Math.floor(Number(frame.cutHeight) / tileSizeInput), 4, 40);
                         if (nCols > 0 && nRows > 0 && (nCols !== this.cols || nRows !== this.rows)) {
                             const colsEl = el('gridCols');
                             const rowsEl = el('gridRows');

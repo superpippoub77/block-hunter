@@ -2804,6 +2804,7 @@ class GameScene extends Phaser.Scene {
             // support trailing '.' to indicate transparency / no tile (e.g. 'f.' puddle effects but no tile drawn)
             let noTileFlag = false;
             try {
+                // Case A: original token in the map data itself ends with '.' (e.g. 'x.').
                 if (typeof originalValue === 'string' && originalValue.length > 1 && originalValue.endsWith('.')) {
                     noTileFlag = true;
                     // remove trailing dot for subsequent parsing of the resolved value
@@ -2825,6 +2826,14 @@ class GameScene extends Phaser.Scene {
                             }
                         }
                     } catch (e) { }
+                }
+
+                // Case B: mapping in tokenMap yields a value that ends with '.' (e.g. '#': 'w0000.').
+                // In that case, even if the original token didn't end with '.', we should
+                // honor the trailing dot in the mapped value and treat it as `noTile`.
+                if (!noTileFlag && typeof value === 'string' && value.endsWith('.')) {
+                    noTileFlag = true;
+                    value = value.slice(0, -1);
                 }
             } catch (e) { }
 
@@ -3116,6 +3125,15 @@ class GameScene extends Phaser.Scene {
 
                     if (type === 'wall' && this.walls) {
                         this.walls.add(tileSprite);
+                        // Ensure a static physics body exists for this tileSprite even when
+                        // added from a plain sprite (some Phaser builds do not auto-create
+                        // bodies for sprites added to a staticGroup). This guarantees
+                        // invisible walls will block the player.
+                        try {
+                            if (!tileSprite.body && this.physics && this.physics.add && this.physics.add.existing) {
+                                this.physics.add.existing(tileSprite, true);
+                            }
+                        } catch (e) { }
                         // assign contact spec according to config (contactType, radiusMultiplier, proximityTiles)
                         try {
                             const spec = resolveContactSpec('wall');
@@ -3139,13 +3157,9 @@ class GameScene extends Phaser.Scene {
                                 }
                                 if (tileInvisible) {
                                     // For invisible walls, use a full-tile rectangular body so collision covers entire cell
-                                    tileSprite.body.setSize(tw, th);
-                                    tileSprite.body.setOffset(0, 0);
+                                    try { tileSprite.body.setSize(tw, th); tileSprite.body.setOffset(0, 0); } catch (e) { }
                                 } else {
-                                    tileSprite.body.setCircle(radius);
-                                    const offsetX = Math.floor((tw / 2) - radius);
-                                    const offsetY = Math.floor((th / 2) - radius);
-                                    tileSprite.body.setOffset(offsetX, offsetY);
+                                    try { tileSprite.body.setCircle(radius); const offsetX = Math.floor((tw / 2) - radius); const offsetY = Math.floor((th / 2) - radius); tileSprite.body.setOffset(offsetX, offsetY); } catch (e) { }
                                 }
                             } catch (e) {
                                 tileSprite.body.setSize(Math.floor(tileSprite.displayWidth || tileSprite.width), Math.floor(tileSprite.displayHeight || tileSprite.height));
@@ -3317,7 +3331,11 @@ class GameScene extends Phaser.Scene {
                 // print the stored tile entry so we can verify `noTile`/type/hiddenReveal propagation.
                 try {
                     if (CONFIG.debugTileGrid && mapData && mapData[y] && typeof mapData[y][x] === 'string' && mapData[y][x].endsWith('.')) {
-                        try { console.log('[DEBUG_TILE_ENTRY]', 'grid=', y, x, 'token=', mapData[y][x], 'tileObj=', this.tiles[y][x]); } catch (e) { }
+                        try {
+                            const tileObj = this.tiles[y] && this.tiles[y][x] ? this.tiles[y][x] : null;
+                            const ctype = (tileObj && tileObj.sprite && typeof tileObj.sprite.getData === 'function') ? tileObj.sprite.getData('contactType') : (tileObj && tileObj.contactType) || null;
+                            console.log('[DEBUG_TILE_ENTRY]', 'grid=', y, x, 'token=', mapData[y][x], 'contactType=', ctype, 'tileObj=', tileObj);
+                        } catch (e) { }
                     }
                 } catch (e) { }
                 if (hiddenReveal) {
@@ -3505,7 +3523,28 @@ class GameScene extends Phaser.Scene {
                 for (let x = 0; x < mapCols; x++) {
                     const cx = offsetX + x * CONFIG.tileSize + CONFIG.tileSize / 2;
                     const cy = offsetY + y * CONFIG.tileSize + CONFIG.tileSize / 2;
-                    const txt = this.add.text(cx, cy, `${y},${x}`, labelStyle).setOrigin(0.5);
+                    // include contactType in debug label when available
+                    let labelText = `${y},${x}`;
+                    try {
+                        const t = (this.tiles && this.tiles[y]) ? this.tiles[y][x] : null;
+                        let ctype = null;
+                        if (t) {
+                            if (t.sprite && typeof t.sprite.getData === 'function') {
+                                ctype = t.sprite.getData('contactType') || null;
+                            }
+                            if (!ctype && t.contactType) ctype = t.contactType;
+                            // fallback: derive from logical type using resolveContactSpec
+                            if (!ctype && typeof resolveContactSpec === 'function') {
+                                try {
+                                    const spec = resolveContactSpec(t.type || null);
+                                    if (spec && spec.contactType) ctype = spec.contactType;
+                                } catch (e) { }
+                            }
+                        }
+                        if (ctype) labelText = `${y},${x}\n${ctype}`;
+                        else labelText = `${y},${x}`;
+                    } catch (e) { }
+                    const txt = this.add.text(cx, cy, labelText, labelStyle).setOrigin(0.5).setLineSpacing(0);
                     txt.setAlpha(0.7);
                     txt.setDepth(51);
                     // Keep label hidden unless debug enabled
@@ -6202,6 +6241,25 @@ class GameScene extends Phaser.Scene {
                         // small popup
                         this.showScorePopup && this.showScorePopup(-10, this.player.x, this.player.y);
                     }
+                    // apply a persistent wet visual on the tile itself
+                    try {
+                        if (!tile.waterWet) {
+                            // compute tile center coordinates
+                            const gridX = Math.floor((this.player.x - (this.mapOffsetX || 0)) / (Number(CONFIG.tileSize) || 32));
+                            const gridY = Math.floor((this.player.y - (this.mapOffsetY || 0)) / (Number(CONFIG.tileSize) || 32));
+                            const worldX = (this.mapOffsetX || 0) + gridX * (Number(CONFIG.tileSize) || 32) + (Number(CONFIG.tileSize) || 32) / 2;
+                            const worldY = (this.mapOffsetY || 0) + gridY * (Number(CONFIG.tileSize) || 32) + (Number(CONFIG.tileSize) || 32) / 2;
+                            const wet = this.add.circle(worldX, worldY, Math.floor((Number(CONFIG.tileSize) || 32) * 0.42), 0x3399ff, 0.22).setDepth(Math.round(worldY) - 5);
+                            tile.waterWet = true;
+                            tile.wetSprite = wet;
+                            const wetDur = Number(CONFIG.waterWetDuration) || 2500;
+                            this.time.delayedCall(wetDur, () => {
+                                try { if (wet && wet.destroy) wet.destroy(); } catch (e) { }
+                                tile.waterWet = false;
+                                tile.wetSprite = null;
+                            }, [], this);
+                        }
+                    } catch (e) { }
                 } catch (e) { }
             }
 
@@ -6286,6 +6344,24 @@ class GameScene extends Phaser.Scene {
                             } catch (e) { }
                         }, [], this);
                     }
+                    // apply a visible mud stain to the tile so puddle effect is visible on the map
+                    try {
+                        if (!tile.mudApplied) {
+                            const gridX = Math.floor((this.player.x - (this.mapOffsetX || 0)) / (Number(CONFIG.tileSize) || 32));
+                            const gridY = Math.floor((this.player.y - (this.mapOffsetY || 0)) / (Number(CONFIG.tileSize) || 32));
+                            const worldX = (this.mapOffsetX || 0) + gridX * (Number(CONFIG.tileSize) || 32) + (Number(CONFIG.tileSize) || 32) / 2;
+                            const worldY = (this.mapOffsetY || 0) + gridY * (Number(CONFIG.tileSize) || 32) + (Number(CONFIG.tileSize) || 32) / 2;
+                            const stain = this.add.rectangle(worldX, worldY, Math.floor((Number(CONFIG.tileSize) || 32) * 0.9), Math.floor((Number(CONFIG.tileSize) || 32) * 0.9), 0x552200, 0.28).setOrigin(0.5).setDepth(Math.round(worldY) - 6);
+                            tile.mudApplied = true;
+                            tile.mudSprite = stain;
+                            const stainDur = (Number(CONFIG.mudDuration) || 3000) * 2;
+                            this.time.delayedCall(stainDur, () => {
+                                try { if (stain && stain.destroy) stain.destroy(); } catch (e) { }
+                                tile.mudApplied = false;
+                                tile.mudSprite = null;
+                            }, [], this);
+                        }
+                    } catch (e) { }
                 } catch (e) { }
             }
 
