@@ -3562,6 +3562,10 @@ class GameScene extends Phaser.Scene {
                 if (this.tileGridLabels && Array.isArray(this.tileGridLabels)) {
                     this.tileGridLabels.forEach(l => { l.visible = visible; });
                 }
+                // Also show/hide the hidden-tile overlay (noTile / hiddenReveal)
+                try {
+                    if (this.tileHiddenDebug) this.tileHiddenDebug.visible = visible;
+                } catch (e) { }
             });
         } catch (e) {
             // ignore if input not ready or in non-interactive context
