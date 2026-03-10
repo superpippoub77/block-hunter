@@ -30,6 +30,7 @@ jobs:
             **/.vs/**
             **/.vscode/**
             **/node_modules/**
+            **/tools/**
             README*
             package.json
             server.js
