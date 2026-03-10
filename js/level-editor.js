@@ -272,6 +272,7 @@ class LevelEditorScene extends Phaser.Scene {
         this.selectedCell = null;
         this.paletteItems = [];
         this.lastBrushToken = 'w0000';
+        this._dragNoTile = false; // true when user holds '.' while dragging to mark invisible
     }
 
     preload() {
@@ -467,8 +468,8 @@ class LevelEditorScene extends Phaser.Scene {
                     if (frame && Number.isFinite(frame.cutWidth) && Number.isFinite(frame.cutHeight)) {
                         // Use the configured tile size (pixel dimension) when computing cols/rows.
                         const tileSizeInput = Number(el('tileSizeSlider')?.value) || 64;
-                        const nCols = clamp(Math.floor(Number(frame.cutWidth) / tileSizeInput), 4, 40);
-                        const nRows = clamp(Math.floor(Number(frame.cutHeight) / tileSizeInput), 4, 40);
+                        const nCols = clamp(Math.floor(Number(frame.cutWidth) / tileSizeInput), 4, 120);
+                        const nRows = clamp(Math.floor(Number(frame.cutHeight) / tileSizeInput), 4, 120);
                         if (nCols > 0 && nRows > 0 && (nCols !== this.cols || nRows !== this.rows)) {
                             const colsEl = el('gridCols');
                             const rowsEl = el('gridRows');
@@ -673,7 +674,7 @@ class LevelEditorScene extends Phaser.Scene {
             if (pointer.rightButtonDown()) {
                 this.rotateSelectedCell(1);
             } else if (this.lastBrushToken) {
-                this.placeToken(cell.col, cell.row, this.lastBrushToken);
+                this.placeToken(cell.col, cell.row, this.lastBrushToken, { noTile: !!this._dragNoTile });
             }
             this.renderGrid();
         });
@@ -706,6 +707,45 @@ class LevelEditorScene extends Phaser.Scene {
             this.mirrorSelectedCell('v');
             this.renderGrid();
         });
+
+        // Track '.' key for marking dragged items as invisible (noTile)
+        try {
+            window.addEventListener('keydown', (ev) => {
+                try {
+                    if (ev && ev.key === '.') {
+                        // hold modifier for dragging
+                        this._dragNoTile = true;
+                        // if a cell is selected, toggle notile on its last token
+                        if (this.selectedCell) {
+                            try {
+                                const { row, col } = this.selectedCell;
+                                const cell = this.cells[row] && this.cells[row][col] ? this.cells[row][col] : null;
+                                if (cell && cell.base && cell.base !== '-') {
+                                    const parts = String(cell.base).split('/').map(s => s.trim()).filter(Boolean);
+                                    if (parts.length) {
+                                        const last = parts[parts.length - 1];
+                                        if (String(last).endsWith('.')) {
+                                            // remove trailing dot
+                                            parts[parts.length - 1] = String(last).slice(0, -1);
+                                        } else {
+                                            parts[parts.length - 1] = String(last) + '.';
+                                        }
+                                        cell.base = parts.join('/');
+                                        this.updateSelectedCellInfo();
+                                        this.renderGrid();
+                                    }
+                                }
+                            } catch (e) { }
+                        }
+                    }
+                } catch (e) { }
+            });
+            window.addEventListener('keyup', (ev) => {
+                try {
+                    if (ev && ev.key === '.') this._dragNoTile = false;
+                } catch (e) { }
+            });
+        } catch (e) { }
 
         // Open wall variant picker with 'W' (was 'V' before; 'V' now flips vertical)
         this.input.keyboard.on('keydown-W', () => {
@@ -788,6 +828,8 @@ class LevelEditorScene extends Phaser.Scene {
                 container.setScale(1.06);
                 container.setAlpha(0.9);
                 this.lastBrushToken = container.getData('token');
+                // mark initial noTile state from global flag
+                try { container.setData('noTile', !!this._dragNoTile); } catch (e) { }
             });
 
             container.on('drag', (_pointer, dragX, dragY) => {
@@ -817,7 +859,10 @@ class LevelEditorScene extends Phaser.Scene {
                     const cell = this.getGridCellFromPointer(worldX, worldY);
                     if (cell) {
                         this.selectedCell = cell;
-                        this.placeToken(cell.col, cell.row, container.getData('token'));
+                        // respect noTile modifier on the dragged container
+                        const tok = container.getData('token');
+                        const noTile = !!container.getData('noTile') || !!this._dragNoTile;
+                        this.placeToken(cell.col, cell.row, tok, { noTile });
                         this.updateSelectedCellInfo();
                         this.renderGrid();
                     }
@@ -843,20 +888,38 @@ class LevelEditorScene extends Phaser.Scene {
         return { col, row };
     }
 
-    placeToken(col, row, token) {
+    placeToken(col, row, token, opts = {}) {
         if (!this.cells[row] || !this.cells[row][col]) return;
         const cell = this.cells[row][col];
         const useReveal = !!el('revealMode')?.checked;
         const normalized = normalizeToken(token);
-
+        // If reveal mode is active, set reveal token (legacy support)
         if (useReveal) {
             cell.reveal = normalized === '-' ? null : normalized;
             return;
         }
 
-        cell.base = normalized;
-        if (normalized === '-') {
+        // Support multiple objects in same cell by appending with '/'
+        const noTile = !!opts.noTile;
+        const tokenToPlace = noTile ? `${normalized}.` : normalized;
+
+        if (!cell.base || cell.base === '-' ) {
+            cell.base = tokenToPlace;
             cell.reveal = null;
+            return;
+        }
+
+        // Append new token to existing base separated by '/'
+        // Avoid duplicating same token consecutively
+        try {
+            const parts = String(cell.base || '').split('/').map(s => s.trim()).filter(Boolean);
+            const last = parts.length ? parts[parts.length - 1] : null;
+            if (last !== tokenToPlace) {
+                parts.push(tokenToPlace);
+                cell.base = parts.join('/');
+            }
+        } catch (e) {
+            cell.base = `${cell.base}/${tokenToPlace}`;
         }
     }
 
@@ -1028,7 +1091,17 @@ class LevelEditorScene extends Phaser.Scene {
     }
 
     addTokenVisual(container, token, x, y, size) {
-        const info = this.tokenToRenderInfo(token);
+        // support token lists joined by '/': render the topmost (last) token visually
+        let mainToken = String(token ?? '-');
+        try {
+            const parts = mainToken.split('/').map(s => s.trim()).filter(Boolean);
+            if (parts.length > 0) mainToken = parts[parts.length - 1];
+        } catch (e) { }
+        // strip trailing '.' marker for invisible/noTile when rendering visual
+        let invisible = false;
+        if (mainToken.endsWith('.')) { invisible = true; mainToken = mainToken.slice(0, -1); }
+
+        const info = this.tokenToRenderInfo(mainToken);
         const scale = size / 64;
 
         if (info.kind === 'empty') {
@@ -1040,6 +1113,7 @@ class LevelEditorScene extends Phaser.Scene {
         if (info.kind === 'tile') {
             const tile = this.add.sprite(x, y, info.texture, info.frame);
             tile.setScale(scale);
+            if (invisible) tile.setAlpha(0.35);
             container.add(tile);
             return;
         }
@@ -1050,6 +1124,7 @@ class LevelEditorScene extends Phaser.Scene {
             if (info.flip === 'h') wall.setFlipX(true);
             else if (info.flip === 'v') wall.setFlipY(true);
             else wall.setAngle((info.rot || 0) * 90);
+            if (invisible) wall.setAlpha(0.35);
             container.add(wall);
             return;
         }
@@ -1057,6 +1132,7 @@ class LevelEditorScene extends Phaser.Scene {
         if (info.kind === 'obj') {
             const obj = this.add.sprite(x, y, 'objects', info.frame);
             obj.setScale(scale * 0.9);
+            if (invisible) obj.setAlpha(0.35);
             container.add(obj);
             return;
         }
@@ -1111,22 +1187,41 @@ class LevelEditorScene extends Phaser.Scene {
                 this.gridLayer.add(bg);
 
                 const cell = this.cells[row][col];
+                // Render main visual using last token if multiple present
                 this.addTokenVisual(this.gridLayer, cell.base, cx, cy, this.cellSize);
 
-                if (cell.reveal) {
-                    const tag = this.add.text(
-                        x + this.cellSize - 2,
-                        y + 2,
-                        `/${cell.reveal}`,
-                        {
+                // If any token in the cell includes trailing '.', show 'notile' marker
+                try {
+                    const hasNoTile = String(cell.base || '').split('/').some(t => (String(t || '').trim().endsWith('.')));
+                    if (hasNoTile) {
+                        const nt = this.add.text(cx, cy + Math.floor(this.cellSize * 0.18), 'notile', {
                             fontFamily: 'monospace',
-                            fontSize: `${Math.max(8, Math.floor(this.cellSize * 0.19))}px`,
-                            color: '#ffd76a',
-                            backgroundColor: '#1f1300'
-                        }
-                    ).setOrigin(1, 0);
-                    this.gridLayer.add(tag);
-                }
+                            fontSize: `${Math.max(8, Math.floor(this.cellSize * 0.16))}px`,
+                            color: '#ffffff'
+                        }).setOrigin(0.5, 0);
+                        this.gridLayer.add(nt);
+                    }
+                } catch (e) { }
+
+                // Show small tag for additional stacked tokens (beyond first) in top-left
+                try {
+                    const parts = String(cell.base || '').split('/').map(s => s.trim()).filter(Boolean);
+                    if (parts.length > 1) {
+                        const extra = parts.slice(0, Math.min(parts.length - 1, 3)).join('/');
+                        const tag = this.add.text(
+                            x + 2,
+                            y + 2,
+                            `${extra}`,
+                            {
+                                fontFamily: 'monospace',
+                                fontSize: `${Math.max(8, Math.floor(this.cellSize * 0.14))}px`,
+                                color: '#ffd76a',
+                                backgroundColor: '#1f1300'
+                            }
+                        ).setOrigin(0, 0);
+                        this.gridLayer.add(tag);
+                    }
+                } catch (e) { }
             }
         }
 
@@ -1169,8 +1264,11 @@ class LevelEditorScene extends Phaser.Scene {
         }
         const { row, col } = this.selectedCell;
         const cell = this.cells[row]?.[col];
+        const base = cell?.base || '-';
         const reveal = cell?.reveal ? ` / ${cell.reveal}` : '';
-        infoEl.textContent = `Cella ${row},${col}: ${cell?.base || '-'}${reveal}`;
+        // indicate notile if any token in base is marked with trailing '.'
+        const hasNoTile = String(base).split('/').some(t => String(t || '').trim().endsWith('.'));
+        infoEl.textContent = `Cella ${row},${col}: ${base}${reveal}` + (hasNoTile ? ' [notile]' : '');
     }
 
     toTilesMatrix() {
@@ -1188,9 +1286,21 @@ class LevelEditorScene extends Phaser.Scene {
         for (let y = 0; y < this.rows; y++) {
             for (let x = 0; x < this.cols; x++) {
                 const raw = tiles[y]?.[x] ?? '-';
-                const parsed = splitToken(raw);
-                this.cells[y][x].base = parsed.base;
-                this.cells[y][x].reveal = parsed.reveal;
+                // If raw contains multiple '/' tokens, preserve whole string in base
+                try {
+                    if (String(raw).includes('/') && String(raw).split('/').length > 2) {
+                        this.cells[y][x].base = String(raw);
+                        this.cells[y][x].reveal = null;
+                    } else {
+                        const parsed = splitToken(raw);
+                        this.cells[y][x].base = parsed.base;
+                        this.cells[y][x].reveal = parsed.reveal;
+                    }
+                } catch (e) {
+                    const parsed = splitToken(raw);
+                    this.cells[y][x].base = parsed.base;
+                    this.cells[y][x].reveal = parsed.reveal;
+                }
             }
         }
 
