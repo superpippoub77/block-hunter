@@ -2618,6 +2618,14 @@ class GameScene extends Phaser.Scene {
         } else {
             this.gemsRemaining = CONFIG.gemsPerLevel;
         }
+        // Determine whether gems should appear one-by-one or all at once for this level.
+        try {
+            this.gemsOneByOne = Boolean(
+                (this.levelData && this.levelData.map && typeof this.levelData.map.gemsOneByOne !== 'undefined') ? this.levelData.map.gemsOneByOne
+                : (this.levelData && typeof this.levelData.gemsOneByOne !== 'undefined') ? this.levelData.gemsOneByOne
+                : (typeof CONFIG.gemsOneByOneDefault !== 'undefined' ? CONFIG.gemsOneByOneDefault : false)
+            );
+        } catch (e) { this.gemsOneByOne = false; }
         // Number of gems required to unlock the exit for this level.
         // Priority: levelData.requiredGems || levelData.gemsRequired || levelData.map.requiredGems -> fallback CONFIG.gemsPerLevel
         this.requiredGems = Number(this.levelData?.requiredGems ?? this.levelData?.gemsRequired ?? this.levelData?.map?.requiredGems ?? CONFIG.gemsPerLevel) || Number(CONFIG.gemsPerLevel);
@@ -2638,9 +2646,26 @@ class GameScene extends Phaser.Scene {
         this.spawnGhosts();
         this.spawnBatsFromMap();
 
-        // Spawn first gem, otherwise activate map exits immediately
+        // Spawn gems according to mode: one-by-one (spawn first only) or all-at-once
         if ((Number(this.gemsRemaining) || 0) > 0) {
-            this.time.delayedCall(CONFIG.gemSpawnDelay, () => this.spawnGem());
+            if (this.gemsOneByOne) {
+                this.time.delayedCall(CONFIG.gemSpawnDelay, () => this.spawnGem());
+            } else {
+                // spawn all gems immediately
+                if (Array.isArray(this.mapGemPositions) && this.mapGemPositions.length > 0) {
+                    for (let i = 0; i < this.mapGemPositions.length; i++) {
+                        const p = this.mapGemPositions[i];
+                        try { this.createGemPickupAt(p.x, p.y); } catch (e) { }
+                    }
+                    this.mapGemIndex = this.mapGemPositions.length;
+                } else {
+                    // no fixed positions: spawn N gems randomly
+                    const count = Number(this.gemsRemaining) || 0;
+                    for (let i = 0; i < count; i++) {
+                        try { this.spawnGem(); } catch (e) { }
+                    }
+                }
+            }
         } else {
             this.activateHole2Exits();
         }
@@ -7351,8 +7376,11 @@ class GameScene extends Phaser.Scene {
         } catch (e) { /* ignore */ }
 
         if (this.gemsRemaining > 0) {
-            this.time.delayedCall(CONFIG.gemSpawnDelay, () => this.spawnGem());
-            return;
+            // Only spawn the next gem automatically when configured to show one-by-one
+            if (this.gemsOneByOne) {
+                this.time.delayedCall(CONFIG.gemSpawnDelay, () => this.spawnGem());
+                return;
+            }
         }
 
         // If there are no more gems to spawn, ensure exits are active as a fallback

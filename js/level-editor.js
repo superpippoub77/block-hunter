@@ -1686,6 +1686,13 @@ function readLevelFromForm() {
         if (mu) level.music = mu;
     } catch (e) { /* ignore */ }
 
+    // gems one-by-one flag (per-map)
+    try {
+        if (el('gemsOneByOne')) {
+            level.map.gemsOneByOne = !!el('gemsOneByOne').checked;
+        }
+    } catch (e) { }
+
     return { ...level, ...extra, map: level.map, playerStart: level.playerStart };
 }
 
@@ -1799,6 +1806,13 @@ function applyLevelToForm(levelData) {
         if (el('levelMusic')) el('levelMusic').value = data.music ? String(data.music) : '';
         try { if (window.__editorMusicAudio && data.music) { window.__editorMusicAudio.src = String(data.music); } } catch (e) {}
     } catch (e) {}
+
+    // set gemsOneByOne checkbox if present in map or top-level
+    try {
+        if (el('gemsOneByOne')) {
+            el('gemsOneByOne').checked = Boolean((mapData && typeof mapData.gemsOneByOne !== 'undefined') ? mapData.gemsOneByOne : (typeof data.gemsOneByOne !== 'undefined' ? data.gemsOneByOne : false));
+        }
+    } catch (e) { }
 
     const knownKeys = new Set([
         'tokenMap',

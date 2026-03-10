@@ -28,6 +28,7 @@
   "parallaxFgAlpha": 0.8,
   "topTenTimeout": 10000,
   "gemSpawnDelay": 1000,
+  "gemsOneByOneDefault": false,
   "gemsPerLevel": 10,
   "credits": 0,
   "language": "en",
