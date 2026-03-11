@@ -135,9 +135,7 @@ const DEFAULT_LEVEL = {
     ghost: 2,
     bat: 2,
     ghostSpeed: 80,
-    batSpeed: 90
-    ,
-    background: 1,
+    batSpeed: 90,
     backgroundEnabled: true,
     foregroundEnabled: true
 };
