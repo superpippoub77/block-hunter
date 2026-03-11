@@ -140,6 +140,14 @@ function parseNumber(value, fallback = 0) {
     return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+function parseRepeatValue(value, fallback = 1) {
+    const raw = String(value ?? '').trim();
+    if (raw === '*') return '*';
+    const parsed = Number(raw);
+    if (!Number.isFinite(parsed)) return fallback;
+    return Math.max(1, Math.floor(parsed));
+}
+
 function parseNullableInput(text) {
     const raw = String(text ?? '').trim();
     if (!raw || raw.toLowerCase() === 'null') return null;
@@ -399,61 +407,68 @@ class LevelEditorScene extends Phaser.Scene {
 
     updateEditorBackgroundImage(skipAutoGrid = false) {
         const show = !!el('showBackground')?.checked;
-        // First prefer active bg row from DOM (radio). Fallback to single select value.
-        let key = null;
-        try {
-            const activeRadio = document.querySelector('#bgLayersContainer input.bg-active-radio:checked');
-            if (activeRadio) {
-                const row = activeRadio.closest('.bg-layer');
-                if (row) {
-                    const sel = row.querySelector('select.bg-src');
-                    let src = '';
-                    if (sel) {
-                        const v = String(sel.value || '').trim();
-                        src = v ? `images/${v}` : '';
-                    } else {
-                        src = String(row.querySelector('.bg-src')?.value || '').trim();
-                    }
-                    if (src) {
-                        // create a stable key for this src
-                        const safeKey = `editor_bg_${src.replace(/[^a-z0-9_.-]+/gi, '_')}`;
-                        // if texture exists, use it; otherwise load dynamically
-                        if (this.textures.exists(safeKey)) {
-                            key = safeKey;
-                        } else {
-                            try {
-                                // start loader for this key
-                                this.load.image(safeKey, src);
-                                this.load.once('complete', () => {
-                                    try {
-                                        if (!this.editorBgImage) this.editorBgImage = this.add.image(0, 0, safeKey).setDepth(-500);
-                                        this.editorBgImage.setTexture(safeKey);
-                                        this.editorBgImage.setDisplaySize(this.cellSize * this.cols, this.cellSize * this.rows);
-                                        this.editorBgImage.setPosition(this.gridOffsetX + (this.cellSize * this.cols) / 2, this.gridOffsetY + (this.cellSize * this.rows) / 2);
-                                        this.editorBgImage.setVisible(show);
-                                    } catch (e) { /* ignore */ }
-                                });
-                                this.load.start();
-                                // fallthrough: keep key so it will be applied if/when ready
-                                key = safeKey;
-                            } catch (e) {
-                                // ignore loader errors and fallback
-                            }
-                        }
-                    }
+        const destroyEditorBackgrounds = () => {
+            try {
+                if (Array.isArray(this.editorBgImages)) {
+                    this.editorBgImages.forEach((img) => {
+                        try { img.destroy(); } catch (e) { }
+                    });
                 }
-            }
-        } catch (e) { /* ignore DOM access issues */ }
+            } catch (e) { }
+            this.editorBgImages = [];
+            this.editorBgImage = null;
+        };
 
-        if (!key) {
+        const resolveBgLayerSrc = (layer) => {
+            if (!layer) return '';
+            const srcRaw = layer.src;
+            if (typeof srcRaw === 'number') return String(srcRaw);
+            return String(srcRaw || '').trim();
+        };
+
+        const resolveBgTextureKey = (src, idx) => {
+            const raw = String(src || '').trim();
+            if (!raw) return null;
+            if (/^\d+$/.test(raw)) {
+                const numbered = `game_bg_${raw}`;
+                return this.textures.exists(numbered) ? numbered : null;
+            }
+            if (this.textures.exists(raw)) return raw;
+
+            const safeKey = `editor_bg_${idx}_${raw.replace(/[^a-z0-9_.-]+/gi, '_')}`;
+            if (this.textures.exists(safeKey)) return safeKey;
+
+            try {
+                this.load.image(safeKey, raw);
+                this.load.once('complete', () => {
+                    try { this.updateEditorBackgroundImage(skipAutoGrid); } catch (e) { }
+                });
+                this.load.start();
+            } catch (e) { }
+            return null;
+        };
+
+        const domLayers = readBackgroundLayersFromDOM();
+        let bgLayers = Array.isArray(domLayers) ? domLayers.slice() : [];
+        if (!bgLayers.length) {
             const val = String(el('levelBackground')?.value ?? '').trim();
-            key = this.getBackgroundKeyFromValue(val);
+            const fallbackKey = this.getBackgroundKeyFromValue(val);
+            if (fallbackKey) {
+                bgLayers = [{ src: fallbackKey, parallaxBgAlpha: 1, enabled: true }];
+            }
         }
 
-        if (!show || !key) {
-            if (this.editorBgImage) {
-                try { this.editorBgImage.setVisible(false); } catch (e) {}
-            }
+        const enabledLayers = bgLayers.filter((ly) => ly && ly.enabled !== false && resolveBgLayerSrc(ly));
+
+        if (!show || !enabledLayers.length) {
+            destroyEditorBackgrounds();
+            return;
+        }
+
+        const primaryLayer = enabledLayers[0];
+        const primaryKey = resolveBgTextureKey(resolveBgLayerSrc(primaryLayer), 0);
+        if (!primaryKey) {
+            destroyEditorBackgrounds();
             return;
         }
 
@@ -464,7 +479,7 @@ class LevelEditorScene extends Phaser.Scene {
             try {
                 const autoChk = el('autoGridFromBg');
                     if (!skipAutoGrid && autoChk && autoChk.checked) {
-                    const frame = this.textures.getFrame(key, 0);
+                    const frame = this.textures.getFrame(primaryKey, 0);
                     if (frame && Number.isFinite(frame.cutWidth) && Number.isFinite(frame.cutHeight)) {
                         // Use the configured tile size (pixel dimension) when computing cols/rows.
                         const tileSizeInput = Number(el('tileSizeSlider')?.value) || 64;
@@ -486,20 +501,44 @@ class LevelEditorScene extends Phaser.Scene {
 
         const gridW = this.cellSize * this.cols;
         const gridH = this.cellSize * this.rows;
-        const cx = this.gridOffsetX + gridW / 2;
-        const cy = this.gridOffsetY + gridH / 2;
+        destroyEditorBackgrounds();
+        this.editorBgImages = [];
 
-        if (!this.editorBgImage) {
-            this.editorBgImage = this.add.image(cx, cy, key).setDepth(-500);
-        }
-        try {
-            this.editorBgImage.setTexture(key);
-            this.editorBgImage.setDisplaySize(gridW, gridH);
-            this.editorBgImage.setPosition(cx, cy);
-            this.editorBgImage.setVisible(true);
-        } catch (e) {
-            // ignore
-        }
+        const buildRepeatCount = (raw, span, step) => {
+            const parsed = parseRepeatValue(raw, 1);
+            if (parsed !== '*') return parsed;
+            const safeStep = Math.max(1, Math.abs(step || span));
+            return Math.max(1, Math.ceil(span / safeStep) + 2);
+        };
+
+        enabledLayers.forEach((layer, idx) => {
+            const textureKey = resolveBgTextureKey(resolveBgLayerSrc(layer), idx);
+            if (!textureKey) return;
+
+            const alpha = parseNumber(layer.parallaxBgAlpha, 1);
+            const offsetX = parseNumber(layer.offsetX ?? layer.left ?? layer.x ?? layer.positionX, 0);
+            const offsetY = parseNumber(layer.offsetY ?? layer.top ?? layer.y ?? layer.positionY, 0);
+
+            const stepX = parseNumber(layer.repeatStepX ?? layer.replicaStepX ?? layer.repeatOffsetX ?? layer.replicaOffsetX, gridW) || gridW;
+            const stepY = parseNumber(layer.repeatStepY ?? layer.replicaStepY ?? layer.repeatOffsetY ?? layer.replicaOffsetY, gridH) || gridH;
+
+            const countX = buildRepeatCount(layer.repeatX ?? layer.replicaX ?? layer.repeatCountX ?? layer.replicaCountX ?? 1, gridW + Math.abs(offsetX), stepX);
+            const countY = buildRepeatCount(layer.repeatY ?? layer.replicaY ?? layer.repeatCountY ?? layer.replicaCountY ?? 1, gridH + Math.abs(offsetY), stepY);
+
+            for (let iy = 0; iy < countY; iy++) {
+                for (let ix = 0; ix < countX; ix++) {
+                    const img = this.add.image(0, 0, textureKey).setDepth(-500 - idx);
+                    const x = this.gridOffsetX + offsetX + (stepX * ix) + gridW / 2;
+                    const y = this.gridOffsetY + offsetY + (stepY * iy) + gridH / 2;
+                    img.setDisplaySize(gridW, gridH);
+                    img.setPosition(x, y);
+                    img.setAlpha(clamp(alpha, 0, 1));
+                    this.editorBgImages.push(img);
+                }
+            }
+        });
+
+        this.editorBgImage = this.editorBgImages.length ? this.editorBgImages[0] : null;
     }
 
     resetGrid(cols, rows, skipBgUpdate = false) {
@@ -1229,7 +1268,9 @@ class LevelEditorScene extends Phaser.Scene {
         const borderH = this.rows * this.cellSize;
         // ensure editor background (if present) matches current grid position/size so it scrolls with tiles
         try {
-            if (this.editorBgImage) {
+            if (Array.isArray(this.editorBgImages) && this.editorBgImages.length) {
+                this.updateEditorBackgroundImage(true);
+            } else if (this.editorBgImage) {
                 this.editorBgImage.setDisplaySize(borderW, borderH);
                 this.editorBgImage.setPosition(this.gridOffsetX + borderW / 2, this.gridOffsetY + borderH / 2);
             }
@@ -1490,6 +1531,7 @@ function drawMiniMapPreview(scene) {
     window.__levelEditorImageCache = window.__levelEditorImageCache || {};
     const drawLayerImage = (layer) => {
         if (!layer || !layer.src) return false;
+        if (layer.enabled === false) return false;
         const src = String(layer.src || '').trim();
         if (!src) return false;
         const cache = window.__levelEditorImageCache;
@@ -1506,6 +1548,14 @@ function drawMiniMapPreview(scene) {
         if (!entry.loaded) return false;
         const img = entry.img;
         const alpha = Number.isFinite(layer.parallaxBgAlpha) ? layer.parallaxBgAlpha : 1.0;
+        const offsetX = parseNumber(layer.offsetX ?? layer.left ?? layer.x ?? layer.positionX, 0);
+        const offsetY = parseNumber(layer.offsetY ?? layer.top ?? layer.y ?? layer.positionY, 0);
+        const stepX = parseNumber(layer.repeatStepX ?? layer.replicaStepX ?? layer.repeatOffsetX ?? layer.replicaOffsetX, mapW) || mapW;
+        const stepY = parseNumber(layer.repeatStepY ?? layer.replicaStepY ?? layer.repeatOffsetY ?? layer.replicaOffsetY, mapH) || mapH;
+        const repeatX = parseRepeatValue(layer.repeatX ?? layer.replicaX ?? layer.repeatCountX ?? layer.replicaCountX ?? 1, 1);
+        const repeatY = parseRepeatValue(layer.repeatY ?? layer.replicaY ?? layer.repeatCountY ?? layer.replicaCountY ?? 1, 1);
+        const countX = (repeatX === '*') ? Math.max(1, Math.ceil((mapW + Math.abs(offsetX)) / Math.max(1, Math.abs(stepX))) + 2) : repeatX;
+        const countY = (repeatY === '*') ? Math.max(1, Math.ceil((mapH + Math.abs(offsetY)) / Math.max(1, Math.abs(stepY))) + 2) : repeatY;
         try {
             ctx.save();
             // clip to map rectangle so image stays inside blue mini-map
@@ -1513,7 +1563,13 @@ function drawMiniMapPreview(scene) {
             ctx.rect(offX, offY, mapW, mapH);
             ctx.clip();
             ctx.globalAlpha = alpha;
-            ctx.drawImage(img, offX, offY, mapW, mapH);
+            for (let iy = 0; iy < countY; iy++) {
+                for (let ix = 0; ix < countX; ix++) {
+                    const dx = offX + offsetX + stepX * ix;
+                    const dy = offY + offsetY + stepY * iy;
+                    ctx.drawImage(img, dx, dy, mapW, mapH);
+                }
+            }
             ctx.restore();
         } catch (e) {
             return false;
@@ -1625,6 +1681,7 @@ function drawMiniMapPreview(scene) {
     if (Array.isArray(fgLayers) && fgLayers.length > 0) {
         fgLayers.forEach((ly) => {
             if (!ly || !ly.src) return;
+            if (ly.enabled === false) return;
             const src = String(ly.src || '').trim();
             const cache = window.__levelEditorImageCache || {};
             if (!cache[src]) {
@@ -1639,6 +1696,14 @@ function drawMiniMapPreview(scene) {
             }
             const entry = cache[src];
             if (!entry.loaded) return;
+            const offsetX = parseNumber(ly.offsetX ?? ly.left ?? ly.x ?? ly.positionX, 0);
+            const offsetY = parseNumber(ly.offsetY ?? ly.top ?? ly.y ?? ly.positionY, 0);
+            const stepX = parseNumber(ly.repeatStepX ?? ly.replicaStepX ?? ly.repeatOffsetX ?? ly.replicaOffsetX, mapW) || mapW;
+            const stepY = parseNumber(ly.repeatStepY ?? ly.replicaStepY ?? ly.repeatOffsetY ?? ly.replicaOffsetY, mapH) || mapH;
+            const repeatX = parseRepeatValue(ly.repeatX ?? ly.replicaX ?? ly.repeatCountX ?? ly.replicaCountX ?? 1, 1);
+            const repeatY = parseRepeatValue(ly.repeatY ?? ly.replicaY ?? ly.repeatCountY ?? ly.replicaCountY ?? 1, 1);
+            const countX = (repeatX === '*') ? Math.max(1, Math.ceil((mapW + Math.abs(offsetX)) / Math.max(1, Math.abs(stepX))) + 2) : repeatX;
+            const countY = (repeatY === '*') ? Math.max(1, Math.ceil((mapH + Math.abs(offsetY)) / Math.max(1, Math.abs(stepY))) + 2) : repeatY;
             try {
                 ctx.save();
                 // clip to map rectangle so fg stays inside mini-map
@@ -1646,7 +1711,13 @@ function drawMiniMapPreview(scene) {
                 ctx.rect(offX, offY, mapW, mapH);
                 ctx.clip();
                 ctx.globalAlpha = Number.isFinite(ly.parallaxFgAlpha) ? ly.parallaxFgAlpha : 1.0;
-                ctx.drawImage(entry.img, offX, offY, mapW, mapH);
+                for (let iy = 0; iy < countY; iy++) {
+                    for (let ix = 0; ix < countX; ix++) {
+                        const dx = offX + offsetX + stepX * ix;
+                        const dy = offY + offsetY + stepY * iy;
+                        ctx.drawImage(entry.img, dx, dy, mapW, mapH);
+                    }
+                }
                 ctx.restore();
             } catch (e) { /* ignore */ }
         });
@@ -1934,7 +2005,9 @@ function applyLevelToForm(levelData) {
         'tokenMap',
         'id', 'map', 'playerStart', 'staticRocks', 'dynamicBoulders', 'speed', 'escapeRoute',
         'objectiveLabel', 'enemies', 'collectibles', 'traps', 'spawnPoints', 'timeLimit',
-        'scoreRules', 'light', 'ghost', 'bat', 'ghostSpeed', 'batSpeed'
+        'scoreRules', 'light', 'ghost', 'bat', 'ghostSpeed', 'batSpeed',
+        'background', 'foreground', 'backgroundEnabled', 'rain', 'fog', 'music',
+        'gemsOneByOne', 'requiredGems', 'gemsRequired', 'playerStart2', 'timer'
     ]);
     const extra = {};
     Object.keys(data).forEach((key) => {
@@ -1977,6 +2050,7 @@ function readBackgroundLayersFromDOM() {
     const layers = [];
     const items = Array.from(container.querySelectorAll('.bg-layer'));
     items.forEach((it) => {
+        const enabled = !!it.querySelector('.bg-enabled')?.checked;
         let src = '';
         const sel = it.querySelector('select.bg-src');
         if (sel) {
@@ -1988,7 +2062,24 @@ function readBackgroundLayersFromDOM() {
         if (!src) return; // skip empty
         const factor = parseNumber(it.querySelector('.bg-factor')?.value, 1.0);
         const alpha = parseNumber(it.querySelector('.bg-alpha')?.value, 1.0);
-        layers.push({ src, parallaxBgFactor: factor, parallaxBgAlpha: alpha });
+        const offsetX = parseNumber(it.querySelector('.bg-offset-x')?.value, 0);
+        const offsetY = parseNumber(it.querySelector('.bg-offset-y')?.value, 0);
+        const repeatX = parseRepeatValue(it.querySelector('.bg-repeat-x')?.value, 1);
+        const repeatY = parseRepeatValue(it.querySelector('.bg-repeat-y')?.value, 1);
+        const stepX = parseNumber(it.querySelector('.bg-step-x')?.value, 0);
+        const stepY = parseNumber(it.querySelector('.bg-step-y')?.value, 0);
+        layers.push({
+            src,
+            enabled,
+            parallaxBgFactor: factor,
+            parallaxBgAlpha: alpha,
+            offsetX,
+            offsetY,
+            repeatX,
+            repeatY,
+            repeatStepX: stepX,
+            repeatStepY: stepY
+        });
     });
     return layers;
 }
@@ -2000,6 +2091,7 @@ function readForegroundLayersFromDOM() {
     const layers = [];
     const items = Array.from(container.querySelectorAll('.fg-layer'));
     items.forEach((it) => {
+        const enabled = !!it.querySelector('.fg-enabled')?.checked;
         let src = '';
         const sel = it.querySelector('select.fg-src');
         if (sel) {
@@ -2011,7 +2103,24 @@ function readForegroundLayersFromDOM() {
         if (!src) return;
         const factor = parseNumber(it.querySelector('.fg-factor')?.value, 1.0);
         const alpha = parseNumber(it.querySelector('.fg-alpha')?.value, 1.0);
-        layers.push({ src, parallaxFgFactor: factor, parallaxFgAlpha: alpha });
+        const offsetX = parseNumber(it.querySelector('.fg-offset-x')?.value, 0);
+        const offsetY = parseNumber(it.querySelector('.fg-offset-y')?.value, 0);
+        const repeatX = parseRepeatValue(it.querySelector('.fg-repeat-x')?.value, 1);
+        const repeatY = parseRepeatValue(it.querySelector('.fg-repeat-y')?.value, 1);
+        const stepX = parseNumber(it.querySelector('.fg-step-x')?.value, 0);
+        const stepY = parseNumber(it.querySelector('.fg-step-y')?.value, 0);
+        layers.push({
+            src,
+            enabled,
+            parallaxFgFactor: factor,
+            parallaxFgAlpha: alpha,
+            offsetX,
+            offsetY,
+            repeatX,
+            repeatY,
+            repeatStepX: stepX,
+            repeatStepY: stepY
+        });
     });
     return layers;
 }
@@ -2025,9 +2134,16 @@ function applyBackgroundLayersToDOM(bg) {
     const arr = Array.isArray(bg) ? bg : (bg ? [bg] : []);
     arr.forEach((layer, idx) => {
         const src = layer?.src || String(layer || '').trim();
+        const enabled = layer?.enabled !== false;
         const factor = layer?.parallaxBgFactor ?? 1.0;
         const alpha = layer?.parallaxBgAlpha ?? 1.0;
-        const elRow = createBgLayerElement(src, factor, alpha, idx);
+        const offsetX = layer?.offsetX ?? layer?.left ?? layer?.x ?? layer?.positionX ?? 0;
+        const offsetY = layer?.offsetY ?? layer?.top ?? layer?.y ?? layer?.positionY ?? 0;
+        const repeatX = layer?.repeatX ?? layer?.replicaX ?? layer?.repeatCountX ?? layer?.replicaCountX ?? 1;
+        const repeatY = layer?.repeatY ?? layer?.replicaY ?? layer?.repeatCountY ?? layer?.replicaCountY ?? 1;
+        const stepX = layer?.repeatStepX ?? layer?.replicaStepX ?? layer?.repeatOffsetX ?? layer?.replicaOffsetX ?? 0;
+        const stepY = layer?.repeatStepY ?? layer?.replicaStepY ?? layer?.repeatOffsetY ?? layer?.replicaOffsetY ?? 0;
+        const elRow = createBgLayerElement({ src, enabled, factor, alpha, offsetX, offsetY, repeatX, repeatY, stepX, stepY, idx });
         container.appendChild(elRow);
     });
     // If no radio is selected, default to the first background layer
@@ -2049,19 +2165,53 @@ function applyForegroundLayersToDOM(fg) {
     const arr = Array.isArray(fg) ? fg : (fg ? [fg] : []);
     arr.forEach((layer, idx) => {
         const src = layer?.src || String(layer || '').trim();
+        const enabled = layer?.enabled !== false;
         const factor = layer?.parallaxFgFactor ?? 1.0;
         const alpha = layer?.parallaxFgAlpha ?? 1.0;
-        container.appendChild(createFgLayerElement(src, factor, alpha, idx));
+        const offsetX = layer?.offsetX ?? layer?.left ?? layer?.x ?? layer?.positionX ?? 0;
+        const offsetY = layer?.offsetY ?? layer?.top ?? layer?.y ?? layer?.positionY ?? 0;
+        const repeatX = layer?.repeatX ?? layer?.replicaX ?? layer?.repeatCountX ?? layer?.replicaCountX ?? 1;
+        const repeatY = layer?.repeatY ?? layer?.replicaY ?? layer?.repeatCountY ?? layer?.replicaCountY ?? 1;
+        const stepX = layer?.repeatStepX ?? layer?.replicaStepX ?? layer?.repeatOffsetX ?? layer?.replicaOffsetX ?? 0;
+        const stepY = layer?.repeatStepY ?? layer?.replicaStepY ?? layer?.repeatOffsetY ?? layer?.replicaOffsetY ?? 0;
+        container.appendChild(createFgLayerElement({ src, enabled, factor, alpha, offsetX, offsetY, repeatX, repeatY, stepX, stepY, idx }));
     });
 }
 
-function createBgLayerElement(src, factor, alpha, idx) {
+function createBgLayerElement(cfg = {}) {
+    const src = cfg.src || '';
+    const factor = cfg.factor ?? 1.0;
+    const alpha = cfg.alpha ?? 1.0;
+    const enabled = cfg.enabled !== false;
+    const offsetX = cfg.offsetX ?? 0;
+    const offsetY = cfg.offsetY ?? 0;
+    const repeatX = cfg.repeatX ?? 1;
+    const repeatY = cfg.repeatY ?? 1;
+    const stepX = cfg.stepX ?? 0;
+    const stepY = cfg.stepY ?? 0;
+
     const wrapper = document.createElement('div');
     wrapper.className = 'bg-layer';
     wrapper.style.display = 'grid';
-    wrapper.style.gridTemplateColumns = '30px 1fr 60px 60px 40px';
-    wrapper.style.gap = '6px';
-    wrapper.style.marginBottom = '6px';
+    wrapper.style.gridTemplateColumns = '1fr';
+    wrapper.style.gap = '4px';
+    wrapper.style.marginBottom = '8px';
+    wrapper.style.padding = '6px';
+    wrapper.style.border = '1px solid #2c3f63';
+    wrapper.style.borderRadius = '4px';
+    wrapper.style.background = 'rgba(10,20,44,0.45)';
+
+    const rowTop = document.createElement('div');
+    rowTop.style.display = 'grid';
+    rowTop.style.gridTemplateColumns = '22px 22px 1fr 40px';
+    rowTop.style.gap = '6px';
+
+    const enabledChk = document.createElement('input');
+    enabledChk.type = 'checkbox';
+    enabledChk.className = 'bg-enabled';
+    enabledChk.checked = enabled;
+    enabledChk.title = 'Layer attivo';
+
     // radio to select this layer as active background
     const radio = document.createElement('input');
     radio.type = 'radio';
@@ -2093,18 +2243,79 @@ function createBgLayerElement(src, factor, alpha, idx) {
     const a = document.createElement('input'); a.className = 'bg-alpha'; a.type = 'number'; a.step = '0.05'; a.value = String(alpha);
     const del = document.createElement('button'); del.type = 'button'; del.textContent = '✖'; del.title = 'Rimuovi'; del.addEventListener('click', () => { wrapper.remove(); });
 
-    wrapper.appendChild(radio);
-    wrapper.appendChild(inp); wrapper.appendChild(f); wrapper.appendChild(a); wrapper.appendChild(del);
+    const rowMid = document.createElement('div');
+    rowMid.style.display = 'grid';
+    rowMid.style.gridTemplateColumns = 'repeat(4, 1fr)';
+    rowMid.style.gap = '6px';
+
+    const ox = document.createElement('input'); ox.className = 'bg-offset-x'; ox.type = 'number'; ox.step = '1'; ox.value = String(offsetX); ox.title = 'offsetX'; ox.placeholder = 'offX';
+    const oy = document.createElement('input'); oy.className = 'bg-offset-y'; oy.type = 'number'; oy.step = '1'; oy.value = String(offsetY); oy.title = 'offsetY'; oy.placeholder = 'offY';
+
+    const rowBottom = document.createElement('div');
+    rowBottom.style.display = 'grid';
+    rowBottom.style.gridTemplateColumns = 'repeat(4, 1fr)';
+    rowBottom.style.gap = '6px';
+
+    const rx = document.createElement('input'); rx.className = 'bg-repeat-x'; rx.type = 'text'; rx.value = String(repeatX); rx.title = 'repeatX / replicaX'; rx.placeholder = 'repX';
+    const ry = document.createElement('input'); ry.className = 'bg-repeat-y'; ry.type = 'text'; ry.value = String(repeatY); ry.title = 'repeatY / replicaY'; ry.placeholder = 'repY';
+    const sx = document.createElement('input'); sx.className = 'bg-step-x'; sx.type = 'number'; sx.step = '1'; sx.value = String(stepX); sx.title = 'repeatStepX'; sx.placeholder = 'stepX';
+    const sy = document.createElement('input'); sy.className = 'bg-step-y'; sy.type = 'number'; sy.step = '1'; sy.value = String(stepY); sy.title = 'repeatStepY'; sy.placeholder = 'stepY';
+
+    rowTop.appendChild(enabledChk);
+    rowTop.appendChild(radio);
+    rowTop.appendChild(inp);
+    rowTop.appendChild(del);
+
+    rowMid.appendChild(f);
+    rowMid.appendChild(a);
+    rowMid.appendChild(ox);
+    rowMid.appendChild(oy);
+
+    rowBottom.appendChild(rx);
+    rowBottom.appendChild(ry);
+    rowBottom.appendChild(sx);
+    rowBottom.appendChild(sy);
+
+    wrapper.appendChild(rowTop);
+    wrapper.appendChild(rowMid);
+    wrapper.appendChild(rowBottom);
     return wrapper;
 }
 
-function createFgLayerElement(src, factor, alpha, idx) {
+function createFgLayerElement(cfg = {}) {
+    const src = cfg.src || '';
+    const factor = cfg.factor ?? 1.0;
+    const alpha = cfg.alpha ?? 1.0;
+    const enabled = cfg.enabled !== false;
+    const offsetX = cfg.offsetX ?? 0;
+    const offsetY = cfg.offsetY ?? 0;
+    const repeatX = cfg.repeatX ?? 1;
+    const repeatY = cfg.repeatY ?? 1;
+    const stepX = cfg.stepX ?? 0;
+    const stepY = cfg.stepY ?? 0;
+
     const wrapper = document.createElement('div');
     wrapper.className = 'fg-layer';
     wrapper.style.display = 'grid';
-    wrapper.style.gridTemplateColumns = '1fr 60px 60px 40px';
-    wrapper.style.gap = '6px';
-    wrapper.style.marginBottom = '6px';
+    wrapper.style.gridTemplateColumns = '1fr';
+    wrapper.style.gap = '4px';
+    wrapper.style.marginBottom = '8px';
+    wrapper.style.padding = '6px';
+    wrapper.style.border = '1px solid #2c3f63';
+    wrapper.style.borderRadius = '4px';
+    wrapper.style.background = 'rgba(10,20,44,0.45)';
+
+    const rowTop = document.createElement('div');
+    rowTop.style.display = 'grid';
+    rowTop.style.gridTemplateColumns = '22px 1fr 40px';
+    rowTop.style.gap = '6px';
+
+    const enabledChk = document.createElement('input');
+    enabledChk.type = 'checkbox';
+    enabledChk.className = 'fg-enabled';
+    enabledChk.checked = enabled;
+    enabledChk.title = 'Layer attivo';
+
     let inp;
     const masterSelect = el('fgImageSelect');
     if (masterSelect) {
@@ -2122,7 +2333,41 @@ function createFgLayerElement(src, factor, alpha, idx) {
     const a = document.createElement('input'); a.className = 'fg-alpha'; a.type = 'number'; a.step = '0.05'; a.value = String(alpha);
     const del = document.createElement('button'); del.type = 'button'; del.textContent = '✖'; del.title = 'Rimuovi'; del.addEventListener('click', () => { wrapper.remove(); });
 
-    wrapper.appendChild(inp); wrapper.appendChild(f); wrapper.appendChild(a); wrapper.appendChild(del);
+    const rowMid = document.createElement('div');
+    rowMid.style.display = 'grid';
+    rowMid.style.gridTemplateColumns = 'repeat(4, 1fr)';
+    rowMid.style.gap = '6px';
+
+    const ox = document.createElement('input'); ox.className = 'fg-offset-x'; ox.type = 'number'; ox.step = '1'; ox.value = String(offsetX); ox.title = 'offsetX'; ox.placeholder = 'offX';
+    const oy = document.createElement('input'); oy.className = 'fg-offset-y'; oy.type = 'number'; oy.step = '1'; oy.value = String(offsetY); oy.title = 'offsetY'; oy.placeholder = 'offY';
+
+    const rowBottom = document.createElement('div');
+    rowBottom.style.display = 'grid';
+    rowBottom.style.gridTemplateColumns = 'repeat(4, 1fr)';
+    rowBottom.style.gap = '6px';
+
+    const rx = document.createElement('input'); rx.className = 'fg-repeat-x'; rx.type = 'text'; rx.value = String(repeatX); rx.title = 'repeatX / replicaX'; rx.placeholder = 'repX';
+    const ry = document.createElement('input'); ry.className = 'fg-repeat-y'; ry.type = 'text'; ry.value = String(repeatY); ry.title = 'repeatY / replicaY'; ry.placeholder = 'repY';
+    const sx = document.createElement('input'); sx.className = 'fg-step-x'; sx.type = 'number'; sx.step = '1'; sx.value = String(stepX); sx.title = 'repeatStepX'; sx.placeholder = 'stepX';
+    const sy = document.createElement('input'); sy.className = 'fg-step-y'; sy.type = 'number'; sy.step = '1'; sy.value = String(stepY); sy.title = 'repeatStepY'; sy.placeholder = 'stepY';
+
+    rowTop.appendChild(enabledChk);
+    rowTop.appendChild(inp);
+    rowTop.appendChild(del);
+
+    rowMid.appendChild(f);
+    rowMid.appendChild(a);
+    rowMid.appendChild(ox);
+    rowMid.appendChild(oy);
+
+    rowBottom.appendChild(rx);
+    rowBottom.appendChild(ry);
+    rowBottom.appendChild(sx);
+    rowBottom.appendChild(sy);
+
+    wrapper.appendChild(rowTop);
+    wrapper.appendChild(rowMid);
+    wrapper.appendChild(rowBottom);
     return wrapper;
 }
 
@@ -2132,16 +2377,11 @@ function ensureBgHeader() {
     if (container.querySelector('.bg-header')) return;
     const header = document.createElement('div');
     header.className = 'bg-header';
-    header.style.display = 'grid';
-    header.style.gridTemplateColumns = '30px 1fr 60px 60px 40px';
-    header.style.gap = '6px';
+    header.style.display = 'block';
     header.style.marginBottom = '6px';
-    const h0 = document.createElement('div'); h0.textContent = ''; h0.style.color = '#9fb8df';
-    const h1 = document.createElement('div'); h1.textContent = 'Image'; h1.style.color = '#9fb8df';
-    const h2 = document.createElement('div'); h2.textContent = 'Factor'; h2.style.color = '#9fb8df';
-    const h3 = document.createElement('div'); h3.textContent = 'Alpha'; h3.style.color = '#9fb8df';
-    const h4 = document.createElement('div'); h4.textContent = '';
-    header.appendChild(h0); header.appendChild(h1); header.appendChild(h2); header.appendChild(h3); header.appendChild(h4);
+    header.style.color = '#9fb8df';
+    header.style.fontSize = '8px';
+    header.textContent = 'BG: [enabled][active][image] | [factor,alpha,offX,offY] | [repX,repY,stepX,stepY]';
     container.appendChild(header);
 }
 
@@ -2151,15 +2391,11 @@ function ensureFgHeader() {
     if (container.querySelector('.fg-header')) return;
     const header = document.createElement('div');
     header.className = 'fg-header';
-    header.style.display = 'grid';
-    header.style.gridTemplateColumns = '1fr 60px 60px 40px';
-    header.style.gap = '6px';
+    header.style.display = 'block';
     header.style.marginBottom = '6px';
-    const h1 = document.createElement('div'); h1.textContent = 'Image'; h1.style.color = '#9fb8df';
-    const h2 = document.createElement('div'); h2.textContent = 'Fac'; h2.style.color = '#9fb8df';
-    const h3 = document.createElement('div'); h3.textContent = 'Alp'; h3.style.color = '#9fb8df';
-    const h4 = document.createElement('div'); h4.textContent = '';
-    header.appendChild(h1); header.appendChild(h2); header.appendChild(h3); header.appendChild(h4);
+    header.style.color = '#9fb8df';
+    header.style.fontSize = '8px';
+    header.textContent = 'FG: [enabled][image] | [factor,alpha,offX,offY] | [repX,repY,stepX,stepY]';
     container.appendChild(header);
 }
 
@@ -2480,6 +2716,27 @@ function bindUI() {
             drawMiniMapPreview(scene);
         });
     }
+
+    const bgLayerContainer = el('bgLayersContainer');
+    if (bgLayerContainer) {
+        const onBgLayerChange = () => {
+            const scene = getScene();
+            scene?.updateEditorBackgroundImage?.(true);
+            drawMiniMapPreview(scene);
+        };
+        bgLayerContainer.addEventListener('input', onBgLayerChange);
+        bgLayerContainer.addEventListener('change', onBgLayerChange);
+    }
+
+    const fgLayerContainer = el('fgLayersContainer');
+    if (fgLayerContainer) {
+        const onFgLayerChange = () => {
+            drawMiniMapPreview(getScene());
+        };
+        fgLayerContainer.addEventListener('input', onFgLayerChange);
+        fgLayerContainer.addEventListener('change', onFgLayerChange);
+    }
+
     // auto-grid-from-background toggle
     const autoGridChk = el('autoGridFromBg');
     if (autoGridChk) {
@@ -2554,13 +2811,33 @@ function setupRightAccordion() {
 
 // hook add bg/fg buttons if present
 window.addEventListener('load', () => {
+    const refreshLayerVisuals = () => {
+        try {
+            const scene = getScene();
+            scene?.updateEditorBackgroundImage?.(true);
+            drawMiniMapPreview(scene);
+        } catch (e) { }
+    };
+
+    const setAllLayerEnabled = (containerId, checkboxClass, enabled) => {
+        try {
+            const container = el(containerId);
+            if (!container) return;
+            const checks = Array.from(container.querySelectorAll(`input.${checkboxClass}`));
+            checks.forEach((c) => { c.checked = !!enabled; });
+            refreshLayerVisuals();
+        } catch (e) { }
+    };
+
     try {
         const addBg = el('addBgLayerBtn');
         if (addBg) addBg.addEventListener('click', () => {
             const container = el('bgLayersContainer');
             if (!container) return;
             ensureBgHeader();
-            container.appendChild(createBgLayerElement('', 1.0, 1.0, Date.now()));
+            container.appendChild(createBgLayerElement({ src: '', factor: 1.0, alpha: 1.0, enabled: true }));
+            try { getScene()?.updateEditorBackgroundImage?.(true); } catch (e) {}
+            try { drawMiniMapPreview(getScene()); } catch (e) {}
         });
     } catch (e) {}
     try {
@@ -2569,7 +2846,8 @@ window.addEventListener('load', () => {
             const container = el('fgLayersContainer');
             if (!container) return;
             ensureFgHeader();
-            container.appendChild(createFgLayerElement('', 1.0, 1.0, Date.now()));
+            container.appendChild(createFgLayerElement({ src: '', factor: 1.0, alpha: 1.0, enabled: true }));
+            try { drawMiniMapPreview(getScene()); } catch (e) {}
         });
     } catch (e) {}
     try {
@@ -2581,7 +2859,9 @@ window.addEventListener('load', () => {
             const container = el('bgLayersContainer');
             if (!container) return;
             ensureBgHeader();
-            container.appendChild(createBgLayerElement(`images/${val}`, 1.0, 1.0, Date.now()));
+            container.appendChild(createBgLayerElement({ src: `images/${val}`, factor: 1.0, alpha: 1.0, enabled: true }));
+            try { getScene()?.updateEditorBackgroundImage?.(true); } catch (e) {}
+            try { drawMiniMapPreview(getScene()); } catch (e) {}
         });
     } catch (e) {}
     try {
@@ -2593,7 +2873,40 @@ window.addEventListener('load', () => {
             const container = el('fgLayersContainer');
             if (!container) return;
             ensureFgHeader();
-            container.appendChild(createFgLayerElement(`images/${val}`, 1.0, 1.0, Date.now()));
+            container.appendChild(createFgLayerElement({ src: `images/${val}`, factor: 1.0, alpha: 1.0, enabled: true }));
+            try { drawMiniMapPreview(getScene()); } catch (e) {}
+        });
+    } catch (e) {}
+
+    try {
+        const bgEnableAllBtn = el('bgEnableAllBtn');
+        if (bgEnableAllBtn) bgEnableAllBtn.addEventListener('click', () => {
+            setAllLayerEnabled('bgLayersContainer', 'bg-enabled', true);
+            try { setStatus('Tutti i background attivati.'); } catch (e) { }
+        });
+    } catch (e) {}
+
+    try {
+        const bgDisableAllBtn = el('bgDisableAllBtn');
+        if (bgDisableAllBtn) bgDisableAllBtn.addEventListener('click', () => {
+            setAllLayerEnabled('bgLayersContainer', 'bg-enabled', false);
+            try { setStatus('Tutti i background disattivati.'); } catch (e) { }
+        });
+    } catch (e) {}
+
+    try {
+        const fgEnableAllBtn = el('fgEnableAllBtn');
+        if (fgEnableAllBtn) fgEnableAllBtn.addEventListener('click', () => {
+            setAllLayerEnabled('fgLayersContainer', 'fg-enabled', true);
+            try { setStatus('Tutti i foreground attivati.'); } catch (e) { }
+        });
+    } catch (e) {}
+
+    try {
+        const fgDisableAllBtn = el('fgDisableAllBtn');
+        if (fgDisableAllBtn) fgDisableAllBtn.addEventListener('click', () => {
+            setAllLayerEnabled('fgLayersContainer', 'fg-enabled', false);
+            try { setStatus('Tutti i foreground disattivati.'); } catch (e) { }
         });
     } catch (e) {}
 });
