@@ -2449,9 +2449,12 @@ class GameScene extends Phaser.Scene {
         }
 
         // Resize and position background(s) to cover the world, then let them scroll.
-        // Support level-specific multi-layer backgrounds: levelData.background can be
-        // a single value or an array of entries. Each entry may be a string/number or
-        // an object with `src`, `parallaxBgFactor`, and `parallaxBgAlpha`.
+        // Support level-specific multi-layer backgrounds: each layer can define:
+        // - src
+        // - parallax factor/alpha
+        // - pixel offset (offsetX/left, offsetY/top)
+        // - replicas on X/Y (repeatX/repeatY or replicaX/replicaY), including '*' for extended repeat
+        // - replica step in pixels (repeatStepX/repeatStepY)
         const ensureBgEntrySrc = (entry) => {
             if (entry && typeof entry === 'object') return entry.src;
             return entry;
@@ -2459,6 +2462,100 @@ class GameScene extends Phaser.Scene {
 
         const bgWidth = Math.max(worldWidth, CONFIG.width);
         const bgHeight = Math.max(worldHeight, CONFIG.height);
+        const fgWidth = Math.max(worldWidth, CONFIG.width);
+        const fgHeight = Math.max(worldHeight, CONFIG.height);
+
+        const parseNumeric = (value, fallback = 0) => {
+            const n = Number(value);
+            return Number.isFinite(n) ? n : fallback;
+        };
+
+        const parseRepeatValue = (value) => {
+            if (value === '*' || value === 'infinite' || value === 'Infinity') return '*';
+            const n = Number(value);
+            if (!Number.isFinite(n)) return 1;
+            return Math.max(1, Math.floor(n));
+        };
+
+        const resolveLayerPlacement = (entry, layerW, layerH, viewportW, viewportH) => {
+            const e = (entry && typeof entry === 'object') ? entry : {};
+
+            const offsetX = parseNumeric(e.offsetX ?? e.left ?? e.x ?? e.positionX, 0);
+            const offsetY = parseNumeric(e.offsetY ?? e.top ?? e.y ?? e.positionY, 0);
+
+            const stepX = parseNumeric(
+                e.repeatStepX ?? e.replicaStepX ?? e.repeatOffsetX ?? e.replicaOffsetX,
+                layerW
+            );
+            const stepY = parseNumeric(
+                e.repeatStepY ?? e.replicaStepY ?? e.repeatOffsetY ?? e.replicaOffsetY,
+                layerH
+            );
+
+            const repeatX = parseRepeatValue(e.repeatX ?? e.replicaX ?? e.repeatCountX ?? e.replicaCountX ?? 1);
+            const repeatY = parseRepeatValue(e.repeatY ?? e.replicaY ?? e.repeatCountY ?? e.replicaCountY ?? 1);
+
+            const safeStepX = Math.abs(stepX) > 0 ? stepX : layerW;
+            const safeStepY = Math.abs(stepY) > 0 ? stepY : layerH;
+
+            const computeInfiniteCount = (stepAbs, span, fallbackSize) => {
+                const unit = Math.max(1, stepAbs || fallbackSize || 1);
+                return Math.max(1, Math.ceil(span / unit) + 2);
+            };
+
+            const spanX = Math.max(worldWidth, viewportW) + Math.abs(offsetX) + Math.abs(safeStepX);
+            const spanY = Math.max(worldHeight, viewportH) + Math.abs(offsetY) + Math.abs(safeStepY);
+
+            const countX = (repeatX === '*')
+                ? computeInfiniteCount(Math.abs(safeStepX), spanX, layerW)
+                : repeatX;
+            const countY = (repeatY === '*')
+                ? computeInfiniteCount(Math.abs(safeStepY), spanY, layerH)
+                : repeatY;
+
+            return {
+                offsetX,
+                offsetY,
+                stepX: safeStepX,
+                stepY: safeStepY,
+                repeatX,
+                repeatY,
+                countX,
+                countY
+            };
+        };
+
+        const placeLayerImage = (img, baseX, baseY, layerW, layerH, placement, ix, iy) => {
+            const x = baseX + placement.offsetX + placement.stepX * ix;
+            const y = baseY + placement.offsetY + placement.stepY * iy;
+            try { img.setOrigin(0, 0); } catch (e) { }
+            img.setDisplaySize(layerW, layerH);
+            img.setPosition(x, y);
+            img.__bhLayerMeta = {
+                baseX,
+                baseY,
+                layerW,
+                layerH,
+                offsetX: placement.offsetX,
+                offsetY: placement.offsetY,
+                stepX: placement.stepX,
+                stepY: placement.stepY,
+                ix,
+                iy
+            };
+        };
+
+        const applyLayerResize = (img, w, h) => {
+            if (!img || !img.__bhLayerMeta) return;
+            const m = img.__bhLayerMeta;
+            const x = m.baseX + m.offsetX + m.stepX * m.ix;
+            const y = m.baseY + m.offsetY + m.stepY * m.iy;
+            try { img.setOrigin(0, 0); } catch (e) { }
+            img.setDisplaySize(w, h);
+            img.setPosition(x, y);
+            m.layerW = w;
+            m.layerH = h;
+        };
 
         if (this.levelData && this.levelData.background != null) {
             const specs = Array.isArray(this.levelData.background) ? this.levelData.background : [this.levelData.background];
@@ -2487,16 +2584,20 @@ class GameScene extends Phaser.Scene {
                     ? Number(entry.parallaxBgAlpha)
                     : (typeof CONFIG.parallaxBgAlpha === 'number' ? Number(CONFIG.parallaxBgAlpha) : 1);
 
+                const placement = resolveLayerPlacement(entry, bgWidth, bgHeight, CONFIG.width, CONFIG.height);
+
                 const createBgImage = (textureKey) => {
                     try {
-                        const img = this.add.image(worldX, worldY, textureKey);
-                        try { img.setOrigin(0, 0); } catch (e) { }
-                        img.setDisplaySize(bgWidth, bgHeight);
-                        img.setPosition(worldX, worldY);
-                        try { img.setDepth(-1000 - idx); } catch (e) { }
-                        try { img.setScrollFactor(parallaxFactor); } catch (e) { }
-                        try { img.setAlpha(Phaser.Math.Clamp(alphaVal, 0, 1)); } catch (e) { }
-                        this.gameBgs.push(img);
+                        for (let iy = 0; iy < placement.countY; iy++) {
+                            for (let ix = 0; ix < placement.countX; ix++) {
+                                const img = this.add.image(worldX, worldY, textureKey);
+                                placeLayerImage(img, worldX, worldY, bgWidth, bgHeight, placement, ix, iy);
+                                try { img.setDepth(-1000 - idx); } catch (e) { }
+                                try { img.setScrollFactor(parallaxFactor); } catch (e) { }
+                                try { img.setAlpha(Phaser.Math.Clamp(alphaVal, 0, 1)); } catch (e) { }
+                                this.gameBgs.push(img);
+                            }
+                        }
                     } catch (e) { }
                 };
 
@@ -2519,9 +2620,12 @@ class GameScene extends Phaser.Scene {
             if (this.gameBgs && this.gameBgs.length) this.gameBg = this.gameBgs[0];
         } else {
             if (this.gameBg) {
-                try { this.gameBg.setOrigin(0, 0); } catch (e) { }
-                this.gameBg.setDisplaySize(bgWidth, bgHeight);
-                this.gameBg.setPosition(worldX, worldY);
+                placeLayerImage(this.gameBg, worldX, worldY, bgWidth, bgHeight, {
+                    offsetX: 0,
+                    offsetY: 0,
+                    stepX: bgWidth,
+                    stepY: bgHeight
+                }, 0, 0);
                 this.gameBg.setScrollFactor(parallaxBgFactor);
             }
         }
@@ -2545,26 +2649,28 @@ class GameScene extends Phaser.Scene {
             const createForegroundWithKey = (fgKey, entry, idx) => {
                 try {
                     if (!this.textures.exists(fgKey)) return;
-                    const img = this.add.image(worldX, worldY, fgKey);
-                    img.setOrigin(0, 0);
-                    const fgWidth = Math.max(worldWidth, CONFIG.width);
-                    const fgHeight = Math.max(worldHeight, CONFIG.height);
-                    img.setDisplaySize(fgWidth, fgHeight);
-                    img.setPosition(worldX, worldY);
-                    try { img.setDepth(3000 + idx); } catch (e) { }
+                    const placement = resolveLayerPlacement(entry, fgWidth, fgHeight, CONFIG.width, CONFIG.height);
 
                     const fgAlpha = (entry && typeof entry === 'object' && typeof entry.parallaxFgAlpha === 'number')
                         ? Number(entry.parallaxFgAlpha)
                         : (typeof CONFIG.parallaxFgAlpha === 'number' ? Number(CONFIG.parallaxFgAlpha) : 0.92);
-                    try { img.setAlpha(Phaser.Math.Clamp(fgAlpha, 0, 1)); } catch (e) { }
 
                     const parallaxFactor = (entry && typeof entry === 'object' && typeof entry.parallaxFgFactor === 'number')
                         ? entry.parallaxFgFactor
                         : parallaxFgDefault;
-                    img.setScrollFactor(parallaxFactor);
 
-                    this.gameFgs.push(img);
-                    this.gameFg = this.gameFgs.length ? this.gameFgs[this.gameFgs.length - 1] : img;
+                    for (let iy = 0; iy < placement.countY; iy++) {
+                        for (let ix = 0; ix < placement.countX; ix++) {
+                            const img = this.add.image(worldX, worldY, fgKey);
+                            placeLayerImage(img, worldX, worldY, fgWidth, fgHeight, placement, ix, iy);
+                            try { img.setDepth(3000 + idx); } catch (e) { }
+                            try { img.setAlpha(Phaser.Math.Clamp(fgAlpha, 0, 1)); } catch (e) { }
+                            img.setScrollFactor(parallaxFactor);
+
+                            this.gameFgs.push(img);
+                            this.gameFg = this.gameFgs.length ? this.gameFgs[this.gameFgs.length - 1] : img;
+                        }
+                    }
                 } catch (e) { /* ignore failures creating FG */ }
             };
 
@@ -2711,12 +2817,22 @@ class GameScene extends Phaser.Scene {
                 camera.setDeadzone(w * 0.3, h * 0.3);
 
                 // Adjust background display to cover world or new viewport
-                if (this.gameBg) {
-                    const bgW = Math.max(worldWidth, w);
-                    const bgH = Math.max(worldHeight, h);
-                    try { this.gameBg.setOrigin(0, 0); } catch (e) { }
-                    this.gameBg.setDisplaySize(bgW, bgH);
-                    this.gameBg.setPosition(worldX, worldY);
+                const bgW = Math.max(worldWidth, w);
+                const bgH = Math.max(worldHeight, h);
+                if (this.gameBgs && this.gameBgs.length) {
+                    this.gameBgs.forEach((img) => {
+                        try { applyLayerResize(img, bgW, bgH); } catch (e) { }
+                    });
+                } else if (this.gameBg) {
+                    applyLayerResize(this.gameBg, bgW, bgH);
+                }
+
+                const fgW = Math.max(worldWidth, w);
+                const fgH = Math.max(worldHeight, h);
+                if (this.gameFgs && this.gameFgs.length) {
+                    this.gameFgs.forEach((img) => {
+                        try { applyLayerResize(img, fgW, fgH); } catch (e) { }
+                    });
                 }
 
                 // Reposition HUD elements

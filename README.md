@@ -40,6 +40,351 @@ Struttura del progetto (principali file)
 - `images/sprite.png` – sprite-sheet 4×4 (opzionale, migliora la resa visiva).
 - `js/game-config.js`, `js/game-state.js` – (se presenti) configurazione separata e stato runtime.
 
+## Formato completo di `level<nm>.json`
+
+I livelli sono in `data/level/level10.json`, `level11.json`, ecc.
+
+Il motore supporta due formati mappa:
+- formato nuovo: `map` oggetto con `rows`, `cols`, `tiles`
+- formato legacy: `map` array 2D direttamente al root
+
+### Template completo (con tutti i campi supportati)
+
+```json
+{
+	"id": "1.1",
+	"cols": 12,
+	"rows": 12,
+	"speed": 1,
+	"escapeRoute": true,
+	"objectiveLabel": "objective_collect_gems_and_survive",
+
+	"requiredGems": 2,
+	"gemsRequired": 2,
+	"gemsOneByOne": false,
+
+	"playerStart": { "row": 1, "col": 1 },
+	"playerStart2": { "row": 1, "col": 2 },
+
+	"ghost": 2,
+	"ghostSpeed": 90,
+	"bat": 2,
+	"batSpeed": 100,
+
+	"batFlightsBeforeRest": 4,
+	"batRestSeconds": 2,
+	"batRestIntervalSeconds": 0,
+
+	"timer": 120,
+	"light": "piena",
+
+	"music": "my_track.mp3",
+	"backgroundMusic": "music/my_track.mp3",
+
+	"tokenMap": {
+		"X": "w00",
+		"x": "w00"
+	},
+
+	"map": {
+		"cols": 12,
+		"rows": 12,
+		"timer": 120,
+		"requiredGems": 2,
+		"gemsOneByOne": false,
+		"ghost": 2,
+		"ghostSpeed": 90,
+		"bat": 2,
+		"batSpeed": 100,
+		"tiles": [
+			["w00", "w00", "w00"],
+			["w00", "-", "g"],
+			["w00", "k", "d"]
+		]
+	},
+
+	"staticRocks": {
+		"enabled": true,
+		"sizes": ["small", "medium", "large"],
+		"spawnInterval": 900,
+		"spawnRate": 1.2,
+		"spawnCount": 1,
+		"spawnCounts": [1, 2],
+		"shardBurstCount": 4,
+
+		"dynamicSize": null,
+		"rotation": null,
+		"chaotic": null
+	},
+
+	"dynamicBoulders": {
+		"enabled": true,
+		"directions": ["top", "bottom", "left", "right"],
+		"sizes": ["small", "medium", "large"],
+		"spawnInterval": 1400,
+		"spawnRate": 0.8,
+		"splitOnImpact": true,
+		"splitPiecesRange": [2, 3],
+		"maxSplitGeneration": 1,
+		"stopAfterRotations": 6
+	},
+
+	"background": [
+		{
+			"src": "images/bg_11.png",
+			"parallaxBgFactor": 1.0,
+			"parallaxBgAlpha": 1.0,
+
+			"offsetX": 120,
+			"offsetY": 40,
+
+			"replicaX": 3,
+			"replicaY": 1,
+			"replicaStepX": 500,
+			"replicaStepY": 0
+		}
+	],
+
+	"foreground": [
+		{
+			"src": "images/foreground.png",
+			"parallaxFgFactor": 1.0,
+			"parallaxFgAlpha": 1.0,
+
+			"left": 0,
+			"top": 0,
+
+			"repeatX": "*",
+			"repeatY": 1,
+			"repeatStepX": 800,
+			"repeatStepY": 600
+		}
+	],
+
+	"rain": {
+		"enabled": true,
+		"intensity": 2.0,
+		"frequency": 200,
+		"wind": 120,
+		"direction": "random",
+		"interval": 20,
+		"duration": 10
+	},
+
+	"fog": {
+		"enabled": true,
+		"alpha": 0.2,
+		"layers": 4,
+		"density": 5,
+		"speed": "slow",
+		"direction": "left"
+	},
+
+	"bonus": {
+		"enabled": false,
+		"name": "bonus1",
+		"label": "BONUS CARRELLO",
+		"criteria": {
+			"mode": "all",
+			"points": 120,
+			"keysCollected": 1
+		},
+		"rewardScore": 120,
+		"pepitaScore": 12,
+		"baseSpeed": 280,
+		"minSpeed": 180,
+		"maxSpeed": 520,
+		"speedStep": 340,
+		"jumpVelocity": 600,
+		"graceMs": 500
+	},
+
+	"enemies": null,
+	"collectibles": null,
+	"traps": null,
+	"spawnPoints": null,
+	"timeLimit": null,
+	"scoreRules": null,
+	"backgroundEnabled": true
+}
+```
+
+### Significato campi (runtime)
+
+Campi root principali:
+
+| Campo | Tipo | Valori | Significato |
+|---|---|---|---|
+| `id` | string | es. `"1.1"` | Identificatore logico del livello. |
+| `rows`, `cols` | number | interi > 0 | Dimensione mappa (usati soprattutto nel formato legacy). |
+| `speed` | number | > 0 | Moltiplicatore velocita' per massi dinamici. |
+| `escapeRoute` | boolean | `true/false` | Se `true` abilita meccanica chiave/porta per uscita. |
+| `objectiveLabel` | string | chiave dizionario | Testo obiettivo mostrato a inizio livello. |
+| `requiredGems` | number | intero >= 0 | Gemme richieste per sbloccare uscita. Priorita' alta. |
+| `gemsRequired` | number | intero >= 0 | Alias legacy di `requiredGems`. |
+| `gemsOneByOne` | boolean | `true/false` | Se le gemme appaiono una per volta. |
+| `timer` | number | secondi > 0 | Timer livello (fallback su `map.timer`). |
+| `light` | string | `piena`, `spenta`, `fissa`, `flash`, `off`, `full`, `fixed`, `lightning` | Modalita' illuminazione. |
+| `music` | string | file/path | Musica livello (cerca in `data/music/` se passi solo nome file). |
+| `backgroundMusic` | string | file/path | Alias di `music`. |
+| `tokenMap` | object | mappa stringa->stringa | Alias token mappa (es. `"X": "w00"`). |
+
+Spawn player:
+
+| Campo | Tipo | Valori | Significato |
+|---|---|---|---|
+| `playerStart` | object | `{ row, col }` | Spawn player 1 in coordinate griglia. |
+| `playerStart2` | object | `{ row, col }` | Spawn player 2 (se attivo). |
+
+Nemici:
+
+| Campo | Tipo | Valori | Significato |
+|---|---|---|---|
+| `ghost` | number | intero >= 0 | Numero fantasmi da spawnare. |
+| `ghostSpeed` | number | > 0 | Velocita' fantasmi. |
+| `bat` | number | intero >= 0 | Numero pipistrelli da spawnare. |
+| `batSpeed` | number | > 0 | Velocita' pipistrelli. |
+| `batFlightsBeforeRest` | number | intero >= 1 | Voli prima del riposo (se non usi intervallo fisso). |
+| `batRestSeconds` | number | > 0 | Durata riposo pipistrello. |
+| `batRestIntervalSeconds` | number | >= 0 | Se >0 usa riposo periodico ogni N secondi. |
+
+`map` (formato nuovo):
+
+| Campo | Tipo | Valori | Significato |
+|---|---|---|---|
+| `map.cols`, `map.rows` | number | interi > 0 | Dimensione mappa. |
+| `map.tiles` | array 2D | token string | Griglia token. |
+| `map.timer` | number | secondi > 0 | Alias timer locale mappa. |
+| `map.requiredGems` | number | intero >= 0 | Alias locale di `requiredGems`. |
+| `map.gemsOneByOne` | boolean | `true/false` | Alias locale di `gemsOneByOne`. |
+| `map.ghost`, `map.ghostSpeed` | number | come root | Alias locali per ghost. |
+| `map.bat`, `map.batSpeed` | number | come root | Alias locali per bat. |
+
+Rocce statiche (`staticRocks`):
+
+| Campo | Tipo | Valori | Significato |
+|---|---|---|---|
+| `enabled` | boolean | `true/false` | Abilita spawn rocce statiche. |
+| `sizes` | array | `small`, `medium`, `large` | Taglie possibili rocce. |
+| `spawnInterval` | number | ms > 0 | Intervallo spawn (priorita' alta). |
+| `spawnRate` | number | spawn/s > 0 | Alternativa a `spawnInterval`. |
+| `spawnCount` | number | intero >= 1 | Rocce per tick fisse. |
+| `spawnCounts` | array | interi >= 1 | Rocce per tick random da elenco. |
+| `shardBurstCount` | number | intero >= 0 | Quanti burst schegge durante la partita. |
+| `dynamicSize`, `rotation`, `chaotic` | any | legacy | Campi presenti in alcuni file, attualmente non influenzano il runtime corrente. |
+
+Massi dinamici (`dynamicBoulders`):
+
+| Campo | Tipo | Valori | Significato |
+|---|---|---|---|
+| `enabled` | boolean | `true/false` | Abilita massi dinamici. |
+| `directions` | array | `top`, `bottom`, `left`, `right` | Direzioni di ingresso. |
+| `sizes` | array | `small`, `medium`, `large` | Taglie possibili massi. |
+| `spawnInterval` | number | ms > 0 | Intervallo spawn (priorita' alta). |
+| `spawnRate` | number | spawn/s > 0 | Alternativa a `spawnInterval`. |
+| `splitOnImpact` | boolean | `true/false` | Se i massi si dividono sugli impatti. |
+| `splitPiecesRange` | array | `[min,max]` interi >=1 | Numero frammenti generati allo split. |
+| `maxSplitGeneration` | number | intero >= 0 | Profondita' massima split. |
+| `stopAfterRotations` | number | intero > 0 | Ferma il masso dopo N rotazioni complete. |
+
+Background / foreground (singolo oggetto o array di oggetti):
+
+| Campo | Tipo | Valori | Significato |
+|---|---|---|---|
+| `src` | string/number | path texture, key texture, numero | Sorgente layer. Numero -> `game_bg_<n>`. |
+| `parallaxBgFactor` | number | >= 0 | Scroll factor background. |
+| `parallaxBgAlpha` | number | 0..1 | Alpha background. |
+| `parallaxFgFactor` | number | >= 0 | Scroll factor foreground. |
+| `parallaxFgAlpha` | number | 0..1 | Alpha foreground. |
+| `offsetX` / `left` / `x` / `positionX` | number | pixel | Offset orizzontale layer. |
+| `offsetY` / `top` / `y` / `positionY` | number | pixel | Offset verticale layer. |
+| `repeatX` / `replicaX` / `repeatCountX` / `replicaCountX` | number/string | intero >=1 o `"*"` | Numero repliche asse X (`"*"` = ripetizione estesa automatica). |
+| `repeatY` / `replicaY` / `repeatCountY` / `replicaCountY` | number/string | intero >=1 o `"*"` | Numero repliche asse Y. |
+| `repeatStepX` / `replicaStepX` / `repeatOffsetX` / `replicaOffsetX` | number | pixel | Passo tra repliche asse X (default larghezza layer). |
+| `repeatStepY` / `replicaStepY` / `repeatOffsetY` / `replicaOffsetY` | number | pixel | Passo tra repliche asse Y (default altezza layer). |
+
+Effetti meteo:
+
+`rain`:
+
+| Campo | Tipo | Valori | Significato |
+|---|---|---|---|
+| `enabled` | boolean | `true/false` | Abilita pioggia. |
+| `intensity` | number | 0.1..5 | Intensita' (quantita' gocce). |
+| `frequency` | number | 20..2000 ms | Frequenza emissione gocce. |
+| `wind` | number | -500..500 | Drift orizzontale. |
+| `direction` | string | `down`, `left`, `right`, `random` | Direzione prevalente pioggia. |
+| `interval` | number | secondi >= 0 | Intervallo tra burst (se usi burst). |
+| `duration` | number | secondi >= 0 | Durata burst pioggia. |
+
+`fog`:
+
+| Campo | Tipo | Valori | Significato |
+|---|---|---|---|
+| `enabled` | boolean | `true/false` | Abilita nebbia decorativa. |
+| `alpha` | number | 0..1 | Opacita' nebbia. |
+| `layers` | number | intero >= 1 | Numero layer nebbia. |
+| `density` | number | intero >= 2 | Blob per layer. |
+| `speed` | string | `slow`, `fast` | Velocita' movimento. |
+| `direction` | string | `left`, `right` | Direzione scorrimento nebbia. |
+
+Bonus (`bonus`):
+
+Il campo e' previsto nei livelli e mantenuto per compatibilita'. La logica bonus dedicata dipende dal flusso scena bonus.
+
+| Campo | Tipo | Valori | Significato |
+|---|---|---|---|
+| `enabled` | boolean | `true/false` | Abilita blocco bonus. |
+| `name`, `label` | string | libero | Nome/etichetta bonus. |
+| `criteria.mode` | string | es. `all` | Modalita' criteri. |
+| `criteria.points` | number | >= 0 | Punteggio richiesto. |
+| `criteria.keysCollected` | number | >= 0 | Chiavi richieste. |
+| `rewardScore`, `pepitaScore` | number | >= 0 | Ricompense punteggio. |
+| `baseSpeed`, `minSpeed`, `maxSpeed`, `speedStep`, `jumpVelocity`, `graceMs` | number | dipende dal bonus | Parametri dinamica bonus. |
+
+Campi legacy/metadata trovati in alcuni JSON:
+
+| Campo | Stato |
+|---|---|
+| `backgroundEnabled` | usato dall'editor livello, non dal runtime principale |
+| `enemies`, `collectibles`, `traps`, `spawnPoints`, `timeLimit`, `scoreRules` | metadata/placeholder: attualmente non letti nel flusso principale |
+
+### Esempi rapidi
+
+Background ripetuto orizzontalmente all'infinito pratico:
+
+```json
+"background": [
+	{
+		"src": "images/bg_11.png",
+		"parallaxBgFactor": 1.0,
+		"parallaxBgAlpha": 1.0,
+		"offsetX": 120,
+		"offsetY": 40,
+		"repeatX": "*",
+		"repeatY": 1,
+		"repeatStepX": 800,
+		"repeatStepY": 600
+	}
+]
+```
+
+Foreground con 3 copie allineate:
+
+```json
+"foreground": [
+	{
+		"src": "images/foreground.png",
+		"parallaxFgFactor": 1,
+		"parallaxFgAlpha": 1,
+		"replicaX": 3,
+		"replicaY": 1,
+		"replicaStepX": 500,
+		"replicaStepY": 0
+	}
+]
+```
+
 Consigli per sviluppo
 
 - `SIZE_SCALE` (variabile globale) permette di ingrandire o rimpicciolire velocemente tutta la UI del gioco.
