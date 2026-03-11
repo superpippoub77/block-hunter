@@ -222,8 +222,8 @@
             margin-bottom: 6px;
             color: var(--sec-text);
             background: var(--sec-bg);
-            border: 1px solid var(--sec-accent);
-            border-left: 6px solid var(--sec-accent);
+            border: none;
+            border-left: none;
             border-radius: 5px;
             padding: 6px 8px;
         }
@@ -513,45 +513,6 @@
                     </div>
                 </div>
                 <div style="margin-top:6px;">
-                    <label for="levelBackground">Background (selezione singola o multipla)</label>
-                    <select id="levelBackground" multiple size="4">
-                        <option value="">(default)</option>
-                        <option value="1" selected>level1</option>
-                        <option value="2">level2</option>
-                        <option value="3">level3</option>
-                        <option value="4">level4</option>
-                        <option value="5">level5</option>
-                        <option value="6">level6</option>
-                    </select>
-                </div>
-
-                <div style="margin-top:6px;">
-                    <label for="levelForeground">Foreground (opzionale, singola o multipla)</label>
-                    <select id="levelForeground" multiple size="3">
-                        <option value="">(none)</option>
-                        <option value="game_fg">foreground</option>
-                    </select>
-                    <div style="margin-top:8px;">
-                        <label style="display:block; font-size:9px; color:#b6caef; margin-bottom:4px;">Background layers
-                            (aggiungi/rimuovi)</label>
-                        <div class="tiny" style="margin-bottom:6px;">Ogni layer supporta: attivo/non attivo, parallax, alpha, offset X/Y, repliche X/Y e step X/Y. Usa <strong>*</strong> in repliche per copertura automatica.</div>
-                        <div style="display:flex; gap:6px; margin-bottom:6px;">
-                            <button id="bgEnableAllBtn" type="button">Attiva tutti BG</button>
-                            <button id="bgDisableAllBtn" type="button">Disattiva tutti BG</button>
-                        </div>
-                        <div style="display:flex; gap:6px; margin-bottom:6px; align-items:center;">
-                            <select id="bgImageSelect" style="flex:1;">
-                                <option value="">-- scegli immagine background --</option>
-                                <option value="bg_10.png">bg_10.png (assets/images/background)</option>
-                                <option value="bg_11png">bg_11png (assets/images/background)</option>
-                                <option value="bg_12.png">bg_12.png (assets/images/background)</option>
-                            </select>
-                            <button id="addBgFromSelectBtn" type="button">Aggiungi</button>
-                        </div>
-                        <div id="bgLayersContainer"></div>
-                        <button id="addBgLayerBtn" type="button" style="margin-top:6px;">Aggiungi Background
-                            Layer</button>
-                    </div>
                     <div style="margin-top:8px;">
                         <label style="display:block; font-size:9px; color:#b6caef; margin-bottom:4px;">Foreground layers
                             (aggiungi/rimuovi)</label>
