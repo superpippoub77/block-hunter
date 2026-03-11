@@ -25,6 +25,7 @@ const STORAGE_KEY = 'blockHunterLevelEditorState';
 const WALL_TOKEN_REGEX = /^w(\d)(\d)(\d)([hv0])$/i;
 const BG_ASSETS_DIR = 'assets/images/background';
 const FG_ASSETS_DIR = 'assets/images/foreground';
+const API_BASE_PATH = 'api';
 
 // Available numeric level backgrounds discovered from images/level<N>.png
 const AVAILABLE_BG_LEVELS = [1,2,3,4,5,6];
@@ -148,6 +149,11 @@ function parseRepeatValue(value, fallback = 1) {
     const parsed = Number(raw);
     if (!Number.isFinite(parsed)) return fallback;
     return Math.max(1, Math.floor(parsed));
+}
+
+function buildApiUrl(path) {
+    const clean = String(path ?? '').replace(/^\/+/, '');
+    return `${API_BASE_PATH}/${clean}`;
 }
 
 function normalizeLayerSrc(rawValue, type) {
@@ -318,7 +324,8 @@ class LevelEditorScene extends Phaser.Scene {
             .spritesheet('bat_anim', 'images/batpng.png', { frameWidth: 64, frameHeight: 64 });
 
         // preload possible game backgrounds so the editor can offer them
-        this.load.image('game_bg', 'images/game_bg.png');
+        // Fallback default background (game_bg.png is not present in this repo)
+        this.load.image('game_bg', 'images/attract_bg.png');
         // load all discovered numeric level backgrounds
         try {
             (AVAILABLE_BG_LEVELS || []).forEach((n) => {
@@ -2649,7 +2656,7 @@ function bindUI() {
     // Populate levelMusic select dynamically from server /music folder
     async function populateMusicOptions() {
         try {
-            const resp = await fetch('/api/music');
+            const resp = await fetch(buildApiUrl('music'));
             if (!resp.ok) return;
             const list = await resp.json();
             const sel = el('levelMusic');
@@ -2672,8 +2679,8 @@ function bindUI() {
     async function populateImageOptions() {
         try {
             const [bgResp, fgResp] = await Promise.all([
-                fetch('/api/images/background'),
-                fetch('/api/images/foreground')
+                fetch(buildApiUrl('images/background')),
+                fetch(buildApiUrl('images/foreground'))
             ]);
 
             const bgSel = el('bgImageSelect');
