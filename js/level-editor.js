@@ -23,6 +23,8 @@ const OBJECT_FRAMES = {
 
 const STORAGE_KEY = 'blockHunterLevelEditorState';
 const WALL_TOKEN_REGEX = /^w(\d)(\d)(\d)([hv0])$/i;
+const BG_ASSETS_DIR = 'assets/images/background';
+const FG_ASSETS_DIR = 'assets/images/foreground';
 
 // Available numeric level backgrounds discovered from images/level<N>.png
 const AVAILABLE_BG_LEVELS = [1,2,3,4,5,6];
@@ -146,6 +148,30 @@ function parseRepeatValue(value, fallback = 1) {
     const parsed = Number(raw);
     if (!Number.isFinite(parsed)) return fallback;
     return Math.max(1, Math.floor(parsed));
+}
+
+function normalizeLayerSrc(rawValue, type) {
+    const raw = String(rawValue ?? '').trim();
+    if (!raw) return '';
+
+    if (/^(https?:|data:|blob:|\/)/i.test(raw)) return raw;
+    if (/^game_bg(_\d+)?$/i.test(raw)) return raw;
+    if (raw.startsWith(`${BG_ASSETS_DIR}/`) || raw.startsWith(`${FG_ASSETS_DIR}/`)) return raw;
+
+    const targetDir = type === 'fg' ? FG_ASSETS_DIR : BG_ASSETS_DIR;
+    if (raw.startsWith('images/')) return `${targetDir}/${raw.slice('images/'.length)}`;
+    if (!raw.includes('/')) return `${targetDir}/${raw}`;
+
+    return raw;
+}
+
+function layerFilenameFromSrc(src, type) {
+    const raw = String(src ?? '').trim();
+    if (!raw) return '';
+    const targetDir = type === 'fg' ? FG_ASSETS_DIR : BG_ASSETS_DIR;
+    if (raw.startsWith(`${targetDir}/`)) return raw.slice(targetDir.length + 1);
+    if (raw.startsWith('images/')) return raw.slice('images/'.length);
+    return raw.includes('/') ? raw.split('/').pop() : raw;
 }
 
 function parseNullableInput(text) {
@@ -2055,9 +2081,9 @@ function readBackgroundLayersFromDOM() {
         const sel = it.querySelector('select.bg-src');
         if (sel) {
             const v = String(sel.value || '').trim();
-            src = v ? `images/${v}` : '';
+            src = v ? `${BG_ASSETS_DIR}/${v}` : '';
         } else {
-            src = String(it.querySelector('.bg-src')?.value || '').trim();
+            src = normalizeLayerSrc(it.querySelector('.bg-src')?.value, 'bg');
         }
         if (!src) return; // skip empty
         const factor = parseNumber(it.querySelector('.bg-factor')?.value, 1.0);
@@ -2096,9 +2122,9 @@ function readForegroundLayersFromDOM() {
         const sel = it.querySelector('select.fg-src');
         if (sel) {
             const v = String(sel.value || '').trim();
-            src = v ? `images/${v}` : '';
+            src = v ? `${FG_ASSETS_DIR}/${v}` : '';
         } else {
-            src = String(it.querySelector('.fg-src')?.value || '').trim();
+            src = normalizeLayerSrc(it.querySelector('.fg-src')?.value, 'fg');
         }
         if (!src) return;
         const factor = parseNumber(it.querySelector('.fg-factor')?.value, 1.0);
@@ -2232,12 +2258,12 @@ function createBgLayerElement(cfg = {}) {
         Array.from(masterSelect.options).forEach((o) => {
             const opt = document.createElement('option'); opt.value = o.value; opt.textContent = o.textContent; sel.appendChild(opt);
         });
-        // set value from src (strip images/ prefix if present)
-        const current = String(src || '').replace(/^images\//, '');
+        // set value from src keeping only the filename
+        const current = layerFilenameFromSrc(src, 'bg');
         if (current) try { sel.value = current; } catch (e) {}
         inp = sel;
     } else {
-        inp = document.createElement('input'); inp.className = 'bg-src'; inp.placeholder = 'src (es. images/bg_10.png)'; inp.value = src || '';
+        inp = document.createElement('input'); inp.className = 'bg-src'; inp.placeholder = `src (es. ${BG_ASSETS_DIR}/bg_10.png)`; inp.value = src || '';
     }
     const f = document.createElement('input'); f.className = 'bg-factor'; f.type = 'number'; f.step = '0.1'; f.value = String(factor);
     const a = document.createElement('input'); a.className = 'bg-alpha'; a.type = 'number'; a.step = '0.05'; a.value = String(alpha);
@@ -2323,11 +2349,11 @@ function createFgLayerElement(cfg = {}) {
         Array.from(masterSelect.options).forEach((o) => {
             const opt = document.createElement('option'); opt.value = o.value; opt.textContent = o.textContent; sel.appendChild(opt);
         });
-        const current = String(src || '').replace(/^images\//, '');
+        const current = layerFilenameFromSrc(src, 'fg');
         if (current) try { sel.value = current; } catch (e) {}
         inp = sel;
     } else {
-        inp = document.createElement('input'); inp.className = 'fg-src'; inp.placeholder = 'src (es. images/foreground2.png)'; inp.value = src || '';
+        inp = document.createElement('input'); inp.className = 'fg-src'; inp.placeholder = `src (es. ${FG_ASSETS_DIR}/foreground2.png)`; inp.value = src || '';
     }
     const f = document.createElement('input'); f.className = 'fg-factor'; f.type = 'number'; f.step = '0.1'; f.value = String(factor);
     const a = document.createElement('input'); a.className = 'fg-alpha'; a.type = 'number'; a.step = '0.05'; a.value = String(alpha);
@@ -2642,19 +2668,24 @@ function bindUI() {
 
     try { populateMusicOptions(); } catch (e) {}
 
-    // Populate bg/fg image selects dynamically from server /images folder
+    // Populate bg/fg image selects dynamically from server assets images folders
     async function populateImageOptions() {
         try {
-            const resp = await fetch('/api/images');
-            if (!resp.ok) return;
-            const list = await resp.json();
+            const [bgResp, fgResp] = await Promise.all([
+                fetch('/api/images/background'),
+                fetch('/api/images/foreground')
+            ]);
+
             const bgSel = el('bgImageSelect');
             const fgSel = el('fgImageSelect');
+
+            const bgList = bgResp.ok ? await bgResp.json() : [];
+            const fgList = fgResp.ok ? await fgResp.json() : [];
             if (bgSel) {
                 // keep a default placeholder option
                 bgSel.innerHTML = '';
                 const placeholder = document.createElement('option'); placeholder.value = ''; placeholder.textContent = '-- scegli immagine background --'; bgSel.appendChild(placeholder);
-                list.forEach((p) => {
+                bgList.forEach((p) => {
                     const name = String(p).split('/').pop();
                     const o = document.createElement('option'); o.value = name; o.textContent = name; bgSel.appendChild(o);
                 });
@@ -2662,7 +2693,7 @@ function bindUI() {
             if (fgSel) {
                 fgSel.innerHTML = '';
                 const placeholder = document.createElement('option'); placeholder.value = ''; placeholder.textContent = '-- scegli immagine foreground --'; fgSel.appendChild(placeholder);
-                list.forEach((p) => {
+                fgList.forEach((p) => {
                     const name = String(p).split('/').pop();
                     const o = document.createElement('option'); o.value = name; o.textContent = name; fgSel.appendChild(o);
                 });
@@ -2859,7 +2890,7 @@ window.addEventListener('load', () => {
             const container = el('bgLayersContainer');
             if (!container) return;
             ensureBgHeader();
-            container.appendChild(createBgLayerElement({ src: `images/${val}`, factor: 1.0, alpha: 1.0, enabled: true }));
+            container.appendChild(createBgLayerElement({ src: `${BG_ASSETS_DIR}/${val}`, factor: 1.0, alpha: 1.0, enabled: true }));
             try { getScene()?.updateEditorBackgroundImage?.(true); } catch (e) {}
             try { drawMiniMapPreview(getScene()); } catch (e) {}
         });
@@ -2873,7 +2904,7 @@ window.addEventListener('load', () => {
             const container = el('fgLayersContainer');
             if (!container) return;
             ensureFgHeader();
-            container.appendChild(createFgLayerElement({ src: `images/${val}`, factor: 1.0, alpha: 1.0, enabled: true }));
+            container.appendChild(createFgLayerElement({ src: `${FG_ASSETS_DIR}/${val}`, factor: 1.0, alpha: 1.0, enabled: true }));
             try { drawMiniMapPreview(getScene()); } catch (e) {}
         });
     } catch (e) {}

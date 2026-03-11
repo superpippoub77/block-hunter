@@ -22,6 +22,20 @@ const MIME_TYPES = {
   ".woff2": "font/woff2",
 };
 
+function listImagesInDir(dirPath, publicPrefix, callback) {
+  fs.readdir(dirPath, (err, files) => {
+    if (err) {
+      callback([]);
+      return;
+    }
+    const imgExt = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg"]);
+    const list = (files || [])
+      .filter((f) => imgExt.has(path.extname(f).toLowerCase()))
+      .map((f) => path.posix.join(publicPrefix, f));
+    callback(list);
+  });
+}
+
 function safeResolvePath(urlPath) {
   const decoded = decodeURIComponent(urlPath.split("?")[0]);
   const requestedPath = decoded === "/" ? "/index.html" : decoded;
@@ -120,7 +134,37 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // API: list image files in /images folder
+  // API: list image files in /assets/images/background folder
+  if (req.url && req.url.startsWith('/api/images/background')) {
+    if (req.method !== 'GET') {
+      res.writeHead(405, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ ok: false, error: 'method not allowed' }));
+      return;
+    }
+    const bgDir = path.join(ROOT_DIR, 'assets', 'images', 'background');
+    listImagesInDir(bgDir, 'assets/images/background', (list) => {
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify(list));
+    });
+    return;
+  }
+
+  // API: list image files in /assets/images/foreground folder
+  if (req.url && req.url.startsWith('/api/images/foreground')) {
+    if (req.method !== 'GET') {
+      res.writeHead(405, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ ok: false, error: 'method not allowed' }));
+      return;
+    }
+    const fgDir = path.join(ROOT_DIR, 'assets', 'images', 'foreground');
+    listImagesInDir(fgDir, 'assets/images/foreground', (list) => {
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify(list));
+    });
+    return;
+  }
+
+  // API: list image files in /images folder (legacy)
   if (req.url && req.url.startsWith('/api/images')) {
     if (req.method !== 'GET') {
       res.writeHead(405, { 'Content-Type': 'application/json; charset=utf-8' });
@@ -128,14 +172,7 @@ const server = http.createServer((req, res) => {
       return;
     }
     const imagesDir = path.join(ROOT_DIR, 'images');
-    fs.readdir(imagesDir, (err, files) => {
-      if (err) {
-        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-        res.end(JSON.stringify([]));
-        return;
-      }
-      const imgExt = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg']);
-      const list = (files || []).filter(f => imgExt.has(path.extname(f).toLowerCase())).map(f => path.posix.join('images', f));
+    listImagesInDir(imagesDir, 'images', (list) => {
       res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
       res.end(JSON.stringify(list));
     });
