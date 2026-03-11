@@ -166,6 +166,56 @@
             box-shadow: 0 12px 36px rgba(0, 0, 0, 0.45);
         }
 
+        .objmap-dialog {
+            width: min(1100px, 96vw);
+            max-height: 92vh;
+            overflow: auto;
+            border: 1px solid #40608d;
+            border-radius: 8px;
+            background: #0a1326;
+            padding: 12px;
+            box-shadow: 0 12px 36px rgba(0, 0, 0, 0.45);
+        }
+
+        .objmap-list {
+            display: grid;
+            gap: 10px;
+            margin-top: 8px;
+        }
+
+        .objmap-card {
+            border: 1px solid #31507b;
+            border-radius: 6px;
+            padding: 8px;
+            background: rgba(16, 29, 54, 0.66);
+        }
+
+        .objmap-title-row {
+            display: grid;
+            grid-template-columns: 1fr auto;
+            gap: 8px;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+
+        .objmap-grid2 {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+        }
+
+        .objmap-subtitle {
+            font-size: 9px;
+            color: #bddcff;
+            margin: 8px 0 4px;
+        }
+
+        .objmap-directions {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
         .config-toolbar {
             display: flex;
             justify-content: space-between;
@@ -501,7 +551,10 @@
         <aside class="panel">
             <div class="panel-header">
                 <h1>OPTIONS</h1>
-                <button id="openConfigDialogBtn" class="icon-btn" type="button" title="Configura game config">&#9881;</button>
+                <div style="display:flex; gap:6px;">
+                    <button id="openObjectMapDialogBtn" class="icon-btn" type="button" title="Mappaggio oggetti">OBJ</button>
+                    <button id="openConfigDialogBtn" class="icon-btn" type="button" title="Configura game config">&#9881;</button>
+                </div>
             </div>
             <div style="display:flex; gap:8px; margin-bottom:8px;">
                 <button id="exportTopBtn" type="button">Esporta JSON</button>
@@ -1078,6 +1131,22 @@
             <div class="tiny" style="margin-bottom:8px;">Il salvataggio crea backup automatico in `bck/` prima di aggiornare `data/config.json`.</div>
             <div id="configFormContainer" class="config-grid"></div>
             <div class="status" id="configStatusText"></div>
+        </div>
+    </div>
+
+    <div id="objectMapModal" class="config-modal">
+        <div class="objmap-dialog">
+            <div class="config-toolbar">
+                <h2 style="margin:0; font-size:12px; color:#d7ebff;">Mappaggio Oggetti (assets/images/objects)</h2>
+                <div style="display:flex; gap:6px;">
+                    <button id="addObjectMapBtn" type="button">Aggiungi Oggetto</button>
+                    <button id="saveObjectMapBtn" type="button">Salva</button>
+                    <button id="closeObjectMapDialogBtn" type="button">Chiudi</button>
+                </div>
+            </div>
+            <div class="tiny" style="margin-bottom:8px;">Per ogni oggetto puoi definire sprite sheet/statico, frame, direzioni, speculare lato opposto, movimento automatico, punteggio al contatto e dimensioni in pixel.</div>
+            <div id="objectMapList" class="objmap-list"></div>
+            <div class="status" id="objectMapStatusText"></div>
         </div>
     </div>
 

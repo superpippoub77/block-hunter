@@ -266,6 +266,390 @@ let CONFIG_EDITOR_STATE = {
     loadedConfig: null
 };
 
+let OBJECT_MAP_EDITOR_STATE = {
+    items: []
+};
+
+function setObjectMapStatus(message, isError = false) {
+    const target = el('objectMapStatusText');
+    if (!target) return;
+    target.style.color = isError ? '#ff8f9a' : '#8ee89f';
+    target.textContent = message;
+}
+
+function createDefaultObjectMapping(seedName = '') {
+    return {
+        key: String(seedName || 'new_object').trim() || 'new_object',
+        imageSrc: '',
+        dynamic: false,
+        frameCount: 1,
+        useOppositeSide: true,
+        frames: {
+            idle: { up: '', down: '', left: '', right: '' },
+            move: { up: '', down: '', left: '', right: '' }
+        },
+        contactScore: 0,
+        movement: {
+            automatic: false,
+            directions: [],
+            minStep: 0,
+            maxStep: 0,
+            pauseMs: 0
+        },
+        staticScore: 0,
+        sizePx: {
+            width: 64,
+            height: 64
+        }
+    };
+}
+
+function normalizeObjectMapping(raw) {
+    const base = createDefaultObjectMapping(raw?.key || raw?.id || 'new_object');
+    const inObj = isPlainObject(raw) ? raw : {};
+    const frames = isPlainObject(inObj.frames) ? inObj.frames : {};
+    const idle = isPlainObject(frames.idle) ? frames.idle : {};
+    const move = isPlainObject(frames.move) ? frames.move : {};
+    const movement = isPlainObject(inObj.movement) ? inObj.movement : {};
+    const sizePx = isPlainObject(inObj.sizePx) ? inObj.sizePx : {};
+
+    return {
+        ...base,
+        key: String(inObj.key ?? inObj.id ?? base.key).trim() || base.key,
+        imageSrc: String(inObj.imageSrc ?? inObj.image ?? '').trim(),
+        dynamic: !!inObj.dynamic,
+        frameCount: Math.max(1, parseNumber(inObj.frameCount, 1)),
+        useOppositeSide: inObj.useOppositeSide !== undefined ? !!inObj.useOppositeSide : !!(inObj.mirrorHorizontal ?? true),
+        frames: {
+            idle: {
+                up: String(idle.up ?? ''),
+                down: String(idle.down ?? ''),
+                left: String(idle.left ?? ''),
+                right: String(idle.right ?? '')
+            },
+            move: {
+                up: String(move.up ?? ''),
+                down: String(move.down ?? ''),
+                left: String(move.left ?? ''),
+                right: String(move.right ?? '')
+            }
+        },
+        contactScore: parseNumber(inObj.contactScore, 0),
+        movement: {
+            automatic: !!movement.automatic,
+            directions: Array.isArray(movement.directions) ? movement.directions.map((d) => String(d)) : [],
+            minStep: parseNumber(movement.minStep, 0),
+            maxStep: parseNumber(movement.maxStep, 0),
+            pauseMs: parseNumber(movement.pauseMs, 0)
+        },
+        staticScore: parseNumber(inObj.staticScore, 0),
+        sizePx: {
+            width: Math.max(1, parseNumber(sizePx.width, 64)),
+            height: Math.max(1, parseNumber(sizePx.height, 64))
+        }
+    };
+}
+
+function createDirectionChecks(prefix, selected = []) {
+    const wrap = document.createElement('div');
+    wrap.className = 'objmap-directions';
+    ['up', 'down', 'left', 'right'].forEach((dir) => {
+        const lbl = document.createElement('label');
+        lbl.style.display = 'flex';
+        lbl.style.alignItems = 'center';
+        lbl.style.gap = '6px';
+        const cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.style.width = 'auto';
+        cb.className = `${prefix}-${dir}`;
+        cb.checked = selected.includes(dir);
+        lbl.appendChild(cb);
+        lbl.appendChild(document.createTextNode(dir));
+        wrap.appendChild(lbl);
+    });
+    return wrap;
+}
+
+function setObjectCardVisibility(card) {
+    const dynamic = !!card.querySelector('.obj-dynamic')?.checked;
+    const automatic = !!card.querySelector('.obj-auto')?.checked;
+    const dynBlock = card.querySelector('.obj-dynamic-block');
+    const moveBlock = card.querySelector('.obj-movement-block');
+    const staticBlock = card.querySelector('.obj-static-block');
+    if (dynBlock) dynBlock.style.display = dynamic ? '' : 'none';
+    if (moveBlock) moveBlock.style.display = dynamic && automatic ? '' : 'none';
+    if (staticBlock) staticBlock.style.display = dynamic ? 'none' : '';
+}
+
+function createObjectMapCard(mapping) {
+    const m = normalizeObjectMapping(mapping);
+    const card = document.createElement('div');
+    card.className = 'objmap-card';
+
+    const titleRow = document.createElement('div');
+    titleRow.className = 'objmap-title-row';
+    const keyInput = document.createElement('input');
+    keyInput.className = 'obj-key';
+    keyInput.type = 'text';
+    keyInput.placeholder = 'chiave oggetto (es. ghost)';
+    keyInput.value = m.key;
+    const removeBtn = document.createElement('button');
+    removeBtn.type = 'button';
+    removeBtn.textContent = 'Rimuovi';
+    removeBtn.addEventListener('click', () => {
+        card.remove();
+        setObjectMapStatus('Oggetto rimosso.');
+    });
+    titleRow.appendChild(keyInput);
+    titleRow.appendChild(removeBtn);
+    card.appendChild(titleRow);
+
+    const rowA = document.createElement('div');
+    rowA.className = 'objmap-grid2';
+    const imgWrap = document.createElement('div');
+    imgWrap.innerHTML = '<label>Image file</label>';
+    const imgInput = document.createElement('input');
+    imgInput.className = 'obj-image-src';
+    imgInput.type = 'text';
+    imgInput.placeholder = 'assets/images/objects/filename.png';
+    imgInput.value = m.imageSrc;
+    imgWrap.appendChild(imgInput);
+    const dynWrap = document.createElement('div');
+    dynWrap.innerHTML = '<label style="display:flex; align-items:center; gap:8px;"><input class="obj-dynamic" type="checkbox" style="width:auto; margin-right:6px;">Oggetto dinamico</label>';
+    dynWrap.querySelector('.obj-dynamic').checked = m.dynamic;
+    rowA.appendChild(imgWrap);
+    rowA.appendChild(dynWrap);
+    card.appendChild(rowA);
+
+    const dynBlock = document.createElement('div');
+    dynBlock.className = 'obj-dynamic-block';
+    dynBlock.innerHTML = '<div class="objmap-subtitle">Animazione / Frame</div>';
+    const dynGrid = document.createElement('div');
+    dynGrid.className = 'objmap-grid2';
+
+    const frameCountWrap = document.createElement('div');
+    frameCountWrap.innerHTML = '<label>Frame count</label>';
+    const frameCount = document.createElement('input');
+    frameCount.className = 'obj-frame-count';
+    frameCount.type = 'number';
+    frameCount.min = '1';
+    frameCount.step = '1';
+    frameCount.value = String(m.frameCount);
+    frameCountWrap.appendChild(frameCount);
+
+    const oppositeWrap = document.createElement('div');
+    oppositeWrap.innerHTML = '<label style="display:flex; align-items:center; gap:8px;"><input class="obj-opposite" type="checkbox" style="width:auto; margin-right:6px;">Opposite side (usa lato dx anche per sx)</label>';
+    oppositeWrap.querySelector('.obj-opposite').checked = !!m.useOppositeSide;
+
+    dynGrid.appendChild(frameCountWrap);
+    dynGrid.appendChild(oppositeWrap);
+    dynBlock.appendChild(dynGrid);
+
+    const idleTitle = document.createElement('div');
+    idleTitle.className = 'objmap-subtitle';
+    idleTitle.textContent = 'Frame Idle (up/down/left/right)';
+    dynBlock.appendChild(idleTitle);
+    const idleGrid = document.createElement('div');
+    idleGrid.className = 'objmap-grid2';
+    ['up', 'down', 'left', 'right'].forEach((dir) => {
+        const w = document.createElement('div');
+        w.innerHTML = `<label>idle ${dir}</label>`;
+        const input = document.createElement('input');
+        input.className = `obj-idle-${dir}`;
+        input.type = 'text';
+        input.placeholder = 'es: 0 oppure 0,1,2';
+        input.value = m.frames.idle[dir] || '';
+        w.appendChild(input);
+        idleGrid.appendChild(w);
+    });
+    dynBlock.appendChild(idleGrid);
+
+    const moveTitle = document.createElement('div');
+    moveTitle.className = 'objmap-subtitle';
+    moveTitle.textContent = 'Frame Movimento (up/down/left/right)';
+    dynBlock.appendChild(moveTitle);
+    const moveGrid = document.createElement('div');
+    moveGrid.className = 'objmap-grid2';
+    ['up', 'down', 'left', 'right'].forEach((dir) => {
+        const w = document.createElement('div');
+        w.innerHTML = `<label>move ${dir}</label>`;
+        const input = document.createElement('input');
+        input.className = `obj-move-${dir}`;
+        input.type = 'text';
+        input.placeholder = 'es: 3,4,5';
+        input.value = m.frames.move[dir] || '';
+        w.appendChild(input);
+        moveGrid.appendChild(w);
+    });
+    dynBlock.appendChild(moveGrid);
+    card.appendChild(dynBlock);
+
+    const scoreRow = document.createElement('div');
+    scoreRow.className = 'objmap-grid2';
+    scoreRow.style.marginTop = '8px';
+    const contactWrap = document.createElement('div');
+    contactWrap.innerHTML = '<label>Punti al contatto player</label>';
+    const contactScore = document.createElement('input');
+    contactScore.className = 'obj-contact-score';
+    contactScore.type = 'number';
+    contactScore.step = '1';
+    contactScore.value = String(m.contactScore);
+    contactWrap.appendChild(contactScore);
+    const sizeWrap = document.createElement('div');
+    sizeWrap.innerHTML = '<label>Dimensione px (width,height)</label>';
+    const sizeGrid = document.createElement('div');
+    sizeGrid.className = 'objmap-grid2';
+    const wInput = document.createElement('input');
+    wInput.className = 'obj-size-w';
+    wInput.type = 'number';
+    wInput.min = '1';
+    wInput.step = '1';
+    wInput.value = String(m.sizePx.width);
+    const hInput = document.createElement('input');
+    hInput.className = 'obj-size-h';
+    hInput.type = 'number';
+    hInput.min = '1';
+    hInput.step = '1';
+    hInput.value = String(m.sizePx.height);
+    sizeGrid.appendChild(wInput);
+    sizeGrid.appendChild(hInput);
+    sizeWrap.appendChild(sizeGrid);
+    scoreRow.appendChild(contactWrap);
+    scoreRow.appendChild(sizeWrap);
+    card.appendChild(scoreRow);
+
+    const moveToggleWrap = document.createElement('div');
+    moveToggleWrap.style.marginTop = '8px';
+    moveToggleWrap.innerHTML = '<label style="display:flex; align-items:center; gap:8px;"><input class="obj-auto" type="checkbox" style="width:auto; margin-right:6px;">Movimento automatico</label>';
+    moveToggleWrap.querySelector('.obj-auto').checked = !!m.movement.automatic;
+    card.appendChild(moveToggleWrap);
+
+    const movementBlock = document.createElement('div');
+    movementBlock.className = 'obj-movement-block';
+    movementBlock.innerHTML = '<div class="objmap-subtitle">Parametri movimento automatico</div>';
+    const dirWrap = document.createElement('div');
+    dirWrap.innerHTML = '<label>Direzioni abilitate</label>';
+    dirWrap.appendChild(createDirectionChecks('obj-dir', m.movement.directions));
+    movementBlock.appendChild(dirWrap);
+    const moveRangeGrid = document.createElement('div');
+    moveRangeGrid.className = 'objmap-grid2';
+    const minWrap = document.createElement('div');
+    minWrap.innerHTML = '<label>Range min step</label>';
+    const minInput = document.createElement('input');
+    minInput.className = 'obj-min-step';
+    minInput.type = 'number';
+    minInput.step = '1';
+    minInput.value = String(m.movement.minStep);
+    minWrap.appendChild(minInput);
+    const maxWrap = document.createElement('div');
+    maxWrap.innerHTML = '<label>Range max step</label>';
+    const maxInput = document.createElement('input');
+    maxInput.className = 'obj-max-step';
+    maxInput.type = 'number';
+    maxInput.step = '1';
+    maxInput.value = String(m.movement.maxStep);
+    maxWrap.appendChild(maxInput);
+    moveRangeGrid.appendChild(minWrap);
+    moveRangeGrid.appendChild(maxWrap);
+    movementBlock.appendChild(moveRangeGrid);
+    const pauseWrap = document.createElement('div');
+    pauseWrap.innerHTML = '<label>Pausa ms ai bordi</label>';
+    const pauseInput = document.createElement('input');
+    pauseInput.className = 'obj-pause-ms';
+    pauseInput.type = 'number';
+    pauseInput.step = '1';
+    pauseInput.min = '0';
+    pauseInput.value = String(m.movement.pauseMs);
+    pauseWrap.appendChild(pauseInput);
+    movementBlock.appendChild(pauseWrap);
+    card.appendChild(movementBlock);
+
+    const staticBlock = document.createElement('div');
+    staticBlock.className = 'obj-static-block';
+    staticBlock.style.marginTop = '8px';
+    staticBlock.innerHTML = '<label>Punteggio oggetto statico</label>';
+    const staticScore = document.createElement('input');
+    staticScore.className = 'obj-static-score';
+    staticScore.type = 'number';
+    staticScore.step = '1';
+    staticScore.value = String(m.staticScore);
+    staticBlock.appendChild(staticScore);
+    card.appendChild(staticBlock);
+
+    const dynamicToggle = card.querySelector('.obj-dynamic');
+    const autoToggle = card.querySelector('.obj-auto');
+    dynamicToggle?.addEventListener('change', () => setObjectCardVisibility(card));
+    autoToggle?.addEventListener('change', () => setObjectCardVisibility(card));
+    setObjectCardVisibility(card);
+    return card;
+}
+
+function renderObjectMapEditor() {
+    const list = el('objectMapList');
+    if (!list) return;
+    list.innerHTML = '';
+    OBJECT_MAP_EDITOR_STATE.items.forEach((item) => {
+        list.appendChild(createObjectMapCard(item));
+    });
+}
+
+function collectObjectMappingsFromEditor() {
+    const list = el('objectMapList');
+    if (!list) return [];
+    const cards = Array.from(list.querySelectorAll('.objmap-card'));
+    const out = cards.map((card) => {
+        const getVal = (sel) => String(card.querySelector(sel)?.value ?? '').trim();
+        const getNum = (sel, fallback = 0) => parseNumber(card.querySelector(sel)?.value, fallback);
+        const getCheck = (sel) => !!card.querySelector(sel)?.checked;
+        const dirs = ['up', 'down', 'left', 'right'].filter((d) => !!card.querySelector(`.obj-dir-${d}`)?.checked);
+
+        const mapped = normalizeObjectMapping({
+            key: getVal('.obj-key'),
+            imageSrc: getVal('.obj-image-src'),
+            dynamic: getCheck('.obj-dynamic'),
+            frameCount: getNum('.obj-frame-count', 1),
+            useOppositeSide: getCheck('.obj-opposite'),
+            frames: {
+                idle: {
+                    up: getVal('.obj-idle-up'),
+                    down: getVal('.obj-idle-down'),
+                    left: getVal('.obj-idle-left'),
+                    right: getVal('.obj-idle-right')
+                },
+                move: {
+                    up: getVal('.obj-move-up'),
+                    down: getVal('.obj-move-down'),
+                    left: getVal('.obj-move-left'),
+                    right: getVal('.obj-move-right')
+                }
+            },
+            contactScore: getNum('.obj-contact-score', 0),
+            movement: {
+                automatic: getCheck('.obj-auto'),
+                directions: dirs,
+                minStep: getNum('.obj-min-step', 0),
+                maxStep: getNum('.obj-max-step', 0),
+                pauseMs: getNum('.obj-pause-ms', 0)
+            },
+            staticScore: getNum('.obj-static-score', 0),
+            sizePx: {
+                width: getNum('.obj-size-w', 64),
+                height: getNum('.obj-size-h', 64)
+            }
+        });
+        return mapped;
+    }).filter((m) => m.key);
+
+    OBJECT_MAP_EDITOR_STATE.items = out;
+    return out;
+}
+
+function loadObjectMappingsToEditor(rawList) {
+    const arr = Array.isArray(rawList) ? rawList : [];
+    OBJECT_MAP_EDITOR_STATE.items = arr.map((it) => normalizeObjectMapping(it));
+    renderObjectMapEditor();
+}
+
 function setConfigStatus(message, isError = false) {
     const target = el('configStatusText');
     if (!target) return;
@@ -2574,6 +2958,13 @@ function readLevelFromForm() {
         }
     } catch (e) { }
 
+    try {
+        const mappings = collectObjectMappingsFromEditor();
+        if (Array.isArray(mappings) && mappings.length) {
+            level.objectMappings = mappings;
+        }
+    } catch (e) { /* ignore */ }
+
     return { ...level, ...extra, map: level.map, playerStart: level.playerStart };
 }
 
@@ -2681,6 +3072,8 @@ function applyLevelToForm(levelData) {
         try { if (window.__editorMusicAudio && data.music) { window.__editorMusicAudio.src = String(data.music); } } catch (e) {}
     } catch (e) {}
 
+    try { loadObjectMappingsToEditor(data.objectMappings || []); } catch (e) {}
+
     // set gemsOneByOne checkbox if present in map or top-level
     try {
         if (el('gemsOneByOne')) {
@@ -2694,7 +3087,7 @@ function applyLevelToForm(levelData) {
         'objectiveLabel', 'enemies', 'collectibles', 'traps', 'spawnPoints', 'timeLimit',
         'scoreRules', 'light', 'effects', 'ghost', 'bat', 'ghostSpeed', 'batSpeed',
         'background', 'foreground', 'backgroundEnabled', 'foregroundEnabled', 'rain', 'fog', 'music',
-        'gemsOneByOne', 'requiredGems', 'gemsRequired', 'playerStart2', 'timer'
+        'gemsOneByOne', 'requiredGems', 'gemsRequired', 'playerStart2', 'timer', 'objectMappings'
     ]);
     const extra = {};
     Object.keys(data).forEach((key) => {
@@ -3280,6 +3673,11 @@ function bindUI() {
     const reloadConfigBtn = el('reloadConfigBtn');
     const saveConfigBtn = el('saveConfigBtn');
     const configModal = el('configModal');
+    const openObjectMapDialogBtn = el('openObjectMapDialogBtn');
+    const closeObjectMapDialogBtn = el('closeObjectMapDialogBtn');
+    const addObjectMapBtn = el('addObjectMapBtn');
+    const saveObjectMapBtn = el('saveObjectMapBtn');
+    const objectMapModal = el('objectMapModal');
 
     if (openConfigDialogBtn) {
         openConfigDialogBtn.addEventListener('click', async () => {
@@ -3310,6 +3708,40 @@ function bindUI() {
         configModal.addEventListener('click', (ev) => {
             if (ev.target === configModal) {
                 configModal.classList.remove('open');
+            }
+        });
+    }
+
+    if (openObjectMapDialogBtn) {
+        openObjectMapDialogBtn.addEventListener('click', () => {
+            if (objectMapModal) objectMapModal.classList.add('open');
+            renderObjectMapEditor();
+            setObjectMapStatus('Editor mappaggio oggetti aperto.');
+        });
+    }
+    if (closeObjectMapDialogBtn) {
+        closeObjectMapDialogBtn.addEventListener('click', () => {
+            if (objectMapModal) objectMapModal.classList.remove('open');
+        });
+    }
+    if (addObjectMapBtn) {
+        addObjectMapBtn.addEventListener('click', () => {
+            OBJECT_MAP_EDITOR_STATE.items.push(createDefaultObjectMapping(`obj_${OBJECT_MAP_EDITOR_STATE.items.length + 1}`));
+            renderObjectMapEditor();
+            setObjectMapStatus('Nuovo oggetto aggiunto.');
+        });
+    }
+    if (saveObjectMapBtn) {
+        saveObjectMapBtn.addEventListener('click', () => {
+            const items = collectObjectMappingsFromEditor();
+            setObjectMapStatus(`Mappaggio salvato (${items.length} oggetti).`);
+            if (objectMapModal) objectMapModal.classList.remove('open');
+        });
+    }
+    if (objectMapModal) {
+        objectMapModal.addEventListener('click', (ev) => {
+            if (ev.target === objectMapModal) {
+                objectMapModal.classList.remove('open');
             }
         });
     }
