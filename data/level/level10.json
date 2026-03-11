@@ -104,7 +104,7 @@
                 "-",
                 "-",
                 "-",
-                "exit",
+                "exit[1.2]",
                 "-",
                 "-",
                 "-",
@@ -1413,19 +1413,19 @@
     },
     "background": [
         {
-            "src": "images/bg_11.png",
+            "src": "assets/images/background/bg_11.png",
             "parallaxBgFactor": 1.0,
             "parallaxBgAlpha": 1.0
         },
         {
-            "src": "images/bg_10.png",
+            "src": "assets/images/background/bg_10.png",
             "parallaxBgFactor": 0.9,
             "parallaxBgAlpha": 1.0
         }
     ],
     "foreground": [
         {
-            "src": "images/foreground.png",
+            "src": "assets/images/background/fg_stones_arg.png",
             "parallaxFgFactor": 1,
             "parallaxFgAlpha": 1
         }
