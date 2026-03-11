@@ -3927,6 +3927,45 @@ function buildDomPalette() {
         const panel = document.querySelector('.panel');
         if (!panel) return;
 
+        let tooltipNode = document.getElementById('fieldTooltip');
+        const hideTooltip = () => {
+            if (tooltipNode) tooltipNode.remove();
+            tooltipNode = null;
+        };
+        const showTooltip = (anchor, text) => {
+            if (!anchor || !text) return;
+            hideTooltip();
+            const tip = document.createElement('div');
+            tip.id = 'fieldTooltip';
+            tip.className = 'field-tooltip';
+            tip.textContent = text;
+            document.body.appendChild(tip);
+            const rect = anchor.getBoundingClientRect();
+            const margin = 8;
+            let left = rect.left;
+            let top = rect.bottom + margin;
+            const maxLeft = window.innerWidth - tip.offsetWidth - margin;
+            if (left > maxLeft) left = Math.max(margin, maxLeft);
+            if (top + tip.offsetHeight > window.innerHeight - margin) {
+                top = Math.max(margin, rect.top - tip.offsetHeight - margin);
+            }
+            tip.style.left = `${left}px`;
+            tip.style.top = `${top}px`;
+            tooltipNode = tip;
+            window.setTimeout(() => {
+                const closeIfOpen = () => {
+                    hideTooltip();
+                    document.removeEventListener('click', closeIfOpen, true);
+                    document.removeEventListener('keydown', onEsc, true);
+                };
+                const onEsc = (ev) => {
+                    if (ev.key === 'Escape') closeIfOpen();
+                };
+                document.addEventListener('click', closeIfOpen, true);
+                document.addEventListener('keydown', onEsc, true);
+            }, 0);
+        };
+
         const legendMap = {
             levelId: 'Identificativo univoco del livello (es. 1.0, 2.3).',
             levelSpeed: 'Moltiplicatore generale della velocita della mappa.',
@@ -3942,6 +3981,27 @@ function buildDomPalette() {
             lightMode: 'Modalita di illuminazione globale del livello.',
             playerRow: 'Riga iniziale del player.',
             playerCol: 'Colonna iniziale del player.'
+        };
+
+        const shortMap = {
+            levelId: 'ID',
+            levelSpeed: 'SPD',
+            gridCols: 'COL',
+            gridRows: 'ROW',
+            mapTimer: 'TIME',
+            tileSizeSlider: 'TILE',
+            zoomSlider: 'ZOOM',
+            ghostCount: 'GHOST',
+            batCount: 'BAT',
+            ghostSpeed: 'GSPD',
+            batSpeed: 'BSPD',
+            objectiveLabel: 'OBJ',
+            escapeRoute: 'ESC',
+            lightMode: 'LGT',
+            playerRow: 'P-ROW',
+            playerCol: 'P-COL',
+            rainEnabled: 'RAIN',
+            fogEnabled: 'FOG'
         };
 
         const labels = Array.from(panel.querySelectorAll('label[for]'));
@@ -3973,6 +4033,11 @@ function buildDomPalette() {
 
             labelNode.classList.add('field-label');
             labelNode.dataset.layoutDone = '1';
+            const longLabel = labelNode.textContent.trim();
+            const shortLabel = shortMap[fieldId] || longLabel;
+            labelNode.textContent = `${shortLabel} :`;
+            const tipText = legendMap[fieldId] || `Campo ${longLabel}: modifica questo valore per influenzare il comportamento della mappa.`;
+            labelNode.title = tipText;
             row.appendChild(labelNode);
 
             const valueWrap = document.createElement('div');
@@ -3984,14 +4049,10 @@ function buildDomPalette() {
             if (firstTiny) parent.insertBefore(row, firstTiny);
             else parent.appendChild(row);
 
-            const legend = document.createElement('div');
-            legend.className = 'field-legend';
-            legend.textContent = legendMap[fieldId] || `Campo ${labelNode.textContent.trim()}: modifica questo valore per influenzare il comportamento della mappa.`;
-            parent.appendChild(legend);
-
             labelNode.addEventListener('click', (ev) => {
                 ev.preventDefault();
-                legend.classList.toggle('open');
+                ev.stopPropagation();
+                showTooltip(labelNode, tipText);
             });
         });
 
@@ -4011,30 +4072,31 @@ function buildDomPalette() {
 
             const text = labelNode.textContent.trim();
             if (!text) return;
+            const checkId = String(check.id || '').trim();
+            const shortLabel = shortMap[checkId] || text;
+            const tipText = legendMap[checkId] || `Campo ${text}: attiva o disattiva questa opzione per cambiare il comportamento della mappa.`;
 
             const row = document.createElement('div');
             row.className = 'field-row';
 
             const pseudoLabel = document.createElement('label');
             pseudoLabel.className = 'field-label';
-            pseudoLabel.textContent = text;
+            pseudoLabel.textContent = `${shortLabel} :`;
+            pseudoLabel.title = tipText;
             row.appendChild(pseudoLabel);
 
             const valueWrap = document.createElement('div');
             valueWrap.className = 'field-value';
+            check.style.width = 'auto';
             valueWrap.appendChild(check);
             row.appendChild(valueWrap);
 
             parent.insertBefore(row, labelNode);
 
-            const legend = document.createElement('div');
-            legend.className = 'field-legend';
-            legend.textContent = `Campo ${text}: attiva o disattiva questa opzione per cambiare il comportamento della mappa.`;
-            parent.insertBefore(legend, labelNode.nextSibling);
-
             pseudoLabel.addEventListener('click', (ev) => {
                 ev.preventDefault();
-                legend.classList.toggle('open');
+                ev.stopPropagation();
+                showTooltip(pseudoLabel, tipText);
             });
 
             labelNode.remove();
