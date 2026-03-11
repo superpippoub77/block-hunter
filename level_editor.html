@@ -339,6 +339,64 @@
             color: #9fb8df;
         }
 
+        .field-row {
+            display: grid;
+            grid-template-columns: 34% 66%;
+            align-items: center;
+            column-gap: 8px;
+            min-height: 28px;
+        }
+
+        .field-label {
+            margin: 0;
+            cursor: pointer;
+            color: #c1d8ff;
+            text-decoration: underline dotted rgba(161, 198, 255, 0.45);
+            text-underline-offset: 2px;
+        }
+
+        .field-value {
+            min-width: 0;
+        }
+
+        .field-value input,
+        .field-value select,
+        .field-value textarea {
+            margin-bottom: 0;
+        }
+
+        .field-value>*+* {
+            margin-top: 4px;
+        }
+
+        .field-legend {
+            display: none;
+            margin-top: 4px;
+            margin-left: 34%;
+            padding: 5px 6px;
+            border: 1px solid #35507f;
+            border-radius: 4px;
+            background: rgba(18, 35, 66, 0.62);
+            color: #9ec2f6;
+            font-size: 8px;
+            line-height: 1.4;
+        }
+
+        .field-legend.open {
+            display: block;
+        }
+
+        .bg-layer,
+        .fg-layer {
+            cursor: grab;
+        }
+
+        .bg-layer.dragging,
+        .fg-layer.dragging {
+            opacity: 0.55;
+            border-color: #7eb6ff !important;
+        }
+
         .status {
             font-size: 9px;
             color: #8ee89f;
@@ -565,6 +623,14 @@
                         Calcola automaticamente cols/rows dal background (64x64)
                     </label>
                 </div>
+                <div style="margin-top:8px; display:flex; align-items:center; gap:8px;">
+                    <label style="display:flex; align-items:center; gap:8px;">
+                        <input id="gemsOneByOne" type="checkbox" style="width:auto; margin-right:6px;">Mostra le gemme una alla volta
+                    </label>
+                </div>
+            </div>
+            <div class="section">
+                <h2>Nemici</h2>
                 <div class="grid2" style="margin-top:6px;">
                     <div>
                         <label for="ghostCount">Ghost</label>
@@ -575,14 +641,6 @@
                         <input id="batCount" type="number" min="0" value="2">
                     </div>
                 </div>
-                <div style="margin-top:8px; display:flex; align-items:center; gap:8px;">
-                    <label style="display:flex; align-items:center; gap:8px;">
-                        <input id="gemsOneByOne" type="checkbox" style="width:auto; margin-right:6px;">Mostra le gemme una alla volta
-                    </label>
-                </div>
-            </div>
-            <div class="section">
-                <h2>Nemici</h2>
                 <div class="grid2" style="margin-top:6px;">
                     <div>
                         <label for="ghostSpeed">Ghost Speed</label>

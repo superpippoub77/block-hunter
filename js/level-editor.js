@@ -2868,6 +2868,7 @@ function createBgLayerElement(cfg = {}) {
 
     const wrapper = document.createElement('div');
     wrapper.className = 'bg-layer';
+    wrapper.draggable = true;
     wrapper.style.display = 'grid';
     wrapper.style.gridTemplateColumns = '1fr';
     wrapper.style.gap = '4px';
@@ -2879,7 +2880,7 @@ function createBgLayerElement(cfg = {}) {
 
     const rowTop = document.createElement('div');
     rowTop.style.display = 'grid';
-    rowTop.style.gridTemplateColumns = '22px 22px 1fr 40px';
+    rowTop.style.gridTemplateColumns = '22px 22px 1fr 96px';
     rowTop.style.gap = '6px';
 
     const enabledChk = document.createElement('input');
@@ -2917,7 +2918,52 @@ function createBgLayerElement(cfg = {}) {
     }
     const f = document.createElement('input'); f.className = 'bg-factor'; f.type = 'number'; f.step = '0.1'; f.value = String(factor);
     const a = document.createElement('input'); a.className = 'bg-alpha'; a.type = 'number'; a.step = '0.05'; a.value = String(alpha);
-    const del = document.createElement('button'); del.type = 'button'; del.textContent = '✖'; del.title = 'Rimuovi'; del.addEventListener('click', () => { wrapper.remove(); });
+    const moveUp = document.createElement('button');
+    moveUp.type = 'button';
+    moveUp.textContent = '↑';
+    moveUp.title = 'Sposta su';
+    moveUp.className = 'layer-move-up';
+    moveUp.style.padding = '4px';
+    moveUp.addEventListener('click', () => {
+        const parent = wrapper.parentElement;
+        if (!parent) return;
+        const prev = wrapper.previousElementSibling;
+        if (prev && !prev.classList.contains('bg-header')) {
+            parent.insertBefore(wrapper, prev);
+            refreshLayerPreviews();
+        }
+    });
+
+    const moveDown = document.createElement('button');
+    moveDown.type = 'button';
+    moveDown.textContent = '↓';
+    moveDown.title = 'Sposta giu';
+    moveDown.className = 'layer-move-down';
+    moveDown.style.padding = '4px';
+    moveDown.addEventListener('click', () => {
+        const parent = wrapper.parentElement;
+        if (!parent) return;
+        const next = wrapper.nextElementSibling;
+        if (next) {
+            parent.insertBefore(next, wrapper);
+            refreshLayerPreviews();
+        }
+    });
+
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.textContent = '✖';
+    del.title = 'Rimuovi';
+    del.style.padding = '4px';
+    del.addEventListener('click', () => { wrapper.remove(); refreshLayerPreviews(); });
+
+    const actions = document.createElement('div');
+    actions.style.display = 'grid';
+    actions.style.gridTemplateColumns = 'repeat(3, 1fr)';
+    actions.style.gap = '4px';
+    actions.appendChild(moveUp);
+    actions.appendChild(moveDown);
+    actions.appendChild(del);
 
     const rowMid = document.createElement('div');
     rowMid.style.display = 'grid';
@@ -2940,7 +2986,7 @@ function createBgLayerElement(cfg = {}) {
     rowTop.appendChild(enabledChk);
     rowTop.appendChild(radio);
     rowTop.appendChild(inp);
-    rowTop.appendChild(del);
+    rowTop.appendChild(actions);
 
     rowMid.appendChild(f);
     rowMid.appendChild(a);
@@ -2955,6 +3001,23 @@ function createBgLayerElement(cfg = {}) {
     wrapper.appendChild(rowTop);
     wrapper.appendChild(rowMid);
     wrapper.appendChild(rowBottom);
+
+    wrapper.addEventListener('dragstart', (ev) => {
+        const t = ev.target;
+        if (t && (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'BUTTON' || t.tagName === 'TEXTAREA')) {
+            ev.preventDefault();
+            return;
+        }
+        wrapper.classList.add('dragging');
+        try {
+            ev.dataTransfer.effectAllowed = 'move';
+            ev.dataTransfer.setData('text/plain', 'bg-layer');
+        } catch (e) { }
+    });
+    wrapper.addEventListener('dragend', () => {
+        wrapper.classList.remove('dragging');
+    });
+
     return wrapper;
 }
 
@@ -2972,6 +3035,7 @@ function createFgLayerElement(cfg = {}) {
 
     const wrapper = document.createElement('div');
     wrapper.className = 'fg-layer';
+    wrapper.draggable = true;
     wrapper.style.display = 'grid';
     wrapper.style.gridTemplateColumns = '1fr';
     wrapper.style.gap = '4px';
@@ -2983,7 +3047,7 @@ function createFgLayerElement(cfg = {}) {
 
     const rowTop = document.createElement('div');
     rowTop.style.display = 'grid';
-    rowTop.style.gridTemplateColumns = '22px 1fr 40px';
+    rowTop.style.gridTemplateColumns = '22px 1fr 96px';
     rowTop.style.gap = '6px';
 
     const enabledChk = document.createElement('input');
@@ -3007,7 +3071,52 @@ function createFgLayerElement(cfg = {}) {
     }
     const f = document.createElement('input'); f.className = 'fg-factor'; f.type = 'number'; f.step = '0.1'; f.value = String(factor);
     const a = document.createElement('input'); a.className = 'fg-alpha'; a.type = 'number'; a.step = '0.05'; a.value = String(alpha);
-    const del = document.createElement('button'); del.type = 'button'; del.textContent = '✖'; del.title = 'Rimuovi'; del.addEventListener('click', () => { wrapper.remove(); });
+    const moveUp = document.createElement('button');
+    moveUp.type = 'button';
+    moveUp.textContent = '↑';
+    moveUp.title = 'Sposta su';
+    moveUp.className = 'layer-move-up';
+    moveUp.style.padding = '4px';
+    moveUp.addEventListener('click', () => {
+        const parent = wrapper.parentElement;
+        if (!parent) return;
+        const prev = wrapper.previousElementSibling;
+        if (prev && !prev.classList.contains('fg-header')) {
+            parent.insertBefore(wrapper, prev);
+            refreshLayerPreviews();
+        }
+    });
+
+    const moveDown = document.createElement('button');
+    moveDown.type = 'button';
+    moveDown.textContent = '↓';
+    moveDown.title = 'Sposta giu';
+    moveDown.className = 'layer-move-down';
+    moveDown.style.padding = '4px';
+    moveDown.addEventListener('click', () => {
+        const parent = wrapper.parentElement;
+        if (!parent) return;
+        const next = wrapper.nextElementSibling;
+        if (next) {
+            parent.insertBefore(next, wrapper);
+            refreshLayerPreviews();
+        }
+    });
+
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.textContent = '✖';
+    del.title = 'Rimuovi';
+    del.style.padding = '4px';
+    del.addEventListener('click', () => { wrapper.remove(); refreshLayerPreviews(); });
+
+    const actions = document.createElement('div');
+    actions.style.display = 'grid';
+    actions.style.gridTemplateColumns = 'repeat(3, 1fr)';
+    actions.style.gap = '4px';
+    actions.appendChild(moveUp);
+    actions.appendChild(moveDown);
+    actions.appendChild(del);
 
     const rowMid = document.createElement('div');
     rowMid.style.display = 'grid';
@@ -3029,7 +3138,7 @@ function createFgLayerElement(cfg = {}) {
 
     rowTop.appendChild(enabledChk);
     rowTop.appendChild(inp);
-    rowTop.appendChild(del);
+    rowTop.appendChild(actions);
 
     rowMid.appendChild(f);
     rowMid.appendChild(a);
@@ -3044,6 +3153,23 @@ function createFgLayerElement(cfg = {}) {
     wrapper.appendChild(rowTop);
     wrapper.appendChild(rowMid);
     wrapper.appendChild(rowBottom);
+
+    wrapper.addEventListener('dragstart', (ev) => {
+        const t = ev.target;
+        if (t && (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'BUTTON' || t.tagName === 'TEXTAREA')) {
+            ev.preventDefault();
+            return;
+        }
+        wrapper.classList.add('dragging');
+        try {
+            ev.dataTransfer.effectAllowed = 'move';
+            ev.dataTransfer.setData('text/plain', 'fg-layer');
+        } catch (e) { }
+    });
+    wrapper.addEventListener('dragend', () => {
+        wrapper.classList.remove('dragging');
+    });
+
     return wrapper;
 }
 
@@ -3073,6 +3199,61 @@ function ensureFgHeader() {
     header.style.fontSize = '8px';
     header.textContent = 'FG: [enabled][image] | [factor,alpha,offX,offY] | [repX,repY,stepX,stepY]';
     container.appendChild(header);
+}
+
+function refreshLayerPreviews() {
+    try {
+        const scene = getScene();
+        scene?.updateEditorBackgroundImage?.(true);
+        drawMiniMapPreview(scene);
+    } catch (e) { }
+}
+
+function bindLayerDnD(container, itemSelector) {
+    if (!container || container.dataset.dndBound === '1') return;
+    container.dataset.dndBound = '1';
+
+    const getDragAfterElement = (clientY) => {
+        const draggableElements = Array.from(container.querySelectorAll(`${itemSelector}:not(.dragging)`));
+        let closest = null;
+        let closestOffset = Number.NEGATIVE_INFINITY;
+
+        draggableElements.forEach((child) => {
+            const box = child.getBoundingClientRect();
+            const offset = clientY - box.top - box.height / 2;
+            if (offset < 0 && offset > closestOffset) {
+                closestOffset = offset;
+                closest = child;
+            }
+        });
+
+        return closest;
+    };
+
+    container.addEventListener('dragover', (ev) => {
+        const dragging = container.querySelector(`${itemSelector}.dragging`);
+        if (!dragging) return;
+        ev.preventDefault();
+        const afterElement = getDragAfterElement(ev.clientY);
+        if (!afterElement) {
+            container.appendChild(dragging);
+        } else {
+            container.insertBefore(dragging, afterElement);
+        }
+    });
+
+    container.addEventListener('drop', (ev) => {
+        const dragging = container.querySelector(`${itemSelector}.dragging`);
+        if (!dragging) return;
+        ev.preventDefault();
+        dragging.classList.remove('dragging');
+        refreshLayerPreviews();
+    });
+
+    container.addEventListener('dragend', () => {
+        const dragging = container.querySelector(`${itemSelector}.dragging`);
+        if (dragging) dragging.classList.remove('dragging');
+    });
 }
 
 function bindUI() {
@@ -3639,12 +3820,11 @@ function setupRightAccordion() {
 // hook add bg/fg buttons if present
 window.addEventListener('load', () => {
     const refreshLayerVisuals = () => {
-        try {
-            const scene = getScene();
-            scene?.updateEditorBackgroundImage?.(true);
-            drawMiniMapPreview(scene);
-        } catch (e) { }
+        refreshLayerPreviews();
     };
+
+    try { bindLayerDnD(el('bgLayersContainer'), '.bg-layer'); } catch (e) {}
+    try { bindLayerDnD(el('fgLayersContainer'), '.fg-layer'); } catch (e) {}
 
     const setAllLayerEnabled = (containerId, checkboxClass, enabled) => {
         try {
@@ -3742,6 +3922,126 @@ window.addEventListener('load', () => {
 
 // Build left DOM palette inside #domPalette-* containers. Creates simple accordion groups
 function buildDomPalette() {
+
+    function applyRightPanelFieldLayout() {
+        const panel = document.querySelector('.panel');
+        if (!panel) return;
+
+        const legendMap = {
+            levelId: 'Identificativo univoco del livello (es. 1.0, 2.3).',
+            levelSpeed: 'Moltiplicatore generale della velocita della mappa.',
+            gridCols: 'Numero di colonne della griglia.',
+            gridRows: 'Numero di righe della griglia.',
+            mapTimer: 'Tempo massimo del livello in secondi.',
+            ghostCount: 'Numero totale di ghost presenti nel livello.',
+            batCount: 'Numero totale di bat presenti nel livello.',
+            ghostSpeed: 'Velocita di movimento dei ghost.',
+            batSpeed: 'Velocita di movimento dei bat.',
+            objectiveLabel: 'Chiave testo per l obiettivo mostrato al giocatore.',
+            escapeRoute: 'Abilita o disabilita la via di uscita del livello.',
+            lightMode: 'Modalita di illuminazione globale del livello.',
+            playerRow: 'Riga iniziale del player.',
+            playerCol: 'Colonna iniziale del player.'
+        };
+
+        const labels = Array.from(panel.querySelectorAll('label[for]'));
+        labels.forEach((labelNode) => {
+            if (!(labelNode instanceof HTMLElement)) return;
+            if (labelNode.dataset.layoutDone === '1') return;
+
+            const fieldId = String(labelNode.getAttribute('for') || '').trim();
+            if (!fieldId) return;
+
+            const parent = labelNode.parentElement;
+            if (!parent || !(parent instanceof HTMLElement)) return;
+            if (parent.closest('.config-dialog')) return;
+
+            const directChildren = Array.from(parent.children);
+            if (!directChildren.includes(labelNode)) return;
+
+            const controls = directChildren.filter((child) => {
+                if (!(child instanceof HTMLElement)) return false;
+                if (child === labelNode) return false;
+                if (child.classList.contains('tiny')) return false;
+                return ['INPUT', 'SELECT', 'TEXTAREA'].includes(child.tagName);
+            });
+
+            if (!controls.length) return;
+
+            const row = document.createElement('div');
+            row.className = 'field-row';
+
+            labelNode.classList.add('field-label');
+            labelNode.dataset.layoutDone = '1';
+            row.appendChild(labelNode);
+
+            const valueWrap = document.createElement('div');
+            valueWrap.className = 'field-value';
+            controls.forEach((ctrl) => valueWrap.appendChild(ctrl));
+            row.appendChild(valueWrap);
+
+            const firstTiny = parent.querySelector(':scope > .tiny');
+            if (firstTiny) parent.insertBefore(row, firstTiny);
+            else parent.appendChild(row);
+
+            const legend = document.createElement('div');
+            legend.className = 'field-legend';
+            legend.textContent = legendMap[fieldId] || `Campo ${labelNode.textContent.trim()}: modifica questo valore per influenzare il comportamento della mappa.`;
+            parent.appendChild(legend);
+
+            labelNode.addEventListener('click', (ev) => {
+                ev.preventDefault();
+                legend.classList.toggle('open');
+            });
+        });
+
+        const inlineLabels = Array.from(panel.querySelectorAll('label:not([for])'));
+        inlineLabels.forEach((labelNode) => {
+            if (!(labelNode instanceof HTMLElement)) return;
+            if (labelNode.dataset.layoutDone === '1') return;
+            if (labelNode.closest('.config-dialog')) return;
+
+            const check = labelNode.querySelector('input[type="checkbox"], input[type="radio"]');
+            if (!(check instanceof HTMLElement)) return;
+
+            const parent = labelNode.parentElement;
+            if (!parent || !(parent instanceof HTMLElement)) return;
+            const directChildren = Array.from(parent.children);
+            if (!directChildren.includes(labelNode)) return;
+
+            const text = labelNode.textContent.trim();
+            if (!text) return;
+
+            const row = document.createElement('div');
+            row.className = 'field-row';
+
+            const pseudoLabel = document.createElement('label');
+            pseudoLabel.className = 'field-label';
+            pseudoLabel.textContent = text;
+            row.appendChild(pseudoLabel);
+
+            const valueWrap = document.createElement('div');
+            valueWrap.className = 'field-value';
+            valueWrap.appendChild(check);
+            row.appendChild(valueWrap);
+
+            parent.insertBefore(row, labelNode);
+
+            const legend = document.createElement('div');
+            legend.className = 'field-legend';
+            legend.textContent = `Campo ${text}: attiva o disattiva questa opzione per cambiare il comportamento della mappa.`;
+            parent.insertBefore(legend, labelNode.nextSibling);
+
+            pseudoLabel.addEventListener('click', (ev) => {
+                ev.preventDefault();
+                legend.classList.toggle('open');
+            });
+
+            labelNode.remove();
+        });
+    }
+
+        try { applyRightPanelFieldLayout(); } catch (e) {}
     if (typeof document === 'undefined') return;
     const tilesContainer = el('domPalette-tiles');
     const objectsContainer = el('domPalette-objects');
