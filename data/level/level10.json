@@ -109,6 +109,7 @@
                 "-",
                 "-",
                 "-",
+                "k(lamp)",
                 "-",
                 "-",
                 "-",
@@ -124,8 +125,7 @@
                 "-",
                 "-",
                 "-",
-                "-",
-                "-",
+                "k(lamp{depth:3200;alpha:0.24;alphaMax:0.42})",
                 "-",
                 "-",
                 "-",
@@ -1409,7 +1409,14 @@
                 "duration": 20
             }
         },
-        "objects": {}
+        "objects": {
+            "lamp": {
+                "enabled": true,
+                "depth": 3200,
+                "alpha": 0.24,
+                "alphaMax": 0.42
+            }
+        }
     },
     "ghost": 0,
     "bat": 0,
