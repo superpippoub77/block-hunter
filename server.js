@@ -44,6 +44,84 @@ function safeResolvePath(urlPath) {
 }
 
 const server = http.createServer((req, res) => {
+  // API: get/save config.json with automatic backup in /bck
+  if (req.url && req.url.startsWith('/api/config')) {
+    const configFile = path.join(ROOT_DIR, 'data', 'config.json');
+    const backupDir = path.join(ROOT_DIR, 'bck');
+
+    if (req.method === 'GET') {
+      fs.readFile(configFile, 'utf8', (err, data) => {
+        if (err) {
+          res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
+          res.end(JSON.stringify({ ok: false, error: err.message }));
+          return;
+        }
+        try {
+          const parsed = JSON.parse(data || '{}');
+          res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+          res.end(JSON.stringify(parsed));
+        } catch (e) {
+          res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
+          res.end(JSON.stringify({ ok: false, error: 'invalid config json' }));
+        }
+      });
+      return;
+    }
+
+    if (req.method === 'POST') {
+      let body = '';
+      req.on('data', chunk => { body += chunk.toString(); });
+      req.on('end', () => {
+        try {
+          const payload = JSON.parse(body || '{}');
+          if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+            res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+            res.end(JSON.stringify({ ok: false, error: 'payload must be an object' }));
+            return;
+          }
+
+          try { fs.mkdirSync(path.dirname(configFile), { recursive: true }); } catch (_) {}
+          try { fs.mkdirSync(backupDir, { recursive: true }); } catch (_) {}
+
+          const now = new Date();
+          const pad = (n) => String(n).padStart(2, '0');
+          const stamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+          const backupFileName = `config-${stamp}.json`;
+          const backupFilePath = path.join(backupDir, backupFileName);
+
+          fs.readFile(configFile, 'utf8', (_readErr, currentData) => {
+            const currentText = currentData || '{}';
+            fs.writeFile(backupFilePath, currentText, 'utf8', (backupErr) => {
+              if (backupErr) {
+                res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
+                res.end(JSON.stringify({ ok: false, error: backupErr.message }));
+                return;
+              }
+
+              fs.writeFile(configFile, JSON.stringify(payload, null, 2), 'utf8', (writeErr) => {
+                if (writeErr) {
+                  res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
+                  res.end(JSON.stringify({ ok: false, error: writeErr.message }));
+                  return;
+                }
+                res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+                res.end(JSON.stringify({ ok: true, backupFile: path.posix.join('bck', backupFileName) }));
+              });
+            });
+          });
+        } catch (e) {
+          res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+          res.end(JSON.stringify({ ok: false, error: 'invalid json' }));
+        }
+      });
+      return;
+    }
+
+    res.writeHead(405, { 'Content-Type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify({ ok: false, error: 'method not allowed' }));
+    return;
+  }
+
   // Simple API for top scores: GET /api/top-scores, POST /api/top-scores
   if (req.url && req.url.startsWith('/api/top-scores')) {
     const scoresFile = path.join(ROOT_DIR, 'data', 'topScores.json');

@@ -125,12 +125,93 @@
             background: #0a1020;
         }
 
+        .panel-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+
+        .icon-btn {
+            width: auto;
+            min-width: 36px;
+            padding: 6px 10px;
+            line-height: 1;
+        }
+
+        .config-modal {
+            position: fixed;
+            inset: 0;
+            background: rgba(4, 8, 16, 0.75);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 10000;
+            padding: 16px;
+        }
+
+        .config-modal.open {
+            display: flex;
+        }
+
+        .config-dialog {
+            width: min(1000px, 96vw);
+            max-height: 92vh;
+            overflow: auto;
+            border: 1px solid #40608d;
+            border-radius: 8px;
+            background: #0a1326;
+            padding: 12px;
+            box-shadow: 0 12px 36px rgba(0, 0, 0, 0.45);
+        }
+
+        .config-toolbar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 10px;
+        }
+
+        .config-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+        }
+
+        .cfg-card {
+            border: 1px solid #32507a;
+            border-radius: 6px;
+            background: rgba(14, 25, 48, 0.65);
+            padding: 8px;
+        }
+
+        .cfg-title {
+            font-size: 9px;
+            color: #c6e4ff;
+            margin-bottom: 6px;
+        }
+
+        .cfg-row {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 4px;
+            margin-bottom: 6px;
+        }
+
+        .cfg-inline {
+            display: grid;
+            grid-template-columns: 1fr 120px;
+            gap: 6px;
+        }
+
         .section {
             border: 1px solid #273859;
             border-radius: 6px;
             padding: 8px;
             margin-bottom: 8px;
-            background: rgba(18, 33, 60, 0.45);
+            background: var(--sec-bg);
             --sec-accent: #4b79b8;
             --sec-bg: rgba(24, 52, 92, 0.38);
             --sec-text: #bfe6ff;
@@ -353,7 +434,10 @@
         </div>
 
         <aside class="panel">
-            <h1>OPTIONS</h1>
+            <div class="panel-header">
+                <h1>OPTIONS</h1>
+                <button id="openConfigDialogBtn" class="icon-btn" type="button" title="Configura game config">&#9881;</button>
+            </div>
             <div style="display:flex; gap:8px; margin-bottom:8px;">
                 <button id="exportTopBtn" type="button">Esporta JSON</button>
                 <button id="copyTopBtn" type="button">Copia JSON</button>
@@ -913,6 +997,22 @@
                 <div class="status" id="statusText"></div>
             </div>
         </aside>
+    </div>
+
+    <div id="configModal" class="config-modal">
+        <div class="config-dialog">
+            <div class="config-toolbar">
+                <h2 style="margin:0; font-size:12px; color:#d7ebff;">Configurazione Gioco (data/config.json)</h2>
+                <div style="display:flex; gap:6px;">
+                    <button id="reloadConfigBtn" type="button">Ricarica</button>
+                    <button id="saveConfigBtn" type="button">Salva</button>
+                    <button id="closeConfigDialogBtn" type="button">Chiudi</button>
+                </div>
+            </div>
+            <div class="tiny" style="margin-bottom:8px;">Il salvataggio crea backup automatico in `bck/` prima di aggiornare `data/config.json`.</div>
+            <div id="configFormContainer" class="config-grid"></div>
+            <div class="status" id="configStatusText"></div>
+        </div>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>

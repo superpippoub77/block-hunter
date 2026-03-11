@@ -29,6 +29,7 @@ const API_BASE_PATH = 'api';
 const BG_MANIFEST_PATH = 'data/background-images.json';
 const FG_MANIFEST_PATH = 'data/foreground-images.json';
 const MUSIC_MANIFEST_PATH = 'data/music-files.json';
+const CONFIG_JSON_PATH = 'data/config.json';
 
 // Available numeric level backgrounds discovered from images/level<N>.png
 const AVAILABLE_BG_LEVELS = [1,2,3,4,5,6];
@@ -232,6 +233,220 @@ function parseNullableInput(text) {
     }
 
     return raw;
+}
+
+function isPlainObject(value) {
+    return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function deepClone(value) {
+    return JSON.parse(JSON.stringify(value));
+}
+
+function getNumberRangeForKey(pathKey, currentValue) {
+    const key = String(pathKey || '').toLowerCase();
+    const n = Number(currentValue);
+    if (key.includes('alpha')) return { min: 0, max: 1, step: 0.01 };
+    if (key.includes('speed') || key.includes('factor') || key.includes('difficulty')) return { min: 0, max: Math.max(10, Math.ceil((Number.isFinite(n) ? n : 1) * 2)), step: 0.1 };
+    if (key.includes('duration') || key.includes('timeout') || key.includes('delay') || key.includes('lifetime')) return { min: 0, max: Math.max(60000, Math.ceil((Number.isFinite(n) ? n : 1000) * 3)), step: 1 };
+    if (key.includes('size') || key.includes('width') || key.includes('height') || key.includes('radius') || key.includes('tile')) return { min: 0, max: Math.max(2000, Math.ceil((Number.isFinite(n) ? n : 100) * 3)), step: 1 };
+    return { min: -100000, max: 100000, step: Number.isInteger(n) ? 1 : 0.1 };
+}
+
+function setPathValue(target, pathParts, value) {
+    let ref = target;
+    for (let i = 0; i < pathParts.length - 1; i++) {
+        const p = pathParts[i];
+        if (!isPlainObject(ref[p])) ref[p] = {};
+        ref = ref[p];
+    }
+    ref[pathParts[pathParts.length - 1]] = value;
+}
+
+let CONFIG_EDITOR_STATE = {
+    loadedConfig: null
+};
+
+function setConfigStatus(message, isError = false) {
+    const target = el('configStatusText');
+    if (!target) return;
+    target.style.color = isError ? '#ff8f9a' : '#8ee89f';
+    target.textContent = message;
+}
+
+function buildConfigEditorUI(configObj) {
+    const container = el('configFormContainer');
+    if (!container) return;
+    container.innerHTML = '';
+
+    const cfg = deepClone(configObj || {});
+    CONFIG_EDITOR_STATE.loadedConfig = cfg;
+
+    const createCard = (title) => {
+        const card = document.createElement('div');
+        card.className = 'cfg-card';
+        const h = document.createElement('div');
+        h.className = 'cfg-title';
+        h.textContent = title;
+        card.appendChild(h);
+        return card;
+    };
+
+    const appendField = (parent, pathParts, key, value) => {
+        const row = document.createElement('div');
+        row.className = 'cfg-row';
+        const fullPath = [...pathParts, key].join('.');
+
+        const label = document.createElement('label');
+        label.textContent = fullPath;
+        row.appendChild(label);
+
+        if (typeof value === 'boolean') {
+            const cb = document.createElement('input');
+            cb.type = 'checkbox';
+            cb.checked = value;
+            cb.style.width = 'auto';
+            cb.addEventListener('change', () => setPathValue(CONFIG_EDITOR_STATE.loadedConfig, [...pathParts, key], !!cb.checked));
+            row.appendChild(cb);
+            parent.appendChild(row);
+            return;
+        }
+
+        if (typeof value === 'number') {
+            const wrap = document.createElement('div');
+            wrap.className = 'cfg-inline';
+            const range = document.createElement('input');
+            const number = document.createElement('input');
+            const meta = getNumberRangeForKey(fullPath, value);
+            range.type = 'range';
+            range.min = String(meta.min);
+            range.max = String(meta.max);
+            range.step = String(meta.step);
+            range.value = String(value);
+            number.type = 'number';
+            number.step = String(meta.step);
+            number.value = String(value);
+
+            const sync = (src, dst) => {
+                const v = Number(src.value);
+                if (!Number.isFinite(v)) return;
+                dst.value = String(v);
+                setPathValue(CONFIG_EDITOR_STATE.loadedConfig, [...pathParts, key], v);
+            };
+            range.addEventListener('input', () => sync(range, number));
+            number.addEventListener('input', () => sync(number, range));
+
+            wrap.appendChild(range);
+            wrap.appendChild(number);
+            row.appendChild(wrap);
+            parent.appendChild(row);
+            return;
+        }
+
+        if (typeof value === 'string') {
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.value = value;
+            input.addEventListener('input', () => setPathValue(CONFIG_EDITOR_STATE.loadedConfig, [...pathParts, key], String(input.value)));
+            row.appendChild(input);
+            parent.appendChild(row);
+            return;
+        }
+
+        // arrays or objects fallback: editable JSON textarea
+        const ta = document.createElement('textarea');
+        ta.style.minHeight = '72px';
+        ta.value = JSON.stringify(value, null, 2);
+        ta.addEventListener('input', () => {
+            try {
+                const parsed = JSON.parse(ta.value);
+                ta.style.borderColor = '#35507f';
+                setPathValue(CONFIG_EDITOR_STATE.loadedConfig, [...pathParts, key], parsed);
+            } catch (_e) {
+                ta.style.borderColor = '#b23f5a';
+            }
+        });
+        row.appendChild(ta);
+        parent.appendChild(row);
+    };
+
+    const appendObjectSection = (parent, obj, pathParts) => {
+        Object.keys(obj).sort().forEach((k) => {
+            const value = obj[k];
+            if (isPlainObject(value)) {
+                const details = document.createElement('details');
+                details.open = false;
+                details.style.marginBottom = '6px';
+                const summary = document.createElement('summary');
+                summary.textContent = [...pathParts, k].join('.');
+                summary.style.cursor = 'pointer';
+                summary.style.fontSize = '9px';
+                summary.style.color = '#cbe5ff';
+                details.appendChild(summary);
+                const inner = document.createElement('div');
+                inner.style.padding = '6px 2px 0 2px';
+                appendObjectSection(inner, value, [...pathParts, k]);
+                details.appendChild(inner);
+                parent.appendChild(details);
+            } else {
+                appendField(parent, pathParts, k, value);
+            }
+        });
+    };
+
+    const topLevelKeys = Object.keys(cfg).sort();
+    const generalCard = createCard('Generale');
+    let hasGeneral = false;
+
+    topLevelKeys.forEach((key) => {
+        const value = cfg[key];
+        if (isPlainObject(value)) {
+            const card = createCard(key);
+            appendObjectSection(card, value, [key]);
+            container.appendChild(card);
+        } else {
+            hasGeneral = true;
+            appendField(generalCard, [], key, value);
+        }
+    });
+
+    if (hasGeneral) {
+        container.prepend(generalCard);
+    }
+}
+
+async function loadConfigEditor() {
+    try {
+        const resp = await fetch(CONFIG_JSON_PATH, { cache: 'no-store' });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const cfg = await resp.json();
+        buildConfigEditorUI(cfg);
+        setConfigStatus('Configurazione caricata.');
+    } catch (e) {
+        setConfigStatus(`Errore caricamento config: ${e.message}`, true);
+    }
+}
+
+async function saveConfigEditor() {
+    if (!CONFIG_EDITOR_STATE.loadedConfig) {
+        setConfigStatus('Nessuna configurazione caricata.', true);
+        return;
+    }
+    try {
+        const resp = await fetch(buildApiUrl('config'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(CONFIG_EDITOR_STATE.loadedConfig)
+        });
+        const payload = await resp.json().catch(() => ({}));
+        if (!resp.ok || payload.ok === false) {
+            throw new Error(payload.error || `HTTP ${resp.status}`);
+        }
+        const backupFile = payload.backupFile ? ` Backup: ${payload.backupFile}` : '';
+        setConfigStatus(`Configurazione salvata.${backupFile}`);
+    } catch (e) {
+        setConfigStatus(`Errore salvataggio config: ${e.message}`, true);
+    }
 }
 
 function tokenToMiniMapColor(token) {
@@ -2806,6 +3021,44 @@ function bindUI() {
     const saveLocalBtn = el('saveLocalBtn');
     const loadLocalBtn = el('loadLocalBtn');
     const importJsonFile = el('importJsonFile');
+    const openConfigDialogBtn = el('openConfigDialogBtn');
+    const closeConfigDialogBtn = el('closeConfigDialogBtn');
+    const reloadConfigBtn = el('reloadConfigBtn');
+    const saveConfigBtn = el('saveConfigBtn');
+    const configModal = el('configModal');
+
+    if (openConfigDialogBtn) {
+        openConfigDialogBtn.addEventListener('click', async () => {
+            if (configModal) configModal.classList.add('open');
+            await loadConfigEditor();
+        });
+    }
+
+    if (closeConfigDialogBtn) {
+        closeConfigDialogBtn.addEventListener('click', () => {
+            if (configModal) configModal.classList.remove('open');
+        });
+    }
+
+    if (reloadConfigBtn) {
+        reloadConfigBtn.addEventListener('click', async () => {
+            await loadConfigEditor();
+        });
+    }
+
+    if (saveConfigBtn) {
+        saveConfigBtn.addEventListener('click', async () => {
+            await saveConfigEditor();
+        });
+    }
+
+    if (configModal) {
+        configModal.addEventListener('click', (ev) => {
+            if (ev.target === configModal) {
+                configModal.classList.remove('open');
+            }
+        });
+    }
 
     applyGridBtn?.addEventListener('click', () => {
         const scene = getScene();
