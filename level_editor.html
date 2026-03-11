@@ -564,9 +564,44 @@
 
             <div class="section">
                 <h2>Effetti Oggetti (effects.objects)</h2>
-                <label for="objectsEffectsJson">Configurazione JSON globale effetti oggetti (lamp, pulse, float, halo, outline...)</label>
-                <textarea id="objectsEffectsJson" style="min-height:100px;" placeholder='{"lamp":{"radiusTiles":1.6,"color":"#ffd88a"},"pulse":{"scale":1.2,"duration":520}}'>{}</textarea>
-                <div class="tiny">Questi valori finiscono in `effects.objects` e vengono applicati ai token con effetto.</div>
+                <div class="tiny" style="margin-bottom:8px;">Wizard globale: imposta i default in `effects.objects` per lamp, pulse, float, halo e outline.</div>
+                <div class="grid2" style="margin-top:6px;">
+                    <div>
+                        <label style="display:flex; align-items:center; gap:8px;"><input id="objFxLampEnabled" type="checkbox" style="width:auto; margin-right:6px;">lamp abilitato</label>
+                        <label for="objFxLampRadius" style="margin-top:6px;">lamp radiusTiles</label>
+                        <input id="objFxLampRadius" type="number" step="0.1" min="0" placeholder="1.6">
+                        <label for="objFxLampColor" style="margin-top:6px;">lamp color</label>
+                        <input id="objFxLampColor" type="text" placeholder="#ffd88a">
+                    </div>
+                    <div>
+                        <label style="display:flex; align-items:center; gap:8px;"><input id="objFxPulseEnabled" type="checkbox" style="width:auto; margin-right:6px;">pulse abilitato</label>
+                        <label for="objFxPulseScale" style="margin-top:6px;">pulse scale</label>
+                        <input id="objFxPulseScale" type="number" step="0.01" min="0" placeholder="1.2">
+                        <label for="objFxPulseDuration" style="margin-top:6px;">pulse duration ms</label>
+                        <input id="objFxPulseDuration" type="number" step="1" min="0" placeholder="520">
+                    </div>
+                    <div>
+                        <label style="display:flex; align-items:center; gap:8px;"><input id="objFxFloatEnabled" type="checkbox" style="width:auto; margin-right:6px;">float abilitato</label>
+                        <label for="objFxFloatAmplitude" style="margin-top:6px;">float amplitudeTiles</label>
+                        <input id="objFxFloatAmplitude" type="number" step="0.1" min="0" placeholder="0.35">
+                        <label for="objFxFloatDuration" style="margin-top:6px;">float duration ms</label>
+                        <input id="objFxFloatDuration" type="number" step="1" min="0" placeholder="900">
+                    </div>
+                    <div>
+                        <label style="display:flex; align-items:center; gap:8px;"><input id="objFxHaloEnabled" type="checkbox" style="width:auto; margin-right:6px;">halo abilitato</label>
+                        <label for="objFxHaloRadius" style="margin-top:6px;">halo radiusTiles</label>
+                        <input id="objFxHaloRadius" type="number" step="0.1" min="0" placeholder="1.2">
+                        <label for="objFxHaloColor" style="margin-top:6px;">halo color</label>
+                        <input id="objFxHaloColor" type="text" placeholder="#ffffff">
+                    </div>
+                    <div>
+                        <label style="display:flex; align-items:center; gap:8px;"><input id="objFxOutlineEnabled" type="checkbox" style="width:auto; margin-right:6px;">outline abilitato</label>
+                        <label for="objFxOutlineThickness" style="margin-top:6px;">outline thickness</label>
+                        <input id="objFxOutlineThickness" type="number" step="0.1" min="0" placeholder="2">
+                        <label for="objFxOutlineColor" style="margin-top:6px;">outline color</label>
+                        <input id="objFxOutlineColor" type="text" placeholder="#ffffff">
+                    </div>
+                </div>
             </div>
 
             <div class="section">

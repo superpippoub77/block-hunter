@@ -515,6 +515,82 @@ function refreshSelectedEffectsPreview() {
     preview.value = buildSelectedEffectsFromControls();
 }
 
+function buildObjectsEffectsFromWizard() {
+    const out = {};
+
+    const pushIfEnabled = (name, enabledId, fieldMap) => {
+        if (!el(enabledId)?.checked) return;
+        const cfg = { enabled: true };
+        Object.keys(fieldMap).forEach((k) => {
+            const node = el(fieldMap[k]);
+            const raw = String(node?.value ?? '').trim();
+            if (!raw) return;
+            const num = Number(raw);
+            cfg[k] = Number.isFinite(num) ? num : raw;
+        });
+        out[name] = cfg;
+    };
+
+    pushIfEnabled('lamp', 'objFxLampEnabled', {
+        radiusTiles: 'objFxLampRadius',
+        color: 'objFxLampColor'
+    });
+    pushIfEnabled('pulse', 'objFxPulseEnabled', {
+        scale: 'objFxPulseScale',
+        duration: 'objFxPulseDuration'
+    });
+    pushIfEnabled('float', 'objFxFloatEnabled', {
+        amplitudeTiles: 'objFxFloatAmplitude',
+        duration: 'objFxFloatDuration'
+    });
+    pushIfEnabled('halo', 'objFxHaloEnabled', {
+        radiusTiles: 'objFxHaloRadius',
+        color: 'objFxHaloColor'
+    });
+    pushIfEnabled('outline', 'objFxOutlineEnabled', {
+        thickness: 'objFxOutlineThickness',
+        color: 'objFxOutlineColor'
+    });
+
+    return out;
+}
+
+function applyObjectsEffectsWizard(objectsEffects) {
+    const root = (objectsEffects && typeof objectsEffects === 'object' && !Array.isArray(objectsEffects)) ? objectsEffects : {};
+
+    const applyOne = (name, enabledId, fields) => {
+        const cfg = (root[name] && typeof root[name] === 'object' && !Array.isArray(root[name])) ? root[name] : null;
+        const enabled = !!(cfg && cfg.enabled !== false);
+        if (el(enabledId)) el(enabledId).checked = enabled;
+        Object.keys(fields).forEach((k) => {
+            const node = el(fields[k]);
+            if (!node) return;
+            node.value = cfg && cfg[k] != null ? String(cfg[k]) : '';
+        });
+    };
+
+    applyOne('lamp', 'objFxLampEnabled', {
+        radiusTiles: 'objFxLampRadius',
+        color: 'objFxLampColor'
+    });
+    applyOne('pulse', 'objFxPulseEnabled', {
+        scale: 'objFxPulseScale',
+        duration: 'objFxPulseDuration'
+    });
+    applyOne('float', 'objFxFloatEnabled', {
+        amplitudeTiles: 'objFxFloatAmplitude',
+        duration: 'objFxFloatDuration'
+    });
+    applyOne('halo', 'objFxHaloEnabled', {
+        radiusTiles: 'objFxHaloRadius',
+        color: 'objFxHaloColor'
+    });
+    applyOne('outline', 'objFxOutlineEnabled', {
+        thickness: 'objFxOutlineThickness',
+        color: 'objFxOutlineColor'
+    });
+}
+
 class LevelEditorScene extends Phaser.Scene {
     constructor() {
         super('LevelEditorScene');
@@ -1619,18 +1695,22 @@ class LevelEditorScene extends Phaser.Scene {
         for (let y = 0; y < this.rows; y++) {
             for (let x = 0; x < this.cols; x++) {
                 const raw = tiles[y]?.[x] ?? '-';
+                const rawText = String(raw ?? '-').trim();
                 // If raw contains multiple '/' tokens, preserve whole string in base
                 try {
-                    if (String(raw).includes('/') && String(raw).split('/').length > 2) {
-                        this.cells[y][x].base = String(raw);
+                    // Preserve inline decorated tokens as-is, otherwise splitToken can
+                    // interpret '/' as reveal separator and lose inline effects.
+                    const hasInlineDecorations = /[(){}\[\]]/.test(rawText);
+                    if ((rawText.includes('/') && rawText.split('/').length > 2) || hasInlineDecorations) {
+                        this.cells[y][x].base = rawText || '-';
                         this.cells[y][x].reveal = null;
                     } else {
-                        const parsed = splitToken(raw);
+                        const parsed = splitToken(rawText);
                         this.cells[y][x].base = parsed.base;
                         this.cells[y][x].reveal = parsed.reveal;
                     }
                 } catch (e) {
-                    const parsed = splitToken(raw);
+                    const parsed = splitToken(rawText);
                     this.cells[y][x].base = parsed.base;
                     this.cells[y][x].reveal = parsed.reveal;
                 }
@@ -2051,18 +2131,7 @@ function readLevelFromForm() {
     const splitRangeRaw = String(el('dbSplitRange')?.value ?? '2,3').split(',').map((x) => Number(x.trim())).filter((x) => Number.isFinite(x));
     const splitRange = splitRangeRaw.length >= 2 ? [splitRangeRaw[0], splitRangeRaw[1]] : [2, 3];
 
-    let objectsEffects = {};
-    try {
-        const rawObjectsEffects = String(el('objectsEffectsJson')?.value ?? '').trim();
-        if (rawObjectsEffects) {
-            const parsedObjects = JSON.parse(rawObjectsEffects);
-            if (parsedObjects && typeof parsedObjects === 'object' && !Array.isArray(parsedObjects)) {
-                objectsEffects = parsedObjects;
-            }
-        }
-    } catch (_e) {
-        objectsEffects = {};
-    }
+    const objectsEffects = buildObjectsEffectsFromWizard();
 
     const level = {
         id: String(el('levelId')?.value ?? '1.0').trim() || '1.0',
@@ -2280,11 +2349,7 @@ function applyLevelToForm(levelData) {
         if (el('fogDirection')) el('fogDirection').value = resolvedFog.direction ?? 'left';
     } catch (e) {}
 
-    try {
-        if (el('objectsEffectsJson')) {
-            el('objectsEffectsJson').value = JSON.stringify(objectsEffects, null, 2);
-        }
-    } catch (e) {}
+    try { applyObjectsEffectsWizard(objectsEffects); } catch (e) {}
 
     // populate tokenMap editor if present
     try {
@@ -2873,7 +2938,12 @@ function bindUI() {
         'levelId', 'levelSpeed', 'ghostCount', 'batCount', 'ghostSpeed', 'batSpeed',
         'objectiveLabel', 'lightMode', 'escapeRoute', 'srEnabled', 'srShardBurstCount',
         'srDynamicSize', 'srRotation', 'srChaotic', 'dbEnabled', 'dbSplitOnImpact',
-        'dbDirections', 'dbSizes', 'dbSplitRange', 'dbMaxSplitGen', 'extraRootJson', 'objectsEffectsJson'
+        'dbDirections', 'dbSizes', 'dbSplitRange', 'dbMaxSplitGen', 'extraRootJson',
+        'objFxLampEnabled', 'objFxLampRadius', 'objFxLampColor',
+        'objFxPulseEnabled', 'objFxPulseScale', 'objFxPulseDuration',
+        'objFxFloatEnabled', 'objFxFloatAmplitude', 'objFxFloatDuration',
+        'objFxHaloEnabled', 'objFxHaloRadius', 'objFxHaloColor',
+        'objFxOutlineEnabled', 'objFxOutlineThickness', 'objFxOutlineColor'
     ];
 
     // include rain controls for realtime preview updates
