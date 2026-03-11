@@ -443,9 +443,56 @@
                         <input id="gemsOneByOne" type="checkbox" style="width:auto; margin-right:6px;">Mostra le gemme una alla volta
                     </label>
                 </div>
+            </div>
+            <div class="section">
+                <h2>Nemici</h2>
+                <div class="grid2" style="margin-top:6px;">
+                    <div>
+                        <label for="ghostSpeed">Ghost Speed</label>
+                        <input id="ghostSpeed" type="number" min="0" value="80">
+                        <input id="ghostSpeedRange" type="range" min="0" max="200" step="1" value="80">
+                    </div>
+                    <div>
+                        <label for="batSpeed">Bat Speed</label>
+                        <input id="batSpeed" type="number" min="0" value="90">
+                        <input id="batSpeedRange" type="range" min="0" max="200" step="1" value="90">
+                    </div>
+                </div>
+                <div style="margin-top:6px;">
+                    <label for="objectiveLabel">Objective Label</label>
+                    <input id="objectiveLabel" type="text" value="objective_collect_gems_and_survive">
+                </div>
+                <div class="grid2" style="margin-top:6px;">
+                    <div>
+                        <label for="escapeRoute">Escape Route</label>
+                        <select id="escapeRoute">
+                            <option value="true">true</option>
+                            <option value="false">false</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <div class="section">
+                <h2>Effetti Generali (effects.general)</h2>
+                <div class="grid2" style="margin-top:6px;">
+                    <div>
+                        <label for="lightMode">Luce</label>
+                        <select id="lightMode">
+                            <option value="piena">piena</option>
+                            <option value="tremolante">tremolante</option>
+                            <option value="flash">flash</option>
+                            <option value="spenta">spenta</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label>&nbsp;</label>
+                        <div class="tiny">Configura pioggia, nebbia e luce nel nodo `effects.general`.</div>
+                    </div>
+                </div>
+
                 <div style="margin-top:8px;">
-                    <label style="display:block; font-size:9px; color:#b6caef; margin-bottom:4px;">Weather /
-                        Rain</label>
+                    <label style="display:block; font-size:9px; color:#b6caef; margin-bottom:4px;">Rain</label>
                     <label style="display:flex; align-items:center; gap:8px; margin-bottom:6px;"><input id="rainEnabled"
                             type="checkbox" style="width:auto; margin-right:6px;">Abilita pioggia</label>
                     <div class="grid2">
@@ -482,72 +529,129 @@
                         </div>
                     </div>
                 </div>
+
+                <div style="margin-top:8px;">
+                    <label style="display:block; font-size:9px; color:#b6caef; margin-bottom:4px;">Fog</label>
+                    <label style="display:flex; align-items:center; gap:8px; margin-bottom:6px;"><input id="fogEnabled" type="checkbox" style="width:auto; margin-right:6px;">Abilita nebbia</label>
+                    <div class="grid2">
+                        <div>
+                            <label for="fogAlpha">Alpha (0.0 - 1.0)</label>
+                            <input id="fogAlpha" type="number" step="0.01" min="0" max="1" value="0.15">
+                        </div>
+                        <div>
+                            <label for="fogLayers">Layers (count)</label>
+                            <input id="fogLayers" type="number" min="1" step="1" value="3">
+                        </div>
+                    </div>
+                    <div class="grid2" style="margin-top:6px;">
+                        <div>
+                            <label for="fogSpeed">Speed</label>
+                            <select id="fogSpeed">
+                                <option value="slow">slow</option>
+                                <option value="fast">fast</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label for="fogDirection">Direction</label>
+                            <select id="fogDirection">
+                                <option value="left">left</option>
+                                <option value="right">right</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
             </div>
+
             <div class="section">
-                <h2>Fog</h2>
-                <label style="display:flex; align-items:center; gap:8px; margin-bottom:6px;"><input id="fogEnabled" type="checkbox" style="width:auto; margin-right:6px;">Abilita nebbia</label>
-                <div class="grid2">
+                <h2>Effetti Oggetti (effects.objects)</h2>
+                <label for="objectsEffectsJson">Configurazione JSON globale effetti oggetti (lamp, pulse, float, halo, outline...)</label>
+                <textarea id="objectsEffectsJson" style="min-height:100px;" placeholder='{"lamp":{"radiusTiles":1.6,"color":"#ffd88a"},"pulse":{"scale":1.2,"duration":520}}'>{}</textarea>
+                <div class="tiny">Questi valori finiscono in `effects.objects` e vengono applicati ai token con effetto.</div>
+            </div>
+
+            <div class="section">
+                <h2>Proprietà Oggetto Selezionato</h2>
+                <div class="tiny" id="selectedObjectInfo">Nessun oggetto selezionato.</div>
+                <div class="grid2" style="margin-top:6px;">
                     <div>
-                        <label for="fogAlpha">Alpha (0.0 - 1.0)</label>
-                        <input id="fogAlpha" type="number" step="0.01" min="0" max="1" value="0.15">
+                        <label for="selectedTokenIndex">Oggetto nella cella</label>
+                        <select id="selectedTokenIndex"></select>
                     </div>
                     <div>
-                        <label for="fogLayers">Layers (count)</label>
-                        <input id="fogLayers" type="number" min="1" step="1" value="3">
+                        <label for="selectedTokenBase">Token base</label>
+                        <input id="selectedTokenBase" type="text" readonly>
+                    </div>
+                </div>
+                <label style="display:flex; align-items:center; gap:8px; margin-top:8px;"><input id="selectedTokenInvisible" type="checkbox" style="width:auto; margin-right:6px;">Invisibile (notile, aggiunge `.`)</label>
+                <div class="grid2" style="margin-top:6px;">
+                    <div>
+                        <label for="selectedTokenTargetLevel">Target livello (exit/back) es: 12</label>
+                        <input id="selectedTokenTargetLevel" type="text" placeholder="12">
+                    </div>
+                    <div>
+                        <label>Effetti guidati</label>
+                        <div class="grid3" style="gap:4px;">
+                            <label style="display:flex; align-items:center; gap:6px;"><input id="selectedFxLamp" type="checkbox" style="width:auto;">lamp</label>
+                            <label style="display:flex; align-items:center; gap:6px;"><input id="selectedFxPulse" type="checkbox" style="width:auto;">pulse</label>
+                            <label style="display:flex; align-items:center; gap:6px;"><input id="selectedFxFloat" type="checkbox" style="width:auto;">float</label>
+                            <label style="display:flex; align-items:center; gap:6px;"><input id="selectedFxHalo" type="checkbox" style="width:auto;">halo</label>
+                            <label style="display:flex; align-items:center; gap:6px;"><input id="selectedFxOutline" type="checkbox" style="width:auto;">outline</label>
+                        </div>
                     </div>
                 </div>
                 <div class="grid2" style="margin-top:6px;">
                     <div>
-                        <label for="fogSpeed">Speed</label>
-                        <select id="fogSpeed">
-                            <option value="slow">slow</option>
-                            <option value="fast">fast</option>
-                        </select>
+                        <label for="selectedLampRadius">lamp radiusTiles (opz)</label>
+                        <input id="selectedLampRadius" type="number" step="0.1" min="0" placeholder="1.6">
                     </div>
                     <div>
-                        <label for="fogDirection">Direction</label>
-                        <select id="fogDirection">
-                            <option value="left">left</option>
-                            <option value="right">right</option>
-                        </select>
-                    </div>
-                </div>
-            </div>
-            <div class="section">
-                <h2>Nemici</h2>
-                <div class="grid2" style="margin-top:6px;">
-                    <div>
-                        <label for="ghostSpeed">Ghost Speed</label>
-                        <input id="ghostSpeed" type="number" min="0" value="80">
-                        <input id="ghostSpeedRange" type="range" min="0" max="200" step="1" value="80">
+                        <label for="selectedLampColor">lamp color (opz)</label>
+                        <input id="selectedLampColor" type="text" placeholder="#ffd88a">
                     </div>
                     <div>
-                        <label for="batSpeed">Bat Speed</label>
-                        <input id="batSpeed" type="number" min="0" value="90">
-                        <input id="batSpeedRange" type="range" min="0" max="200" step="1" value="90">
+                        <label for="selectedPulseScale">pulse scale (opz)</label>
+                        <input id="selectedPulseScale" type="number" step="0.01" min="0" placeholder="1.2">
+                    </div>
+                    <div>
+                        <label for="selectedPulseDuration">pulse duration ms (opz)</label>
+                        <input id="selectedPulseDuration" type="number" step="1" min="0" placeholder="520">
+                    </div>
+                    <div>
+                        <label for="selectedFloatAmplitude">float amplitudeTiles (opz)</label>
+                        <input id="selectedFloatAmplitude" type="number" step="0.1" min="0" placeholder="0.35">
+                    </div>
+                    <div>
+                        <label for="selectedFloatDuration">float duration ms (opz)</label>
+                        <input id="selectedFloatDuration" type="number" step="1" min="0" placeholder="900">
+                    </div>
+                    <div>
+                        <label for="selectedHaloRadius">halo radiusTiles (opz)</label>
+                        <input id="selectedHaloRadius" type="number" step="0.1" min="0" placeholder="1.2">
+                    </div>
+                    <div>
+                        <label for="selectedHaloColor">halo color (opz)</label>
+                        <input id="selectedHaloColor" type="text" placeholder="#ffffff">
+                    </div>
+                    <div>
+                        <label for="selectedOutlineThickness">outline thickness (opz)</label>
+                        <input id="selectedOutlineThickness" type="number" step="0.1" min="0" placeholder="2">
+                    </div>
+                    <div>
+                        <label for="selectedOutlineColor">outline color (opz)</label>
+                        <input id="selectedOutlineColor" type="text" placeholder="#ffffff">
                     </div>
                 </div>
                 <div style="margin-top:6px;">
-                    <label for="objectiveLabel">Objective Label</label>
-                    <input id="objectiveLabel" type="text" value="objective_collect_gems_and_survive">
+                    <label for="selectedTokenEffectsCustom">Effetti avanzati (opzionale, es: lamp{radiusTiles:2},spark)</label>
+                    <input id="selectedTokenEffectsCustom" type="text" placeholder="lamp{radiusTiles:2},spark">
                 </div>
-                <div class="grid2" style="margin-top:6px;">
-                    <div>
-                        <label for="lightMode">Light</label>
-                        <select id="lightMode">
-                            <option value="piena">piena</option>
-                            <option value="tremolante">tremolante</option>
-                            <option value="flash">flash</option>
-                            <option value="spenta">spenta</option>
-                        </select>
-                    </div>
-                    <div>
-                        <label for="escapeRoute">Escape Route</label>
-                        <select id="escapeRoute">
-                            <option value="true">true</option>
-                            <option value="false">false</option>
-                        </select>
-                    </div>
+                <div style="margin-top:6px;">
+                    <label for="selectedTokenEffects">Effetti finali token (preview)</label>
+                    <input id="selectedTokenEffects" type="text" readonly>
+                </div>
+                <div class="btn-row" style="margin-top:8px;">
+                    <button id="applySelectedTokenPropsBtn" type="button">Applica Proprietà</button>
+                    <button id="removeSelectedTokenBtn" type="button">Rimuovi Oggetto</button>
                 </div>
             </div>
 

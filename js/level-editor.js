@@ -109,7 +109,28 @@ const DEFAULT_LEVEL = {
     spawnPoints: null,
     timeLimit: null,
     scoreRules: null,
-    light: 'piena',
+    effects: {
+        general: {
+            light: 'piena',
+            rain: {
+                enabled: false,
+                intensity: 1,
+                frequency: 180,
+                wind: 0,
+                direction: 'down',
+                interval: 5,
+                duration: 0
+            },
+            fog: {
+                enabled: false,
+                alpha: 0.15,
+                layers: 3,
+                speed: 'slow',
+                direction: 'left'
+            }
+        },
+        objects: {}
+    },
     ghost: 2,
     bat: 2,
     ghostSpeed: 80,
@@ -117,14 +138,6 @@ const DEFAULT_LEVEL = {
     ,
     background: 1,
     backgroundEnabled: true
-    ,
-    rain: {
-        enabled: false,
-        intensity: 1,
-        frequency: 180,
-        wind: 0,
-        direction: 'down'
-    }
 };
 
 function el(id) {
@@ -321,6 +334,187 @@ function joinToken(base, reveal) {
     return r ? `${b}/${r}` : b;
 }
 
+function parseDecoratedToken(tokenInput) {
+    let raw = String(tokenInput ?? '').trim();
+    if (!raw) {
+        return {
+            raw: '',
+            base: '',
+            target: '',
+            effects: '',
+            invisible: false
+        };
+    }
+
+    let invisible = false;
+    if (raw.endsWith('.')) {
+        invisible = true;
+        raw = raw.slice(0, -1).trim();
+    }
+
+    let effects = '';
+    const effectsMatch = raw.match(/\((.*)\)$/);
+    if (effectsMatch) {
+        effects = String(effectsMatch[1] || '').trim();
+        raw = raw.slice(0, effectsMatch.index).trim();
+    }
+
+    let target = '';
+    let base = raw;
+    const targetMatch = raw.match(/^(.*)\[([^\]]+)\]$/);
+    if (targetMatch) {
+        base = String(targetMatch[1] || '').trim();
+        target = String(targetMatch[2] || '').trim();
+    }
+
+    return {
+        raw: String(tokenInput ?? '').trim(),
+        base,
+        target,
+        effects,
+        invisible
+    };
+}
+
+function composeDecoratedToken(meta) {
+    const safeBase = String(meta?.base || '').trim();
+    if (!safeBase) return '-';
+
+    let out = safeBase;
+    const target = String(meta?.target || '').trim();
+    if (target && /^(exit|back|bck|back_level)$/i.test(safeBase)) {
+        out += `[${target}]`;
+    }
+
+    const effects = String(meta?.effects || '').trim();
+    if (effects) {
+        out += `(${effects})`;
+    }
+
+    if (meta?.invisible) {
+        out += '.';
+    }
+    return out;
+}
+
+function getRenderableTokenBase(tokenInput) {
+    return parseDecoratedToken(tokenInput).base || String(tokenInput || '').trim();
+}
+
+function splitEffectsList(text) {
+    const raw = String(text || '').trim();
+    if (!raw) return [];
+    const out = [];
+    let cur = '';
+    let braceDepth = 0;
+    for (let i = 0; i < raw.length; i++) {
+        const ch = raw[i];
+        if (ch === '{') braceDepth++;
+        if (ch === '}') braceDepth = Math.max(0, braceDepth - 1);
+        if (ch === ',' && braceDepth === 0) {
+            if (cur.trim()) out.push(cur.trim());
+            cur = '';
+            continue;
+        }
+        cur += ch;
+    }
+    if (cur.trim()) out.push(cur.trim());
+    return out;
+}
+
+function parseEffectEntry(entry) {
+    const raw = String(entry || '').trim();
+    if (!raw) return { name: '', options: {} };
+    const match = raw.match(/^([a-zA-Z0-9_\-]+)(?:\{(.*)\})?$/);
+    if (!match) return { name: raw.toLowerCase(), options: {} };
+
+    const name = String(match[1] || '').trim().toLowerCase();
+    const body = String(match[2] || '').trim();
+    if (!body) return { name, options: {} };
+
+    const options = {};
+    body.split(/[;,]/).forEach((piece) => {
+        const token = String(piece || '').trim();
+        if (!token) return;
+        const kv = token.split(/[:=]/);
+        const key = String(kv[0] || '').trim();
+        const value = String(kv.slice(1).join(':') || '').trim();
+        if (!key || !value) return;
+        options[key] = value;
+    });
+
+    return { name, options };
+}
+
+function clearGuidedEffectOptionInputs() {
+    [
+        'selectedLampRadius',
+        'selectedLampColor',
+        'selectedPulseScale',
+        'selectedPulseDuration',
+        'selectedFloatAmplitude',
+        'selectedFloatDuration',
+        'selectedHaloRadius',
+        'selectedHaloColor',
+        'selectedOutlineThickness',
+        'selectedOutlineColor'
+    ].forEach((id) => {
+        const node = el(id);
+        if (node) node.value = '';
+    });
+}
+
+function buildEffectEntry(name, options = {}) {
+    const keys = Object.keys(options).filter((k) => String(options[k] || '').trim() !== '');
+    if (!keys.length) return name;
+    const body = keys.map((k) => `${k}:${String(options[k]).trim()}`).join(';');
+    return `${name}{${body}}`;
+}
+
+function buildSelectedEffectsFromControls() {
+    const known = [];
+    if (el('selectedFxLamp')?.checked) {
+        known.push(buildEffectEntry('lamp', {
+            radiusTiles: el('selectedLampRadius')?.value,
+            color: el('selectedLampColor')?.value
+        }));
+    }
+    if (el('selectedFxPulse')?.checked) {
+        known.push(buildEffectEntry('pulse', {
+            scale: el('selectedPulseScale')?.value,
+            duration: el('selectedPulseDuration')?.value
+        }));
+    }
+    if (el('selectedFxFloat')?.checked) {
+        known.push(buildEffectEntry('float', {
+            amplitudeTiles: el('selectedFloatAmplitude')?.value,
+            duration: el('selectedFloatDuration')?.value
+        }));
+    }
+    if (el('selectedFxHalo')?.checked) {
+        known.push(buildEffectEntry('halo', {
+            radiusTiles: el('selectedHaloRadius')?.value,
+            color: el('selectedHaloColor')?.value
+        }));
+    }
+    if (el('selectedFxOutline')?.checked) {
+        known.push(buildEffectEntry('outline', {
+            thickness: el('selectedOutlineThickness')?.value,
+            color: el('selectedOutlineColor')?.value
+        }));
+    }
+
+    const custom = splitEffectsList(el('selectedTokenEffectsCustom')?.value || '');
+    const combined = [...known, ...custom].filter(Boolean);
+    return combined.join(',');
+}
+
+function refreshSelectedEffectsPreview() {
+    const preview = el('selectedTokenEffects');
+    if (!preview) return;
+    preview.value = buildSelectedEffectsFromControls();
+}
+
 class LevelEditorScene extends Phaser.Scene {
     constructor() {
         super('LevelEditorScene');
@@ -337,6 +531,7 @@ class LevelEditorScene extends Phaser.Scene {
         this.gridAreaHeight = 0;
         this.cells = [];
         this.selectedCell = null;
+        this.selectedTokenIndex = 0;
         this.paletteItems = [];
         this.lastBrushToken = 'w0000';
         this._dragNoTile = false; // true when user holds '.' while dragging to mark invisible
@@ -782,6 +977,12 @@ class LevelEditorScene extends Phaser.Scene {
             if (!cell) return;
 
             this.selectedCell = cell;
+            try {
+                const rawParts = String(this.cells[cell.row]?.[cell.col]?.base || '').split('/').map((s) => s.trim()).filter(Boolean);
+                this.selectedTokenIndex = Math.max(0, rawParts.length - 1);
+            } catch (e) {
+                this.selectedTokenIndex = 0;
+            }
             this.updateSelectedCellInfo();
 
             if (pointer.rightButtonDown()) {
@@ -976,6 +1177,12 @@ class LevelEditorScene extends Phaser.Scene {
                         const tok = container.getData('token');
                         const noTile = !!container.getData('noTile') || !!this._dragNoTile;
                         this.placeToken(cell.col, cell.row, tok, { noTile });
+                        try {
+                            const rawParts = String(this.cells[cell.row]?.[cell.col]?.base || '').split('/').map((s) => s.trim()).filter(Boolean);
+                            this.selectedTokenIndex = Math.max(0, rawParts.length - 1);
+                        } catch (e) {
+                            this.selectedTokenIndex = 0;
+                        }
                         this.updateSelectedCellInfo();
                         this.renderGrid();
                     }
@@ -1019,6 +1226,7 @@ class LevelEditorScene extends Phaser.Scene {
         if (!cell.base || cell.base === '-' ) {
             cell.base = tokenToPlace;
             cell.reveal = null;
+            this.selectedTokenIndex = 0;
             return;
         }
 
@@ -1030,9 +1238,11 @@ class LevelEditorScene extends Phaser.Scene {
             if (last !== tokenToPlace) {
                 parts.push(tokenToPlace);
                 cell.base = parts.join('/');
+                this.selectedTokenIndex = Math.max(0, parts.length - 1);
             }
         } catch (e) {
             cell.base = `${cell.base}/${tokenToPlace}`;
+            this.selectedTokenIndex = Math.max(0, String(cell.base).split('/').filter(Boolean).length - 1);
         }
     }
 
@@ -1167,14 +1377,15 @@ class LevelEditorScene extends Phaser.Scene {
     }
 
     tokenToRenderInfo(token) {
-        const raw = String(token ?? '').trim().toLowerCase();
+        const baseToken = getRenderableTokenBase(token);
+        const raw = String(baseToken ?? '').trim().toLowerCase();
         if (/^exit(\[[^\]]+\])?$/.test(raw)) {
             return { kind: 'obj', frame: OBJECT_FRAMES.exit };
         }
         if (/^(?:bck|back|back_level)(\[[^\]]+\])?$/.test(raw)) {
             return { kind: 'tile', texture: 'tiles', frame: 5 };
         }
-        const normalized = normalizeToken(token);
+        const normalized = normalizeToken(baseToken);
         const wallMatch = normalized.match(WALL_TOKEN_REGEX);
         if (wallMatch) {
                 const row = Number(wallMatch[1]);
@@ -1492,14 +1703,15 @@ function drawMiniMapFrame(scene, ctx, textureKey, frameIndex, x, y, size, opts =
 }
 
 function drawMiniMapToken(scene, ctx, token, x, y, size, opts = {}) {
-    const raw = String(token ?? '').trim().toLowerCase();
+    const baseToken = getRenderableTokenBase(token);
+    const raw = String(baseToken ?? '').trim().toLowerCase();
     if (/^exit(\[[^\]]+\])?$/.test(raw)) {
         return drawMiniMapFrame(scene, ctx, 'objects', OBJECT_FRAMES.exit, x, y, size, { alpha: opts.alpha });
     }
     if (/^(?:bck|back|back_level)(\[[^\]]+\])?$/.test(raw)) {
         return drawMiniMapFrame(scene, ctx, 'tiles', 5, x, y, size, { alpha: opts.alpha });
     }
-    const normalized = normalizeToken(token);
+    const normalized = normalizeToken(baseToken);
     const wallMatch = normalized.match(WALL_TOKEN_REGEX);
     if (wallMatch) {
         const row = clamp(Number(wallMatch[1]), 0, 3);
@@ -1839,6 +2051,19 @@ function readLevelFromForm() {
     const splitRangeRaw = String(el('dbSplitRange')?.value ?? '2,3').split(',').map((x) => Number(x.trim())).filter((x) => Number.isFinite(x));
     const splitRange = splitRangeRaw.length >= 2 ? [splitRangeRaw[0], splitRangeRaw[1]] : [2, 3];
 
+    let objectsEffects = {};
+    try {
+        const rawObjectsEffects = String(el('objectsEffectsJson')?.value ?? '').trim();
+        if (rawObjectsEffects) {
+            const parsedObjects = JSON.parse(rawObjectsEffects);
+            if (parsedObjects && typeof parsedObjects === 'object' && !Array.isArray(parsedObjects)) {
+                objectsEffects = parsedObjects;
+            }
+        }
+    } catch (_e) {
+        objectsEffects = {};
+    }
+
     const level = {
         id: String(el('levelId')?.value ?? '1.0').trim() || '1.0',
         map: {
@@ -1881,7 +2106,28 @@ function readLevelFromForm() {
         spawnPoints: null,
         timeLimit: null,
         scoreRules: null,
-        light: String(el('lightMode')?.value || 'piena').trim(),
+        effects: {
+            general: {
+                light: String(el('lightMode')?.value || 'piena').trim(),
+                rain: {
+                    enabled: !!el('rainEnabled')?.checked,
+                    intensity: parseNumber(el('rainIntensity')?.value, 1),
+                    frequency: parseNumber(el('rainFrequency')?.value, 180),
+                    wind: parseNumber(el('rainWind')?.value, 0),
+                    direction: String(el('rainDirection')?.value || 'down'),
+                    interval: parseNumber(el('rainInterval')?.value, 5),
+                    duration: parseNumber(el('rainDuration')?.value, 0)
+                },
+                fog: {
+                    enabled: !!el('fogEnabled')?.checked,
+                    alpha: parseNumber(el('fogAlpha')?.value, 0.15),
+                    layers: Math.max(1, parseNumber(el('fogLayers')?.value, 3)),
+                    speed: String(el('fogSpeed')?.value || 'slow'),
+                    direction: String(el('fogDirection')?.value || 'left')
+                }
+            },
+            objects: objectsEffects
+        },
         ghost: parseNumber(el('ghostCount')?.value, 0),
         bat: parseNumber(el('batCount')?.value, 0),
         ghostSpeed: parseNumber(el('ghostSpeed')?.value, 80),
@@ -1905,26 +2151,6 @@ function readLevelFromForm() {
 
     // include background enabled flag
     level.backgroundEnabled = !!el('showBackground')?.checked;
-
-    // rain/weather
-    level.rain = {
-        enabled: !!el('rainEnabled')?.checked,
-        intensity: parseNumber(el('rainIntensity')?.value, 1),
-        frequency: parseNumber(el('rainFrequency')?.value, 180),
-        wind: parseNumber(el('rainWind')?.value, 0),
-        direction: String(el('rainDirection')?.value || 'down'),
-        interval: parseNumber(el('rainInterval')?.value, 5),
-        duration: parseNumber(el('rainDuration')?.value, 0)
-    };
-
-    // fog (optional)
-    level.fog = {
-        enabled: !!el('fogEnabled')?.checked,
-        alpha: parseNumber(el('fogAlpha')?.value, 0.15),
-        layers: Math.max(1, parseNumber(el('fogLayers')?.value, 3)),
-        speed: String(el('fogSpeed')?.value || 'slow'),
-        direction: String(el('fogDirection')?.value || 'left')
-    };
 
     // background can be single or multiple
     // Prefer structured background layers UI if present
@@ -1973,6 +2199,20 @@ function readLevelFromForm() {
 
 function applyLevelToForm(levelData) {
     const data = { ...DEFAULT_LEVEL, ...(levelData || {}) };
+    const effectsRoot = (data.effects && typeof data.effects === 'object' && !Array.isArray(data.effects)) ? data.effects : {};
+    const generalEffects = (effectsRoot.general && typeof effectsRoot.general === 'object' && !Array.isArray(effectsRoot.general)) ? effectsRoot.general : {};
+    const objectsEffects = (effectsRoot.objects && typeof effectsRoot.objects === 'object' && !Array.isArray(effectsRoot.objects)) ? effectsRoot.objects : {};
+    const resolvedLight = generalEffects.light ?? data.light ?? DEFAULT_LEVEL.effects.general.light;
+    const resolvedRain = {
+        ...(DEFAULT_LEVEL.effects?.general?.rain || {}),
+        ...(data.rain || {}),
+        ...(generalEffects.rain || {})
+    };
+    const resolvedFog = {
+        ...(DEFAULT_LEVEL.effects?.general?.fog || {}),
+        ...(data.fog || {}),
+        ...(generalEffects.fog || {})
+    };
     const mapData = data.map || {};
     const staticRocks = { ...DEFAULT_LEVEL.staticRocks, ...(data.staticRocks || {}) };
     const dynamicBoulders = { ...DEFAULT_LEVEL.dynamicBoulders, ...(data.dynamicBoulders || {}) };
@@ -1989,7 +2229,7 @@ function applyLevelToForm(levelData) {
     try { if (el('ghostSpeedRange')) el('ghostSpeedRange').value = el('ghostSpeed').value; } catch (e) {}
     try { if (el('batSpeedRange')) el('batSpeedRange').value = el('batSpeed').value; } catch (e) {}
     el('objectiveLabel').value = data.objectiveLabel ?? DEFAULT_LEVEL.objectiveLabel;
-    el('lightMode').value = data.light ?? DEFAULT_LEVEL.light;
+    el('lightMode').value = resolvedLight;
     el('escapeRoute').value = String(!!data.escapeRoute);
     // set background select (support single value or array)
     try {
@@ -2023,21 +2263,27 @@ function applyLevelToForm(levelData) {
     el('levelBackground').value = data.background ? String(data.background) : '';
     if (el('showBackground')) el('showBackground').checked = data.backgroundEnabled !== undefined ? !!data.backgroundEnabled : true;
     if (el('autoGridFromBg')) el('autoGridFromBg').checked = true;
-    if (el('rainEnabled')) el('rainEnabled').checked = !!data.rain?.enabled;
-    if (el('rainIntensity')) el('rainIntensity').value = data.rain?.intensity ?? 1;
-    if (el('rainFrequency')) el('rainFrequency').value = data.rain?.frequency ?? 180;
-    if (el('rainWind')) el('rainWind').value = data.rain?.wind ?? 0;
-    if (el('rainDirection')) el('rainDirection').value = data.rain?.direction ?? 'down';
-    if (el('rainInterval')) el('rainInterval').value = data.rain?.interval ?? 5;
-    if (el('rainDuration')) el('rainDuration').value = data.rain?.duration ?? 0;
+    if (el('rainEnabled')) el('rainEnabled').checked = !!resolvedRain.enabled;
+    if (el('rainIntensity')) el('rainIntensity').value = resolvedRain.intensity ?? 1;
+    if (el('rainFrequency')) el('rainFrequency').value = resolvedRain.frequency ?? 180;
+    if (el('rainWind')) el('rainWind').value = resolvedRain.wind ?? 0;
+    if (el('rainDirection')) el('rainDirection').value = resolvedRain.direction ?? 'down';
+    if (el('rainInterval')) el('rainInterval').value = resolvedRain.interval ?? 5;
+    if (el('rainDuration')) el('rainDuration').value = resolvedRain.duration ?? 0;
 
     // populate fog editor if present
     try {
-        if (el('fogEnabled')) el('fogEnabled').checked = !!data.fog?.enabled;
-        if (el('fogAlpha')) el('fogAlpha').value = data.fog?.alpha ?? 0.15;
-        if (el('fogLayers')) el('fogLayers').value = data.fog?.layers ?? 3;
-        if (el('fogSpeed')) el('fogSpeed').value = data.fog?.speed ?? 'slow';
-        if (el('fogDirection')) el('fogDirection').value = data.fog?.direction ?? 'left';
+        if (el('fogEnabled')) el('fogEnabled').checked = !!resolvedFog.enabled;
+        if (el('fogAlpha')) el('fogAlpha').value = resolvedFog.alpha ?? 0.15;
+        if (el('fogLayers')) el('fogLayers').value = resolvedFog.layers ?? 3;
+        if (el('fogSpeed')) el('fogSpeed').value = resolvedFog.speed ?? 'slow';
+        if (el('fogDirection')) el('fogDirection').value = resolvedFog.direction ?? 'left';
+    } catch (e) {}
+
+    try {
+        if (el('objectsEffectsJson')) {
+            el('objectsEffectsJson').value = JSON.stringify(objectsEffects, null, 2);
+        }
     } catch (e) {}
 
     // populate tokenMap editor if present
@@ -2093,7 +2339,7 @@ function applyLevelToForm(levelData) {
         'tokenMap',
         'id', 'map', 'playerStart', 'staticRocks', 'dynamicBoulders', 'speed', 'escapeRoute',
         'objectiveLabel', 'enemies', 'collectibles', 'traps', 'spawnPoints', 'timeLimit',
-        'scoreRules', 'light', 'ghost', 'bat', 'ghostSpeed', 'batSpeed',
+        'scoreRules', 'light', 'effects', 'ghost', 'bat', 'ghostSpeed', 'batSpeed',
         'background', 'foreground', 'backgroundEnabled', 'rain', 'fog', 'music',
         'gemsOneByOne', 'requiredGems', 'gemsRequired', 'playerStart2', 'timer'
     ]);
@@ -2627,7 +2873,7 @@ function bindUI() {
         'levelId', 'levelSpeed', 'ghostCount', 'batCount', 'ghostSpeed', 'batSpeed',
         'objectiveLabel', 'lightMode', 'escapeRoute', 'srEnabled', 'srShardBurstCount',
         'srDynamicSize', 'srRotation', 'srChaotic', 'dbEnabled', 'dbSplitOnImpact',
-        'dbDirections', 'dbSizes', 'dbSplitRange', 'dbMaxSplitGen', 'extraRootJson'
+        'dbDirections', 'dbSizes', 'dbSplitRange', 'dbMaxSplitGen', 'extraRootJson', 'objectsEffectsJson'
     ];
 
     // include rain controls for realtime preview updates
@@ -2834,6 +3080,101 @@ function bindUI() {
             drawMiniMapPreview(scene);
         });
     }
+
+    const applySelectedTokenPropsBtn = el('applySelectedTokenPropsBtn');
+    if (applySelectedTokenPropsBtn) {
+        applySelectedTokenPropsBtn.addEventListener('click', () => {
+            const scene = getScene();
+            if (!scene || !scene.selectedCell) {
+                setStatus('Nessuna cella selezionata.', true);
+                return;
+            }
+            const { row, col } = scene.selectedCell;
+            const cell = scene.cells[row]?.[col];
+            if (!cell) return;
+
+            const parts = String(cell.base || '-').split('/').map((s) => s.trim()).filter(Boolean);
+            if (!parts.length) {
+                setStatus('Nessun oggetto da modificare in questa cella.', true);
+                return;
+            }
+
+            const idx = clamp(parseNumber(el('selectedTokenIndex')?.value, parts.length - 1), 0, parts.length - 1);
+            const base = String(el('selectedTokenBase')?.value || '').trim();
+            const target = String(el('selectedTokenTargetLevel')?.value || '').trim();
+            const effects = String(buildSelectedEffectsFromControls() || '').trim();
+            const invisible = !!el('selectedTokenInvisible')?.checked;
+
+            parts[idx] = composeDecoratedToken({ base, target, effects, invisible });
+            cell.base = parts.join('/');
+            scene.selectedTokenIndex = idx;
+            scene.updateSelectedCellInfo();
+            scene.renderGrid();
+            drawMiniMapPreview(scene);
+            setStatus('Proprieta oggetto applicate.');
+        });
+    }
+
+    const removeSelectedTokenBtn = el('removeSelectedTokenBtn');
+    if (removeSelectedTokenBtn) {
+        removeSelectedTokenBtn.addEventListener('click', () => {
+            const scene = getScene();
+            if (!scene || !scene.selectedCell) {
+                setStatus('Nessuna cella selezionata.', true);
+                return;
+            }
+            const { row, col } = scene.selectedCell;
+            const cell = scene.cells[row]?.[col];
+            if (!cell) return;
+
+            const parts = String(cell.base || '-').split('/').map((s) => s.trim()).filter(Boolean);
+            if (!parts.length) {
+                setStatus('Nessun oggetto da rimuovere.', true);
+                return;
+            }
+            const idx = clamp(parseNumber(el('selectedTokenIndex')?.value, parts.length - 1), 0, parts.length - 1);
+            parts.splice(idx, 1);
+            cell.base = parts.length ? parts.join('/') : '-';
+            scene.selectedTokenIndex = Math.max(0, parts.length - 1);
+            scene.updateSelectedCellInfo();
+            scene.renderGrid();
+            drawMiniMapPreview(scene);
+            setStatus('Oggetto rimosso dalla cella.');
+        });
+    }
+
+    const selectedTokenIndex = el('selectedTokenIndex');
+    if (selectedTokenIndex) {
+        selectedTokenIndex.addEventListener('change', () => {
+            const scene = getScene();
+            scene?.updateSelectedCellInfo();
+        });
+    }
+
+    [
+        'selectedFxLamp',
+        'selectedFxPulse',
+        'selectedFxFloat',
+        'selectedFxHalo',
+        'selectedFxOutline',
+        'selectedTokenEffectsCustom',
+        'selectedLampRadius',
+        'selectedLampColor',
+        'selectedPulseScale',
+        'selectedPulseDuration',
+        'selectedFloatAmplitude',
+        'selectedFloatDuration',
+        'selectedHaloRadius',
+        'selectedHaloColor',
+        'selectedOutlineThickness',
+        'selectedOutlineColor'
+    ]
+        .forEach((id) => {
+            const node = el(id);
+            if (!node) return;
+            node.addEventListener('input', refreshSelectedEffectsPreview);
+            node.addEventListener('change', refreshSelectedEffectsPreview);
+        });
 }
 
 window.addEventListener('level-editor-ready', () => {
@@ -3174,9 +3515,123 @@ function setupDomDragAndDrop() {
 
         scene.placeToken(cell.col, cell.row, token);
         scene.selectedCell = cell;
+        try {
+            const rawParts = String(scene.cells[cell.row]?.[cell.col]?.base || '').split('/').map((s) => s.trim()).filter(Boolean);
+            scene.selectedTokenIndex = Math.max(0, rawParts.length - 1);
+        } catch (e) {
+            scene.selectedTokenIndex = 0;
+        }
         scene.updateSelectedCellInfo();
         scene.renderGrid();
         drawMiniMapPreview(scene);
         setStatus(`Token ${token} posato in ${cell.row},${cell.col}`);
     });
 }
+
+function fillSelectedTokenEditor(scene) {
+    const infoEl = el('selectedObjectInfo');
+    const idxEl = el('selectedTokenIndex');
+    const baseEl = el('selectedTokenBase');
+    const invEl = el('selectedTokenInvisible');
+    const targetEl = el('selectedTokenTargetLevel');
+    const fxEl = el('selectedTokenEffects');
+    const fxCustomEl = el('selectedTokenEffectsCustom');
+    const knownChecks = {
+        lamp: el('selectedFxLamp'),
+        pulse: el('selectedFxPulse'),
+        float: el('selectedFxFloat'),
+        halo: el('selectedFxHalo'),
+        outline: el('selectedFxOutline')
+    };
+
+    if (!infoEl || !idxEl || !baseEl || !invEl || !targetEl || !fxEl || !fxCustomEl) return;
+
+    if (!scene || !scene.selectedCell) {
+        infoEl.textContent = 'Nessun oggetto selezionato.';
+        idxEl.innerHTML = '';
+        baseEl.value = '';
+        invEl.checked = false;
+        targetEl.value = '';
+        fxEl.value = '';
+        fxCustomEl.value = '';
+        Object.values(knownChecks).forEach((c) => { if (c) c.checked = false; });
+        clearGuidedEffectOptionInputs();
+        return;
+    }
+
+    const { row, col } = scene.selectedCell;
+    const cell = scene.cells[row]?.[col];
+    const parts = String(cell?.base || '-').split('/').map((s) => s.trim()).filter(Boolean);
+    if (!parts.length || (parts.length === 1 && parts[0] === '-')) {
+        infoEl.textContent = `Cella ${row},${col}: nessun oggetto.`;
+        idxEl.innerHTML = '';
+        baseEl.value = '';
+        invEl.checked = false;
+        targetEl.value = '';
+        fxEl.value = '';
+        fxCustomEl.value = '';
+        Object.values(knownChecks).forEach((c) => { if (c) c.checked = false; });
+        clearGuidedEffectOptionInputs();
+        return;
+    }
+
+    idxEl.innerHTML = '';
+    parts.forEach((token, i) => {
+        const parsed = parseDecoratedToken(token);
+        const o = document.createElement('option');
+        o.value = String(i);
+        o.textContent = `${i + 1}. ${parsed.base || token}`;
+        idxEl.appendChild(o);
+    });
+
+    const pickedIndex = clamp(Number(scene.selectedTokenIndex) || 0, 0, parts.length - 1);
+    scene.selectedTokenIndex = pickedIndex;
+    idxEl.value = String(pickedIndex);
+
+    const parsed = parseDecoratedToken(parts[pickedIndex]);
+    baseEl.value = parsed.base;
+    invEl.checked = !!parsed.invisible;
+    targetEl.value = parsed.target;
+
+    Object.values(knownChecks).forEach((c) => { if (c) c.checked = false; });
+    clearGuidedEffectOptionInputs();
+    const customEffects = [];
+    splitEffectsList(parsed.effects).forEach((entry) => {
+        const clean = String(entry || '').trim();
+        if (!clean) return;
+        const parsedEntry = parseEffectEntry(clean);
+        const name = parsedEntry.name;
+        const options = parsedEntry.options || {};
+        if (!['lamp', 'pulse', 'float', 'halo', 'outline'].includes(name) || !knownChecks[name]) {
+            customEffects.push(clean);
+            return;
+        }
+        knownChecks[name].checked = true;
+
+        if (name === 'lamp') {
+            if (el('selectedLampRadius') && options.radiusTiles != null) el('selectedLampRadius').value = options.radiusTiles;
+            if (el('selectedLampColor') && options.color != null) el('selectedLampColor').value = options.color;
+        } else if (name === 'pulse') {
+            if (el('selectedPulseScale') && options.scale != null) el('selectedPulseScale').value = options.scale;
+            if (el('selectedPulseDuration') && options.duration != null) el('selectedPulseDuration').value = options.duration;
+        } else if (name === 'float') {
+            if (el('selectedFloatAmplitude') && options.amplitudeTiles != null) el('selectedFloatAmplitude').value = options.amplitudeTiles;
+            if (el('selectedFloatDuration') && options.duration != null) el('selectedFloatDuration').value = options.duration;
+        } else if (name === 'halo') {
+            if (el('selectedHaloRadius') && options.radiusTiles != null) el('selectedHaloRadius').value = options.radiusTiles;
+            if (el('selectedHaloColor') && options.color != null) el('selectedHaloColor').value = options.color;
+        } else if (name === 'outline') {
+            if (el('selectedOutlineThickness') && options.thickness != null) el('selectedOutlineThickness').value = options.thickness;
+            if (el('selectedOutlineColor') && options.color != null) el('selectedOutlineColor').value = options.color;
+        }
+    });
+    fxCustomEl.value = customEffects.join(',');
+    refreshSelectedEffectsPreview();
+    infoEl.textContent = `Cella ${row},${col}: oggetto ${pickedIndex + 1}/${parts.length}`;
+}
+
+const _originalUpdateSelectedCellInfo = LevelEditorScene.prototype.updateSelectedCellInfo;
+LevelEditorScene.prototype.updateSelectedCellInfo = function updateSelectedCellInfoExtended() {
+    _originalUpdateSelectedCellInfo.call(this);
+    fillSelectedTokenEditor(this);
+};
