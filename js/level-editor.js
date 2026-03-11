@@ -26,6 +26,9 @@ const WALL_TOKEN_REGEX = /^w(\d)(\d)(\d)([hv0])$/i;
 const BG_ASSETS_DIR = 'assets/images/background';
 const FG_ASSETS_DIR = 'assets/images/foreground';
 const API_BASE_PATH = 'api';
+const BG_MANIFEST_PATH = 'data/background-images.json';
+const FG_MANIFEST_PATH = 'data/foreground-images.json';
+const MUSIC_MANIFEST_PATH = 'data/music-files.json';
 
 // Available numeric level backgrounds discovered from images/level<N>.png
 const AVAILABLE_BG_LEVELS = [1,2,3,4,5,6];
@@ -154,6 +157,27 @@ function parseRepeatValue(value, fallback = 1) {
 function buildApiUrl(path) {
     const clean = String(path ?? '').replace(/^\/+/, '');
     return `${API_BASE_PATH}/${clean}`;
+}
+
+async function fetchJsonListWithFallback(primaryUrl, fallbackUrl) {
+    try {
+        const primary = await fetch(primaryUrl);
+        if (primary.ok) {
+            const data = await primary.json();
+            return Array.isArray(data) ? data : [];
+        }
+    } catch (_e) {
+        // Fallback handled below.
+    }
+
+    try {
+        const fallback = await fetch(fallbackUrl);
+        if (!fallback.ok) return [];
+        const data = await fallback.json();
+        return Array.isArray(data) ? data : [];
+    } catch (_e) {
+        return [];
+    }
 }
 
 function normalizeLayerSrc(rawValue, type) {
@@ -2653,12 +2677,10 @@ function bindUI() {
         }
     } catch (e) { /* ignore music UI errors */ }
 
-    // Populate levelMusic select dynamically from server /music folder
+    // Populate levelMusic select dynamically from API with static manifest fallback
     async function populateMusicOptions() {
         try {
-            const resp = await fetch(buildApiUrl('music'));
-            if (!resp.ok) return;
-            const list = await resp.json();
+            const list = await fetchJsonListWithFallback(buildApiUrl('music'), MUSIC_MANIFEST_PATH);
             const sel = el('levelMusic');
             if (!sel) return;
             // clear existing options and add (none)
@@ -2678,16 +2700,13 @@ function bindUI() {
     // Populate bg/fg image selects dynamically from server assets images folders
     async function populateImageOptions() {
         try {
-            const [bgResp, fgResp] = await Promise.all([
-                fetch(buildApiUrl('images/background')),
-                fetch(buildApiUrl('images/foreground'))
+            const [bgList, fgList] = await Promise.all([
+                fetchJsonListWithFallback(buildApiUrl('images/background'), BG_MANIFEST_PATH),
+                fetchJsonListWithFallback(buildApiUrl('images/foreground'), FG_MANIFEST_PATH)
             ]);
 
             const bgSel = el('bgImageSelect');
             const fgSel = el('fgImageSelect');
-
-            const bgList = bgResp.ok ? await bgResp.json() : [];
-            const fgList = fgResp.ok ? await fgResp.json() : [];
             if (bgSel) {
                 // keep a default placeholder option
                 bgSel.innerHTML = '';
