@@ -353,6 +353,9 @@
             color: #c1d8ff;
             text-decoration: underline dotted rgba(161, 198, 255, 0.45);
             text-underline-offset: 2px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
 
         .field-value {
@@ -369,21 +372,19 @@
             margin-top: 4px;
         }
 
-        .field-legend {
-            display: none;
-            margin-top: 4px;
-            margin-left: 34%;
-            padding: 5px 6px;
-            border: 1px solid #35507f;
-            border-radius: 4px;
-            background: rgba(18, 35, 66, 0.62);
-            color: #9ec2f6;
+        .field-tooltip {
+            position: fixed;
+            z-index: 12000;
+            max-width: 320px;
+            padding: 6px 8px;
+            border: 1px solid #4b74b5;
+            border-radius: 6px;
+            background: rgba(14, 28, 56, 0.96);
+            color: #cde4ff;
             font-size: 8px;
-            line-height: 1.4;
-        }
-
-        .field-legend.open {
-            display: block;
+            line-height: 1.45;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.38);
+            pointer-events: none;
         }
 
         .bg-layer,
