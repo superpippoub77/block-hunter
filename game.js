@@ -2446,6 +2446,7 @@ class GameScene extends Phaser.Scene {
         this.batDirectionTimer = null;
         this.dynamicBouldersRuntimeDisabled = false;
         this.batSpawnPositions = [];
+        this.effectFollowers = [];
         this.spawnedFallingStoneCount = 0;
         this.stoneShardBurstsRemaining = 0;
         this.nextStoneShardBurstIndex = Number.POSITIVE_INFINITY;
@@ -2952,6 +2953,86 @@ class GameScene extends Phaser.Scene {
             return val;
         };
 
+        const splitTokenEffects = (rawToken) => {
+            const text = String(rawToken ?? '').trim();
+            if (!text) return { base: text, effects: [], effectOptions: {} };
+
+            // Supports forms like: g(lamp), g(lamp,pulse), exit[12](lamp), g(lamp).
+            const match = text.match(/^(.+?)\(([^()]+)\)(\.)?$/);
+            if (!match) return { base: text, effects: [], effectOptions: {} };
+
+            let base = String(match[1] || '').trim();
+            if (match[3] === '.') base = `${base}.`;
+
+            const listRaw = String(match[2] || '');
+            const entries = [];
+            let buf = '';
+            let depth = 0;
+            for (let i = 0; i < listRaw.length; i++) {
+                const ch = listRaw[i];
+                if (ch === '{') depth++;
+                if (ch === '}') depth = Math.max(0, depth - 1);
+                if (ch === ',' && depth === 0) {
+                    entries.push(buf.trim());
+                    buf = '';
+                    continue;
+                }
+                buf += ch;
+            }
+            if (buf.trim()) entries.push(buf.trim());
+
+            const effects = [];
+            const effectOptions = {};
+
+            entries.forEach((entry) => {
+                const rawEntry = String(entry || '').trim();
+                if (!rawEntry) return;
+
+                const m = rawEntry.match(/^([a-z0-9_\-]+)(?:\{([^}]*)\})?$/i);
+                if (!m) return;
+
+                const normalizedName = this.normalizeEffectName(m[1]);
+                if (!normalizedName) return;
+                if (!effects.includes(normalizedName)) effects.push(normalizedName);
+
+                const optionsText = String(m[2] || '').trim();
+                if (!optionsText) return;
+
+                const optionPairs = optionsText.split(/[;,]+/).map((p) => p.trim()).filter(Boolean);
+                if (!optionPairs.length) return;
+
+                const parsedOptions = {};
+                optionPairs.forEach((pair) => {
+                    const eqIdx = pair.indexOf(':');
+                    const sepIdx = eqIdx >= 0 ? eqIdx : pair.indexOf('=');
+                    if (sepIdx <= 0) return;
+                    const key = String(pair.slice(0, sepIdx)).trim();
+                    const rawValue = String(pair.slice(sepIdx + 1)).trim();
+                    if (!key) return;
+
+                    if (/^(true|false)$/i.test(rawValue)) {
+                        parsedOptions[key] = /^true$/i.test(rawValue);
+                        return;
+                    }
+                    if (/^-?\d+(\.\d+)?$/.test(rawValue)) {
+                        parsedOptions[key] = Number(rawValue);
+                        return;
+                    }
+                    // Keep non-numeric values as string (colors like #ffee99, 0xffee99, etc.)
+                    parsedOptions[key] = rawValue;
+                });
+
+                if (Object.keys(parsedOptions).length) {
+                    effectOptions[normalizedName] = {
+                        ...(effectOptions[normalizedName] || {}),
+                        ...parsedOptions
+                    };
+                }
+            });
+
+            return { base, effects, effectOptions };
+        };
+
         const parseSingleMapSymbol = (value) => {
             // apply tokenMap mappings first
             const originalValue = value;
@@ -3185,8 +3266,14 @@ class GameScene extends Phaser.Scene {
                     const coverPart = value.slice(0, slashIndex).trim();
                     const revealPart = value.slice(slashIndex + 1).trim();
                     if (coverPart && revealPart) {
-                        const coverCell = parseSingleMapSymbol(coverPart);
-                        const revealCell = parseSingleMapSymbol(revealPart);
+                        const coverMeta = splitTokenEffects(coverPart);
+                        const revealMeta = splitTokenEffects(revealPart);
+                        const coverCell = parseSingleMapSymbol(coverMeta.base);
+                        const revealCell = parseSingleMapSymbol(revealMeta.base);
+                        if (coverMeta.effects.length) coverCell.effects = coverMeta.effects;
+                        if (revealMeta.effects.length) revealCell.effects = revealMeta.effects;
+                        if (coverMeta.effectOptions && Object.keys(coverMeta.effectOptions).length) coverCell.effectOptions = coverMeta.effectOptions;
+                        if (revealMeta.effectOptions && Object.keys(revealMeta.effectOptions).length) revealCell.effectOptions = revealMeta.effectOptions;
                         return {
                             ...coverCell,
                             hiddenReveal: revealCell
@@ -3195,7 +3282,10 @@ class GameScene extends Phaser.Scene {
                 }
             }
 
-            const singleCell = parseSingleMapSymbol(value);
+            const singleMeta = splitTokenEffects(value);
+            const singleCell = parseSingleMapSymbol(singleMeta.base);
+            if (singleMeta.effects.length) singleCell.effects = singleMeta.effects;
+            if (singleMeta.effectOptions && Object.keys(singleMeta.effectOptions).length) singleCell.effectOptions = singleMeta.effectOptions;
             return {
                 ...singleCell,
                 hiddenReveal: null
@@ -3211,6 +3301,12 @@ class GameScene extends Phaser.Scene {
                 let wallFlip = '0';
                 let hiddenReveal = null;
                 let tileNoTile = false;
+                let cellEffects = [];
+                let cellEffectOptions = {};
+                let cellBackTargetLevelIndex = null;
+                let cellBackTargetLevelId = null;
+                let cellExitTargetLevelIndex = null;
+                let cellExitTargetLevelId = null;
 
                 // If we have map data from JSON, use it
                 if (mapData && mapData[y] && mapData[y][x] !== undefined) {
@@ -3222,6 +3318,14 @@ class GameScene extends Phaser.Scene {
                     hiddenReveal = cell.hiddenReveal || null;
                     var tileInvisible = !!cell.invisible;
                     tileNoTile = !!cell.noTile;
+                    cellEffects = Array.isArray(cell.effects) ? cell.effects : [];
+                    cellEffectOptions = (cell.effectOptions && typeof cell.effectOptions === 'object' && !Array.isArray(cell.effectOptions))
+                        ? cell.effectOptions
+                        : {};
+                    cellBackTargetLevelIndex = Number.isFinite(Number(cell.backTargetLevelIndex)) ? Number(cell.backTargetLevelIndex) : null;
+                    cellBackTargetLevelId = cell.backTargetLevelId || null;
+                    cellExitTargetLevelIndex = Number.isFinite(Number(cell.exitTargetLevelIndex)) ? Number(cell.exitTargetLevelIndex) : null;
+                    cellExitTargetLevelId = cell.exitTargetLevelId || null;
                 } else {
                     // Fallback to old random generation
                     // Border walls
@@ -3285,6 +3389,7 @@ class GameScene extends Phaser.Scene {
                     // (avoids gaps when native tile frame height differs from width)
                     tileSprite.setDisplaySize(CONFIG.tileSize, CONFIG.tileSize);
                     try { tileSprite.setData && tileSprite.setData('type', normalizedTileType); } catch (e) { }
+                    try { this.applyTokenEffects(tileSprite, cellEffects, tx, ty, cellEffectOptions); } catch (e) { }
 
                     // If the tile was marked 'invisible' in the map, hide its graphic
                     if (type === 'wall' && tileInvisible) {
@@ -3372,6 +3477,7 @@ class GameScene extends Phaser.Scene {
                         OBJECT_FRAMES.door
                     );
                     this.setupDoor(door);
+                    try { this.applyTokenEffects(door, cellEffects, door.x, door.y, cellEffectOptions); } catch (e) { }
                     this.hasDoorInMap = true;
                     coverSprite = door;
                 }
@@ -3447,6 +3553,7 @@ class GameScene extends Phaser.Scene {
                     } catch (e) { }
                     itemSprite.setData('gridX', x);
                     itemSprite.setData('gridY', y);
+                    try { this.applyTokenEffects(itemSprite, cellEffects, itemSprite.x, itemSprite.y, cellEffectOptions); } catch (e) { }
                     if (type === 'key' || type === 'wooden') {
                         // keys and wooden planks float to indicate pickup
                         this.applyKeyFloatingEffect(itemSprite);
@@ -3467,7 +3574,9 @@ class GameScene extends Phaser.Scene {
                     }
                     this.mapGemPositions.push({
                         x: offsetX + x * CONFIG.tileSize + CONFIG.tileSize / 2,
-                        y: offsetY + y * CONFIG.tileSize + CONFIG.tileSize / 2
+                        y: offsetY + y * CONFIG.tileSize + CONFIG.tileSize / 2,
+                        effects: cellEffects,
+                        effectOptions: cellEffectOptions
                     });
                 }
 
@@ -3480,8 +3589,10 @@ class GameScene extends Phaser.Scene {
                         y: offsetY + y * CONFIG.tileSize + CONFIG.tileSize / 2,
                         gridX: x,
                         gridY: y,
-                        exitTargetLevelIndex: Number.isFinite(Number(cell.exitTargetLevelIndex)) ? Number(cell.exitTargetLevelIndex) : null,
-                        exitTargetLevelId: cell.exitTargetLevelId || null
+                        exitTargetLevelIndex: cellExitTargetLevelIndex,
+                        exitTargetLevelId: cellExitTargetLevelId,
+                        effects: cellEffects,
+                        effectOptions: cellEffectOptions
                     });
                 }
 
@@ -3510,7 +3621,8 @@ class GameScene extends Phaser.Scene {
                     }
                     this.batSpawnPositions.push({
                         x: offsetX + x * CONFIG.tileSize + CONFIG.tileSize / 2,
-                        y: offsetY + y * CONFIG.tileSize + CONFIG.tileSize / 2
+                        y: offsetY + y * CONFIG.tileSize + CONFIG.tileSize / 2,
+                        effects: cellEffects
                     });
                 }
 
@@ -3521,8 +3633,10 @@ class GameScene extends Phaser.Scene {
                     sprite: tileSprite,
                     noTile: !!tileNoTile,
                     invisible: !!tileInvisible,
-                    backTargetLevelIndex: Number.isFinite(Number(cell.backTargetLevelIndex)) ? Number(cell.backTargetLevelIndex) : null,
-                    backTargetLevelId: cell.backTargetLevelId || null
+                    backTargetLevelIndex: cellBackTargetLevelIndex,
+                    backTargetLevelId: cellBackTargetLevelId,
+                    effects: cellEffects,
+                    effectOptions: cellEffectOptions
                 };
                 // Diagnostic: when debug flag enabled and the source map token had a trailing dot,
                 // print the stored tile entry so we can verify `noTile`/type/hiddenReveal propagation.
@@ -4371,6 +4485,8 @@ class GameScene extends Phaser.Scene {
         }
         let worldX;
         let worldY;
+        let gemEffects = [];
+        let gemEffectOptions = {};
 
         if (this.mapGemPositions && this.mapGemPositions.length > 0) {
             const next = this.mapGemPositions[this.mapGemIndex];
@@ -4379,6 +4495,10 @@ class GameScene extends Phaser.Scene {
             }
             worldX = next.x;
             worldY = next.y;
+            gemEffects = Array.isArray(next.effects) ? next.effects : [];
+            gemEffectOptions = (next.effectOptions && typeof next.effectOptions === 'object' && !Array.isArray(next.effectOptions))
+                ? next.effectOptions
+                : {};
         } else {
             let x, y, attempts = 0;
             do {
@@ -4391,14 +4511,14 @@ class GameScene extends Phaser.Scene {
             worldY = this.mapOffsetY + y * CONFIG.tileSize + CONFIG.tileSize / 2;
         }
 
-        this.createGemPickupAt(worldX, worldY);
+        this.createGemPickupAt(worldX, worldY, gemEffects, gemEffectOptions);
 
         if (this.mapGemPositions && this.mapGemPositions.length > 0) {
             this.mapGemIndex++;
         }
     }
 
-    createGemPickupAt(worldX, worldY) {
+    createGemPickupAt(worldX, worldY, effects = [], effectOptions = null) {
         if (!this.gems) return null;
 
         const gem = this.gems.create(worldX, worldY, 'objects', OBJECT_FRAMES.gem);
@@ -4415,6 +4535,8 @@ class GameScene extends Phaser.Scene {
             yoyo: true,
             repeat: -1
         });
+
+        try { this.applyTokenEffects(gem, effects, worldX, worldY, effectOptions); } catch (e) { }
 
         return gem;
     }
@@ -4486,6 +4608,246 @@ class GameScene extends Phaser.Scene {
         });
     }
 
+    normalizeEffectName(rawName) {
+        const aliases = {
+            light: 'lamp',
+            flicker: 'lamp',
+            flicker_light: 'lamp',
+            glow: 'halo',
+            bob: 'float'
+        };
+        const known = new Set(['lamp', 'pulse', 'float', 'halo', 'outline']);
+        const k = String(rawName || '').trim().toLowerCase().replace(/[^a-z0-9_\-]/g, '');
+        if (!k) return null;
+        const normalized = aliases[k] || k;
+        return known.has(normalized) ? normalized : null;
+    }
+
+    normalizeTokenEffects(rawEffects) {
+        if (!Array.isArray(rawEffects)) return [];
+        const out = [];
+
+        rawEffects.forEach((entry) => {
+            const normalized = this.normalizeEffectName(entry);
+            if (!normalized) return;
+            if (!out.includes(normalized)) out.push(normalized);
+        });
+
+        return out;
+    }
+
+    parseEffectColor(value, fallback = 0xffffff) {
+        if (typeof value === 'number' && Number.isFinite(value)) {
+            return value;
+        }
+        const text = String(value ?? '').trim();
+        if (!text) return fallback;
+
+        if (/^0x[0-9a-f]{6}$/i.test(text)) {
+            const parsed = Number(text);
+            return Number.isFinite(parsed) ? parsed : fallback;
+        }
+        if (/^#[0-9a-f]{6}$/i.test(text)) {
+            const parsed = parseInt(text.slice(1), 16);
+            return Number.isFinite(parsed) ? parsed : fallback;
+        }
+        return fallback;
+    }
+
+    getLevelEffectsConfig() {
+        const raw = this.levelData && this.levelData.effects;
+        if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+        return raw;
+    }
+
+    getEffectOptions(effectName) {
+        const cfg = this.getLevelEffectsConfig();
+        const options = cfg && cfg[effectName];
+        if (!options || typeof options !== 'object' || Array.isArray(options)) return {};
+        return options;
+    }
+
+    readEffectNumber(options, keys, fallback, min = null, max = null) {
+        const keyList = Array.isArray(keys) ? keys : [keys];
+        let picked = fallback;
+        for (const key of keyList) {
+            if (!key) continue;
+            const value = Number(options && options[key]);
+            if (Number.isFinite(value)) {
+                picked = value;
+                break;
+            }
+        }
+        if (Number.isFinite(min)) picked = Math.max(min, picked);
+        if (Number.isFinite(max)) picked = Math.min(max, picked);
+        return picked;
+    }
+
+    isEffectEnabled(options) {
+        const raw = options && options.enabled;
+        if (typeof raw === 'boolean') return raw;
+        if (typeof raw === 'string') return raw.toLowerCase() !== 'false';
+        return true;
+    }
+
+    registerEffectFollower(target, follower, offsetX = 0, offsetY = 0) {
+        if (!target || !follower) return;
+        if (!Array.isArray(this.effectFollowers)) this.effectFollowers = [];
+        this.effectFollowers.push({ target, follower, offsetX, offsetY });
+    }
+
+    updateEffectFollowers() {
+        if (!Array.isArray(this.effectFollowers) || !this.effectFollowers.length) return;
+        this.effectFollowers = this.effectFollowers.filter((link) => {
+            const target = link?.target;
+            const follower = link?.follower;
+            if (!target || !follower || !target.active || !follower.active) {
+                try { follower?.destroy?.(); } catch (e) { }
+                return false;
+            }
+            try {
+                follower.setPosition((target.x || 0) + (Number(link.offsetX) || 0), (target.y || 0) + (Number(link.offsetY) || 0));
+            } catch (e) {
+                return false;
+            }
+            return true;
+        });
+    }
+
+    applyTokenEffects(target, rawEffects, worldX = null, worldY = null, rawEffectOptions = null) {
+        const effects = this.normalizeTokenEffects(rawEffects);
+        if (!target || !effects.length) return;
+        const inlineOptionsMap = (rawEffectOptions && typeof rawEffectOptions === 'object' && !Array.isArray(rawEffectOptions))
+            ? rawEffectOptions
+            : {};
+
+        const px = Number.isFinite(Number(worldX)) ? Number(worldX) : (target.x || 0);
+        const py = Number.isFinite(Number(worldY)) ? Number(worldY) : (target.y || 0);
+
+        effects.forEach((effectName) => {
+            try {
+                const options = this.getEffectOptions(effectName);
+                const localOptions = (inlineOptionsMap[effectName] && typeof inlineOptionsMap[effectName] === 'object' && !Array.isArray(inlineOptionsMap[effectName]))
+                    ? inlineOptionsMap[effectName]
+                    : {};
+                const mergedOptions = { ...options, ...localOptions };
+                if (!this.isEffectEnabled(mergedOptions)) return;
+
+                if (effectName === 'pulse') {
+                    const pulseScale = this.readEffectNumber(mergedOptions, ['scale', 'scaleMultiplier'], 1.12, 1.01, 4);
+                    const pulseDuration = this.readEffectNumber(mergedOptions, ['duration', 'durationMs'], 430, 80, 10000);
+                    const baseScaleX = Number(target.scaleX || target.scale || 1) || 1;
+                    const baseScaleY = Number(target.scaleY || target.scale || 1) || 1;
+                    this.tweens.add({
+                        targets: target,
+                        scaleX: baseScaleX * pulseScale,
+                        scaleY: baseScaleY * pulseScale,
+                        duration: pulseDuration,
+                        yoyo: true,
+                        repeat: -1,
+                        ease: 'Sine.easeInOut'
+                    });
+                    return;
+                }
+
+                if (effectName === 'float') {
+                    const ampPx = this.readEffectNumber(mergedOptions, ['amplitudePixels', 'amplitudePx'], NaN);
+                    const ampTiles = this.readEffectNumber(mergedOptions, ['amplitudeTiles'], 0.14, 0.01, 5);
+                    const amplitude = Number.isFinite(ampPx)
+                        ? Math.max(2, ampPx)
+                        : Math.max(4, Math.round((Number(CONFIG.tileSize) || 64) * ampTiles));
+                    const floatDuration = this.readEffectNumber(mergedOptions, ['duration', 'durationMs'], 760, 80, 10000);
+                    this.tweens.add({
+                        targets: target,
+                        y: (target.y || py) - amplitude,
+                        duration: floatDuration,
+                        yoyo: true,
+                        repeat: -1,
+                        ease: 'Sine.easeInOut'
+                    });
+                    return;
+                }
+
+                if (effectName === 'lamp') {
+                    const radiusPx = this.readEffectNumber(mergedOptions, ['radiusPixels', 'radiusPx'], NaN);
+                    const radiusTiles = this.readEffectNumber(mergedOptions, ['radiusTiles'], 1.2, 0.1, 20);
+                    const radius = Number.isFinite(radiusPx)
+                        ? Math.max(6, Math.floor(radiusPx))
+                        : Math.max(18, Math.floor((Number(CONFIG.tileSize) || 64) * radiusTiles));
+                    const color = this.parseEffectColor(mergedOptions.color, 0xffdf8a);
+                    const alphaStart = this.readEffectNumber(mergedOptions, ['alpha', 'alphaStart'], 0.14, 0, 1);
+                    const alphaMin = this.readEffectNumber(mergedOptions, ['alphaMin'], 0.08, 0, 1);
+                    const alphaMax = this.readEffectNumber(mergedOptions, ['alphaMax'], 0.22, 0, 1);
+                    const scaleMin = this.readEffectNumber(mergedOptions, ['scaleMin'], 0.93, 0.1, 10);
+                    const scaleMax = this.readEffectNumber(mergedOptions, ['scaleMax'], 1.08, 0.1, 10);
+                    const durMin = this.readEffectNumber(mergedOptions, ['durationMin', 'durationMinMs'], 240, 30, 10000);
+                    const durMax = this.readEffectNumber(mergedOptions, ['durationMax', 'durationMaxMs'], 560, 30, 10000);
+                    const depth = this.readEffectNumber(mergedOptions, ['depth'], 8, -5000, 20000);
+                    const halo = this.add.circle(px, py, radius, color, alphaStart).setDepth(depth);
+                    const addBlend = mergedOptions.addBlend === undefined ? true : !!mergedOptions.addBlend;
+                    if (addBlend) {
+                        try { halo.setBlendMode(Phaser.BlendModes.ADD); } catch (e) { }
+                    }
+                    this.tweens.add({
+                        targets: halo,
+                        alpha: { from: alphaMin, to: alphaMax },
+                        scaleX: { from: scaleMin, to: scaleMax },
+                        scaleY: { from: scaleMin, to: scaleMax },
+                        duration: Phaser.Math.Between(Math.min(durMin, durMax), Math.max(durMin, durMax)),
+                        yoyo: true,
+                        repeat: -1,
+                        ease: 'Sine.easeInOut'
+                    });
+                    this.registerEffectFollower(target, halo);
+                    return;
+                }
+
+                if (effectName === 'halo') {
+                    const radiusPx = this.readEffectNumber(mergedOptions, ['radiusPixels', 'radiusPx'], NaN);
+                    const radiusTiles = this.readEffectNumber(mergedOptions, ['radiusTiles'], 0.7, 0.05, 20);
+                    const radius = Number.isFinite(radiusPx)
+                        ? Math.max(4, Math.floor(radiusPx))
+                        : Math.max(12, Math.floor((Number(CONFIG.tileSize) || 64) * radiusTiles));
+                    const color = this.parseEffectColor(mergedOptions.color, 0x8fd4ff);
+                    const alpha = this.readEffectNumber(mergedOptions, ['alpha'], 0.16, 0, 1);
+                    const depth = this.readEffectNumber(mergedOptions, ['depth'], 9, -5000, 20000);
+                    const halo = this.add.circle(px, py, radius, color, alpha).setDepth(depth);
+                    const addBlend = mergedOptions.addBlend === undefined ? true : !!mergedOptions.addBlend;
+                    if (addBlend) {
+                        try { halo.setBlendMode(Phaser.BlendModes.ADD); } catch (e) { }
+                    }
+                    this.registerEffectFollower(target, halo);
+                    return;
+                }
+
+                if (effectName === 'outline') {
+                    const radiusPx = this.readEffectNumber(mergedOptions, ['radiusPixels', 'radiusPx'], NaN);
+                    const radiusTiles = this.readEffectNumber(mergedOptions, ['radiusTiles'], 0.5, 0.05, 20);
+                    const radius = Number.isFinite(radiusPx)
+                        ? Math.max(4, Math.floor(radiusPx))
+                        : Math.max(10, Math.floor((Number(CONFIG.tileSize) || 64) * radiusTiles));
+                    const strokeWidth = this.readEffectNumber(mergedOptions, ['thickness', 'strokeWidth'], 2, 1, 20);
+                    const strokeColor = this.parseEffectColor(mergedOptions.color, 0xf5f5f5);
+                    const strokeAlpha = this.readEffectNumber(mergedOptions, ['strokeAlpha'], 0.65, 0, 1);
+                    const alphaMin = this.readEffectNumber(mergedOptions, ['alphaMin'], 0.25, 0, 1);
+                    const alphaMax = this.readEffectNumber(mergedOptions, ['alphaMax'], 0.65, 0, 1);
+                    const duration = this.readEffectNumber(mergedOptions, ['duration', 'durationMs'], 650, 80, 10000);
+                    const depth = this.readEffectNumber(mergedOptions, ['depth'], 11, -5000, 20000);
+                    const ring = this.add.circle(px, py, radius, 0x000000, 0).setStrokeStyle(strokeWidth, strokeColor, strokeAlpha).setDepth(depth);
+                    this.tweens.add({
+                        targets: ring,
+                        alpha: { from: alphaMin, to: alphaMax },
+                        duration,
+                        yoyo: true,
+                        repeat: -1,
+                        ease: 'Sine.easeInOut'
+                    });
+                    this.registerEffectFollower(target, ring);
+                }
+            } catch (e) { }
+        });
+    }
+
     spawnDoor() {
         const side = Phaser.Math.Between(0, 3);
         let x, y;
@@ -4518,7 +4880,7 @@ class GameScene extends Phaser.Scene {
         }
     }
 
-    spawnHole2ExitAt(worldX, worldY, gridX = null, gridY = null, exitTargetLevelIndex = null, exitTargetLevelId = null) {
+    spawnHole2ExitAt(worldX, worldY, gridX = null, gridY = null, exitTargetLevelIndex = null, exitTargetLevelId = null, effects = [], effectOptions = null) {
         if (!this.hole2Exits) return;
 
         const exits = this.hole2Exits.children?.entries || [];
@@ -4544,6 +4906,9 @@ class GameScene extends Phaser.Scene {
         hole2Exit.setData('gridY', gridY);
         hole2Exit.setData('exitTargetLevelIndex', Number.isFinite(Number(exitTargetLevelIndex)) ? Number(exitTargetLevelIndex) : null);
         hole2Exit.setData('exitTargetLevelId', exitTargetLevelId || null);
+        hole2Exit.setData('effects', Array.isArray(effects) ? effects : []);
+        hole2Exit.setData('effectOptions', (effectOptions && typeof effectOptions === 'object' && !Array.isArray(effectOptions)) ? effectOptions : {});
+        try { this.applyTokenEffects(hole2Exit, effects, worldX, worldY, effectOptions); } catch (e) { }
         if (hole2Exit.body) {
             try {
                 const specExit = resolveContactSpec('exit');
@@ -4692,7 +5057,9 @@ class GameScene extends Phaser.Scene {
                 exitPos.gridX,
                 exitPos.gridY,
                 exitPos.exitTargetLevelIndex,
-                exitPos.exitTargetLevelId
+                    exitPos.exitTargetLevelId,
+                exitPos.effects,
+                exitPos.effectOptions
             );
         });
     }
@@ -6668,6 +7035,8 @@ class GameScene extends Phaser.Scene {
             if (this.updateLayerDepths) this.updateLayerDepths();
         } catch (e) { }
 
+        try { this.updateEffectFollowers(); } catch (e) { }
+
         // Update floating player labels (1P / 2P) so they follow each player
         try {
             const labelOffsetY = -6;
@@ -7146,6 +7515,7 @@ class GameScene extends Phaser.Scene {
             itemSprite.setData('type', itemType);
             itemSprite.setData('gridX', gridX);
             itemSprite.setData('gridY', gridY);
+            try { this.applyTokenEffects(itemSprite, revealCell.effects, worldX, worldY, revealCell.effectOptions); } catch (e) { }
             if (itemType === 'key') {
                 this.applyKeyFloatingEffect(itemSprite);
             }
@@ -7173,6 +7543,7 @@ class GameScene extends Phaser.Scene {
                     wallSprite.body.setSize(Math.floor(wallSprite.displayWidth || wallSprite.width), Math.floor(wallSprite.displayHeight || wallSprite.height));
                 }
             }
+            try { this.applyTokenEffects(wallSprite, revealCell.effects, worldX, worldY, revealCell.effectOptions); } catch (e) { }
             this.tiles[gridY][gridX].type = 'wall';
             this.tiles[gridY][gridX].sprite = wallSprite;
             return;
@@ -7182,6 +7553,7 @@ class GameScene extends Phaser.Scene {
             if (this.doors) {
                 const door = this.doors.create(worldX, worldY, 'objects', OBJECT_FRAMES.door);
                 this.setupDoor(door);
+                try { this.applyTokenEffects(door, revealCell.effects, worldX, worldY, revealCell.effectOptions); } catch (e) { }
                 this.hasDoorInMap = true;
             }
             this.tiles[gridY][gridX].type = 'empty';
@@ -7197,19 +7569,7 @@ class GameScene extends Phaser.Scene {
 
         if (revealType === 'gem') {
             if (this.gems) {
-                const gem = this.gems.create(worldX, worldY, 'objects', OBJECT_FRAMES.gem);
-                const gemScaleFactor = CONFIG.objectSize / OBJECT_NATIVE_SIZE;
-                gem.setScale(gemScaleFactor);
-                if (gem.body) {
-                    gem.body.setSize(Math.floor(gem.displayWidth || gem.width), Math.floor(gem.displayHeight || gem.height));
-                }
-                this.tweens.add({
-                    targets: gem,
-                    scale: 1.2,
-                    duration: 500,
-                    yoyo: true,
-                    repeat: -1
-                });
+                this.createGemPickupAt(worldX, worldY, revealCell.effects, revealCell.effectOptions);
                 this.gemsRemaining = (Number(this.gemsRemaining) || 0) + 1;
             }
             this.tiles[gridY][gridX].type = 'empty';
@@ -7227,7 +7587,9 @@ class GameScene extends Phaser.Scene {
                 gridX,
                 gridY,
                 exitTargetLevelIndex: Number.isFinite(Number(revealCell.exitTargetLevelIndex)) ? Number(revealCell.exitTargetLevelIndex) : null,
-                exitTargetLevelId: revealCell.exitTargetLevelId || null
+                exitTargetLevelId: revealCell.exitTargetLevelId || null,
+                effects: Array.isArray(revealCell.effects) ? revealCell.effects : [],
+                effectOptions: (revealCell.effectOptions && typeof revealCell.effectOptions === 'object' && !Array.isArray(revealCell.effectOptions)) ? revealCell.effectOptions : {}
             });
             this.tiles[gridY][gridX].type = 'empty';
             this.tiles[gridY][gridX].sprite = null;
@@ -7239,7 +7601,9 @@ class GameScene extends Phaser.Scene {
                     gridX,
                     gridY,
                     revealCell.exitTargetLevelIndex,
-                    revealCell.exitTargetLevelId
+                    revealCell.exitTargetLevelId,
+                    revealCell.effects,
+                    revealCell.effectOptions
                 );
             }
             return;
@@ -7250,6 +7614,8 @@ class GameScene extends Phaser.Scene {
             this.tiles[gridY][gridX].sprite = null;
             this.tiles[gridY][gridX].backTargetLevelIndex = Number.isFinite(Number(revealCell.backTargetLevelIndex)) ? Number(revealCell.backTargetLevelIndex) : null;
             this.tiles[gridY][gridX].backTargetLevelId = revealCell.backTargetLevelId || null;
+            this.tiles[gridY][gridX].effects = Array.isArray(revealCell.effects) ? revealCell.effects : [];
+            this.tiles[gridY][gridX].effectOptions = (revealCell.effectOptions && typeof revealCell.effectOptions === 'object' && !Array.isArray(revealCell.effectOptions)) ? revealCell.effectOptions : {};
             try { this.spawnBackLabelAt(worldX, worldY); } catch (e) { }
             return;
         }
@@ -7264,6 +7630,7 @@ class GameScene extends Phaser.Scene {
         if (baseFrame !== undefined) {
             const tileSprite = this.add.sprite(worldX, worldY, 'tiles', baseFrame);
             tileSprite.setDisplaySize(CONFIG.tileSize, CONFIG.tileSize);
+            try { this.applyTokenEffects(tileSprite, revealCell.effects, worldX, worldY, revealCell.effectOptions); } catch (e) { }
             this.tiles[gridY][gridX].type = revealType;
             this.tiles[gridY][gridX].sprite = tileSprite;
             return;

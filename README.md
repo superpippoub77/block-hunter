@@ -86,6 +86,20 @@ Il motore supporta due formati mappa:
 		"x": "w00"
 	},
 
+	"effects": {
+		"lamp": {
+			"enabled": true,
+			"radiusTiles": 1.6,
+			"color": "#ffd88a",
+			"alphaMin": 0.08,
+			"alphaMax": 0.22
+		},
+		"pulse": {
+			"scale": 1.18,
+			"duration": 520
+		}
+	},
+
 	"map": {
 		"cols": 12,
 		"rows": 12,
@@ -259,6 +273,56 @@ Nemici:
 | `map.gemsOneByOne` | boolean | `true/false` | Alias locale di `gemsOneByOne`. |
 | `map.ghost`, `map.ghostSpeed` | number | come root | Alias locali per ghost. |
 | `map.bat`, `map.batSpeed` | number | come root | Alias locali per bat. |
+
+Token mappa (sintassi runtime):
+
+- `exit` -> livello successivo.
+- `exit[12]` -> vai al livello `1.2`.
+- `back` -> livello precedente.
+- `back[11]` -> vai al livello `1.1`.
+- `token(effetto)` -> applica un effetto standard al token (es. `g(lamp)`).
+- `token(effetto1,effetto2)` -> applica piu' effetti (es. `g(lamp,pulse)`).
+- `token(effetto{opzioni})` -> override per singolo token (es. `g(lamp{radiusTiles:2;color:#ffee99})`).
+- Compatibile con target livello: `exit[12](halo)` oppure `back[11](outline{thickness:3})`.
+
+Note parsing token:
+
+- Gli override inline supportano separatori `:` o `=` tra chiave e valore.
+- Le opzioni in `{...}` possono essere separate da `;` o `,`.
+- I colori supportati sono `#rrggbb` o `0xrrggbb`.
+- Le opzioni inline sovrascrivono quelle globali definite in `effects`.
+
+Effetti configurabili a livello (`effects`):
+
+La sezione root `effects` permette di definire i parametri standard per ogni effetto. Ogni token che usa quell'effetto eredita questi valori, salvo override inline.
+
+Effetti disponibili:
+
+| Effetto | Parametri principali |
+|---|---|
+| `lamp` | `enabled`, `radiusTiles`/`radiusPixels`, `color`, `alpha`/`alphaStart`, `alphaMin`, `alphaMax`, `scaleMin`, `scaleMax`, `durationMin`, `durationMax`, `depth`, `addBlend` |
+| `pulse` | `enabled`, `scale`/`scaleMultiplier`, `duration` |
+| `float` | `enabled`, `amplitudeTiles`/`amplitudePixels`, `duration` |
+| `halo` | `enabled`, `radiusTiles`/`radiusPixels`, `color`, `alpha`, `depth`, `addBlend` |
+| `outline` | `enabled`, `radiusTiles`/`radiusPixels`, `thickness`/`strokeWidth`, `color`, `strokeAlpha`, `alphaMin`, `alphaMax`, `duration`, `depth` |
+
+Esempio completo (globale + inline):
+
+```json
+{
+	"effects": {
+		"lamp": { "radiusTiles": 1.5, "color": "#ffd88a" },
+		"pulse": { "scale": 1.15, "duration": 480 },
+		"outline": { "color": "#ffffff", "thickness": 2 }
+	},
+	"map": {
+		"tiles": [
+			["g(lamp)", "g(lamp{radiusTiles:2;color:#ffee99},pulse)", "exit[12](halo)"],
+			["back[11](outline{thickness:3})", "-", "k(float)"]
+		]
+	}
+}
+```
 
 Rocce statiche (`staticRocks`):
 
