@@ -3981,27 +3981,6 @@ function buildDomPalette() {
             playerCol: 'Colonna iniziale del player.'
         };
 
-        const shortMap = {
-            levelId: 'ID',
-            levelSpeed: 'SPD',
-            gridCols: 'COL',
-            gridRows: 'ROW',
-            mapTimer: 'TIME',
-            tileSizeSlider: 'TILE',
-            zoomSlider: 'ZOOM',
-            ghostCount: 'GHOST',
-            batCount: 'BAT',
-            ghostSpeed: 'GSPD',
-            batSpeed: 'BSPD',
-            objectiveLabel: 'OBJ',
-            escapeRoute: 'ESC',
-            lightMode: 'LGT',
-            playerRow: 'P-ROW',
-            playerCol: 'P-COL',
-            rainEnabled: 'RAIN',
-            fogEnabled: 'FOG'
-        };
-
         const labels = Array.from(panel.querySelectorAll('label[for]'));
         labels.forEach((labelNode) => {
             if (!(labelNode instanceof HTMLElement)) return;
@@ -4032,8 +4011,7 @@ function buildDomPalette() {
             labelNode.classList.add('field-label');
             labelNode.dataset.layoutDone = '1';
             const longLabel = labelNode.textContent.trim();
-            const shortLabel = shortMap[fieldId] || longLabel;
-            labelNode.textContent = `${shortLabel} :`;
+            labelNode.textContent = `${longLabel} :`;
             const tipText = legendMap[fieldId] || `Campo ${longLabel}: modifica questo valore per influenzare il comportamento della mappa.`;
             labelNode.title = tipText;
             row.appendChild(labelNode);
@@ -4071,7 +4049,6 @@ function buildDomPalette() {
             const text = labelNode.textContent.trim();
             if (!text) return;
             const checkId = String(check.id || '').trim();
-            const shortLabel = shortMap[checkId] || text;
             const tipText = legendMap[checkId] || `Campo ${text}: attiva o disattiva questa opzione per cambiare il comportamento della mappa.`;
 
             const row = document.createElement('div');
@@ -4079,7 +4056,7 @@ function buildDomPalette() {
 
             const pseudoLabel = document.createElement('label');
             pseudoLabel.className = 'field-label';
-            pseudoLabel.textContent = `${shortLabel} :`;
+            pseudoLabel.textContent = `${text} :`;
             pseudoLabel.title = tipText;
             row.appendChild(pseudoLabel);
 
