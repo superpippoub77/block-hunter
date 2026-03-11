@@ -724,6 +724,19 @@ function buildSelectedEffectsFromControls() {
 }
 
 function refreshSelectedEffectsPreview() {
+    const toggle = (checkId, groupId) => {
+        const group = el(groupId);
+        if (!group) return;
+        const enabled = !!el(checkId)?.checked;
+        group.style.display = enabled ? '' : 'none';
+    };
+
+    toggle('selectedFxLamp', 'selectedLampOptions');
+    toggle('selectedFxPulse', 'selectedPulseOptions');
+    toggle('selectedFxFloat', 'selectedFloatOptions');
+    toggle('selectedFxHalo', 'selectedHaloOptions');
+    toggle('selectedFxOutline', 'selectedOutlineOptions');
+
     const preview = el('selectedTokenEffects');
     if (!preview) return;
     preview.value = buildSelectedEffectsFromControls();
@@ -4288,6 +4301,7 @@ function fillSelectedTokenEditor(scene) {
         fxCustomEl.value = '';
         Object.values(knownChecks).forEach((c) => { if (c) c.checked = false; });
         clearGuidedEffectOptionInputs();
+        refreshSelectedEffectsPreview();
         return;
     }
 
@@ -4304,6 +4318,7 @@ function fillSelectedTokenEditor(scene) {
         fxCustomEl.value = '';
         Object.values(knownChecks).forEach((c) => { if (c) c.checked = false; });
         clearGuidedEffectOptionInputs();
+        refreshSelectedEffectsPreview();
         return;
     }
 
