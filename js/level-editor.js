@@ -2515,38 +2515,12 @@ function applyLevelToForm(levelData) {
     el('objectiveLabel').value = data.objectiveLabel ?? DEFAULT_LEVEL.objectiveLabel;
     el('lightMode').value = resolvedLight;
     el('escapeRoute').value = String(!!data.escapeRoute);
-    // set background select (support single value or array)
-    try {
-        const bgEl = el('levelBackground');
-        if (bgEl && bgEl.options) {
-            const vals = Array.isArray(data.background) ? data.background : (data.background !== undefined && data.background !== null ? [data.background] : []);
-            Array.from(bgEl.options).forEach(o => {
-                o.selected = vals.length === 0 ? (o.value === String(data.background)) : vals.some(v => String(v) === o.value);
-            });
-        } else {
-            el('levelBackground').value = data.background ? String(data.background) : '';
-        }
-    } catch (e) { el('levelBackground').value = data.background ? String(data.background) : ''; }
-    // set foreground select (support single value or array)
-    try {
-        const fgEl = el('levelForeground');
-        if (fgEl && fgEl.options) {
-            const vals = Array.isArray(data.foreground) ? data.foreground : (data.foreground !== undefined && data.foreground !== null ? [data.foreground] : []);
-            Array.from(fgEl.options).forEach(o => {
-                o.selected = vals.length === 0 ? (o.value === String(data.foreground)) : vals.some(v => String(v) === o.value);
-            });
-        } else {
-            if (el('levelForeground')) el('levelForeground').value = data.foreground ? String(data.foreground) : '';
-        }
-    } catch (e) { if (el('levelForeground')) el('levelForeground').value = data.foreground ? String(data.foreground) : ''; }
+    // legacy background/foreground selects are optional; layers DOM is authoritative
 
     el('playerRow').value = data.playerStart?.row ?? DEFAULT_LEVEL.playerStart.row;
     el('playerCol').value = data.playerStart?.col ?? DEFAULT_LEVEL.playerStart.col;
 
-    // background select + enabled (legacy UI might be absent)
-    try {
-        if (el('levelBackground')) el('levelBackground').value = data.background ? String(data.background) : '';
-    } catch (e) { }
+    // background toggle
     if (el('showBackground')) el('showBackground').checked = data.backgroundEnabled !== undefined ? !!data.backgroundEnabled : true;
     if (el('autoGridFromBg')) el('autoGridFromBg').checked = true;
     if (el('rainEnabled')) el('rainEnabled').checked = !!resolvedRain.enabled;
@@ -3586,7 +3560,17 @@ window.addEventListener('load', () => {
         } catch (e) { }
     };
 
-    // Background-layer legacy controls removed from UI.
+    try {
+        const addBg = el('addBgLayerBtn');
+        if (addBg) addBg.addEventListener('click', () => {
+            const container = el('bgLayersContainer');
+            if (!container) return;
+            ensureBgHeader();
+            container.appendChild(createBgLayerElement({ src: '', factor: 1.0, alpha: 1.0, enabled: true }));
+            try { getScene()?.updateEditorBackgroundImage?.(true); } catch (e) {}
+            try { drawMiniMapPreview(getScene()); } catch (e) {}
+        });
+    } catch (e) {}
     try {
         const addFg = el('addFgLayerBtn');
         if (addFg) addFg.addEventListener('click', () => {
@@ -3597,7 +3581,20 @@ window.addEventListener('load', () => {
             try { drawMiniMapPreview(getScene()); } catch (e) {}
         });
     } catch (e) {}
-    // Background-layer legacy controls removed from UI.
+    try {
+        const addBgFrom = el('addBgFromSelectBtn');
+        const bgSelect = el('bgImageSelect');
+        if (addBgFrom && bgSelect) addBgFrom.addEventListener('click', () => {
+            const val = String(bgSelect.value || '').trim();
+            if (!val) return;
+            const container = el('bgLayersContainer');
+            if (!container) return;
+            ensureBgHeader();
+            container.appendChild(createBgLayerElement({ src: `${BG_ASSETS_DIR}/${val}`, factor: 1.0, alpha: 1.0, enabled: true }));
+            try { getScene()?.updateEditorBackgroundImage?.(true); } catch (e) {}
+            try { drawMiniMapPreview(getScene()); } catch (e) {}
+        });
+    } catch (e) {}
     try {
         const addFgFrom = el('addFgFromSelectBtn');
         const fgSelect = el('fgImageSelect');
@@ -3612,9 +3609,21 @@ window.addEventListener('load', () => {
         });
     } catch (e) {}
 
-    // Background-layer legacy controls removed from UI.
+    try {
+        const bgEnableAllBtn = el('bgEnableAllBtn');
+        if (bgEnableAllBtn) bgEnableAllBtn.addEventListener('click', () => {
+            setAllLayerEnabled('bgLayersContainer', 'bg-enabled', true);
+            try { setStatus('Tutti i background attivati.'); } catch (e) { }
+        });
+    } catch (e) {}
 
-    // Background-layer legacy controls removed from UI.
+    try {
+        const bgDisableAllBtn = el('bgDisableAllBtn');
+        if (bgDisableAllBtn) bgDisableAllBtn.addEventListener('click', () => {
+            setAllLayerEnabled('bgLayersContainer', 'bg-enabled', false);
+            try { setStatus('Tutti i background disattivati.'); } catch (e) { }
+        });
+    } catch (e) {}
 
     try {
         const fgEnableAllBtn = el('fgEnableAllBtn');

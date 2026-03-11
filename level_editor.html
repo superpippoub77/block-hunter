@@ -514,6 +514,27 @@
                 </div>
                 <div style="margin-top:6px;">
                     <div style="margin-top:8px;">
+                        <label style="display:block; font-size:9px; color:#b6caef; margin-bottom:4px;">Background layers
+                            (aggiungi/rimuovi)</label>
+                        <div class="tiny" style="margin-bottom:6px;">Ogni layer supporta: attivo/non attivo, parallax, alpha, offset X/Y, repliche X/Y e step X/Y. Usa <strong>*</strong> in repliche per copertura automatica.</div>
+                        <div style="display:flex; gap:6px; margin-bottom:6px;">
+                            <button id="bgEnableAllBtn" type="button">Attiva tutti BG</button>
+                            <button id="bgDisableAllBtn" type="button">Disattiva tutti BG</button>
+                        </div>
+                        <div style="display:flex; gap:6px; margin-bottom:6px; align-items:center;">
+                            <select id="bgImageSelect" style="flex:1;">
+                                <option value="">-- scegli immagine background --</option>
+                                <option value="bg_10.png">bg_10.png (assets/images/background)</option>
+                                <option value="bg_11png">bg_11png (assets/images/background)</option>
+                                <option value="bg_12.png">bg_12.png (assets/images/background)</option>
+                            </select>
+                            <button id="addBgFromSelectBtn" type="button">Aggiungi</button>
+                        </div>
+                        <div id="bgLayersContainer"></div>
+                        <button id="addBgLayerBtn" type="button" style="margin-top:6px;">Aggiungi Background
+                            Layer</button>
+                    </div>
+                    <div style="margin-top:8px;">
                         <label style="display:block; font-size:9px; color:#b6caef; margin-bottom:4px;">Foreground layers
                             (aggiungi/rimuovi)</label>
                         <div class="tiny" style="margin-bottom:6px;">Anche i foreground hanno attivo/non attivo e parametri di offset/replica (repX, repY, stepX, stepY).</div>
