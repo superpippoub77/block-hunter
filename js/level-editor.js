@@ -3870,35 +3870,6 @@ window.addEventListener('load', () => {
         });
     } catch (e) {}
     try {
-        const addBgFrom = el('addBgFromSelectBtn');
-        const bgSelect = el('bgImageSelect');
-        if (addBgFrom && bgSelect) addBgFrom.addEventListener('click', () => {
-            const val = String(bgSelect.value || '').trim();
-            if (!val) return;
-            const container = el('bgLayersContainer');
-            if (!container) return;
-            ensureBgHeader();
-            container.appendChild(createBgLayerElement({ src: `${BG_ASSETS_DIR}/${val}`, factor: 1.0, alpha: 1.0, enabled: true }));
-            try { getScene()?.updateEditorBackgroundImage?.(true); } catch (e) {}
-            try { drawMiniMapPreview(getScene()); } catch (e) {}
-        });
-    } catch (e) {}
-    try {
-        const addFgFrom = el('addFgFromSelectBtn');
-        const fgSelect = el('fgImageSelect');
-        if (addFgFrom && fgSelect) addFgFrom.addEventListener('click', () => {
-            const val = String(fgSelect.value || '').trim();
-            if (!val) return;
-            const container = el('fgLayersContainer');
-            if (!container) return;
-            ensureFgHeader();
-            container.appendChild(createFgLayerElement({ src: `${FG_ASSETS_DIR}/${val}`, factor: 1.0, alpha: 1.0, enabled: true }));
-            try { getScene()?.updateEditorBackgroundImage?.(true); } catch (e) {}
-            try { drawMiniMapPreview(getScene()); } catch (e) {}
-        });
-    } catch (e) {}
-
-    try {
         const bgEnableAllBtn = el('bgEnableAllBtn');
         if (bgEnableAllBtn) bgEnableAllBtn.addEventListener('click', () => {
             setAllLayerEnabled('bgLayersContainer', 'bg-enabled', true);
