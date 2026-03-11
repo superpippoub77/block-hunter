@@ -1389,28 +1389,33 @@
     "spawnPoints": null,
     "timeLimit": null,
     "scoreRules": null,
-    "light": "piena",
+    "effects": {
+        "general": {
+            "light": "piena",
+            "fog": {
+                "enabled": false,
+                "alpha": 0.15,
+                "layers": 10,
+                "speed": "fast",
+                "direction": "left"
+            },
+            "rain": {
+                "enabled": true,
+                "intensity": 2.2,
+                "frequency": 220,
+                "wind": 200,
+                "direction": "random",
+                "interval": 20,
+                "duration": 20
+            }
+        },
+        "objects": {}
+    },
     "ghost": 0,
     "bat": 0,
     "ghostSpeed": 0,
     "batSpeed": 0,
     "backgroundEnabled": true,
-    "fog": {
-        "enabled": false,
-        "alpha": 0.15,
-        "layers": 10,
-        "speed": "fast",
-        "direction": "left"
-    },
-    "rain": {
-        "enabled": true,
-        "intensity": 2.2,
-        "frequency": 220,
-        "wind": 200,
-        "direction": "random",
-        "interval": 20,
-        "duration": 20
-    },
     "background": [
         {
             "src": "images/bg_11.png",

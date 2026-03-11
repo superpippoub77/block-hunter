@@ -2257,7 +2257,10 @@ class GameScene extends Phaser.Scene {
 
         // --- Rain / weather effect (configurable from level JSON)
         try {
-            const rainCfg = (this.levelData && (this.levelData.rain || (this.levelData.weather && this.levelData.weather.rain))) || null;
+            const generalFx = this.getGeneralEffectsConfig();
+            const rainCfg = (generalFx && generalFx.rain)
+                || (this.levelData && (this.levelData.rain || (this.levelData.weather && this.levelData.weather.rain)))
+                || null;
             const clearRain = () => {
                 try {
                     if (this.rainEmitter) { try { this.rainEmitter.stop && this.rainEmitter.stop(); } catch (e) { } this.rainEmitter = null; }
@@ -3666,7 +3669,8 @@ class GameScene extends Phaser.Scene {
 
         // Decorative fog / mist support (per-level configurable)
         try {
-            const fogCfg = (this.levelData && this.levelData.fog) ? this.levelData.fog : null;
+            const generalFx = this.getGeneralEffectsConfig();
+            const fogCfg = (generalFx && generalFx.fog) || ((this.levelData && this.levelData.fog) ? this.levelData.fog : null);
             if (fogCfg && fogCfg.enabled) {
                 const fogAlpha = (typeof fogCfg.alpha === 'number') ? fogCfg.alpha : 0.28;
                 // layers controls depth; density controls how many blobs per layer
@@ -4654,9 +4658,25 @@ class GameScene extends Phaser.Scene {
         return fallback;
     }
 
+    getGeneralEffectsConfig() {
+        const raw = this.levelData && this.levelData.effects;
+        if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+        const general = raw.general;
+        if (!general || typeof general !== 'object' || Array.isArray(general)) return {};
+        return general;
+    }
+
     getLevelEffectsConfig() {
         const raw = this.levelData && this.levelData.effects;
         if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+
+        const objects = raw.objects;
+        if (objects && typeof objects === 'object' && !Array.isArray(objects)) {
+            return objects;
+        }
+
+        // Backward compatibility: old schema had object effects directly under `effects`
+        if (raw.general || raw.objects) return {};
         return raw;
     }
 
@@ -6464,7 +6484,8 @@ class GameScene extends Phaser.Scene {
     setupLevelLightEffect() {
         this.stopLevelLightEffect();
 
-        const lightModeRaw = this.levelData?.light ?? this.levelConfig?.light;
+        const generalFx = this.getGeneralEffectsConfig();
+        const lightModeRaw = generalFx?.light ?? this.levelData?.light ?? this.levelConfig?.light;
         const lightMode = String(lightModeRaw || '')
             .trim()
             .toLowerCase()

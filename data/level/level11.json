@@ -57,7 +57,12 @@
   "spawnPoints": null,
   "timeLimit": null,
   "scoreRules": null,
-  "light": "piena",
+  "effects": {
+    "general": {
+      "light": "piena"
+    },
+    "objects": {}
+  },
   "ghost":2,
   "bat":2,
   "ghostSpeed": 80,
