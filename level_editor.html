@@ -67,6 +67,30 @@
             border: 1px solid #1f3b5f;
             cursor: pointer;
             border-radius: 4px;
+            transition: filter 0.12s ease, transform 0.12s ease;
+        }
+
+        .accordion h3:hover {
+            filter: brightness(1.08);
+            transform: translateY(-1px);
+        }
+
+        .left-panel .accordion:nth-of-type(1) h3 {
+            background: #102b45;
+            border-color: #2f6ea2;
+            color: #bfe6ff;
+        }
+
+        .left-panel .accordion:nth-of-type(2) h3 {
+            background: #2c1d48;
+            border-color: #6e4aa6;
+            color: #d9caff;
+        }
+
+        .left-panel .accordion:nth-of-type(3) h3 {
+            background: #213b2e;
+            border-color: #4f9b6b;
+            color: #caf7da;
         }
 
         .accordion .content {
@@ -104,15 +128,23 @@
         .section {
             border: 1px solid #273859;
             border-radius: 6px;
-            padding: 10px;
-            margin-bottom: 10px;
+            padding: 8px;
+            margin-bottom: 8px;
             background: rgba(18, 33, 60, 0.45);
+            --sec-accent: #4b79b8;
+            --sec-bg: rgba(24, 52, 92, 0.38);
+            --sec-text: #bfe6ff;
         }
 
         .section h2 {
             font-size: 11px;
-            margin-bottom: 8px;
-            color: #8fd8ff;
+            margin-bottom: 6px;
+            color: var(--sec-text);
+            background: var(--sec-bg);
+            border: 1px solid var(--sec-accent);
+            border-left: 6px solid var(--sec-accent);
+            border-radius: 5px;
+            padding: 6px 8px;
         }
 
         .section h2 {
@@ -126,6 +158,42 @@
 
         .section.collapsed .section-body {
             display: none;
+        }
+
+        .section.section-tone-1 {
+            --sec-accent: #4b79b8;
+            --sec-bg: rgba(29, 62, 110, 0.35);
+            --sec-text: #c8e7ff;
+        }
+
+        .section.section-tone-2 {
+            --sec-accent: #8b5fbf;
+            --sec-bg: rgba(76, 45, 114, 0.35);
+            --sec-text: #e6d4ff;
+        }
+
+        .section.section-tone-3 {
+            --sec-accent: #4fa280;
+            --sec-bg: rgba(32, 74, 59, 0.35);
+            --sec-text: #cff7e8;
+        }
+
+        .section.section-tone-4 {
+            --sec-accent: #bf7e4a;
+            --sec-bg: rgba(96, 61, 31, 0.35);
+            --sec-text: #ffe4c8;
+        }
+
+        .section.section-tone-5 {
+            --sec-accent: #b24b6c;
+            --sec-bg: rgba(89, 31, 52, 0.35);
+            --sec-text: #ffd0de;
+        }
+
+        .section.section-tone-6 {
+            --sec-accent: #6a9b3d;
+            --sec-bg: rgba(55, 78, 32, 0.35);
+            --sec-text: #e5f7cc;
         }
 
         .grid2,
@@ -160,7 +228,7 @@
             border: 1px solid #35507f;
             background: #0c1832;
             color: #e3eeff;
-            padding: 6px;
+            padding: 5px;
         }
 
         textarea {
@@ -184,7 +252,7 @@
         }
 
         .tiny {
-            margin-top: 6px;
+            margin-top: 4px;
             font-size: 8px;
             line-height: 1.45;
             color: #9fb8df;

@@ -61,6 +61,52 @@ function loadTranslations(lang, callback) {
         });
 }
 
+function clearRuntimeMatchStorage() {
+    try {
+        if (window && window.localStorage) {
+            // Runtime-only persistence for the current run
+            localStorage.removeItem('blockHunterPlacedPlanks');
+        }
+    } catch (e) { }
+
+    try {
+        if (window && window.sessionStorage) {
+            // Session data should never leak across fresh runs
+            sessionStorage.clear();
+        }
+    } catch (e) { }
+}
+
+function resetGameStateForNewRun(players = 1) {
+    const p = Number(players) === 2 ? 2 : 1;
+
+    GAME_STATE.players = p;
+    GAME_STATE.currentLevel = 0;
+    GAME_STATE.score = 0;
+    GAME_STATE.isGameOver = false;
+
+    GAME_STATE.lives = 5;
+    GAME_STATE.dynamiteCount = 20;
+    GAME_STATE.keysCount = 0;
+    GAME_STATE.woodenCount = 0;
+
+    GAME_STATE.keysP1 = 0;
+    GAME_STATE.keysP2 = 0;
+    GAME_STATE.woodenP1 = 0;
+    GAME_STATE.woodenP2 = 0;
+
+    if (p === 2) {
+        GAME_STATE.livesP1 = 5;
+        GAME_STATE.livesP2 = 5;
+    } else {
+        delete GAME_STATE.livesP1;
+        delete GAME_STATE.livesP2;
+    }
+
+    GAME_STATE.placedPlanks = [];
+    clearRuntimeMatchStorage();
+}
+
 
 
 // Utility: draw a rounded panel (semi-transparent fill + black border) around a text object
@@ -934,28 +980,7 @@ class AttractScene extends Phaser.Scene {
                 intro.stop();
             }
             GAME_STATE.credits -= players;
-            // record number of players for later scenes
-            GAME_STATE.players = Number(players) || 1;
-            GAME_STATE.score = GAME_STATE.score || 0;
-            GAME_STATE.lives = GAME_STATE.lives || 5;
-            GAME_STATE.dynamiteCount = GAME_STATE.dynamiteCount || 20;
-            // Single-player inventory (kept for backward compatibility)
-            GAME_STATE.keysCount = GAME_STATE.keysCount || 0;
-            // Wooden planks collected by player (used to bridge holes)
-            GAME_STATE.woodenCount = GAME_STATE.woodenCount || 0;
-            // Per-player inventories for local 2-player mode
-            GAME_STATE.keysP1 = 0;
-            GAME_STATE.keysP2 = 0;
-            GAME_STATE.woodenP1 = 0;
-            GAME_STATE.woodenP2 = 0;
-            GAME_STATE.currentLevel = 0;
-            // initialize lives per-player when starting 2-player
-            if (Number(GAME_STATE.players) === 2) {
-                GAME_STATE.livesP1 = 5;
-                GAME_STATE.livesP2 = 5;
-            } else {
-                GAME_STATE.lives = 5;
-            }
+            resetGameStateForNewRun(players);
             this.scene.start('LevelSelectScene');
         }
     }
@@ -1494,16 +1519,7 @@ class CreditsScene extends Phaser.Scene {
             if ((Number(GAME_STATE.credits) || 0) >= players) {
                 try { const intro = this.sound.get('intro_bgm'); if (intro && intro.isPlaying) intro.stop(); } catch (e) {}
                 GAME_STATE.credits = (Number(GAME_STATE.credits) || 0) - players;
-                GAME_STATE.players = Number(players) || 1;
-                GAME_STATE.score = GAME_STATE.score || 0;
-                GAME_STATE.lives = GAME_STATE.lives || 5;
-                GAME_STATE.dynamiteCount = GAME_STATE.dynamiteCount || 20;
-                GAME_STATE.keysCount = GAME_STATE.keysCount || 0;
-                GAME_STATE.woodenCount = GAME_STATE.woodenCount || 0;
-                GAME_STATE.keysP1 = 0; GAME_STATE.keysP2 = 0; GAME_STATE.woodenP1 = 0; GAME_STATE.woodenP2 = 0;
-                GAME_STATE.currentLevel = 0;
-                if (Number(GAME_STATE.players) === 2) { GAME_STATE.livesP1 = 5; GAME_STATE.livesP2 = 5; }
-                else { GAME_STATE.lives = 5; }
+                resetGameStateForNewRun(players);
                 this.scene.start('LevelSelectScene');
             } else {
                 this.scene.start('AttractScene');

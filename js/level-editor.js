@@ -3268,9 +3268,12 @@ function setupRightAccordion() {
     const panel = document.querySelector('.panel');
     if (!panel) return;
     const sections = Array.from(panel.querySelectorAll('.section'));
-    sections.forEach((sec) => {
+    sections.forEach((sec, idx) => {
         const h2 = sec.querySelector('h2');
         if (!h2) return;
+        // color tone class per section for quick visual distinction
+        const tone = (idx % 6) + 1;
+        sec.classList.add(`section-tone-${tone}`);
         // add +/- indicator
         let ind = h2.querySelector('.section-indicator');
         if (!ind) {
@@ -3296,8 +3299,8 @@ function setupRightAccordion() {
             toMove.forEach(n => body.appendChild(n));
             sec.appendChild(body);
         }
-        // default: expanded
-        sec.classList.remove('collapsed');
+        // default: collapsed
+        sec.classList.add('collapsed');
         // set initial indicator state
         try { ind.textContent = sec.classList.contains('collapsed') ? '+' : '-'; } catch (e) {}
         // toggle on click and update indicator
@@ -3477,12 +3480,7 @@ function buildDomPalette() {
     });
 
     // expand objects group by default
-    try {
-        if (objectsContainer) objectsContainer.style.display = 'block';
-        // also highlight the header
-        const objHead = document.querySelector('.accordion h3[data-group="objects"]');
-        if (objHead) objHead.style.background = '#0b2a44';
-    } catch (e) { /* ignore */ }
+    // keep all left accordions collapsed by default
 
     function makePaletteItem(labelText, token) {
         const d = document.createElement('div');
