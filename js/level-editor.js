@@ -222,6 +222,9 @@ function parseNullableInput(text) {
 }
 
 function tokenToMiniMapColor(token) {
+    const raw = String(token ?? '').trim().toLowerCase();
+    if (/^exit(\[[^\]]+\])?$/.test(raw)) return '#526f9f';
+    if (/^(?:bck|back|back_level)(\[[^\]]+\])?$/.test(raw)) return '#526f9f';
     const normalized = normalizeToken(token);
     if (normalized === '-') return '#0f1f3e';
     if (normalized === 'f') return '#2f4f67';
@@ -599,6 +602,10 @@ class LevelEditorScene extends Phaser.Scene {
     }
 
     resetGrid(cols, rows, skipBgUpdate = false) {
+        const prevCells = Array.isArray(this.cells) ? this.cells : [];
+        const prevRows = Number(this.rows) || 0;
+        const prevCols = Number(this.cols) || 0;
+
         this.cols = clamp(Math.floor(cols), 4, 40);
         this.rows = clamp(Math.floor(rows), 4, 40);
 
@@ -634,10 +641,19 @@ class LevelEditorScene extends Phaser.Scene {
             startY: 24
         };
 
-        this.cells = Array.from({ length: this.rows }, () => Array.from({ length: this.cols }, () => ({
-            base: '-',
-            reveal: null
-        })));
+        this.cells = Array.from({ length: this.rows }, (_, r) => Array.from({ length: this.cols }, (_, c) => {
+            const prevCell = (r < prevRows && c < prevCols && prevCells[r] && prevCells[r][c]) ? prevCells[r][c] : null;
+            if (prevCell && typeof prevCell === 'object') {
+                return {
+                    base: normalizeToken(prevCell.base ?? '-'),
+                    reveal: prevCell.reveal ? normalizeToken(prevCell.reveal) : null
+                };
+            }
+            return {
+                base: '-',
+                reveal: null
+            };
+        }));
         this.selectedCell = null;
         this.renderGrid();
         // update background image after layout changes (unless explicitly skipped)
@@ -662,7 +678,8 @@ class LevelEditorScene extends Phaser.Scene {
         this.gridOffsetX = Math.max(padding, Math.floor((Math.max(64, totalW - (this.paletteArea?.width || 360) - padding * 3) - gridW) / 2) + padding);
         this.gridOffsetY = Math.max(padding, Math.floor((totalH - gridH) / 2));
         // update background image and re-render
-        try { this.updateEditorBackgroundImage(); } catch (e) {}
+        // Zoom should not trigger auto-grid recomputation, otherwise cells may be reset.
+        try { this.updateEditorBackgroundImage(true); } catch (e) {}
         this.renderGrid();
         // update scrollbar ranges after zooming/resizing cells
         try { this.updateScrollbars(); } catch (e) { /* ignore */ }
@@ -1150,6 +1167,13 @@ class LevelEditorScene extends Phaser.Scene {
     }
 
     tokenToRenderInfo(token) {
+        const raw = String(token ?? '').trim().toLowerCase();
+        if (/^exit(\[[^\]]+\])?$/.test(raw)) {
+            return { kind: 'obj', frame: OBJECT_FRAMES.exit };
+        }
+        if (/^(?:bck|back|back_level)(\[[^\]]+\])?$/.test(raw)) {
+            return { kind: 'tile', texture: 'tiles', frame: 5 };
+        }
         const normalized = normalizeToken(token);
         const wallMatch = normalized.match(WALL_TOKEN_REGEX);
         if (wallMatch) {
@@ -1468,6 +1492,13 @@ function drawMiniMapFrame(scene, ctx, textureKey, frameIndex, x, y, size, opts =
 }
 
 function drawMiniMapToken(scene, ctx, token, x, y, size, opts = {}) {
+    const raw = String(token ?? '').trim().toLowerCase();
+    if (/^exit(\[[^\]]+\])?$/.test(raw)) {
+        return drawMiniMapFrame(scene, ctx, 'objects', OBJECT_FRAMES.exit, x, y, size, { alpha: opts.alpha });
+    }
+    if (/^(?:bck|back|back_level)(\[[^\]]+\])?$/.test(raw)) {
+        return drawMiniMapFrame(scene, ctx, 'tiles', 5, x, y, size, { alpha: opts.alpha });
+    }
     const normalized = normalizeToken(token);
     const wallMatch = normalized.match(WALL_TOKEN_REGEX);
     if (wallMatch) {

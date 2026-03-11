@@ -255,6 +255,39 @@ function getLevelMasterNumber(levelIndex) {
     return Math.floor(levelIndex / 5) + 1;
 }
 
+function parseExitTargetLevel(rawTarget) {
+    const text = String(rawTarget ?? '').trim();
+    if (!text) return null;
+
+    let major = null;
+    let minor = null;
+
+    if (/^\d+\.\d+$/.test(text)) {
+        const parts = text.split('.');
+        major = Number(parts[0]);
+        minor = Number(parts[1]);
+    } else if (/^\d+$/.test(text)) {
+        // Compact form: 12 => 1.2, 123 => 12.3
+        if (text.length < 2) return null;
+        major = Number(text.slice(0, -1));
+        minor = Number(text.slice(-1));
+    } else {
+        return null;
+    }
+
+    if (!Number.isFinite(major) || !Number.isFinite(minor)) return null;
+    if (major < 1 || minor < 0 || minor > 4) return null;
+
+    const totalLevels = (LEVEL_CONFIG && Array.isArray(LEVEL_CONFIG.levels)) ? LEVEL_CONFIG.levels.length : 0;
+    const index = ((major - 1) * 5) + minor;
+    if (index < 0 || index >= totalLevels) return null;
+
+    return {
+        id: `${major}.${minor}`,
+        index
+    };
+}
+
 // Small helper to add an unobtrusive 'by SpikeCode' credit to a scene.
 // Call from scenes where the credit should appear (not the main GameScene).
 function addSpikeCredit(scene, opts = {}) {
@@ -3067,9 +3100,21 @@ class GameScene extends Phaser.Scene {
                 return { type: 'wall', wallFrame: 0, wallRotation: 0, wallFlip: '0', noTile: noTileFlag };
             }
 
-            // Support multi-character tokens like 'exit' which should map to hole2 (the exit frame)
+            // Support multi-character tokens like 'back' and 'back[...]'
             if (typeof value === 'string') {
                 const vnorm = value.trim().toLowerCase();
+                const backTargetMatch = vnorm.match(/^(?:bck|back|back_level)\[(.+)\]$/i);
+                if (backTargetMatch) {
+                    const target = parseExitTargetLevel(backTargetMatch[1]);
+                    return {
+                        type: 'back',
+                        wallFrame: 0,
+                        wallRotation: 0,
+                        noTile: noTileFlag,
+                        backTargetLevelIndex: target ? target.index : null,
+                        backTargetLevelId: target ? target.id : null
+                    };
+                }
                 if (vnorm === 'bck' || vnorm === 'back' || vnorm === 'back_level') {
                     return { type: 'back', wallFrame: 0, wallRotation: 0, noTile: noTileFlag };
                 }
@@ -3081,6 +3126,18 @@ class GameScene extends Phaser.Scene {
             // Support multi-character tokens like 'exit' which should map to hole2 (the exit frame)
             if (typeof value === 'string') {
                 const vnorm = value.trim().toLowerCase();
+                const exitTargetMatch = vnorm.match(/^exit\[(.+)\]$/i);
+                if (exitTargetMatch) {
+                    const target = parseExitTargetLevel(exitTargetMatch[1]);
+                    return {
+                        type: 'hole2',
+                        wallFrame: 0,
+                        wallRotation: 0,
+                        noTile: noTileFlag,
+                        exitTargetLevelIndex: target ? target.index : null,
+                        exitTargetLevelId: target ? target.id : null
+                    };
+                }
                 if (vnorm === 'exit' || vnorm === 'hole2') {
                     return { type: 'hole2', wallFrame: 0, wallRotation: 0, noTile: noTileFlag };
                 }
@@ -3422,8 +3479,19 @@ class GameScene extends Phaser.Scene {
                         x: offsetX + x * CONFIG.tileSize + CONFIG.tileSize / 2,
                         y: offsetY + y * CONFIG.tileSize + CONFIG.tileSize / 2,
                         gridX: x,
-                        gridY: y
+                        gridY: y,
+                        exitTargetLevelIndex: Number.isFinite(Number(cell.exitTargetLevelIndex)) ? Number(cell.exitTargetLevelIndex) : null,
+                        exitTargetLevelId: cell.exitTargetLevelId || null
                     });
+                }
+
+                if (!tileNoTile && type === 'back') {
+                    try {
+                        this.spawnBackLabelAt(
+                            offsetX + x * CONFIG.tileSize + CONFIG.tileSize / 2,
+                            offsetY + y * CONFIG.tileSize + CONFIG.tileSize / 2
+                        );
+                    } catch (e) { }
                 }
 
                 if (!tileNoTile && type === 'ghost') {
@@ -3448,7 +3516,14 @@ class GameScene extends Phaser.Scene {
 
                 // Store logical type (for game logic) and sprite separately. Use original
                 // `type` as the tile `type` so holes are recognized even when no tile is drawn.
-                this.tiles[y][x] = { type: type, sprite: tileSprite, noTile: !!tileNoTile, invisible: !!tileInvisible };
+                this.tiles[y][x] = {
+                    type: type,
+                    sprite: tileSprite,
+                    noTile: !!tileNoTile,
+                    invisible: !!tileInvisible,
+                    backTargetLevelIndex: Number.isFinite(Number(cell.backTargetLevelIndex)) ? Number(cell.backTargetLevelIndex) : null,
+                    backTargetLevelId: cell.backTargetLevelId || null
+                };
                 // Diagnostic: when debug flag enabled and the source map token had a trailing dot,
                 // print the stored tile entry so we can verify `noTile`/type/hiddenReveal propagation.
                 try {
@@ -4443,7 +4518,7 @@ class GameScene extends Phaser.Scene {
         }
     }
 
-    spawnHole2ExitAt(worldX, worldY, gridX = null, gridY = null) {
+    spawnHole2ExitAt(worldX, worldY, gridX = null, gridY = null, exitTargetLevelIndex = null, exitTargetLevelId = null) {
         if (!this.hole2Exits) return;
 
         const exits = this.hole2Exits.children?.entries || [];
@@ -4467,6 +4542,8 @@ class GameScene extends Phaser.Scene {
         } catch (e) { }
         hole2Exit.setData('gridX', gridX);
         hole2Exit.setData('gridY', gridY);
+        hole2Exit.setData('exitTargetLevelIndex', Number.isFinite(Number(exitTargetLevelIndex)) ? Number(exitTargetLevelIndex) : null);
+        hole2Exit.setData('exitTargetLevelId', exitTargetLevelId || null);
         if (hole2Exit.body) {
             try {
                 const specExit = resolveContactSpec('exit');
@@ -4536,6 +4613,44 @@ class GameScene extends Phaser.Scene {
         }
     }
 
+    spawnBackLabelAt(worldX, worldY) {
+        try {
+            if (!this.backLabels) {
+                this.backLabels = this.add.group();
+            }
+
+            const existing = this.backLabels.getChildren().some((entry) => {
+                if (!entry || !entry.active) return false;
+                return Math.abs(entry.x - worldX) < 1 && Math.abs(entry.y - worldY) < 1;
+            });
+            if (existing) return;
+
+            const fontSize = Math.max(10, Math.floor(CONFIG.objectSize / 3));
+            const label = this.add.text(worldX, worldY, 'BACK', {
+                fontFamily: 'PressStart2P, Arial',
+                fontSize: `${fontSize}px`,
+                color: '#ffffff',
+                stroke: '#000000',
+                strokeThickness: 4,
+                align: 'center'
+            }).setOrigin(0.5, 0.5);
+
+            label.setDepth(1000);
+            this.backLabels.add(label);
+
+            this.tweens.add({
+                targets: label,
+                y: worldY - 6,
+                duration: 700,
+                yoyo: true,
+                repeat: -1,
+                ease: 'Sine.easeInOut'
+            });
+        } catch (e) {
+            console.warn('Failed to create BACK label:', e);
+        }
+    }
+
     activateHole2Exits() {
         if (this.hole2ExitsActive) return;
 
@@ -4571,7 +4686,14 @@ class GameScene extends Phaser.Scene {
         this.exitUnlocked = true;
 
         (Array.isArray(this.hole2ExitPositions) ? this.hole2ExitPositions : []).forEach((exitPos) => {
-            this.spawnHole2ExitAt(exitPos.x, exitPos.y, exitPos.gridX, exitPos.gridY);
+            this.spawnHole2ExitAt(
+                exitPos.x,
+                exitPos.y,
+                exitPos.gridX,
+                exitPos.gridY,
+                exitPos.exitTargetLevelIndex,
+                exitPos.exitTargetLevelId
+            );
         });
     }
 
@@ -4580,7 +4702,9 @@ class GameScene extends Phaser.Scene {
         if (!hole2Exit || !hole2Exit.active) return;
         // Ensure exit has been unlocked by collecting the required number of gems
         if (!this.exitUnlocked) return;
-        this.levelComplete();
+        const forcedLevelIndex = Number(hole2Exit.getData?.('exitTargetLevelIndex'));
+        const targetLevel = Number.isFinite(forcedLevelIndex) ? forcedLevelIndex : null;
+        this.levelComplete(targetLevel);
     }
 
     setupCollisions() {
@@ -6493,7 +6617,10 @@ class GameScene extends Phaser.Scene {
 
             // Back level token: return to previous level
             if (tile.type === 'back') {
-                try { this.goToPreviousLevel(); } catch (e) { }
+                try {
+                    const forcedBackLevel = Number.isFinite(Number(tile.backTargetLevelIndex)) ? Number(tile.backTargetLevelIndex) : null;
+                    this.goToPreviousLevel(forcedBackLevel);
+                } catch (e) { }
             }
         }
 
@@ -6802,7 +6929,8 @@ class GameScene extends Phaser.Scene {
 
         // Check if on back tile: return to previous level
         if (tile && tile.type === 'back') {
-            this.goToPreviousLevel();
+            const forcedBackLevel = Number.isFinite(Number(tile.backTargetLevelIndex)) ? Number(tile.backTargetLevelIndex) : null;
+            this.goToPreviousLevel(forcedBackLevel);
         }
 
         // Check proximity to doors for opening
@@ -7093,13 +7221,36 @@ class GameScene extends Phaser.Scene {
             if (!this.hole2ExitPositions) {
                 this.hole2ExitPositions = [];
             }
-            this.hole2ExitPositions.push({ x: worldX, y: worldY, gridX, gridY });
+            this.hole2ExitPositions.push({
+                x: worldX,
+                y: worldY,
+                gridX,
+                gridY,
+                exitTargetLevelIndex: Number.isFinite(Number(revealCell.exitTargetLevelIndex)) ? Number(revealCell.exitTargetLevelIndex) : null,
+                exitTargetLevelId: revealCell.exitTargetLevelId || null
+            });
             this.tiles[gridY][gridX].type = 'empty';
             this.tiles[gridY][gridX].sprite = null;
 
             if (this.hole2ExitsActive && (Number(this.gemsRemaining) || 0) <= 0) {
-                this.spawnHole2ExitAt(worldX, worldY, gridX, gridY);
+                this.spawnHole2ExitAt(
+                    worldX,
+                    worldY,
+                    gridX,
+                    gridY,
+                    revealCell.exitTargetLevelIndex,
+                    revealCell.exitTargetLevelId
+                );
             }
+            return;
+        }
+
+        if (revealType === 'back') {
+            this.tiles[gridY][gridX].type = 'back';
+            this.tiles[gridY][gridX].sprite = null;
+            this.tiles[gridY][gridX].backTargetLevelIndex = Number.isFinite(Number(revealCell.backTargetLevelIndex)) ? Number(revealCell.backTargetLevelIndex) : null;
+            this.tiles[gridY][gridX].backTargetLevelId = revealCell.backTargetLevelId || null;
+            try { this.spawnBackLabelAt(worldX, worldY); } catch (e) { }
             return;
         }
 
@@ -8250,7 +8401,7 @@ class GameScene extends Phaser.Scene {
         return true;
     }
 
-    levelComplete() {
+    levelComplete(forcedLevelIndex = null) {
         if (this.isLevelTransitioning) {
             return;
         }
@@ -8276,7 +8427,14 @@ class GameScene extends Phaser.Scene {
             && !!(bonusConfig.name || bonusConfig.level || bonusConfig.file || bonusConfig.nome);
 
         const totalLevels = LEVEL_CONFIG.levels.length;
-        const nextLevel = (GAME_STATE.currentLevel + 1) % totalLevels;
+        const computedNextLevel = (GAME_STATE.currentLevel + 1) % totalLevels;
+        let nextLevel = computedNextLevel;
+        if (Number.isFinite(Number(forcedLevelIndex))) {
+            const forced = Number(forcedLevelIndex);
+            if (forced >= 0 && forced < totalLevels) {
+                nextLevel = forced;
+            }
+        }
         GAME_STATE.currentLevel = nextLevel;
 
         const completedText = t.level_completed || t.levelComplete || 'LEVEL COMPLETED';
@@ -8351,7 +8509,7 @@ class GameScene extends Phaser.Scene {
         this.time.delayedCall(1500, goToNextLevel);
     }
 
-    goToPreviousLevel() {
+    goToPreviousLevel(forcedLevelIndex = null) {
         if (this.isLevelTransitioning) return;
         this.isLevelTransitioning = true;
 
@@ -8385,7 +8543,14 @@ class GameScene extends Phaser.Scene {
 
         const totalLevels = (LEVEL_CONFIG && Array.isArray(LEVEL_CONFIG.levels)) ? LEVEL_CONFIG.levels.length : 1;
         const current = Number(GAME_STATE.currentLevel) || 0;
-        const prev = ((current - 1) + totalLevels) % Math.max(1, totalLevels);
+        const computedPrev = ((current - 1) + totalLevels) % Math.max(1, totalLevels);
+        let prev = computedPrev;
+        if (Number.isFinite(Number(forcedLevelIndex))) {
+            const forced = Number(forcedLevelIndex);
+            if (forced >= 0 && forced < totalLevels) {
+                prev = forced;
+            }
+        }
         GAME_STATE.currentLevel = prev;
 
         // Show a central flashing "BACK" overlay before transitioning
