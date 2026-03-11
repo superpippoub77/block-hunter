@@ -138,7 +138,8 @@ const DEFAULT_LEVEL = {
     batSpeed: 90
     ,
     background: 1,
-    backgroundEnabled: true
+    backgroundEnabled: true,
+    foregroundEnabled: true
 };
 
 function el(id) {
@@ -953,6 +954,7 @@ class LevelEditorScene extends Phaser.Scene {
 
     updateEditorBackgroundImage(skipAutoGrid = false) {
         const show = !!el('showBackground')?.checked;
+        const showForeground = !!el('showForeground')?.checked;
         const destroyEditorBackgrounds = () => {
             try {
                 if (Array.isArray(this.editorBgImages)) {
@@ -963,6 +965,18 @@ class LevelEditorScene extends Phaser.Scene {
             } catch (e) { }
             this.editorBgImages = [];
             this.editorBgImage = null;
+        };
+
+        const destroyEditorForegrounds = () => {
+            try {
+                if (Array.isArray(this.editorFgImages)) {
+                    this.editorFgImages.forEach((img) => {
+                        try { img.destroy(); } catch (e) { }
+                    });
+                }
+            } catch (e) { }
+            this.editorFgImages = [];
+            this.editorFgImage = null;
         };
 
         const resolveBgLayerSrc = (layer) => {
@@ -994,6 +1008,29 @@ class LevelEditorScene extends Phaser.Scene {
             return null;
         };
 
+        const resolveFgLayerSrc = (layer) => {
+            if (!layer) return '';
+            return String(layer.src || '').trim();
+        };
+
+        const resolveFgTextureKey = (src, idx) => {
+            const raw = String(src || '').trim();
+            if (!raw) return null;
+            if (this.textures.exists(raw)) return raw;
+
+            const safeKey = `editor_fg_${idx}_${raw.replace(/[^a-z0-9_.-]+/gi, '_')}`;
+            if (this.textures.exists(safeKey)) return safeKey;
+
+            try {
+                this.load.image(safeKey, raw);
+                this.load.once('complete', () => {
+                    try { this.updateEditorBackgroundImage(skipAutoGrid); } catch (e) { }
+                });
+                this.load.start();
+            } catch (e) { }
+            return null;
+        };
+
         const domLayers = readBackgroundLayersFromDOM();
         let bgLayers = Array.isArray(domLayers) ? domLayers.slice() : [];
         if (!bgLayers.length) {
@@ -1008,48 +1045,84 @@ class LevelEditorScene extends Phaser.Scene {
 
         if (!show || !enabledLayers.length) {
             destroyEditorBackgrounds();
-            return;
-        }
+        } else {
+            const primaryLayer = enabledLayers[0];
+            const primaryKey = resolveBgTextureKey(resolveBgLayerSrc(primaryLayer), 0);
+            if (!primaryKey) {
+                destroyEditorBackgrounds();
+            } else {
 
-        const primaryLayer = enabledLayers[0];
-        const primaryKey = resolveBgTextureKey(resolveBgLayerSrc(primaryLayer), 0);
-        if (!primaryKey) {
-            destroyEditorBackgrounds();
-            return;
-        }
-
-            // If an actual texture frame exists and the user requested auto-grid-from-bg,
-            // compute cols/rows from the natural background size assuming 64x64 cells.
-            // Passing `skipAutoGrid=true` prevents this behavior (useful when the user
-            // is only changing tile size and doesn't want cols/rows recomputed).
-            try {
-                const autoChk = el('autoGridFromBg');
+                // If an actual texture frame exists and the user requested auto-grid-from-bg,
+                // compute cols/rows from the natural background size assuming 64x64 cells.
+                // Passing `skipAutoGrid=true` prevents this behavior (useful when the user
+                // is only changing tile size and doesn't want cols/rows recomputed).
+                try {
+                    const autoChk = el('autoGridFromBg');
                     if (!skipAutoGrid && autoChk && autoChk.checked) {
-                    const frame = this.textures.getFrame(primaryKey, 0);
-                    if (frame && Number.isFinite(frame.cutWidth) && Number.isFinite(frame.cutHeight)) {
-                        // Use the configured tile size (pixel dimension) when computing cols/rows.
-                        const tileSizeInput = Number(el('tileSizeSlider')?.value) || 64;
-                        const nCols = clamp(Math.floor(Number(frame.cutWidth) / tileSizeInput), 4, 120);
-                        const nRows = clamp(Math.floor(Number(frame.cutHeight) / tileSizeInput), 4, 120);
-                        if (nCols > 0 && nRows > 0 && (nCols !== this.cols || nRows !== this.rows)) {
-                            const colsEl = el('gridCols');
-                            const rowsEl = el('gridRows');
-                            if (colsEl) colsEl.value = String(nCols);
-                            if (rowsEl) rowsEl.value = String(nRows);
-                            // Apply grid but skip bg update inside resetGrid to avoid recursion
-                            try { this.resetGrid(nCols, nRows, true); } catch (e) { /* ignore */ }
+                        const frame = this.textures.getFrame(primaryKey, 0);
+                        if (frame && Number.isFinite(frame.cutWidth) && Number.isFinite(frame.cutHeight)) {
+                            // Use the configured tile size (pixel dimension) when computing cols/rows.
+                            const tileSizeInput = Number(el('tileSizeSlider')?.value) || 64;
+                            const nCols = clamp(Math.floor(Number(frame.cutWidth) / tileSizeInput), 4, 120);
+                            const nRows = clamp(Math.floor(Number(frame.cutHeight) / tileSizeInput), 4, 120);
+                            if (nCols > 0 && nRows > 0 && (nCols !== this.cols || nRows !== this.rows)) {
+                                const colsEl = el('gridCols');
+                                const rowsEl = el('gridRows');
+                                if (colsEl) colsEl.value = String(nCols);
+                                if (rowsEl) rowsEl.value = String(nRows);
+                                // Apply grid but skip bg update inside resetGrid to avoid recursion
+                                try { this.resetGrid(nCols, nRows, true); } catch (e) { /* ignore */ }
+                            }
                         }
                     }
+                } catch (e) {
+                    // ignore any issues while probing textures
                 }
-            } catch (e) {
-                // ignore any issues while probing textures
-            }
 
+                const gridW = this.cellSize * this.cols;
+                const gridH = this.cellSize * this.rows;
+                destroyEditorBackgrounds();
+                this.editorBgImages = [];
+
+                const buildRepeatCount = (raw, span, step) => {
+                    const parsed = parseRepeatValue(raw, 1);
+                    if (parsed !== '*') return parsed;
+                    const safeStep = Math.max(1, Math.abs(step || span));
+                    return Math.max(1, Math.ceil(span / safeStep) + 2);
+                };
+
+                enabledLayers.forEach((layer, idx) => {
+                    const textureKey = resolveBgTextureKey(resolveBgLayerSrc(layer), idx);
+                    if (!textureKey) return;
+
+                    const alpha = parseNumber(layer.parallaxBgAlpha, 1);
+                    const offsetX = parseNumber(layer.offsetX ?? layer.left ?? layer.x ?? layer.positionX, 0);
+                    const offsetY = parseNumber(layer.offsetY ?? layer.top ?? layer.y ?? layer.positionY, 0);
+
+                    const stepX = parseNumber(layer.repeatStepX ?? layer.replicaStepX ?? layer.repeatOffsetX ?? layer.replicaOffsetX, gridW) || gridW;
+                    const stepY = parseNumber(layer.repeatStepY ?? layer.replicaStepY ?? layer.repeatOffsetY ?? layer.replicaOffsetY, gridH) || gridH;
+
+                    const countX = buildRepeatCount(layer.repeatX ?? layer.replicaX ?? layer.repeatCountX ?? layer.replicaCountX ?? 1, gridW + Math.abs(offsetX), stepX);
+                    const countY = buildRepeatCount(layer.repeatY ?? layer.replicaY ?? layer.repeatCountY ?? layer.replicaCountY ?? 1, gridH + Math.abs(offsetY), stepY);
+
+                    for (let iy = 0; iy < countY; iy++) {
+                        for (let ix = 0; ix < countX; ix++) {
+                            const img = this.add.image(0, 0, textureKey).setDepth(-500 - idx);
+                            const x = this.gridOffsetX + offsetX + (stepX * ix) + gridW / 2;
+                            const y = this.gridOffsetY + offsetY + (stepY * iy) + gridH / 2;
+                            img.setDisplaySize(gridW, gridH);
+                            img.setPosition(x, y);
+                            img.setAlpha(clamp(alpha, 0, 1));
+                            this.editorBgImages.push(img);
+                        }
+                    }
+                });
+
+                this.editorBgImage = this.editorBgImages.length ? this.editorBgImages[0] : null;
+            }
+        }
         const gridW = this.cellSize * this.cols;
         const gridH = this.cellSize * this.rows;
-        destroyEditorBackgrounds();
-        this.editorBgImages = [];
-
         const buildRepeatCount = (raw, span, step) => {
             const parsed = parseRepeatValue(raw, 1);
             if (parsed !== '*') return parsed;
@@ -1057,11 +1130,21 @@ class LevelEditorScene extends Phaser.Scene {
             return Math.max(1, Math.ceil(span / safeStep) + 2);
         };
 
-        enabledLayers.forEach((layer, idx) => {
-            const textureKey = resolveBgTextureKey(resolveBgLayerSrc(layer), idx);
+        const domFgLayers = readForegroundLayersFromDOM();
+        const enabledFgLayers = Array.isArray(domFgLayers)
+            ? domFgLayers.filter((ly) => ly && ly.enabled !== false && resolveFgLayerSrc(ly))
+            : [];
+
+        destroyEditorForegrounds();
+        if (!showForeground || !enabledFgLayers.length) {
+            return;
+        }
+
+        enabledFgLayers.forEach((layer, idx) => {
+            const textureKey = resolveFgTextureKey(resolveFgLayerSrc(layer), idx);
             if (!textureKey) return;
 
-            const alpha = parseNumber(layer.parallaxBgAlpha, 1);
+            const alpha = parseNumber(layer.parallaxFgAlpha, 1);
             const offsetX = parseNumber(layer.offsetX ?? layer.left ?? layer.x ?? layer.positionX, 0);
             const offsetY = parseNumber(layer.offsetY ?? layer.top ?? layer.y ?? layer.positionY, 0);
 
@@ -1073,18 +1156,18 @@ class LevelEditorScene extends Phaser.Scene {
 
             for (let iy = 0; iy < countY; iy++) {
                 for (let ix = 0; ix < countX; ix++) {
-                    const img = this.add.image(0, 0, textureKey).setDepth(-500 - idx);
+                    const img = this.add.image(0, 0, textureKey).setDepth(500 + idx);
                     const x = this.gridOffsetX + offsetX + (stepX * ix) + gridW / 2;
                     const y = this.gridOffsetY + offsetY + (stepY * iy) + gridH / 2;
                     img.setDisplaySize(gridW, gridH);
                     img.setPosition(x, y);
                     img.setAlpha(clamp(alpha, 0, 1));
-                    this.editorBgImages.push(img);
+                    this.editorFgImages.push(img);
                 }
             }
         });
 
-        this.editorBgImage = this.editorBgImages.length ? this.editorBgImages[0] : null;
+        this.editorFgImage = this.editorFgImages.length ? this.editorFgImages[0] : null;
     }
 
     resetGrid(cols, rows, skipBgUpdate = false) {
@@ -2266,6 +2349,7 @@ function drawMiniMapPreview(scene) {
     ctx.strokeRect(offX + 0.5, offY + 0.5, mapW - 1, mapH - 1);
 
     // draw foreground layers over the map (from DOM or fallback)
+    const showFg = !!el('showForeground')?.checked;
     const domFg = readForegroundLayersFromDOM();
     let fgLayers = null;
     if (Array.isArray(domFg) && domFg.length > 0) fgLayers = domFg;
@@ -2273,7 +2357,7 @@ function drawMiniMapPreview(scene) {
         const fgVal = String(el('levelForeground')?.value ?? '').trim();
         if (fgVal) fgLayers = [{ src: fgVal, parallaxFgFactor: 1.0, parallaxFgAlpha: 1.0 }];
     }
-    if (Array.isArray(fgLayers) && fgLayers.length > 0) {
+    if (showFg && Array.isArray(fgLayers) && fgLayers.length > 0) {
         fgLayers.forEach((ly) => {
             if (!ly || !ly.src) return;
             if (ly.enabled === false) return;
@@ -2433,8 +2517,9 @@ function readLevelFromForm() {
         }
     } catch (e) {}
 
-    // include background enabled flag
+    // include background/foreground enabled flags
     level.backgroundEnabled = !!el('showBackground')?.checked;
+    level.foregroundEnabled = !!el('showForeground')?.checked;
 
     // background can be single or multiple
     // Prefer structured background layers UI if present
@@ -2520,8 +2605,9 @@ function applyLevelToForm(levelData) {
     el('playerRow').value = data.playerStart?.row ?? DEFAULT_LEVEL.playerStart.row;
     el('playerCol').value = data.playerStart?.col ?? DEFAULT_LEVEL.playerStart.col;
 
-    // background toggle
+    // background/foreground toggles
     if (el('showBackground')) el('showBackground').checked = data.backgroundEnabled !== undefined ? !!data.backgroundEnabled : true;
+    if (el('showForeground')) el('showForeground').checked = data.foregroundEnabled !== undefined ? !!data.foregroundEnabled : true;
     if (el('autoGridFromBg')) el('autoGridFromBg').checked = true;
     if (el('rainEnabled')) el('rainEnabled').checked = !!resolvedRain.enabled;
     if (el('rainIntensity')) el('rainIntensity').value = resolvedRain.intensity ?? 1;
@@ -2596,7 +2682,7 @@ function applyLevelToForm(levelData) {
         'id', 'map', 'playerStart', 'staticRocks', 'dynamicBoulders', 'speed', 'escapeRoute',
         'objectiveLabel', 'enemies', 'collectibles', 'traps', 'spawnPoints', 'timeLimit',
         'scoreRules', 'light', 'effects', 'ghost', 'bat', 'ghostSpeed', 'batSpeed',
-        'background', 'foreground', 'backgroundEnabled', 'rain', 'fog', 'music',
+        'background', 'foreground', 'backgroundEnabled', 'foregroundEnabled', 'rain', 'fog', 'music',
         'gemsOneByOne', 'requiredGems', 'gemsRequired', 'playerStart2', 'timer'
     ]);
     const extra = {};
@@ -3349,6 +3435,14 @@ function bindUI() {
             drawMiniMapPreview(scene);
         });
     }
+    const showFg = el('showForeground');
+    if (showFg) {
+        showFg.addEventListener('change', () => {
+            const scene = getScene();
+            scene?.updateEditorBackgroundImage?.();
+            drawMiniMapPreview(scene);
+        });
+    }
 
     const bgLayerContainer = el('bgLayersContainer');
     if (bgLayerContainer) {
@@ -3364,7 +3458,9 @@ function bindUI() {
     const fgLayerContainer = el('fgLayersContainer');
     if (fgLayerContainer) {
         const onFgLayerChange = () => {
-            drawMiniMapPreview(getScene());
+            const scene = getScene();
+            scene?.updateEditorBackgroundImage?.(true);
+            drawMiniMapPreview(scene);
         };
         fgLayerContainer.addEventListener('input', onFgLayerChange);
         fgLayerContainer.addEventListener('change', onFgLayerChange);
@@ -3578,6 +3674,7 @@ window.addEventListener('load', () => {
             if (!container) return;
             ensureFgHeader();
             container.appendChild(createFgLayerElement({ src: '', factor: 1.0, alpha: 1.0, enabled: true }));
+            try { getScene()?.updateEditorBackgroundImage?.(true); } catch (e) {}
             try { drawMiniMapPreview(getScene()); } catch (e) {}
         });
     } catch (e) {}
@@ -3605,6 +3702,7 @@ window.addEventListener('load', () => {
             if (!container) return;
             ensureFgHeader();
             container.appendChild(createFgLayerElement({ src: `${FG_ASSETS_DIR}/${val}`, factor: 1.0, alpha: 1.0, enabled: true }));
+            try { getScene()?.updateEditorBackgroundImage?.(true); } catch (e) {}
             try { drawMiniMapPreview(getScene()); } catch (e) {}
         });
     } catch (e) {}
