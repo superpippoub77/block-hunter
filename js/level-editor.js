@@ -30,6 +30,7 @@ const BG_MANIFEST_PATH = 'data/background-images.json';
 const FG_MANIFEST_PATH = 'data/foreground-images.json';
 const MUSIC_MANIFEST_PATH = 'data/music-files.json';
 const CONFIG_JSON_PATH = 'data/config.json';
+const OBJECTS_JSON_PATH = 'data/objects.json';
 
 // Available numeric level backgrounds discovered from images/level<N>.png
 const AVAILABLE_BG_LEVELS = [1,2,3,4,5,6];
@@ -787,6 +788,280 @@ function setObjectCardVisibility(card) {
     if (staticBlock) staticBlock.style.display = dynamic ? 'none' : '';
 }
 
+function resolveObjectPreviewSrc(rawSrc) {
+    const raw = String(rawSrc ?? '').trim();
+    if (!raw) return '';
+    if (/^(https?:|data:|blob:|\/)/i.test(raw)) return raw;
+    return raw;
+}
+
+function parseFrameSequence(rawText) {
+    const raw = String(rawText ?? '').trim();
+    if (!raw) return [];
+    const out = [];
+    raw.split(',').map((part) => part.trim()).filter(Boolean).forEach((chunk) => {
+        const m = chunk.match(/^(\d+)\s*-\s*(\d+)$/);
+        if (m) {
+            const a = Number(m[1]);
+            const b = Number(m[2]);
+            if (!Number.isFinite(a) || !Number.isFinite(b)) return;
+            const step = a <= b ? 1 : -1;
+            for (let i = a; step > 0 ? i <= b : i >= b; i += step) out.push(i);
+            return;
+        }
+        const n = Number(chunk);
+        if (Number.isFinite(n)) out.push(Math.max(0, Math.floor(n)));
+    });
+    return out;
+}
+
+function buildCardAnimationFrames(card) {
+    const get = (sel) => String(card.querySelector(sel)?.value ?? '').trim();
+    const sequenceCandidates = [
+        get('.obj-move-right'),
+        get('.obj-move-down'),
+        get('.obj-move-up'),
+        get('.obj-move-left'),
+        get('.obj-idle-right'),
+        get('.obj-idle-down'),
+        get('.obj-idle-up'),
+        get('.obj-idle-left')
+    ];
+    for (const candidate of sequenceCandidates) {
+        const parsed = parseFrameSequence(candidate);
+        if (parsed.length) return parsed;
+    }
+    const fallback = Number(card.querySelector('.obj-default-frame')?.value);
+    return [Number.isFinite(fallback) ? Math.max(0, Math.floor(fallback)) : 0];
+}
+
+function getCardPreviewModel(card) {
+    const src = resolveObjectPreviewSrc(card.querySelector('.obj-image-src')?.value);
+    const frameW = Math.max(1, parseNumber(card.querySelector('.obj-size-w')?.value, 64));
+    const frameH = Math.max(1, parseNumber(card.querySelector('.obj-size-h')?.value, 64));
+    const defaultFrame = Math.max(0, parseNumber(card.querySelector('.obj-default-frame')?.value, 0));
+    const animationFrames = buildCardAnimationFrames(card);
+    return { src, frameW, frameH, defaultFrame, animationFrames };
+}
+
+function drawFrameOnCanvas(canvas, image, frameIndex, frameW, frameH) {
+    if (!canvas || !image) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    canvas.width = 200;
+    canvas.height = 200;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = '#061124';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    const cols = Math.max(1, Math.floor(image.width / frameW));
+    const rows = Math.max(1, Math.floor(image.height / frameH));
+    const maxFrame = Math.max(0, (cols * rows) - 1);
+    const frame = Math.max(0, Math.min(maxFrame, Math.floor(frameIndex)));
+    const sx = (frame % cols) * frameW;
+    const sy = Math.floor(frame / cols) * frameH;
+
+    const scale = Math.min((canvas.width - 16) / frameW, (canvas.height - 16) / frameH);
+    const drawW = Math.max(1, Math.floor(frameW * scale));
+    const drawH = Math.max(1, Math.floor(frameH * scale));
+    const dx = Math.floor((canvas.width - drawW) / 2);
+    const dy = Math.floor((canvas.height - drawH) / 2);
+
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(image, sx, sy, frameW, frameH, dx, dy, drawW, drawH);
+    ctx.strokeStyle = '#63b9ff';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(dx + 0.5, dy + 0.5, drawW, drawH);
+}
+
+function drawSheetOnCanvas(canvas, image, frameW, frameH, highlightFrames = []) {
+    if (!canvas || !image) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const maxViewW = 560;
+    const maxViewH = 300;
+    const scale = Math.min(maxViewW / image.width, maxViewH / image.height, 1);
+    const drawW = Math.max(1, Math.floor(image.width * scale));
+    const drawH = Math.max(1, Math.floor(image.height * scale));
+    canvas.width = drawW;
+    canvas.height = drawH;
+
+    ctx.clearRect(0, 0, drawW, drawH);
+    ctx.fillStyle = '#050d1d';
+    ctx.fillRect(0, 0, drawW, drawH);
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(image, 0, 0, image.width, image.height, 0, 0, drawW, drawH);
+
+    const cols = Math.max(1, Math.floor(image.width / frameW));
+    const rows = Math.max(1, Math.floor(image.height / frameH));
+    const cellW = frameW * scale;
+    const cellH = frameH * scale;
+
+    ctx.strokeStyle = 'rgba(99,185,255,0.40)';
+    ctx.lineWidth = 1;
+    for (let x = 0; x <= cols; x++) {
+        const px = Math.round(x * cellW) + 0.5;
+        ctx.beginPath();
+        ctx.moveTo(px, 0);
+        ctx.lineTo(px, drawH);
+        ctx.stroke();
+    }
+    for (let y = 0; y <= rows; y++) {
+        const py = Math.round(y * cellH) + 0.5;
+        ctx.beginPath();
+        ctx.moveTo(0, py);
+        ctx.lineTo(drawW, py);
+        ctx.stroke();
+    }
+
+    const maxFrame = Math.max(0, (cols * rows) - 1);
+    const unique = Array.from(new Set((highlightFrames || [])
+        .map((it) => Math.floor(Number(it)))
+        .filter((n) => Number.isFinite(n) && n >= 0 && n <= maxFrame)));
+
+    unique.forEach((frame, index) => {
+        const cx = frame % cols;
+        const cy = Math.floor(frame / cols);
+        const rx = Math.round(cx * cellW) + 1;
+        const ry = Math.round(cy * cellH) + 1;
+        const rw = Math.max(2, Math.round(cellW) - 2);
+        const rh = Math.max(2, Math.round(cellH) - 2);
+        ctx.strokeStyle = index === 0 ? '#ffe68f' : '#ff8fb0';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(rx + 0.5, ry + 0.5, rw, rh);
+        ctx.fillStyle = 'rgba(0,0,0,0.7)';
+        ctx.fillRect(rx, ry, Math.min(38, rw), Math.min(14, rh));
+        ctx.fillStyle = '#ffffff';
+        ctx.font = '10px monospace';
+        ctx.fillText(String(frame), rx + 3, ry + 10);
+    });
+}
+
+function stopCardAnimationPreview(card) {
+    const timer = card.__objPreviewAnimTimer;
+    if (timer) {
+        clearInterval(timer);
+        card.__objPreviewAnimTimer = null;
+    }
+    card.__objPreviewAnimRunning = false;
+}
+
+function startCardAnimationPreview(card, image, frameW, frameH, sequence) {
+    stopCardAnimationPreview(card);
+    const frames = Array.isArray(sequence) ? sequence : [];
+    if (!frames.length) return;
+    const canvas = card.querySelector('.obj-preview-anim-canvas');
+    if (!canvas) return;
+
+    let i = 0;
+    drawFrameOnCanvas(canvas, image, frames[i], frameW, frameH);
+    card.__objPreviewAnimTimer = setInterval(() => {
+        i = (i + 1) % frames.length;
+        drawFrameOnCanvas(canvas, image, frames[i], frameW, frameH);
+    }, 140);
+    card.__objPreviewAnimRunning = true;
+}
+
+function renderCardPreview(card) {
+    const { src, frameW, frameH, defaultFrame, animationFrames } = getCardPreviewModel(card);
+    const statusEl = card.querySelector('.obj-preview-info');
+    const sheetCanvas = card.querySelector('.obj-preview-sheet-canvas');
+    const frameCanvas = card.querySelector('.obj-preview-frame-canvas');
+    const animCanvas = card.querySelector('.obj-preview-anim-canvas');
+
+    if (!src) {
+        stopCardAnimationPreview(card);
+        if (statusEl) statusEl.textContent = 'Inserisci imageSrc per vedere la preview.';
+        [sheetCanvas, frameCanvas, animCanvas].forEach((c) => {
+            if (!c) return;
+            const ctx = c.getContext('2d');
+            c.width = 240;
+            c.height = c.classList.contains('obj-preview-sheet-canvas') ? 140 : 200;
+            if (ctx) {
+                ctx.clearRect(0, 0, c.width, c.height);
+                ctx.fillStyle = '#050d1d';
+                ctx.fillRect(0, 0, c.width, c.height);
+            }
+        });
+        return;
+    }
+
+    const nextToken = `${src}__${frameW}__${frameH}__${animationFrames.join('-')}__${defaultFrame}`;
+    const refreshWithImage = (img) => {
+        drawSheetOnCanvas(sheetCanvas, img, frameW, frameH, animationFrames);
+        drawFrameOnCanvas(frameCanvas, img, defaultFrame, frameW, frameH);
+        drawFrameOnCanvas(animCanvas, img, animationFrames[0] ?? defaultFrame, frameW, frameH);
+        if (statusEl) {
+            const cols = Math.max(1, Math.floor(img.width / frameW));
+            const rows = Math.max(1, Math.floor(img.height / frameH));
+            const total = cols * rows;
+            statusEl.textContent = `Sheet ${img.width}x${img.height}px | cella ${frameW}x${frameH}px | matrice ${cols}x${rows} (${total} frame)`;
+        }
+        if (card.__objPreviewAnimRunning) {
+            startCardAnimationPreview(card, img, frameW, frameH, animationFrames);
+        }
+    };
+
+    if (card.__objPreviewImage && card.__objPreviewImageSrc === src) {
+        card.__objPreviewCacheToken = nextToken;
+        refreshWithImage(card.__objPreviewImage);
+        return;
+    }
+
+    stopCardAnimationPreview(card);
+    const img = new Image();
+    img.onload = () => {
+        card.__objPreviewImage = img;
+        card.__objPreviewImageSrc = src;
+        card.__objPreviewCacheToken = nextToken;
+        refreshWithImage(img);
+    };
+    img.onerror = () => {
+        if (statusEl) statusEl.textContent = `Impossibile caricare: ${src}`;
+    };
+    img.src = src;
+}
+
+function attachCardPreviewEvents(card) {
+    const selectors = [
+        '.obj-image-src', '.obj-size-w', '.obj-size-h', '.obj-default-frame',
+        '.obj-idle-up', '.obj-idle-down', '.obj-idle-left', '.obj-idle-right',
+        '.obj-move-up', '.obj-move-down', '.obj-move-left', '.obj-move-right'
+    ];
+    selectors.forEach((sel) => {
+        const node = card.querySelector(sel);
+        if (!node) return;
+        node.addEventListener('input', () => renderCardPreview(card));
+        node.addEventListener('change', () => renderCardPreview(card));
+    });
+
+    const playBtn = card.querySelector('.obj-preview-play-btn');
+    if (playBtn) {
+        playBtn.addEventListener('click', () => {
+            if (card.__objPreviewAnimRunning) {
+                stopCardAnimationPreview(card);
+                playBtn.textContent = 'Play animazione';
+                const img = card.__objPreviewImage;
+                if (img) {
+                    const model = getCardPreviewModel(card);
+                    drawFrameOnCanvas(card.querySelector('.obj-preview-anim-canvas'), img, model.animationFrames[0] ?? model.defaultFrame, model.frameW, model.frameH);
+                }
+            } else {
+                const img = card.__objPreviewImage;
+                if (!img) {
+                    renderCardPreview(card);
+                    return;
+                }
+                const model = getCardPreviewModel(card);
+                startCardAnimationPreview(card, img, model.frameW, model.frameH, model.animationFrames);
+                playBtn.textContent = 'Stop animazione';
+            }
+        });
+    }
+}
+
 function createObjectMapCard(mapping) {
     const m = normalizeObjectMapping(mapping);
     const card = document.createElement('div');
@@ -803,6 +1078,7 @@ function createObjectMapCard(mapping) {
     removeBtn.type = 'button';
     removeBtn.textContent = 'Rimuovi';
     removeBtn.addEventListener('click', () => {
+        stopCardAnimationPreview(card);
         card.remove();
         setObjectMapStatus('Oggetto rimosso.');
     });
@@ -1094,10 +1370,57 @@ function createObjectMapCard(mapping) {
     advancedBlock.appendChild(advancedInput);
     card.appendChild(advancedBlock);
 
+    const previewTitle = document.createElement('div');
+    previewTitle.className = 'objmap-subtitle';
+    previewTitle.textContent = 'Anteprima sprite / griglia frame / animazione';
+    card.appendChild(previewTitle);
+
+    const previewGrid = document.createElement('div');
+    previewGrid.className = 'objmap-preview-grid';
+
+    const sheetPane = document.createElement('div');
+    sheetPane.className = 'objmap-preview-pane';
+    const sheetCanvas = document.createElement('canvas');
+    sheetCanvas.className = 'obj-preview-sheet-canvas';
+    sheetCanvas.width = 320;
+    sheetCanvas.height = 180;
+    const previewInfo = document.createElement('div');
+    previewInfo.className = 'objmap-preview-meta obj-preview-info';
+    previewInfo.textContent = 'Inserisci imageSrc per vedere la preview.';
+    sheetPane.appendChild(sheetCanvas);
+    sheetPane.appendChild(previewInfo);
+
+    const rightPane = document.createElement('div');
+    rightPane.className = 'objmap-preview-pane';
+    const frameCanvas = document.createElement('canvas');
+    frameCanvas.className = 'obj-preview-frame-canvas';
+    frameCanvas.width = 200;
+    frameCanvas.height = 200;
+    const animCanvas = document.createElement('canvas');
+    animCanvas.className = 'obj-preview-anim-canvas';
+    animCanvas.width = 200;
+    animCanvas.height = 200;
+    const actions = document.createElement('div');
+    actions.className = 'objmap-preview-actions';
+    const playBtn = document.createElement('button');
+    playBtn.type = 'button';
+    playBtn.className = 'obj-preview-play-btn';
+    playBtn.textContent = 'Play animazione';
+    actions.appendChild(playBtn);
+    rightPane.appendChild(frameCanvas);
+    rightPane.appendChild(animCanvas);
+    rightPane.appendChild(actions);
+
+    previewGrid.appendChild(sheetPane);
+    previewGrid.appendChild(rightPane);
+    card.appendChild(previewGrid);
+
     const dynamicToggle = card.querySelector('.obj-dynamic');
     const autoToggle = card.querySelector('.obj-auto');
     dynamicToggle?.addEventListener('change', () => setObjectCardVisibility(card));
     autoToggle?.addEventListener('change', () => setObjectCardVisibility(card));
+    attachCardPreviewEvents(card);
+    renderCardPreview(card);
     setObjectCardVisibility(card);
     return card;
 }
@@ -1189,6 +1512,19 @@ function loadObjectMappingsToEditor(rawList) {
 function loadObjectMappingsExample() {
     loadObjectMappingsToEditor(OBJECT_MAPPINGS_EXAMPLE);
     setObjectMapStatus('Esempio JSON esteso caricato: enemy/tile/wall/exit/pickup con parametri avanzati.');
+}
+
+async function loadObjectMappingsFromObjectsFile() {
+    try {
+        const resp = await fetch(OBJECTS_JSON_PATH, { cache: 'no-store' });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const data = await resp.json();
+        if (!Array.isArray(data)) throw new Error('Formato non valido: atteso array JSON.');
+        loadObjectMappingsToEditor(data);
+        setObjectMapStatus(`Caricati ${data.length} oggetti da ${OBJECTS_JSON_PATH}.`);
+    } catch (err) {
+        setObjectMapStatus(`Errore caricamento ${OBJECTS_JSON_PATH}: ${err.message}`, true);
+    }
 }
 
 function setConfigStatus(message, isError = false) {
@@ -4216,6 +4552,7 @@ function bindUI() {
     const configModal = el('configModal');
     const openObjectMapDialogBtn = el('openObjectMapDialogBtn');
     const closeObjectMapDialogBtn = el('closeObjectMapDialogBtn');
+    const loadObjectMapFromFileBtn = el('loadObjectMapFromFileBtn');
     const loadObjectMapExampleBtn = el('loadObjectMapExampleBtn');
     const addObjectMapBtn = el('addObjectMapBtn');
     const saveObjectMapBtn = el('saveObjectMapBtn');
@@ -4264,6 +4601,11 @@ function bindUI() {
     if (closeObjectMapDialogBtn) {
         closeObjectMapDialogBtn.addEventListener('click', () => {
             if (objectMapModal) objectMapModal.classList.remove('open');
+        });
+    }
+    if (loadObjectMapFromFileBtn) {
+        loadObjectMapFromFileBtn.addEventListener('click', async () => {
+            await loadObjectMappingsFromObjectsFile();
         });
     }
     if (loadObjectMapExampleBtn) {

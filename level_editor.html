@@ -216,6 +216,43 @@
             flex-wrap: wrap;
         }
 
+        .objmap-preview-grid {
+            display: grid;
+            grid-template-columns: 1.6fr 1fr;
+            gap: 8px;
+            margin-top: 8px;
+        }
+
+        .objmap-preview-pane {
+            border: 1px solid #2f517f;
+            border-radius: 6px;
+            background: rgba(8, 18, 36, 0.85);
+            padding: 6px;
+        }
+
+        .objmap-preview-pane canvas {
+            width: 100%;
+            max-width: 100%;
+            border: 1px solid #244067;
+            background: #050b17;
+            image-rendering: pixelated;
+            image-rendering: crisp-edges;
+        }
+
+        .objmap-preview-meta {
+            font-size: 9px;
+            color: #8ec2ff;
+            margin-top: 4px;
+            min-height: 12px;
+        }
+
+        .objmap-preview-actions {
+            display: flex;
+            gap: 6px;
+            margin-top: 6px;
+            flex-wrap: wrap;
+        }
+
         .config-toolbar {
             display: flex;
             justify-content: space-between;
@@ -1139,6 +1176,7 @@
             <div class="config-toolbar">
                 <h2 style="margin:0; font-size:12px; color:#d7ebff;">Mappaggio Oggetti (assets/images/objects)</h2>
                 <div style="display:flex; gap:6px;">
+                    <button id="loadObjectMapFromFileBtn" type="button">Carica data/objects.json</button>
                     <button id="loadObjectMapExampleBtn" type="button">Carica Esempio JSON</button>
                     <button id="addObjectMapBtn" type="button">Aggiungi Oggetto</button>
                     <button id="saveObjectMapBtn" type="button">Salva</button>
