@@ -31,6 +31,7 @@ const FG_MANIFEST_PATH = 'data/foreground-images.json';
 const MUSIC_MANIFEST_PATH = 'data/music-files.json';
 const CONFIG_JSON_PATH = 'data/config.json';
 const OBJECTS_JSON_PATH = 'data/objects.json';
+const LEVELS_DIR_PATH = 'data/level';
 
 // Available numeric level backgrounds discovered from images/level<N>.png
 const AVAILABLE_BG_LEVELS = [1,2,3,4,5,6];
@@ -175,6 +176,30 @@ function buildApiUrl(path) {
     return `${API_BASE_PATH}/${clean}/`;
 }
 
+function buildPageRelativeUrl(path) {
+    const clean = String(path ?? '').trim().replace(/^\.?\/+/, '');
+    if (!clean) return '';
+    if (/^(https?:|data:|blob:)/i.test(clean)) return clean;
+
+    try {
+        const pagePath = String(window?.location?.pathname || '/');
+        const baseDir = pagePath.endsWith('/') ? pagePath : pagePath.replace(/\/[^/]*$/, '/');
+        return `${baseDir}${clean}`;
+    } catch (_e) {
+        return clean;
+    }
+}
+
+function buildStaticPathCandidates(path) {
+    const clean = String(path ?? '').trim().replace(/^\.?\/+/, '');
+    if (!clean) return [];
+
+    const out = [clean, `./${clean}`];
+    const pageRelative = buildPageRelativeUrl(clean);
+    if (pageRelative && !out.includes(pageRelative)) out.push(pageRelative);
+    return out;
+}
+
 async function fetchJsonListWithFallback(primaryUrl, fallbackUrl) {
     try {
         const primary = await fetch(primaryUrl);
@@ -186,14 +211,19 @@ async function fetchJsonListWithFallback(primaryUrl, fallbackUrl) {
         // Fallback handled below.
     }
 
-    try {
-        const fallback = await fetch(fallbackUrl);
-        if (!fallback.ok) return [];
-        const data = await fallback.json();
-        return Array.isArray(data) ? data : [];
-    } catch (_e) {
-        return [];
+    const fallbackCandidates = buildStaticPathCandidates(fallbackUrl);
+    for (const candidate of fallbackCandidates) {
+        try {
+            const fallback = await fetch(candidate);
+            if (!fallback.ok) continue;
+            const data = await fallback.json();
+            return Array.isArray(data) ? data : [];
+        } catch (_e) {
+            // Continue with next candidate.
+        }
     }
+
+    return [];
 }
 
 function normalizeLayerSrc(rawValue, type) {
@@ -2190,18 +2220,37 @@ function loadObjectMappingsExample() {
 }
 
 async function loadObjectMappingsFromObjectsFile() {
+    const candidates = buildStaticPathCandidates(OBJECTS_JSON_PATH);
+    let lastError = null;
+
     try {
-        const resp = await fetch(OBJECTS_JSON_PATH, { cache: 'no-store' });
-        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-        const data = await resp.json();
-        if (!Array.isArray(data)) throw new Error('Formato non valido: atteso array JSON.');
-        loadObjectMappingsToEditor(data);
-        setObjectMapStatus(`Caricati ${data.length} oggetti da ${OBJECTS_JSON_PATH}.`);
-        return data.length;
+        for (const candidate of candidates) {
+            try {
+                const resp = await fetch(candidate, { cache: 'no-store' });
+                if (!resp.ok) {
+                    lastError = new Error(`HTTP ${resp.status} su ${candidate}`);
+                    continue;
+                }
+                const data = await resp.json();
+                if (!Array.isArray(data)) {
+                    lastError = new Error(`Formato non valido su ${candidate}: atteso array JSON.`);
+                    continue;
+                }
+                loadObjectMappingsToEditor(data);
+                setObjectMapStatus(`Caricati ${data.length} oggetti da ${candidate}.`);
+                return data.length;
+            } catch (innerErr) {
+                lastError = innerErr;
+            }
+        }
+
+        const tried = candidates.join(', ');
+        throw lastError || new Error(`Nessun path valido trovato. Tentativi: ${tried}`);
     } catch (err) {
         OBJECT_MAP_EDITOR_STATE.items = [];
         refreshObjectMappingsAvailability();
-        setObjectMapStatus(`Errore caricamento ${OBJECTS_JSON_PATH}: ${err.message}`, true);
+        const tried = candidates.join(', ');
+        setObjectMapStatus(`Errore caricamento objects.json (${tried}): ${err.message}`, true);
         return -1;
     }
 }
@@ -2355,12 +2404,28 @@ function buildConfigEditorUI(configObj) {
 }
 
 async function loadConfigEditor() {
+    const candidates = buildStaticPathCandidates(CONFIG_JSON_PATH);
+    let lastError = null;
+
     try {
-        const resp = await fetch(CONFIG_JSON_PATH, { cache: 'no-store' });
-        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-        const cfg = await resp.json();
-        buildConfigEditorUI(cfg);
-        setConfigStatus('Configurazione caricata.');
+        for (const candidate of candidates) {
+            try {
+                const resp = await fetch(candidate, { cache: 'no-store' });
+                if (!resp.ok) {
+                    lastError = new Error(`HTTP ${resp.status} su ${candidate}`);
+                    continue;
+                }
+                const cfg = await resp.json();
+                buildConfigEditorUI(cfg);
+                setConfigStatus(`Configurazione caricata da ${candidate}.`);
+                return;
+            } catch (innerErr) {
+                lastError = innerErr;
+            }
+        }
+
+        const tried = candidates.join(', ');
+        throw lastError || new Error(`Nessun path valido trovato. Tentativi: ${tried}`);
     } catch (e) {
         setConfigStatus(`Errore caricamento config: ${e.message}`, true);
     }
@@ -5359,6 +5424,11 @@ function bindUI() {
     const copyJsonBtn = el('copyJsonBtn');
     const saveLocalBtn = el('saveLocalBtn');
     const loadLocalBtn = el('loadLocalBtn');
+    const existingLevelSelect = el('existingLevelSelect');
+    const reloadLevelFilesBtn = el('reloadLevelFilesBtn');
+    const loadLevelFileBtn = el('loadLevelFileBtn');
+    const saveLevelFileBtn = el('saveLevelFileBtn');
+    const saveAsNewLevelFileBtn = el('saveAsNewLevelFileBtn');
     const importJsonFile = el('importJsonFile');
     const openConfigDialogBtn = el('openConfigDialogBtn');
     const closeConfigDialogBtn = el('closeConfigDialogBtn');
@@ -5530,6 +5600,272 @@ function bindUI() {
             setStatus(`Errore caricamento: ${error.message}`, true);
         }
     });
+
+    const normalizeLevelFilePath = (rawPath) => {
+        const raw = String(rawPath || '').trim();
+        if (!raw) return '';
+        const cleaned = decodeURIComponent(raw).split('?')[0].split('#')[0].replace(/\\/g, '/');
+        const baseName = cleaned.split('/').pop();
+        if (!baseName || baseName.includes('..') || !baseName.toLowerCase().endsWith('.json')) return '';
+        return `${LEVELS_DIR_PATH}/${baseName}`;
+    };
+
+    const fetchLevelFileList = async () => {
+        let list = [];
+
+        try {
+            const resp = await fetch(buildApiUrl('levels'), { cache: 'no-store' });
+            if (resp.ok) {
+                const data = await resp.json();
+                if (Array.isArray(data)) {
+                    list = data
+                        .map(normalizeLevelFilePath)
+                        .filter(Boolean);
+                }
+            }
+        } catch (_e) {
+            // fallback below
+        }
+
+        if (!list.length) {
+            const dirCandidates = buildStaticPathCandidates(`${LEVELS_DIR_PATH}/`);
+            for (const candidate of dirCandidates) {
+                try {
+                    const resp = await fetch(candidate, { cache: 'no-store' });
+                    if (!resp.ok) continue;
+                    const html = await resp.text();
+                    const matches = [...html.matchAll(/href=["']([^"']+\.json)["']/gi)];
+                    const parsed = matches
+                        .map((m) => normalizeLevelFilePath(m && m[1]))
+                        .filter(Boolean);
+                    if (parsed.length) {
+                        list = parsed;
+                        break;
+                    }
+                } catch (_e) {
+                    // continue with next candidate
+                }
+            }
+        }
+
+        const unique = [...new Set(list)];
+        unique.sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
+        return unique;
+    };
+
+    const suggestNextLevelFileName = (levels) => {
+        const entries = Array.isArray(levels) ? levels : [];
+        const numericLevels = entries
+            .map((p) => {
+                const name = String(p || '').split('/').pop() || '';
+                const m = name.match(/^level(\d+)\.json$/i);
+                return m ? Number(m[1]) : NaN;
+            })
+            .filter((n) => Number.isFinite(n));
+
+        if (!numericLevels.length) return 'level10.json';
+
+        const maxNum = Math.max(...numericLevels);
+        const major = Math.floor(maxNum / 10);
+        const minor = maxNum % 10;
+        const nextNum = (minor < 4) ? (maxNum + 1) : ((major + 1) * 10);
+        return `level${nextNum}.json`;
+    };
+
+    const populateLevelFileOptions = async () => {
+        if (!existingLevelSelect) return [];
+        const previous = String(existingLevelSelect.value || '').trim();
+        const levels = await fetchLevelFileList();
+
+        existingLevelSelect.innerHTML = '';
+        const placeholder = document.createElement('option');
+        placeholder.value = '';
+        placeholder.textContent = '-- seleziona livello --';
+        existingLevelSelect.appendChild(placeholder);
+
+        levels.forEach((path) => {
+            const option = document.createElement('option');
+            option.value = path;
+            option.textContent = String(path).split('/').pop();
+            existingLevelSelect.appendChild(option);
+        });
+
+        if (previous && levels.includes(previous)) {
+            existingLevelSelect.value = previous;
+        }
+
+        if (!levels.length) {
+            setStatus('Nessun file livello trovato in data/level.', true);
+        }
+
+        return levels;
+    };
+
+    const loadSelectedLevelFile = async () => {
+        const selected = String(existingLevelSelect?.value || '').trim();
+        if (!selected) {
+            setStatus('Seleziona prima un livello dal menu a tendina.', true);
+            return;
+        }
+
+        const candidates = buildStaticPathCandidates(selected);
+        let lastError = null;
+
+        for (const candidate of candidates) {
+            try {
+                const resp = await fetch(candidate, { cache: 'no-store' });
+                if (!resp.ok) {
+                    lastError = new Error(`HTTP ${resp.status} su ${candidate}`);
+                    continue;
+                }
+                const parsed = await resp.json();
+                applyLevelToForm(parsed);
+                const scene = getScene();
+                scene?.loadFromJson(parsed);
+                drawMiniMapPreview(scene);
+                setStatus(`Livello caricato da ${candidate}.`);
+                return;
+            } catch (err) {
+                lastError = err;
+            }
+        }
+
+        setStatus(`Errore caricamento livello: ${(lastError && lastError.message) || 'file non trovato'}.`, true);
+    };
+
+    const saveSelectedLevelFile = async () => {
+        const selected = String(existingLevelSelect?.value || '').trim();
+        if (!selected) {
+            setStatus('Seleziona prima un livello dal menu a tendina per salvarlo.', true);
+            return;
+        }
+
+        const normalized = normalizeLevelFilePath(selected);
+        const fileName = String(normalized.split('/').pop() || '').trim();
+        if (!fileName) {
+            setStatus('Nome file livello non valido.', true);
+            return;
+        }
+
+        let level = null;
+        try {
+            level = readLevelFromForm();
+        } catch (error) {
+            setStatus(`Errore preparazione livello: ${error.message}`, true);
+            return;
+        }
+
+        try {
+            const resp = await fetch(buildApiUrl('levels'), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ fileName, level })
+            });
+            const payload = await resp.json().catch(() => ({}));
+            if (!resp.ok || payload.ok === false) {
+                throw new Error(payload.error || `HTTP ${resp.status}`);
+            }
+
+            const savedPath = String(payload.file || normalized);
+            const levels = await populateLevelFileOptions();
+            if (levels.includes(savedPath)) {
+                existingLevelSelect.value = savedPath;
+            } else if (levels.includes(normalized)) {
+                existingLevelSelect.value = normalized;
+            }
+
+            setStatus(`Livello salvato su ${savedPath}.`);
+        } catch (error) {
+            setStatus(`Errore salvataggio livello: ${error.message}`, true);
+        }
+    };
+
+    const saveAsNewLevelFile = async () => {
+        const levels = await fetchLevelFileList();
+        const suggested = suggestNextLevelFileName(levels);
+        const answer = window.prompt('Nome nuovo file livello (es: level60.json)', suggested);
+        const fileName = String(answer || '').trim();
+        if (!fileName) {
+            setStatus('Salvataggio annullato.', true);
+            return;
+        }
+
+        if (!/^[a-z0-9._-]+\.json$/i.test(fileName) || fileName.includes('..')) {
+            setStatus('Nome file non valido. Usa solo lettere/numeri/-/_ e estensione .json', true);
+            return;
+        }
+
+        const targetPath = `${LEVELS_DIR_PATH}/${fileName}`;
+        if (levels.includes(targetPath)) {
+            const overwrite = window.confirm(`Il file ${fileName} esiste gia. Vuoi sovrascriverlo?`);
+            if (!overwrite) {
+                setStatus('Salvataggio annullato.', true);
+                return;
+            }
+        }
+
+        let level = null;
+        try {
+            level = readLevelFromForm();
+        } catch (error) {
+            setStatus(`Errore preparazione livello: ${error.message}`, true);
+            return;
+        }
+
+        try {
+            const resp = await fetch(buildApiUrl('levels'), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ fileName, level })
+            });
+            const payload = await resp.json().catch(() => ({}));
+            if (!resp.ok || payload.ok === false) {
+                throw new Error(payload.error || `HTTP ${resp.status}`);
+            }
+
+            const savedPath = String(payload.file || targetPath);
+            const refreshed = await populateLevelFileOptions();
+            if (existingLevelSelect && refreshed.includes(savedPath)) {
+                existingLevelSelect.value = savedPath;
+            }
+            setStatus(`Nuovo livello salvato su ${savedPath}.`);
+        } catch (error) {
+            setStatus(`Errore salvataggio livello: ${error.message}`, true);
+        }
+    };
+
+    if (reloadLevelFilesBtn) {
+        reloadLevelFilesBtn.addEventListener('click', async () => {
+            const levels = await populateLevelFileOptions();
+            if (levels.length) {
+                setStatus(`Lista livelli aggiornata (${levels.length} file).`);
+            }
+        });
+    }
+
+    if (loadLevelFileBtn) {
+        loadLevelFileBtn.addEventListener('click', async () => {
+            await loadSelectedLevelFile();
+        });
+    }
+
+    if (saveLevelFileBtn) {
+        saveLevelFileBtn.addEventListener('click', async () => {
+            await saveSelectedLevelFile();
+        });
+    }
+
+    if (saveAsNewLevelFileBtn) {
+        saveAsNewLevelFileBtn.addEventListener('click', async () => {
+            await saveAsNewLevelFile();
+        });
+    }
+
+    if (existingLevelSelect) {
+        existingLevelSelect.addEventListener('change', async () => {
+            await loadSelectedLevelFile();
+        });
+    }
 
     importJsonFile?.addEventListener('change', async (event) => {
         const target = event.target;
@@ -5704,6 +6040,7 @@ function bindUI() {
     }
 
     try { populateMusicOptions(); } catch (e) {}
+    try { populateLevelFileOptions(); } catch (e) {}
 
     // Populate bg/fg image selects dynamically from server assets images folders
     async function populateImageOptions() {

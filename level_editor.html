@@ -1154,6 +1154,19 @@
                     <button id="saveLocalBtn" type="button">Salva Locale</button>
                     <button id="loadLocalBtn" type="button">Carica Locale</button>
                 </div>
+                <div style="margin-top:8px;">
+                    <label for="existingLevelSelect">Modifica livello esistente (data/level)</label>
+                    <div style="display:flex; gap:6px; align-items:center;">
+                        <select id="existingLevelSelect" style="flex:1;">
+                            <option value="">-- seleziona livello --</option>
+                        </select>
+                        <button id="reloadLevelFilesBtn" type="button" title="Ricarica lista livelli">Aggiorna</button>
+                        <button id="loadLevelFileBtn" type="button">Carica</button>
+                        <button id="saveLevelFileBtn" type="button">Salva su file</button>
+                        <button id="saveAsNewLevelFileBtn" type="button">Salva come nuovo</button>
+                    </div>
+                    <div class="tiny" style="margin-top:6px;">Legge i file JSON presenti in data/level e carica il livello selezionato nel form e nel canvas.</div>
+                </div>
                 <div style="margin-top:6px;">
                     <label for="importJsonFile">Importa file JSON livello</label>
                     <input id="importJsonFile" type="file" accept="application/json,.json">

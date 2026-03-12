@@ -212,6 +212,72 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // API: list level JSON files in /data/level folder
+  if (req.url && req.url.startsWith('/api/levels')) {
+    const levelDir = path.join(ROOT_DIR, 'data', 'level');
+
+    if (req.method === 'GET') {
+      fs.readdir(levelDir, (err, files) => {
+        if (err) {
+          res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+          res.end(JSON.stringify([]));
+          return;
+        }
+        const list = (files || [])
+          .filter((f) => path.extname(f).toLowerCase() === '.json')
+          .map((f) => path.posix.join('data', 'level', f))
+          .sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
+        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify(list));
+      });
+      return;
+    }
+
+    if (req.method === 'POST') {
+      let body = '';
+      req.on('data', chunk => { body += chunk.toString(); });
+      req.on('end', () => {
+        try {
+          const payload = JSON.parse(body || '{}');
+          const fileName = String(payload?.fileName || '').trim();
+          const level = payload?.level;
+
+          if (!fileName || !/^[a-z0-9._-]+\.json$/i.test(fileName) || fileName.includes('..')) {
+            res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+            res.end(JSON.stringify({ ok: false, error: 'invalid fileName' }));
+            return;
+          }
+          if (!level || typeof level !== 'object' || Array.isArray(level)) {
+            res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+            res.end(JSON.stringify({ ok: false, error: 'level must be an object' }));
+            return;
+          }
+
+          try { fs.mkdirSync(levelDir, { recursive: true }); } catch (_) { }
+          const targetFile = path.join(levelDir, fileName);
+          fs.writeFile(targetFile, `${JSON.stringify(level, null, 2)}\n`, 'utf8', (writeErr) => {
+            if (writeErr) {
+              res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
+              res.end(JSON.stringify({ ok: false, error: writeErr.message }));
+              return;
+            }
+
+            res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+            res.end(JSON.stringify({ ok: true, file: path.posix.join('data', 'level', fileName) }));
+          });
+        } catch (e) {
+          res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+          res.end(JSON.stringify({ ok: false, error: 'invalid json' }));
+        }
+      });
+      return;
+    }
+
+    res.writeHead(405, { 'Content-Type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify({ ok: false, error: 'method not allowed' }));
+    return;
+  }
+
   // API: list image files in /assets/images/background folder
   if (req.url && req.url.startsWith('/api/images/background')) {
     if (req.method !== 'GET') {

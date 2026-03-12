@@ -33,6 +33,28 @@
   "credits": 0,
   "language": "en",
   "difficulty": 1.0,
+  "levelSpecs": {
+    "mainLevelsCount": 5,
+    "subLevelsPerMainLevel": 5,
+    "totalPlayableLevels": 25,
+    "availableMainLevels": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
+    "availableSubLevels": [
+      0,
+      1,
+      2,
+      3,
+      4
+    ],
+    "filePattern": "data/level/levelXY.json",
+    "notes": "X = main level (1..N), Y = sublevel (0..4)",
+    "computedFrom": "data/level/*.json"
+  },
   "currentLevel": 0,
   "score": 0,
   "lives": 5,
