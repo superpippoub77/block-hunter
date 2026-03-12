@@ -5,6 +5,13 @@ const { spawn } = require("child_process");
 
 const PORT = process.env.PORT || 8080;
 const ROOT_DIR = __dirname;
+const USER_DATA_ROOT = process.env.BLOCK_HUNTER_DATA_DIR
+  ? path.resolve(process.env.BLOCK_HUNTER_DATA_DIR)
+  : "";
+const RUNTIME_ROOT = USER_DATA_ROOT || ROOT_DIR;
+const BUNDLED_DATA_DIR = path.join(ROOT_DIR, "data");
+const RUNTIME_DATA_DIR = path.join(RUNTIME_ROOT, "data");
+const RUNTIME_BACKUP_DIR = path.join(RUNTIME_ROOT, "bck");
 
 const MIME_TYPES = {
   ".html": "text/html; charset=utf-8",
@@ -40,17 +47,86 @@ function safeResolvePath(urlPath) {
   const decoded = decodeURIComponent(urlPath.split("?")[0]);
   const requestedPath = decoded === "/" ? "/index.html" : decoded;
   const safePath = path.normalize(requestedPath).replace(/^([/\\])+/, "");
+  const normalizedSafe = safePath.replace(/\\/g, "/");
+
+  if (USER_DATA_ROOT && (normalizedSafe === "data" || normalizedSafe.startsWith("data/"))) {
+    const runtimePath = path.join(RUNTIME_ROOT, safePath);
+    if (fs.existsSync(runtimePath)) {
+      return runtimePath;
+    }
+  }
+
   return path.join(ROOT_DIR, safePath);
 }
+
+function ensureRuntimeDirectories() {
+  if (!USER_DATA_ROOT) return;
+  try { fs.mkdirSync(RUNTIME_DATA_DIR, { recursive: true }); } catch (_e) { }
+  try { fs.mkdirSync(path.join(RUNTIME_DATA_DIR, "level"), { recursive: true }); } catch (_e) { }
+  try { fs.mkdirSync(RUNTIME_BACKUP_DIR, { recursive: true }); } catch (_e) { }
+}
+
+function readTextWithFallback(primaryPath, fallbackPath, callback) {
+  fs.readFile(primaryPath, "utf8", (primaryErr, primaryData) => {
+    if (!primaryErr) {
+      callback(null, primaryData);
+      return;
+    }
+
+    if (!fallbackPath || fallbackPath === primaryPath) {
+      callback(primaryErr, "");
+      return;
+    }
+
+    fs.readFile(fallbackPath, "utf8", (fallbackErr, fallbackData) => {
+      if (fallbackErr) {
+        callback(fallbackErr, "");
+        return;
+      }
+      callback(null, fallbackData);
+    });
+  });
+}
+
+function readJsonArrayFromFile(filePath, callback) {
+  fs.readFile(filePath, "utf8", (err, data) => {
+    if (err) {
+      callback(err, []);
+      return;
+    }
+
+    try {
+      const parsed = JSON.parse(data || "[]");
+      callback(null, Array.isArray(parsed) ? parsed : []);
+    } catch (_e) {
+      callback(null, []);
+    }
+  });
+}
+
+function listJsonFiles(dirPath, callback) {
+  fs.readdir(dirPath, (err, files) => {
+    if (err) {
+      callback([]);
+      return;
+    }
+
+    const jsonFiles = (files || []).filter((f) => path.extname(f).toLowerCase() === ".json");
+    callback(jsonFiles);
+  });
+}
+
+ensureRuntimeDirectories();
 
 const server = http.createServer((req, res) => {
   // API: get/save config.json with automatic backup in /bck
   if (req.url && req.url.startsWith('/api/config')) {
-    const configFile = path.join(ROOT_DIR, 'data', 'config.json');
-    const backupDir = path.join(ROOT_DIR, 'bck');
+    const configFile = path.join(RUNTIME_DATA_DIR, 'config.json');
+    const bundledConfigFile = path.join(BUNDLED_DATA_DIR, 'config.json');
+    const backupDir = RUNTIME_BACKUP_DIR;
 
     if (req.method === 'GET') {
-      fs.readFile(configFile, 'utf8', (err, data) => {
+      readTextWithFallback(configFile, bundledConfigFile, (err, data) => {
         if (err) {
           res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
           res.end(JSON.stringify({ ok: false, error: err.message }));
@@ -89,7 +165,7 @@ const server = http.createServer((req, res) => {
           const backupFileName = `config-${stamp}.json`;
           const backupFilePath = path.join(backupDir, backupFileName);
 
-          fs.readFile(configFile, 'utf8', (_readErr, currentData) => {
+          readTextWithFallback(configFile, bundledConfigFile, (_readErr, currentData) => {
             const currentText = currentData || '{}';
             fs.writeFile(backupFilePath, currentText, 'utf8', (backupErr) => {
               if (backupErr) {
@@ -124,37 +200,34 @@ const server = http.createServer((req, res) => {
 
   // Simple API for top scores: GET /api/top-scores, POST /api/top-scores
   if (req.url && req.url.startsWith('/api/top-scores')) {
-    const scoresFile = path.join(ROOT_DIR, 'data', 'topScores.json');
+    const scoresFile = path.join(RUNTIME_DATA_DIR, 'topScores.json');
+    const runtimeConfigFile = path.join(RUNTIME_DATA_DIR, 'config.json');
+    const bundledConfigFile = path.join(BUNDLED_DATA_DIR, 'config.json');
+
     if (req.method === 'GET') {
-      fs.readFile(scoresFile, 'utf8', (err, data) => {
-        if (err) {
-          // fallback: try to read topScores from data/config.json
-          fs.readFile(path.join(ROOT_DIR, 'data', 'config.json'), 'utf8', (cfgErr, cfgData) => {
-            if (cfgErr) {
-              res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-              res.end(JSON.stringify([]));
-              return;
-            }
-            try {
-              const cfg = JSON.parse(cfgData);
-              const tops = Array.isArray(cfg.topScores) ? cfg.topScores : [];
-              res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-              res.end(JSON.stringify(tops));
-            } catch (e) {
-              res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-              res.end(JSON.stringify([]));
-            }
-          });
+      readJsonArrayFromFile(scoresFile, (scoresErr, scoresPayload) => {
+        if (!scoresErr) {
+          res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+          res.end(JSON.stringify(scoresPayload));
           return;
         }
-        try {
-          const parsed = JSON.parse(data || '[]');
-          res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-          res.end(JSON.stringify(parsed));
-        } catch (e) {
-          res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-          res.end(JSON.stringify([]));
-        }
+
+        readTextWithFallback(runtimeConfigFile, bundledConfigFile, (cfgErr, cfgData) => {
+          if (cfgErr) {
+            res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+            res.end(JSON.stringify([]));
+            return;
+          }
+          try {
+            const cfg = JSON.parse(cfgData || '{}');
+            const tops = Array.isArray(cfg.topScores) ? cfg.topScores : [];
+            res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+            res.end(JSON.stringify(tops));
+          } catch (_e) {
+            res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+            res.end(JSON.stringify([]));
+          }
+        });
       });
       return;
     }
@@ -166,7 +239,7 @@ const server = http.createServer((req, res) => {
         try {
           const payload = JSON.parse(body || '[]');
           // Ensure directory exists
-          try { fs.mkdirSync(path.join(ROOT_DIR, 'data'), { recursive: true }); } catch (_) {}
+          try { fs.mkdirSync(RUNTIME_DATA_DIR, { recursive: true }); } catch (_) {}
           fs.writeFile(scoresFile, JSON.stringify(payload, null, 2), 'utf8', (writeErr) => {
             if (writeErr) {
               res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
@@ -214,21 +287,19 @@ const server = http.createServer((req, res) => {
 
   // API: list level JSON files in /data/level folder
   if (req.url && req.url.startsWith('/api/levels')) {
-    const levelDir = path.join(ROOT_DIR, 'data', 'level');
+    const runtimeLevelDir = path.join(RUNTIME_DATA_DIR, 'level');
+    const bundledLevelDir = path.join(BUNDLED_DATA_DIR, 'level');
 
     if (req.method === 'GET') {
-      fs.readdir(levelDir, (err, files) => {
-        if (err) {
+      listJsonFiles(runtimeLevelDir, (runtimeFiles) => {
+        listJsonFiles(bundledLevelDir, (bundledFiles) => {
+          const list = Array.from(new Set([...(bundledFiles || []), ...(runtimeFiles || [])]))
+            .map((f) => path.posix.join('data', 'level', f))
+            .sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
+
           res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-          res.end(JSON.stringify([]));
-          return;
-        }
-        const list = (files || [])
-          .filter((f) => path.extname(f).toLowerCase() === '.json')
-          .map((f) => path.posix.join('data', 'level', f))
-          .sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
-        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-        res.end(JSON.stringify(list));
+          res.end(JSON.stringify(list));
+        });
       });
       return;
     }
@@ -253,8 +324,8 @@ const server = http.createServer((req, res) => {
             return;
           }
 
-          try { fs.mkdirSync(levelDir, { recursive: true }); } catch (_) { }
-          const targetFile = path.join(levelDir, fileName);
+          try { fs.mkdirSync(runtimeLevelDir, { recursive: true }); } catch (_) { }
+          const targetFile = path.join(runtimeLevelDir, fileName);
           fs.writeFile(targetFile, `${JSON.stringify(level, null, 2)}\n`, 'utf8', (writeErr) => {
             if (writeErr) {
               res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });

@@ -54,7 +54,7 @@ function waitForServerReady(url, timeoutMs = 15000) {
   });
 }
 
-async function startLocalServer() {
+async function startLocalServer(dataRootDir) {
   serverPort = await getFreePort();
   const serverEntry = path.join(__dirname, '..', 'server.js');
 
@@ -62,7 +62,8 @@ async function startLocalServer() {
     env: {
       ...process.env,
       PORT: String(serverPort),
-      OPEN_BROWSER: 'none'
+      OPEN_BROWSER: 'none',
+      BLOCK_HUNTER_DATA_DIR: dataRootDir
     },
     stdio: 'ignore'
   });
@@ -81,7 +82,8 @@ function stopLocalServer() {
 }
 
 async function createMainWindow() {
-  const gameUrl = await startLocalServer();
+  const dataRootDir = path.join(app.getPath('userData'), 'runtime-data');
+  const gameUrl = await startLocalServer(dataRootDir);
 
   const mainWindow = new BrowserWindow({
     width: 1280,

@@ -61,6 +61,7 @@ Output atteso:
 Nota:
 
 - la build NSIS (`build:win`) da Linux richiede `wine` installato.
+- nella versione desktop Electron, i dati modificabili (es. config, top score, livelli salvati) vengono salvati nella cartella utente dell'app, non dentro i file del pacchetto.
 
 Note sugli asset
 
