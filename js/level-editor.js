@@ -1809,6 +1809,9 @@ function createObjectMapCard(mapping) {
         actionSummaryWrap.textContent = `Action: ${trigger} -> ${type}${target} (value: ${val || '0'}, duration: ${duration}ms, cooldown: ${cooldown}ms) | ${payloadInfo}${tags.length ? ` | fx: ${tags.join(', ')}` : ''}`;
     };
 
+    const getNum = (sel, fallback = 0) => parseNumber(card.querySelector(sel)?.value, fallback);
+    const getCheck = (sel) => !!card.querySelector(sel)?.checked;
+
     const summarySelectors = [
         '.obj-action-trigger', '.obj-action-type', '.obj-action-target', '.obj-action-value', '.obj-action-duration', '.obj-action-cooldown',
         '.obj-pay-splash-enabled', '.obj-pay-splash-bursts', '.obj-pay-splash-interval', '.obj-pay-splash-drops', '.obj-pay-splash-cooldown',
