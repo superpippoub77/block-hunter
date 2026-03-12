@@ -1139,12 +1139,13 @@
             <div class="config-toolbar">
                 <h2 style="margin:0; font-size:12px; color:#d7ebff;">Mappaggio Oggetti (assets/images/objects)</h2>
                 <div style="display:flex; gap:6px;">
+                    <button id="loadObjectMapExampleBtn" type="button">Carica Esempio JSON</button>
                     <button id="addObjectMapBtn" type="button">Aggiungi Oggetto</button>
                     <button id="saveObjectMapBtn" type="button">Salva</button>
                     <button id="closeObjectMapDialogBtn" type="button">Chiudi</button>
                 </div>
             </div>
-            <div class="tiny" style="margin-bottom:8px;">Per ogni oggetto puoi definire sprite sheet/statico, frame, direzioni, speculare lato opposto, movimento automatico, punteggio al contatto e dimensioni in pixel.</div>
+            <div class="tiny" style="margin-bottom:8px;">Per ogni elemento puoi definire token/categoria/tipo entita, texture runtime, frame, regole di contatto, movimento, spawn da chiavi livello (ghost, bat, speed), e un blocco JSON avanzato per collision/tile/wall/actor/pickup/effects/render.</div>
             <div id="objectMapList" class="objmap-list"></div>
             <div class="status" id="objectMapStatusText"></div>
         </div>

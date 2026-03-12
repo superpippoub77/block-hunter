@@ -1,0 +1,434 @@
+[
+	{
+		"key": "ghost_alpha",
+		"token": "ghost",
+		"category": "enemy",
+		"entityType": "ghost",
+		"imageSrc": "assets/images/objects/ghost_alpha.png",
+		"textureKey": "ghost",
+		"defaultFrame": 0,
+		"contactType": "edge",
+		"dynamic": true,
+		"frameCount": 10,
+		"useOppositeSide": true,
+		"frames": {
+			"idle": {
+				"up": "0-2",
+				"down": "3-5",
+				"left": "6-8",
+				"right": "6-8"
+			},
+			"move": {
+				"up": "0-9",
+				"down": "0-9",
+				"left": "0-9",
+				"right": "0-9"
+			}
+		},
+		"contactScore": -35,
+		"movement": {
+			"automatic": true,
+			"directions": ["up", "down", "left", "right"],
+			"minStep": 1,
+			"maxStep": 4,
+			"pauseMs": 220
+		},
+		"staticScore": 0,
+		"sizePx": {
+			"width": 64,
+			"height": 64
+		},
+		"spawn": {
+			"fromMapToken": true,
+			"countFromLevelKey": "ghost",
+			"speedFromLevelKeys": ["ghostSpeed"]
+		},
+		"collision": {
+			"contactType": "edge",
+			"radiusMultiplier": 0.45,
+			"proximityTiles": 0.9
+		},
+		"actor": {
+			"canBeDestroyedByDynamite": true,
+			"damageLives": 1,
+			"stealGems": false
+		},
+		"effects": {
+			"onSpawn": ["float", "halo"]
+		}
+	},
+	{
+		"key": "bat_hunter",
+		"token": "bat",
+		"category": "enemy",
+		"entityType": "bat",
+		"imageSrc": "assets/images/objects/bat_hunter.png",
+		"textureKey": "bat",
+		"defaultFrame": 0,
+		"contactType": "edge",
+		"dynamic": true,
+		"frameCount": 10,
+		"useOppositeSide": true,
+		"frames": {
+			"idle": {
+				"up": "0-4",
+				"down": "0-4",
+				"left": "0-4",
+				"right": "0-4"
+			},
+			"move": {
+				"up": "5-9",
+				"down": "5-9",
+				"left": "5-9",
+				"right": "5-9"
+			}
+		},
+		"contactScore": -10,
+		"movement": {
+			"automatic": true,
+			"directions": ["up", "down", "left", "right"],
+			"minStep": 2,
+			"maxStep": 6,
+			"pauseMs": 120
+		},
+		"staticScore": 0,
+		"sizePx": {
+			"width": 64,
+			"height": 64
+		},
+		"spawn": {
+			"fromMapToken": true,
+			"countFromLevelKey": "bat",
+			"speedFromLevelKeys": ["batSpeed"]
+		},
+		"collision": {
+			"contactType": "edge",
+			"radiusMultiplier": 0.45,
+			"proximityTiles": 0.9
+		},
+		"actor": {
+			"stealGems": true,
+			"damageLivesIfNoGems": 1,
+			"canBeDestroyedByDynamite": true,
+			"flightsBeforeRestFromLevelKey": "batFlightsBeforeRest",
+			"restSecondsFromLevelKey": "batRestSeconds",
+			"restIntervalSecondsFromLevelKey": "batRestIntervalSeconds"
+		}
+	},
+	{
+		"key": "wall_variant",
+		"token": "w0010",
+		"category": "wall",
+		"entityType": "wall",
+		"imageSrc": "assets/images/foreground/wall_completed.png",
+		"textureKey": "wall_tiles",
+		"defaultFrame": 1,
+		"contactType": "edge",
+		"dynamic": false,
+		"frameCount": 1,
+		"useOppositeSide": false,
+		"frames": {
+			"idle": {
+				"up": "1",
+				"down": "1",
+				"left": "1",
+				"right": "1"
+			},
+			"move": {
+				"up": "",
+				"down": "",
+				"left": "",
+				"right": ""
+			}
+		},
+		"contactScore": 0,
+		"movement": {
+			"automatic": false,
+			"directions": [],
+			"minStep": 0,
+			"maxStep": 0,
+			"pauseMs": 0
+		},
+		"staticScore": 0,
+		"sizePx": {
+			"width": 64,
+			"height": 64
+		},
+		"spawn": {
+			"fromMapToken": true,
+			"countFromLevelKey": null,
+			"speedFromLevelKeys": []
+		},
+		"wall": {
+			"frame": 1,
+			"rotation": 0,
+			"flip": "0",
+			"invisible": false,
+			"noTile": false
+		},
+		"collision": {
+			"contactType": "edge",
+			"radiusMultiplier": 0.45,
+			"proximityTiles": 0.9
+		}
+	},
+	{
+		"key": "tile_water",
+		"token": "water",
+		"category": "tile",
+		"entityType": "tile",
+		"imageSrc": "assets/images/tiles.png",
+		"textureKey": "tiles",
+		"defaultFrame": 4,
+		"contactType": "edge",
+		"dynamic": false,
+		"frameCount": 1,
+		"useOppositeSide": false,
+		"frames": {
+			"idle": {
+				"up": "4",
+				"down": "4",
+				"left": "4",
+				"right": "4"
+			},
+			"move": {
+				"up": "",
+				"down": "",
+				"left": "",
+				"right": ""
+			}
+		},
+		"contactScore": 0,
+		"movement": {
+			"automatic": false,
+			"directions": [],
+			"minStep": 0,
+			"maxStep": 0,
+			"pauseMs": 0
+		},
+		"staticScore": 0,
+		"sizePx": {
+			"width": 64,
+			"height": 64
+		},
+		"spawn": {
+			"fromMapToken": true,
+			"countFromLevelKey": null,
+			"speedFromLevelKeys": []
+		},
+		"tile": {
+			"type": "water",
+			"walkable": true,
+			"invisible": false,
+			"noTile": false
+		}
+	},
+	{
+		"key": "tile_mud",
+		"token": "mud",
+		"category": "tile",
+		"entityType": "tile",
+		"imageSrc": "assets/images/tiles.png",
+		"textureKey": "tiles",
+		"defaultFrame": 3,
+		"contactType": "edge",
+		"dynamic": false,
+		"frameCount": 1,
+		"useOppositeSide": false,
+		"frames": {
+			"idle": {
+				"up": "3",
+				"down": "3",
+				"left": "3",
+				"right": "3"
+			},
+			"move": {
+				"up": "",
+				"down": "",
+				"left": "",
+				"right": ""
+			}
+		},
+		"contactScore": 0,
+		"movement": {
+			"automatic": false,
+			"directions": [],
+			"minStep": 0,
+			"maxStep": 0,
+			"pauseMs": 0
+		},
+		"staticScore": 0,
+		"sizePx": {
+			"width": 64,
+			"height": 64
+		},
+		"spawn": {
+			"fromMapToken": true,
+			"countFromLevelKey": null,
+			"speedFromLevelKeys": []
+		},
+		"tile": {
+			"type": "mud",
+			"walkable": true,
+			"invisible": false,
+			"noTile": false
+		}
+	},
+	{
+		"key": "exit_portal",
+		"token": "exit",
+		"category": "exit",
+		"entityType": "exit",
+		"imageSrc": "assets/images/objects/exit_portal.png",
+		"textureKey": "objects",
+		"defaultFrame": 14,
+		"contactType": "center-front",
+		"dynamic": false,
+		"frameCount": 1,
+		"useOppositeSide": false,
+		"frames": {
+			"idle": {
+				"up": "14",
+				"down": "14",
+				"left": "14",
+				"right": "14"
+			},
+			"move": {
+				"up": "",
+				"down": "",
+				"left": "",
+				"right": ""
+			}
+		},
+		"contactScore": 0,
+		"movement": {
+			"automatic": false,
+			"directions": [],
+			"minStep": 0,
+			"maxStep": 0,
+			"pauseMs": 0
+		},
+		"staticScore": 0,
+		"sizePx": {
+			"width": 64,
+			"height": 64
+		},
+		"spawn": {
+			"fromMapToken": true,
+			"countFromLevelKey": null,
+			"speedFromLevelKeys": []
+		},
+		"collision": {
+			"contactType": "center-front",
+			"radiusMultiplier": 0.62,
+			"proximityTiles": 0.9
+		},
+		"effects": {
+			"onSpawn": ["pulse", "halo"]
+		}
+	},
+	{
+		"key": "pickup_key",
+		"token": "k",
+		"category": "pickup",
+		"entityType": "key",
+		"imageSrc": "assets/images/objects/key.png",
+		"textureKey": "objects",
+		"defaultFrame": 8,
+		"contactType": "edge",
+		"dynamic": false,
+		"frameCount": 1,
+		"useOppositeSide": false,
+		"frames": {
+			"idle": {
+				"up": "8",
+				"down": "8",
+				"left": "8",
+				"right": "8"
+			},
+			"move": {
+				"up": "",
+				"down": "",
+				"left": "",
+				"right": ""
+			}
+		},
+		"contactScore": 0,
+		"movement": {
+			"automatic": false,
+			"directions": [],
+			"minStep": 0,
+			"maxStep": 0,
+			"pauseMs": 0
+		},
+		"staticScore": 0,
+		"sizePx": {
+			"width": 64,
+			"height": 64
+		},
+		"spawn": {
+			"fromMapToken": true,
+			"countFromLevelKey": null,
+			"speedFromLevelKeys": []
+		},
+		"pickup": {
+			"keysDelta": 1,
+			"score": 0,
+			"removeOnCollect": true,
+			"floating": true
+		},
+		"effects": {
+			"onSpawn": ["float"]
+		}
+	},
+	{
+		"key": "pickup_dynamite",
+		"token": "b",
+		"category": "pickup",
+		"entityType": "dynamite",
+		"imageSrc": "assets/images/objects/dynamite_chest.png",
+		"textureKey": "objects",
+		"defaultFrame": 4,
+		"contactType": "edge",
+		"dynamic": false,
+		"frameCount": 1,
+		"useOppositeSide": false,
+		"frames": {
+			"idle": {
+				"up": "4",
+				"down": "4",
+				"left": "4",
+				"right": "4"
+			},
+			"move": {
+				"up": "",
+				"down": "",
+				"left": "",
+				"right": ""
+			}
+		},
+		"contactScore": 0,
+		"movement": {
+			"automatic": false,
+			"directions": [],
+			"minStep": 0,
+			"maxStep": 0,
+			"pauseMs": 0
+		},
+		"staticScore": 0,
+		"sizePx": {
+			"width": 64,
+			"height": 64
+		},
+		"spawn": {
+			"fromMapToken": true,
+			"countFromLevelKey": null,
+			"speedFromLevelKeys": []
+		},
+		"pickup": {
+			"dynamiteDelta": 50,
+			"score": 0,
+			"removeOnCollect": true
+		}
+	}
+]

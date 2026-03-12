@@ -242,6 +242,36 @@ function deepClone(value) {
     return JSON.parse(JSON.stringify(value));
 }
 
+function deepMerge(base, patch) {
+    const left = isPlainObject(base) ? base : {};
+    const right = isPlainObject(patch) ? patch : {};
+    const out = { ...left };
+    Object.keys(right).forEach((key) => {
+        const lVal = out[key];
+        const rVal = right[key];
+        if (isPlainObject(lVal) && isPlainObject(rVal)) {
+            out[key] = deepMerge(lVal, rVal);
+        } else {
+            out[key] = deepClone(rVal);
+        }
+    });
+    return out;
+}
+
+function parseJsonObjectSafe(text) {
+    const raw = String(text ?? '').trim();
+    if (!raw) return { ok: true, value: {} };
+    try {
+        const parsed = JSON.parse(raw);
+        if (!isPlainObject(parsed)) {
+            return { ok: false, value: {}, message: 'Il JSON avanzato deve essere un oggetto ({}).' };
+        }
+        return { ok: true, value: parsed };
+    } catch (err) {
+        return { ok: false, value: {}, message: `JSON avanzato non valido: ${err.message}` };
+    }
+}
+
 function getNumberRangeForKey(pathKey, currentValue) {
     const key = String(pathKey || '').toLowerCase();
     const n = Number(currentValue);
@@ -270,6 +300,289 @@ let OBJECT_MAP_EDITOR_STATE = {
     items: []
 };
 
+const OBJECT_MAPPINGS_EXAMPLE = [
+    {
+        key: 'ghost_alpha',
+        token: 'ghost',
+        category: 'enemy',
+        entityType: 'ghost',
+        imageSrc: 'assets/images/objects/ghost_alpha.png',
+        textureKey: 'ghost',
+        defaultFrame: 0,
+        contactType: 'edge',
+        dynamic: true,
+        frameCount: 8,
+        useOppositeSide: true,
+        frames: {
+            idle: {
+                up: '0-1',
+                down: '2-3',
+                left: '4-5',
+                right: '4-5'
+            },
+            move: {
+                up: '6-7',
+                down: '8-9',
+                left: '10-13',
+                right: '10-13'
+            }
+        },
+        contactScore: -35,
+        movement: {
+            automatic: true,
+            directions: ['up', 'down', 'left', 'right'],
+            minStep: 1,
+            maxStep: 4,
+            pauseMs: 220
+        },
+        staticScore: 0,
+        sizePx: {
+            width: 64,
+            height: 64
+        },
+        spawn: {
+            fromMapToken: true,
+            countFromLevelKey: 'ghost',
+            speedFromLevelKeys: ['ghostSpeed']
+        },
+        advanced: {
+            collision: {
+                contactType: 'edge',
+                radiusMultiplier: 0.45,
+                proximityTiles: 0.9
+            },
+            actor: {
+                canBeDestroyedByDynamite: true,
+                damageLives: 1,
+                stealGems: false
+            },
+            effects: {
+                onSpawn: ['float', 'halo']
+            }
+        }
+    },
+    {
+        key: 'bat_hunter',
+        token: 'bat',
+        category: 'enemy',
+        entityType: 'bat',
+        imageSrc: 'assets/images/objects/bat_hunter.png',
+        textureKey: 'bat',
+        defaultFrame: 0,
+        contactType: 'edge',
+        dynamic: true,
+        frameCount: 10,
+        useOppositeSide: true,
+        frames: {
+            idle: {
+                up: '0-4',
+                down: '0-4',
+                left: '0-4',
+                right: '0-4'
+            },
+            move: {
+                up: '5-9',
+                down: '5-9',
+                left: '5-9',
+                right: '5-9'
+            }
+        },
+        contactScore: -10,
+        movement: {
+            automatic: true,
+            directions: ['up', 'down', 'left', 'right'],
+            minStep: 2,
+            maxStep: 6,
+            pauseMs: 120
+        },
+        staticScore: 0,
+        sizePx: {
+            width: 64,
+            height: 64
+        },
+        spawn: {
+            fromMapToken: true,
+            countFromLevelKey: 'bat',
+            speedFromLevelKeys: ['batSpeed']
+        },
+        advanced: {
+            actor: {
+                stealGems: true,
+                flightsBeforeRestFromLevelKey: 'batFlightsBeforeRest',
+                restSecondsFromLevelKey: 'batRestSeconds',
+                restIntervalSecondsFromLevelKey: 'batRestIntervalSeconds'
+            }
+        }
+    },
+    {
+        key: 'ancient_idol',
+        token: 'idol',
+        category: 'collectible',
+        entityType: 'pickup',
+        imageSrc: 'assets/images/objects/ancient_idol.png',
+        textureKey: 'objects',
+        defaultFrame: 11,
+        contactType: 'center-front',
+        dynamic: false,
+        frameCount: 1,
+        useOppositeSide: false,
+        frames: {
+            idle: {
+                up: '0',
+                down: '0',
+                left: '0',
+                right: '0'
+            },
+            move: {
+                up: '',
+                down: '',
+                left: '',
+                right: ''
+            }
+        },
+        contactScore: 15,
+        movement: {
+            automatic: false,
+            directions: [],
+            minStep: 0,
+            maxStep: 0,
+            pauseMs: 0
+        },
+        staticScore: 120,
+        sizePx: {
+            width: 96,
+            height: 96
+        },
+        spawn: {
+            fromMapToken: true,
+            countFromLevelKey: null,
+            speedFromLevelKeys: []
+        },
+        advanced: {
+            pickup: {
+                gemsDelta: 0,
+                livesDelta: 0,
+                keysDelta: 0,
+                dynamiteDelta: 0,
+                score: 120,
+                removeOnCollect: true
+            },
+            collision: {
+                contactType: 'center-front',
+                radiusMultiplier: 0.45,
+                proximityTiles: 0.9
+            }
+        }
+    },
+    {
+        key: 'wall_variant',
+        token: 'w0010',
+        category: 'wall',
+        entityType: 'wall',
+        imageSrc: 'assets/images/foreground/wall_completed.png',
+        textureKey: 'wall_tiles',
+        defaultFrame: 1,
+        contactType: 'edge',
+        dynamic: false,
+        frameCount: 1,
+        useOppositeSide: false,
+        frames: {
+            idle: {
+                up: '1',
+                down: '1',
+                left: '1',
+                right: '1'
+            },
+            move: {
+                up: '',
+                down: '',
+                left: '',
+                right: ''
+            }
+        },
+        contactScore: 0,
+        movement: {
+            automatic: false,
+            directions: [],
+            minStep: 0,
+            maxStep: 0,
+            pauseMs: 0
+        },
+        staticScore: 0,
+        sizePx: {
+            width: 64,
+            height: 64
+        },
+        spawn: {
+            fromMapToken: true,
+            countFromLevelKey: null,
+            speedFromLevelKeys: []
+        },
+        advanced: {
+            wall: {
+                frame: 1,
+                rotation: 0,
+                flip: '0',
+                invisible: false,
+                noTile: false
+            }
+        }
+    },
+    {
+        key: 'tile_water',
+        token: 'water',
+        category: 'tile',
+        entityType: 'tile',
+        imageSrc: 'assets/images/tiles.png',
+        textureKey: 'tiles',
+        defaultFrame: 4,
+        contactType: 'edge',
+        dynamic: false,
+        frameCount: 1,
+        useOppositeSide: false,
+        frames: {
+            idle: {
+                up: '4',
+                down: '4',
+                left: '4',
+                right: '4'
+            },
+            move: {
+                up: '',
+                down: '',
+                left: '',
+                right: ''
+            }
+        },
+        contactScore: 0,
+        movement: {
+            automatic: false,
+            directions: [],
+            minStep: 0,
+            maxStep: 0,
+            pauseMs: 0
+        },
+        staticScore: 0,
+        sizePx: {
+            width: 64,
+            height: 64
+        },
+        spawn: {
+            fromMapToken: true,
+            countFromLevelKey: null,
+            speedFromLevelKeys: []
+        },
+        advanced: {
+            tile: {
+                type: 'water',
+                walkable: true,
+                noTile: false,
+                invisible: false
+            }
+        }
+    }
+];
+
 function setObjectMapStatus(message, isError = false) {
     const target = el('objectMapStatusText');
     if (!target) return;
@@ -280,7 +593,13 @@ function setObjectMapStatus(message, isError = false) {
 function createDefaultObjectMapping(seedName = '') {
     return {
         key: String(seedName || 'new_object').trim() || 'new_object',
+        token: '',
+        category: 'custom',
+        entityType: 'generic',
         imageSrc: '',
+        textureKey: 'objects',
+        defaultFrame: 0,
+        contactType: 'edge',
         dynamic: false,
         frameCount: 1,
         useOppositeSide: true,
@@ -300,7 +619,82 @@ function createDefaultObjectMapping(seedName = '') {
         sizePx: {
             width: 64,
             height: 64
-        }
+        },
+        spawn: {
+            fromMapToken: true,
+            countFromLevelKey: null,
+            speedFromLevelKeys: []
+        },
+        advanced: {}
+    };
+}
+
+function getObjectMappingKnownKeys() {
+    return new Set([
+        'key', 'id', 'token', 'mapToken', 'category', 'entityType', 'type',
+        'imageSrc', 'image', 'textureKey', 'defaultFrame', 'contactType',
+        'dynamic', 'frameCount', 'useOppositeSide', 'mirrorHorizontal',
+        'frames', 'contactScore', 'movement', 'staticScore', 'sizePx',
+        'spawn', 'advanced', 'collision', 'render', 'tile', 'wall', 'actor',
+        'pickup', 'effects', 'tags', 'params'
+    ]);
+}
+
+function buildAdvancedFromRawObject(inObj) {
+    const known = getObjectMappingKnownKeys();
+    const residual = {};
+    Object.keys(inObj).forEach((k) => {
+        if (!known.has(k)) residual[k] = inObj[k];
+    });
+    const adv = isPlainObject(inObj.advanced) ? inObj.advanced : {};
+    return deepMerge(residual, adv);
+}
+
+function parseCsvList(value) {
+    const raw = String(value ?? '').trim();
+    if (!raw) return [];
+    return raw.split(',').map((s) => String(s).trim()).filter(Boolean);
+}
+
+function mergeMappingWithAdvanced(baseMapping, advancedObject) {
+    const merged = deepMerge(baseMapping, advancedObject);
+    if (isPlainObject(merged.advanced)) {
+        delete merged.advanced;
+    }
+    return merged;
+}
+
+function formatAdvancedJson(value) {
+    if (!isPlainObject(value) || !Object.keys(value).length) return '';
+    return JSON.stringify(value, null, 2);
+}
+
+function normalizeContactType(value) {
+    const raw = String(value ?? '').trim().toLowerCase();
+    if (!raw) return 'edge';
+    if (raw === 'center-front' || raw === 'center') return 'center-front';
+    if (raw === 'edge') return 'edge';
+    return raw;
+}
+
+function normalizeCategory(value) {
+    const allowed = new Set(['enemy', 'pickup', 'tile', 'wall', 'exit', 'player', 'decor', 'custom']);
+    const raw = String(value ?? '').trim().toLowerCase();
+    if (allowed.has(raw)) return raw;
+    return 'custom';
+}
+
+function normalizeSpawn(rawSpawn) {
+    const s = isPlainObject(rawSpawn) ? rawSpawn : {};
+    const speedKeys = Array.isArray(s.speedFromLevelKeys)
+        ? s.speedFromLevelKeys.map((it) => String(it).trim()).filter(Boolean)
+        : [];
+    return {
+        fromMapToken: s.fromMapToken !== undefined ? !!s.fromMapToken : true,
+        countFromLevelKey: (s.countFromLevelKey === null || s.countFromLevelKey === undefined || s.countFromLevelKey === '')
+            ? null
+            : String(s.countFromLevelKey),
+        speedFromLevelKeys: speedKeys
     };
 }
 
@@ -312,11 +706,21 @@ function normalizeObjectMapping(raw) {
     const move = isPlainObject(frames.move) ? frames.move : {};
     const movement = isPlainObject(inObj.movement) ? inObj.movement : {};
     const sizePx = isPlainObject(inObj.sizePx) ? inObj.sizePx : {};
+    const spawn = normalizeSpawn(inObj.spawn);
+    const advanced = buildAdvancedFromRawObject(inObj);
+    const collision = isPlainObject(inObj.collision) ? inObj.collision : {};
+    const render = isPlainObject(inObj.render) ? inObj.render : {};
 
     return {
         ...base,
         key: String(inObj.key ?? inObj.id ?? base.key).trim() || base.key,
+        token: String(inObj.token ?? inObj.mapToken ?? '').trim(),
+        category: normalizeCategory(inObj.category),
+        entityType: String(inObj.entityType ?? inObj.type ?? base.entityType).trim() || base.entityType,
         imageSrc: String(inObj.imageSrc ?? inObj.image ?? '').trim(),
+        textureKey: String(inObj.textureKey ?? render.textureKey ?? base.textureKey).trim() || base.textureKey,
+        defaultFrame: Math.max(0, parseNumber(inObj.defaultFrame ?? render.frame, 0)),
+        contactType: normalizeContactType(inObj.contactType ?? collision.contactType ?? base.contactType),
         dynamic: !!inObj.dynamic,
         frameCount: Math.max(1, parseNumber(inObj.frameCount, 1)),
         useOppositeSide: inObj.useOppositeSide !== undefined ? !!inObj.useOppositeSide : !!(inObj.mirrorHorizontal ?? true),
@@ -346,7 +750,9 @@ function normalizeObjectMapping(raw) {
         sizePx: {
             width: Math.max(1, parseNumber(sizePx.width, 64)),
             height: Math.max(1, parseNumber(sizePx.height, 64))
-        }
+        },
+        spawn,
+        advanced
     };
 }
 
@@ -406,6 +812,15 @@ function createObjectMapCard(mapping) {
 
     const rowA = document.createElement('div');
     rowA.className = 'objmap-grid2';
+    const tokenWrap = document.createElement('div');
+    tokenWrap.innerHTML = '<label>Token mappa (es. ghost, bat, w0010, water)</label>';
+    const tokenInput = document.createElement('input');
+    tokenInput.className = 'obj-token';
+    tokenInput.type = 'text';
+    tokenInput.placeholder = 'token opzionale';
+    tokenInput.value = m.token || '';
+    tokenWrap.appendChild(tokenInput);
+
     const imgWrap = document.createElement('div');
     imgWrap.innerHTML = '<label>Image file</label>';
     const imgInput = document.createElement('input');
@@ -417,9 +832,71 @@ function createObjectMapCard(mapping) {
     const dynWrap = document.createElement('div');
     dynWrap.innerHTML = '<label style="display:flex; align-items:center; gap:8px;"><input class="obj-dynamic" type="checkbox" style="width:auto; margin-right:6px;">Oggetto dinamico</label>';
     dynWrap.querySelector('.obj-dynamic').checked = m.dynamic;
+    rowA.appendChild(tokenWrap);
     rowA.appendChild(imgWrap);
     rowA.appendChild(dynWrap);
     card.appendChild(rowA);
+
+    const profileGrid = document.createElement('div');
+    profileGrid.className = 'objmap-grid2';
+    profileGrid.style.marginTop = '8px';
+
+    const categoryWrap = document.createElement('div');
+    categoryWrap.innerHTML = '<label>Categoria</label>';
+    const categorySelect = document.createElement('select');
+    categorySelect.className = 'obj-category';
+    ['enemy', 'pickup', 'tile', 'wall', 'exit', 'player', 'decor', 'custom'].forEach((cat) => {
+        const op = document.createElement('option');
+        op.value = cat;
+        op.textContent = cat;
+        categorySelect.appendChild(op);
+    });
+    categorySelect.value = normalizeCategory(m.category);
+    categoryWrap.appendChild(categorySelect);
+
+    const entityWrap = document.createElement('div');
+    entityWrap.innerHTML = '<label>Entity type</label>';
+    const entityInput = document.createElement('input');
+    entityInput.className = 'obj-entity-type';
+    entityInput.type = 'text';
+    entityInput.placeholder = 'es. ghost, bat, wall, tile, pickup';
+    entityInput.value = m.entityType || '';
+    entityWrap.appendChild(entityInput);
+
+    const textureWrap = document.createElement('div');
+    textureWrap.innerHTML = '<label>Texture key runtime</label>';
+    const textureInput = document.createElement('input');
+    textureInput.className = 'obj-texture-key';
+    textureInput.type = 'text';
+    textureInput.placeholder = 'objects, ghost, bat, tiles, wall_tiles';
+    textureInput.value = m.textureKey || 'objects';
+    textureWrap.appendChild(textureInput);
+
+    const frameWrap = document.createElement('div');
+    frameWrap.innerHTML = '<label>Frame default</label>';
+    const frameInput = document.createElement('input');
+    frameInput.className = 'obj-default-frame';
+    frameInput.type = 'number';
+    frameInput.step = '1';
+    frameInput.min = '0';
+    frameInput.value = String(m.defaultFrame ?? 0);
+    frameWrap.appendChild(frameInput);
+
+    const contactTypeWrap = document.createElement('div');
+    contactTypeWrap.innerHTML = '<label>Contact type</label>';
+    const contactTypeInput = document.createElement('input');
+    contactTypeInput.className = 'obj-contact-type';
+    contactTypeInput.type = 'text';
+    contactTypeInput.placeholder = 'edge, center-front';
+    contactTypeInput.value = m.contactType || 'edge';
+    contactTypeWrap.appendChild(contactTypeInput);
+
+    profileGrid.appendChild(categoryWrap);
+    profileGrid.appendChild(entityWrap);
+    profileGrid.appendChild(textureWrap);
+    profileGrid.appendChild(frameWrap);
+    profileGrid.appendChild(contactTypeWrap);
+    card.appendChild(profileGrid);
 
     const dynBlock = document.createElement('div');
     dynBlock.className = 'obj-dynamic-block';
@@ -576,6 +1053,47 @@ function createObjectMapCard(mapping) {
     staticBlock.appendChild(staticScore);
     card.appendChild(staticBlock);
 
+    const spawnBlock = document.createElement('div');
+    spawnBlock.style.marginTop = '8px';
+    spawnBlock.innerHTML = '<div class="objmap-subtitle">Spawn / binding livello</div>';
+    const spawnGrid = document.createElement('div');
+    spawnGrid.className = 'objmap-grid2';
+    const spawnFromMapWrap = document.createElement('div');
+    spawnFromMapWrap.innerHTML = '<label style="display:flex; align-items:center; gap:8px;"><input class="obj-spawn-from-map" type="checkbox" style="width:auto; margin-right:6px;">Spawn da token mappa</label>';
+    spawnFromMapWrap.querySelector('.obj-spawn-from-map').checked = !!m.spawn?.fromMapToken;
+    const spawnCountWrap = document.createElement('div');
+    spawnCountWrap.innerHTML = '<label>Count da chiave livello</label>';
+    const spawnCountInput = document.createElement('input');
+    spawnCountInput.className = 'obj-spawn-count-key';
+    spawnCountInput.type = 'text';
+    spawnCountInput.placeholder = 'ghost, bat, ecc';
+    spawnCountInput.value = String(m.spawn?.countFromLevelKey ?? '');
+    spawnCountWrap.appendChild(spawnCountInput);
+    const spawnSpeedWrap = document.createElement('div');
+    spawnSpeedWrap.innerHTML = '<label>Speed keys livello (csv)</label>';
+    const spawnSpeedInput = document.createElement('input');
+    spawnSpeedInput.className = 'obj-spawn-speed-keys';
+    spawnSpeedInput.type = 'text';
+    spawnSpeedInput.placeholder = 'ghostSpeed, batSpeed';
+    spawnSpeedInput.value = Array.isArray(m.spawn?.speedFromLevelKeys) ? m.spawn.speedFromLevelKeys.join(', ') : '';
+    spawnSpeedWrap.appendChild(spawnSpeedInput);
+    spawnGrid.appendChild(spawnFromMapWrap);
+    spawnGrid.appendChild(spawnCountWrap);
+    spawnGrid.appendChild(spawnSpeedWrap);
+    spawnBlock.appendChild(spawnGrid);
+    card.appendChild(spawnBlock);
+
+    const advancedBlock = document.createElement('div');
+    advancedBlock.style.marginTop = '8px';
+    advancedBlock.innerHTML = '<label>Advanced JSON (parametri liberi: collision, tile, wall, actor, pickup, effects, render, tags...)</label>';
+    const advancedInput = document.createElement('textarea');
+    advancedInput.className = 'obj-advanced-json';
+    advancedInput.rows = 8;
+    advancedInput.style.width = '100%';
+    advancedInput.value = formatAdvancedJson(m.advanced);
+    advancedBlock.appendChild(advancedInput);
+    card.appendChild(advancedBlock);
+
     const dynamicToggle = card.querySelector('.obj-dynamic');
     const autoToggle = card.querySelector('.obj-auto');
     dynamicToggle?.addEventListener('change', () => setObjectCardVisibility(card));
@@ -602,10 +1120,22 @@ function collectObjectMappingsFromEditor() {
         const getNum = (sel, fallback = 0) => parseNumber(card.querySelector(sel)?.value, fallback);
         const getCheck = (sel) => !!card.querySelector(sel)?.checked;
         const dirs = ['up', 'down', 'left', 'right'].filter((d) => !!card.querySelector(`.obj-dir-${d}`)?.checked);
+        const advancedRaw = parseJsonObjectSafe(getVal('.obj-advanced-json'));
 
-        const mapped = normalizeObjectMapping({
+        if (!advancedRaw.ok) {
+            setObjectMapStatus(advancedRaw.message, true);
+            throw new Error(advancedRaw.message);
+        }
+
+        const normalized = normalizeObjectMapping({
             key: getVal('.obj-key'),
+            token: getVal('.obj-token'),
+            category: getVal('.obj-category'),
+            entityType: getVal('.obj-entity-type'),
             imageSrc: getVal('.obj-image-src'),
+            textureKey: getVal('.obj-texture-key'),
+            defaultFrame: getNum('.obj-default-frame', 0),
+            contactType: getVal('.obj-contact-type') || 'edge',
             dynamic: getCheck('.obj-dynamic'),
             frameCount: getNum('.obj-frame-count', 1),
             useOppositeSide: getCheck('.obj-opposite'),
@@ -635,9 +1165,15 @@ function collectObjectMappingsFromEditor() {
             sizePx: {
                 width: getNum('.obj-size-w', 64),
                 height: getNum('.obj-size-h', 64)
+            },
+            spawn: {
+                fromMapToken: getCheck('.obj-spawn-from-map'),
+                countFromLevelKey: getVal('.obj-spawn-count-key') || null,
+                speedFromLevelKeys: parseCsvList(getVal('.obj-spawn-speed-keys'))
             }
         });
-        return mapped;
+
+        return mergeMappingWithAdvanced(normalized, advancedRaw.value);
     }).filter((m) => m.key);
 
     OBJECT_MAP_EDITOR_STATE.items = out;
@@ -648,6 +1184,11 @@ function loadObjectMappingsToEditor(rawList) {
     const arr = Array.isArray(rawList) ? rawList : [];
     OBJECT_MAP_EDITOR_STATE.items = arr.map((it) => normalizeObjectMapping(it));
     renderObjectMapEditor();
+}
+
+function loadObjectMappingsExample() {
+    loadObjectMappingsToEditor(OBJECT_MAPPINGS_EXAMPLE);
+    setObjectMapStatus('Esempio JSON esteso caricato: enemy/tile/wall/exit/pickup con parametri avanzati.');
 }
 
 function setConfigStatus(message, isError = false) {
@@ -3675,6 +4216,7 @@ function bindUI() {
     const configModal = el('configModal');
     const openObjectMapDialogBtn = el('openObjectMapDialogBtn');
     const closeObjectMapDialogBtn = el('closeObjectMapDialogBtn');
+    const loadObjectMapExampleBtn = el('loadObjectMapExampleBtn');
     const addObjectMapBtn = el('addObjectMapBtn');
     const saveObjectMapBtn = el('saveObjectMapBtn');
     const objectMapModal = el('objectMapModal');
@@ -3722,6 +4264,11 @@ function bindUI() {
     if (closeObjectMapDialogBtn) {
         closeObjectMapDialogBtn.addEventListener('click', () => {
             if (objectMapModal) objectMapModal.classList.remove('open');
+        });
+    }
+    if (loadObjectMapExampleBtn) {
+        loadObjectMapExampleBtn.addEventListener('click', () => {
+            loadObjectMappingsExample();
         });
     }
     if (addObjectMapBtn) {
