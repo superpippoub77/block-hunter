@@ -356,6 +356,67 @@ let OBJECT_MAP_EDITOR_STATE = {
     items: []
 };
 
+let OBJECT_MAPPINGS_READY = false;
+
+function getPaletteItemsFromObjectMappings() {
+    const rows = Array.isArray(OBJECT_MAP_EDITOR_STATE.items) ? OBJECT_MAP_EDITOR_STATE.items : [];
+    const seen = new Set();
+    const tiles = [];
+    const objects = [];
+
+    rows.forEach((raw) => {
+        if (!raw || typeof raw !== 'object') return;
+        const tokenRaw = String(raw.token ?? raw.mapToken ?? '').trim();
+        if (!tokenRaw) return;
+
+        const token = normalizeToken(tokenRaw);
+        if (!token || token === '-') return;
+        if (WALL_TOKEN_REGEX.test(token)) return;
+
+        const dedupeKey = token.toLowerCase();
+        if (seen.has(dedupeKey)) return;
+        seen.add(dedupeKey);
+
+        const keyLabel = String(raw.key ?? '').trim();
+        const category = String(raw.category ?? '').trim().toLowerCase();
+        const label = keyLabel ? `${keyLabel}` : token;
+        const item = { token, label };
+
+        if (category === 'tile') {
+            tiles.push(item);
+        } else if (category !== 'wall') {
+            objects.push(item);
+        }
+    });
+
+    const sortByToken = (a, b) => String(a.token).localeCompare(String(b.token), 'it');
+    tiles.sort(sortByToken);
+    objects.sort(sortByToken);
+
+    return { tiles, objects };
+}
+
+function refreshObjectMappingsAvailability() {
+    const groups = getPaletteItemsFromObjectMappings();
+    OBJECT_MAPPINGS_READY = (groups.tiles.length + groups.objects.length) > 0;
+    return OBJECT_MAPPINGS_READY;
+}
+
+function openObjectMapDialog(message = '', isError = false) {
+    const objectMapModal = el('objectMapModal');
+    if (objectMapModal) objectMapModal.classList.add('open');
+    renderObjectMapEditor();
+    if (message) setObjectMapStatus(message, isError);
+}
+
+function ensureObjectMappingsReadyOrPrompt(reason = '') {
+    if (refreshObjectMappingsAvailability()) return true;
+    const reasonText = reason ? ` (${reason})` : '';
+    openObjectMapDialog('Nessun oggetto disponibile: aggiungi almeno un oggetto con token e salva.', true);
+    setStatus(`Creazione mappa bloccata: nessun oggetto configurato${reasonText}.`, true);
+    return false;
+}
+
 const OBJECT_MAPPINGS_EXAMPLE = [
     {
         key: 'ghost_alpha',
@@ -2110,12 +2171,14 @@ function collectObjectMappingsFromEditor() {
     }).filter((m) => m.key);
 
     OBJECT_MAP_EDITOR_STATE.items = out;
+    refreshObjectMappingsAvailability();
     return out;
 }
 
 function loadObjectMappingsToEditor(rawList) {
     const arr = Array.isArray(rawList) ? rawList : [];
     OBJECT_MAP_EDITOR_STATE.items = arr.map((it) => normalizeObjectMapping(it));
+    refreshObjectMappingsAvailability();
     renderObjectMapEditor();
 }
 
@@ -2132,8 +2195,12 @@ async function loadObjectMappingsFromObjectsFile() {
         if (!Array.isArray(data)) throw new Error('Formato non valido: atteso array JSON.');
         loadObjectMappingsToEditor(data);
         setObjectMapStatus(`Caricati ${data.length} oggetti da ${OBJECTS_JSON_PATH}.`);
+        return data.length;
     } catch (err) {
+        OBJECT_MAP_EDITOR_STATE.items = [];
+        refreshObjectMappingsAvailability();
         setObjectMapStatus(`Errore caricamento ${OBJECTS_JSON_PATH}: ${err.message}`, true);
+        return -1;
     }
 }
 
@@ -2505,6 +2572,134 @@ function splitEffectsList(text) {
     }
     if (cur.trim()) out.push(cur.trim());
     return out;
+}
+
+const EDITOR_EFFECT_LIBRARY_STATE = {
+    effects: [],
+    source: ''
+};
+
+function parseEditorEffectManifestEntries(manifest) {
+    const root = (manifest && typeof manifest === 'object') ? manifest : {};
+    const list = Array.isArray(root)
+        ? root
+        : (Array.isArray(root.effects) ? root.effects : []);
+
+    const out = [];
+    list.forEach((entry) => {
+        if (typeof entry === 'string') {
+            const name = String(entry || '').trim().toLowerCase();
+            if (name) out.push({ name, source: 'manifest' });
+            return;
+        }
+        if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return;
+        const name = String(entry.name ?? entry.key ?? entry.id ?? '').trim().toLowerCase();
+        if (!name) return;
+        out.push({
+            name,
+            aliases: Array.isArray(entry.aliases) ? entry.aliases.map((a) => String(a || '').trim().toLowerCase()).filter(Boolean) : [],
+            source: String(entry.entry ?? entry.file ?? entry.path ?? '').trim() || 'manifest'
+        });
+    });
+
+    const unique = [];
+    const seen = new Set();
+    out.forEach((it) => {
+        if (!it?.name || seen.has(it.name)) return;
+        seen.add(it.name);
+        unique.push(it);
+    });
+    return unique;
+}
+
+function setEffectLibraryStatus(message, isError = false) {
+    const target = el('effectLibraryStatus');
+    if (!target) return;
+    target.style.color = isError ? '#ff8f9a' : '#9de8ff';
+    target.textContent = message;
+}
+
+function appendEffectNameToSelection(effectName) {
+    const clean = String(effectName || '').trim().toLowerCase();
+    if (!clean) return;
+
+    const knownChecks = {
+        lamp: el('selectedFxLamp'),
+        pulse: el('selectedFxPulse'),
+        float: el('selectedFxFloat'),
+        halo: el('selectedFxHalo'),
+        outline: el('selectedFxOutline')
+    };
+
+    if (knownChecks[clean]) {
+        knownChecks[clean].checked = true;
+        refreshSelectedEffectsPreview();
+        return;
+    }
+
+    const customInput = el('selectedTokenEffectsCustom');
+    if (!customInput) return;
+    const entries = splitEffectsList(customInput.value || '');
+    if (!entries.includes(clean)) {
+        entries.push(clean);
+        customInput.value = entries.join(',');
+    }
+    refreshSelectedEffectsPreview();
+}
+
+function renderEffectLibraryButtons() {
+    const container = el('effectLibraryList');
+    if (!container) return;
+    container.innerHTML = '';
+
+    if (!Array.isArray(EDITOR_EFFECT_LIBRARY_STATE.effects) || !EDITOR_EFFECT_LIBRARY_STATE.effects.length) {
+        return;
+    }
+
+    EDITOR_EFFECT_LIBRARY_STATE.effects.forEach((entry) => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'icon-btn';
+        btn.textContent = `+ ${entry.name}`;
+        btn.title = entry.aliases?.length
+            ? `Alias: ${entry.aliases.join(', ')}`
+            : `Applica effetto ${entry.name}`;
+        btn.addEventListener('click', () => {
+            appendEffectNameToSelection(entry.name);
+            setStatus(`Effetto ${entry.name} aggiunto al token selezionato.`);
+        });
+        container.appendChild(btn);
+    });
+}
+
+async function loadEffectLibraryForEditor() {
+    const candidates = ['data/Library/manifest.json', 'Data/Library/manifest.json'];
+    for (const p of candidates) {
+        try {
+            const resp = await fetch(p, { cache: 'no-store' });
+            if (!resp.ok) continue;
+            const manifest = await resp.json();
+            const effects = parseEditorEffectManifestEntries(manifest);
+            EDITOR_EFFECT_LIBRARY_STATE.effects = effects;
+            EDITOR_EFFECT_LIBRARY_STATE.source = p;
+            renderEffectLibraryButtons();
+            setEffectLibraryStatus(
+                effects.length
+                    ? `Caricati ${effects.length} effetti da ${p}.`
+                    : `Manifest caricato (${p}) ma senza effetti.`,
+                effects.length === 0
+            );
+            return effects;
+        } catch (_e) {
+            // continue with next candidate
+        }
+    }
+
+    EDITOR_EFFECT_LIBRARY_STATE.effects = [];
+    EDITOR_EFFECT_LIBRARY_STATE.source = '';
+    renderEffectLibraryButtons();
+    setEffectLibraryStatus('Manifest libreria effetti non trovato (data/Library/manifest.json).', true);
+    return [];
 }
 
 function parseEffectEntry(entry) {
@@ -3465,6 +3660,7 @@ class LevelEditorScene extends Phaser.Scene {
     }
 
     placeToken(col, row, token, opts = {}) {
+        if (!ensureObjectMappingsReadyOrPrompt('aggiungi oggetti nel dialog OBJ')) return;
         if (!this.cells[row] || !this.cells[row][col]) return;
         const cell = this.cells[row][col];
         const useReveal = !!el('revealMode')?.checked;
@@ -4286,6 +4482,10 @@ function drawMiniMapPreview(scene) {
 }
 
 function readLevelFromForm() {
+    if (!ensureObjectMappingsReadyOrPrompt('configura almeno un oggetto prima dell\'export')) {
+        throw new Error('Nessun oggetto configurato. Apri OBJ e salva almeno un elemento con token valido.');
+    }
+
     const scene = getScene();
     const cols = scene?.cols || parseNumber(el('gridCols')?.value, 12);
     const rows = scene?.rows || parseNumber(el('gridRows')?.value, 12);
@@ -4559,7 +4759,10 @@ function applyLevelToForm(levelData) {
         try { if (window.__editorMusicAudio && data.music) { window.__editorMusicAudio.src = String(data.music); } } catch (e) {}
     } catch (e) {}
 
-    try { loadObjectMappingsToEditor(data.objectMappings || []); } catch (e) {}
+    try {
+        loadObjectMappingsToEditor(data.objectMappings || []);
+        buildDomPalette();
+    } catch (e) {}
 
     // set gemsOneByOne checkbox if present in map or top-level
     try {
@@ -5167,6 +5370,10 @@ function bindUI() {
     const addObjectMapBtn = el('addObjectMapBtn');
     const saveObjectMapBtn = el('saveObjectMapBtn');
     const objectMapModal = el('objectMapModal');
+    const reloadEffectLibraryBtn = el('reloadEffectLibraryBtn');
+    const refreshLeftPalette = () => {
+        try { buildDomPalette(); } catch (_e) { }
+    };
 
     if (openConfigDialogBtn) {
         openConfigDialogBtn.addEventListener('click', async () => {
@@ -5203,9 +5410,7 @@ function bindUI() {
 
     if (openObjectMapDialogBtn) {
         openObjectMapDialogBtn.addEventListener('click', () => {
-            if (objectMapModal) objectMapModal.classList.add('open');
-            renderObjectMapEditor();
-            setObjectMapStatus('Editor mappaggio oggetti aperto.');
+            openObjectMapDialog('Editor mappaggio oggetti aperto.');
         });
     }
     if (closeObjectMapDialogBtn) {
@@ -5216,23 +5421,33 @@ function bindUI() {
     if (loadObjectMapFromFileBtn) {
         loadObjectMapFromFileBtn.addEventListener('click', async () => {
             await loadObjectMappingsFromObjectsFile();
+            refreshLeftPalette();
         });
     }
     if (loadObjectMapExampleBtn) {
         loadObjectMapExampleBtn.addEventListener('click', () => {
             loadObjectMappingsExample();
+            refreshLeftPalette();
         });
     }
     if (addObjectMapBtn) {
         addObjectMapBtn.addEventListener('click', () => {
             OBJECT_MAP_EDITOR_STATE.items.push(createDefaultObjectMapping(`obj_${OBJECT_MAP_EDITOR_STATE.items.length + 1}`));
+            refreshObjectMappingsAvailability();
             renderObjectMapEditor();
             setObjectMapStatus('Nuovo oggetto aggiunto.');
+            refreshLeftPalette();
         });
     }
     if (saveObjectMapBtn) {
         saveObjectMapBtn.addEventListener('click', () => {
             const items = collectObjectMappingsFromEditor();
+            refreshLeftPalette();
+            if (!refreshObjectMappingsAvailability()) {
+                setObjectMapStatus('Aggiungi almeno un oggetto con token valido prima di continuare.', true);
+                openObjectMapDialog('', true);
+                return;
+            }
             setObjectMapStatus(`Mappaggio salvato (${items.length} oggetti).`);
             if (objectMapModal) objectMapModal.classList.remove('open');
         });
@@ -5242,6 +5457,12 @@ function bindUI() {
             if (ev.target === objectMapModal) {
                 objectMapModal.classList.remove('open');
             }
+        });
+    }
+
+    if (reloadEffectLibraryBtn) {
+        reloadEffectLibraryBtn.addEventListener('click', async () => {
+            await loadEffectLibraryForEditor();
         });
     }
 
@@ -5695,19 +5916,31 @@ function bindUI() {
         });
 }
 
-window.addEventListener('level-editor-ready', () => {
+window.addEventListener('level-editor-ready', async () => {
     applyLevelToForm(DEFAULT_LEVEL);
     const scene = getScene();
     if (scene) {
         scene.loadFromJson(DEFAULT_LEVEL);
     }
-    // Build DOM palette (left column) and wire drag/drop handlers
-    try { buildDomPalette(); } catch (e) { /* ignore */ }
+    bindUI();
     try { setupDomDragAndDrop(); } catch (e) { /* ignore */ }
     try { setupRightAccordion(); } catch (e) { /* ignore */ }
-    bindUI();
+    try { await loadEffectLibraryForEditor(); } catch (e) { /* ignore */ }
+
+    // Load palette source from objects.json at startup.
+    const loadedCount = await loadObjectMappingsFromObjectsFile();
+    try { buildDomPalette(); } catch (e) { /* ignore */ }
+
+    if (!refreshObjectMappingsAvailability()) {
+        openObjectMapDialog('Nessun oggetto trovato in data/objects.json. Inserisci almeno un oggetto per avviare la creazione mappa.', true);
+        setStatus('Creazione mappa bloccata: aggiungi oggetti dal dialog OBJ e salva.', true);
+    } else if (loadedCount >= 0) {
+        setStatus(`Editor pronto. Oggetti caricati: ${loadedCount}.`);
+    } else {
+        setStatus('Editor pronto con palette locale: verifica data/objects.json.', true);
+    }
+
     drawMiniMapPreview(scene);
-    setStatus('Editor pronto.');
 });
 
 // Convert right-panel sections into accordions and bind toggles
@@ -6000,27 +6233,21 @@ function buildDomPalette() {
     const wallsContainer = el('domPalette-walls');
     if (!tilesContainer && !objectsContainer && !wallsContainer) return;
 
-    // classify tokens
-    const tileKeys = new Set(['-', '.', '#', 'f', 'h', 's', 'sand', 'water', 'mud', 'back']);
-    const wallKeys = new Set(WALL_PALETTE_ITEMS.map(i => normalizeToken(i.token)));
+    if (tilesContainer) tilesContainer.innerHTML = '';
+    if (objectsContainer) objectsContainer.innerHTML = '';
+    if (wallsContainer) wallsContainer.innerHTML = '';
 
-    // populate tiles
-    PALETTE_ITEMS.forEach((it) => {
-        const tokenNorm = normalizeToken(it.token);
-        if (tileKeys.has(it.token) || tileKeys.has(tokenNorm)) {
-            if (!tilesContainer) return;
-            const elItem = makePaletteItem(it.label || it.token, tokenNorm);
-            tilesContainer.appendChild(elItem);
-        }
+    const dynamicGroups = getPaletteItemsFromObjectMappings();
+
+    dynamicGroups.tiles.forEach((it) => {
+        if (!tilesContainer) return;
+        const elItem = makePaletteItem(it.label || it.token, normalizeToken(it.token));
+        tilesContainer.appendChild(elItem);
     });
 
-    // populate objects (exclude walls and tile keys)
-    PALETTE_ITEMS.forEach((it) => {
-        const tokenNorm = normalizeToken(it.token);
-        if (wallKeys.has(tokenNorm)) return;
-        if (tileKeys.has(it.token) || tileKeys.has(tokenNorm)) return;
+    dynamicGroups.objects.forEach((it) => {
         if (!objectsContainer) return;
-        const elItem = makePaletteItem(it.label || it.token, tokenNorm);
+        const elItem = makePaletteItem(it.label || it.token, normalizeToken(it.token));
         objectsContainer.appendChild(elItem);
     });
 
@@ -6049,13 +6276,16 @@ function buildDomPalette() {
         // set initial state based on content visibility
         const content = h.nextElementSibling;
         try { ind.textContent = (content && (content.style.display === 'block' || getComputedStyle(content).display !== 'none')) ? '-' : '+'; } catch (e) {}
-        h.addEventListener('click', () => {
-            const content = h.nextElementSibling;
-            if (!content) return;
-            const isNowVisible = content.style.display === 'block' ? false : true;
-            content.style.display = isNowVisible ? 'block' : 'none';
-            try { ind.textContent = isNowVisible ? '-' : '+'; } catch (e) {}
-        });
+        if (h.dataset.paletteAccordionBound !== '1') {
+            h.addEventListener('click', () => {
+                const content = h.nextElementSibling;
+                if (!content) return;
+                const isNowVisible = content.style.display === 'block' ? false : true;
+                content.style.display = isNowVisible ? 'block' : 'none';
+                try { ind.textContent = isNowVisible ? '-' : '+'; } catch (e) {}
+            });
+            h.dataset.paletteAccordionBound = '1';
+        }
     });
 
     // expand objects group by default

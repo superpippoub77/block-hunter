@@ -12,6 +12,211 @@ const CONFIG = {};
 // Game state (populated from /data/config.json)
 const GAME_STATE = {};
 
+// Runtime effect library loaded from data/Library/*
+const EFFECT_LIBRARY = {
+    effects: {},
+    aliases: {},
+    loadedEntries: [],
+    lastLoadError: null
+};
+
+function normalizeEffectKey(raw) {
+    return String(raw || '').trim().toLowerCase().replace(/[^a-z0-9_\-]/g, '');
+}
+
+function registerEffectLibraryDefinition(rawDef, sourcePath = '') {
+    const def = (rawDef && typeof rawDef === 'object' && !Array.isArray(rawDef)) ? rawDef : null;
+    if (!def) return false;
+
+    const effectName = normalizeEffectKey(def.name || def.key || def.id);
+    if (!effectName) return false;
+
+    const built = {
+        ...def,
+        name: effectName,
+        sourcePath: sourcePath || String(def.sourcePath || '')
+    };
+
+    EFFECT_LIBRARY.effects[effectName] = built;
+
+    const aliases = Array.isArray(def.aliases) ? def.aliases : [];
+    aliases.forEach((alias) => {
+        const normalizedAlias = normalizeEffectKey(alias);
+        if (!normalizedAlias) return;
+        EFFECT_LIBRARY.aliases[normalizedAlias] = effectName;
+    });
+
+    EFFECT_LIBRARY.aliases[effectName] = effectName;
+    return true;
+}
+
+function parseEffectLibraryManifestEntries(manifest) {
+    const root = (manifest && typeof manifest === 'object') ? manifest : {};
+    const list = Array.isArray(root)
+        ? root
+        : (Array.isArray(root.effects) ? root.effects : []);
+
+    return list
+        .map((entry) => {
+            if (typeof entry === 'string') {
+                const text = String(entry).trim();
+                if (!text) return null;
+                if (/\.js$/i.test(text)) {
+                    return { path: text, nameHint: '' };
+                }
+                return {
+                    path: `data/Library/${text}/effect.js`,
+                    nameHint: normalizeEffectKey(text)
+                };
+            }
+
+            if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return null;
+
+            const nameHint = normalizeEffectKey(entry.name || entry.key || entry.id || '');
+            let filePath = String(entry.entry || entry.file || entry.path || entry.src || entry.module || '').trim();
+            if (!filePath && nameHint) {
+                filePath = `data/Library/${nameHint}/effect.js`;
+            }
+            if (!filePath) return null;
+
+            if (!/\.js$/i.test(filePath)) {
+                filePath = `${filePath.replace(/\/+$/, '')}/effect.js`;
+            }
+
+            return { path: filePath, nameHint };
+        })
+        .filter(Boolean);
+}
+
+function toEffectImportPath(pathLike) {
+    const raw = String(pathLike || '').trim();
+    if (!raw) return '';
+    if (/^(https?:|blob:|data:)/i.test(raw)) return raw;
+    if (raw.startsWith('/')) return raw;
+    if (raw.startsWith('./') || raw.startsWith('../')) return raw;
+    return `./${raw}`;
+}
+
+function loadEffectDefinitionFromScript(pathLike) {
+    return new Promise((resolve) => {
+        try {
+            const src = String(pathLike || '').trim();
+            if (!src || typeof document === 'undefined') {
+                resolve(null);
+                return;
+            }
+
+            window.__BLOCKHUNTER_EFFECT_EXPORT__ = null;
+
+            const script = document.createElement('script');
+            script.async = true;
+            script.src = src;
+
+            script.onload = () => {
+                const exported = window.__BLOCKHUNTER_EFFECT_EXPORT__;
+                window.__BLOCKHUNTER_EFFECT_EXPORT__ = null;
+                try { script.remove(); } catch (_e) { }
+                resolve(exported || null);
+            };
+
+            script.onerror = () => {
+                window.__BLOCKHUNTER_EFFECT_EXPORT__ = null;
+                try { script.remove(); } catch (_e) { }
+                resolve(null);
+            };
+
+            document.head.appendChild(script);
+        } catch (_e) {
+            resolve(null);
+        }
+    });
+}
+
+async function fetchEffectManifest() {
+    const candidates = [
+        'data/Library/manifest.json',
+        'Data/Library/manifest.json'
+    ];
+
+    for (const candidate of candidates) {
+        try {
+            const resp = await fetch(candidate, { cache: 'no-store' });
+            if (!resp.ok) continue;
+            const parsed = await resp.json();
+            return { path: candidate, manifest: parsed };
+        } catch (_e) {
+            // Try next candidate.
+        }
+    }
+
+    return { path: '', manifest: null };
+}
+
+async function loadCustomEffectLibrary() {
+    try {
+        const payload = await fetchEffectManifest();
+        const manifest = payload.manifest;
+        const entries = parseEffectLibraryManifestEntries(manifest);
+
+        if (!entries.length) {
+            EFFECT_LIBRARY.loadedEntries = [];
+            EFFECT_LIBRARY.lastLoadError = null;
+            window.__BLOCKHUNTER_EFFECT_LIBRARY = EFFECT_LIBRARY;
+            return EFFECT_LIBRARY;
+        }
+
+        const loaded = [];
+        for (const entry of entries) {
+            const importPath = toEffectImportPath(entry.path);
+            if (!importPath) continue;
+
+            try {
+                const moduleNs = await import(importPath);
+                const rawCandidate = moduleNs.default ?? moduleNs.effect ?? moduleNs.EFFECT ?? moduleNs.blockHunterEffect;
+                const resolved = (typeof rawCandidate === 'function') ? rawCandidate() : rawCandidate;
+                const defObj = (resolved && typeof resolved === 'object' && !Array.isArray(resolved))
+                    ? resolved
+                    : {
+                        name: entry.nameHint,
+                        apply: null,
+                        defaults: {}
+                    };
+
+                if (!defObj.name && entry.nameHint) {
+                    defObj.name = entry.nameHint;
+                }
+
+                if (registerEffectLibraryDefinition(defObj, entry.path)) {
+                    loaded.push(entry.path);
+                }
+            } catch (err) {
+                // Fallback for plain script files exporting to window.__BLOCKHUNTER_EFFECT_EXPORT__
+                const fallback = await loadEffectDefinitionFromScript(entry.path);
+                const resolvedFallback = (typeof fallback === 'function') ? fallback() : fallback;
+
+                if (resolvedFallback && registerEffectLibraryDefinition({
+                    ...(typeof resolvedFallback === 'object' && !Array.isArray(resolvedFallback) ? resolvedFallback : {}),
+                    name: (resolvedFallback && resolvedFallback.name) ? resolvedFallback.name : entry.nameHint
+                }, entry.path)) {
+                    loaded.push(entry.path);
+                    continue;
+                }
+
+                console.warn('[EffectLibrary] Import failed:', importPath, err);
+            }
+        }
+
+        EFFECT_LIBRARY.loadedEntries = loaded;
+        EFFECT_LIBRARY.lastLoadError = null;
+    } catch (err) {
+        EFFECT_LIBRARY.lastLoadError = String(err?.message || err || 'unknown error');
+        console.warn('[EffectLibrary] Load failed:', err);
+    }
+
+    window.__BLOCKHUNTER_EFFECT_LIBRARY = EFFECT_LIBRARY;
+    return EFFECT_LIBRARY;
+}
+
 
 const GAME_FONT = '"Press Start 2P"';
 // Depth value for HUD elements so they always render above game world/foreground
@@ -5026,8 +5231,17 @@ class GameScene extends Phaser.Scene {
             if (String(effect.type || '').trim().toLowerCase() !== 'spawneffect') continue;
             const effectName = String(effect.effect || '').trim().toLowerCase();
             if (!effectName) continue;
+            const effectOptions = (effect.options && typeof effect.options === 'object' && !Array.isArray(effect.options))
+                ? effect.options
+                : ((effect.payload && typeof effect.payload === 'object' && !Array.isArray(effect.payload)) ? effect.payload : null);
             try {
-                this.applyTokenEffects(player, [effectName], player?.x, player?.y, {});
+                this.applyTokenEffects(
+                    player,
+                    [effectName],
+                    player?.x,
+                    player?.y,
+                    effectOptions ? { [effectName]: effectOptions } : {}
+                );
             } catch (e) { }
         }
     }
@@ -5128,7 +5342,10 @@ class GameScene extends Phaser.Scene {
         } else if (actionType === 'spawneffect') {
             const effectName = String(action.payload?.effect || '').trim();
             if (effectName) {
-                try { this.applyTokenEffects(player, [effectName], player.x, player.y, {}); } catch (e) { }
+                const effectOptions = (action.payload?.effectOptions && typeof action.payload.effectOptions === 'object' && !Array.isArray(action.payload.effectOptions))
+                    ? action.payload.effectOptions
+                    : {};
+                try { this.applyTokenEffects(player, [effectName], player.x, player.y, { [effectName]: effectOptions }); } catch (e) { }
             }
         }
 
@@ -5208,7 +5425,15 @@ class GameScene extends Phaser.Scene {
         const k = String(rawName || '').trim().toLowerCase().replace(/[^a-z0-9_\-]/g, '');
         if (!k) return null;
         const normalized = aliases[k] || k;
-        return known.has(normalized) ? normalized : null;
+        if (known.has(normalized)) return normalized;
+
+        const lib = window.__BLOCKHUNTER_EFFECT_LIBRARY;
+        const aliasMap = (lib && lib.aliases && typeof lib.aliases === 'object') ? lib.aliases : {};
+        const viaAlias = String(aliasMap[normalized] || '').trim();
+        if (viaAlias) return viaAlias;
+
+        const effectMap = (lib && lib.effects && typeof lib.effects === 'object') ? lib.effects : {};
+        return effectMap[normalized] ? normalized : null;
     }
 
     normalizeTokenEffects(rawEffects) {
@@ -5294,10 +5519,139 @@ class GameScene extends Phaser.Scene {
         return true;
     }
 
+    getCustomEffectDefinition(effectName) {
+        const key = normalizeEffectKey(effectName);
+        if (!key) return null;
+        const lib = window.__BLOCKHUNTER_EFFECT_LIBRARY;
+        if (!lib || typeof lib !== 'object') return null;
+        const map = (lib.effects && typeof lib.effects === 'object') ? lib.effects : {};
+        const aliases = (lib.aliases && typeof lib.aliases === 'object') ? lib.aliases : {};
+        const resolvedKey = String(aliases[key] || key).trim();
+        const def = map[resolvedKey];
+        return (def && typeof def === 'object') ? def : null;
+    }
+
     registerEffectFollower(target, follower, offsetX = 0, offsetY = 0) {
         if (!target || !follower) return;
         if (!Array.isArray(this.effectFollowers)) this.effectFollowers = [];
         this.effectFollowers.push({ target, follower, offsetX, offsetY });
+    }
+
+    applyBuiltinTokenEffect(effectName, target, px, py, mergedOptions) {
+        if (effectName === 'pulse') {
+            const pulseScale = this.readEffectNumber(mergedOptions, ['scale', 'scaleMultiplier'], 1.12, 1.01, 4);
+            const pulseDuration = this.readEffectNumber(mergedOptions, ['duration', 'durationMs'], 430, 80, 10000);
+            const baseScaleX = Number(target.scaleX || target.scale || 1) || 1;
+            const baseScaleY = Number(target.scaleY || target.scale || 1) || 1;
+            this.tweens.add({
+                targets: target,
+                scaleX: baseScaleX * pulseScale,
+                scaleY: baseScaleY * pulseScale,
+                duration: pulseDuration,
+                yoyo: true,
+                repeat: -1,
+                ease: 'Sine.easeInOut'
+            });
+            return true;
+        }
+
+        if (effectName === 'float') {
+            const ampPx = this.readEffectNumber(mergedOptions, ['amplitudePixels', 'amplitudePx'], NaN);
+            const ampTiles = this.readEffectNumber(mergedOptions, ['amplitudeTiles'], 0.14, 0.01, 5);
+            const amplitude = Number.isFinite(ampPx)
+                ? Math.max(2, ampPx)
+                : Math.max(4, Math.round((Number(CONFIG.tileSize) || 64) * ampTiles));
+            const floatDuration = this.readEffectNumber(mergedOptions, ['duration', 'durationMs'], 760, 80, 10000);
+            this.tweens.add({
+                targets: target,
+                y: (target.y || py) - amplitude,
+                duration: floatDuration,
+                yoyo: true,
+                repeat: -1,
+                ease: 'Sine.easeInOut'
+            });
+            return true;
+        }
+
+        if (effectName === 'lamp') {
+            const radiusPx = this.readEffectNumber(mergedOptions, ['radiusPixels', 'radiusPx'], NaN);
+            const radiusTiles = this.readEffectNumber(mergedOptions, ['radiusTiles'], 1.2, 0.1, 20);
+            const radius = Number.isFinite(radiusPx)
+                ? Math.max(6, Math.floor(radiusPx))
+                : Math.max(18, Math.floor((Number(CONFIG.tileSize) || 64) * radiusTiles));
+            const color = this.parseEffectColor(mergedOptions.color, 0xffdf8a);
+            const alphaStart = this.readEffectNumber(mergedOptions, ['alpha', 'alphaStart'], 0.14, 0, 1);
+            const alphaMin = this.readEffectNumber(mergedOptions, ['alphaMin'], 0.08, 0, 1);
+            const alphaMax = this.readEffectNumber(mergedOptions, ['alphaMax'], 0.22, 0, 1);
+            const scaleMin = this.readEffectNumber(mergedOptions, ['scaleMin'], 0.93, 0.1, 10);
+            const scaleMax = this.readEffectNumber(mergedOptions, ['scaleMax'], 1.08, 0.1, 10);
+            const durMin = this.readEffectNumber(mergedOptions, ['durationMin', 'durationMinMs'], 240, 30, 10000);
+            const durMax = this.readEffectNumber(mergedOptions, ['durationMax', 'durationMaxMs'], 560, 30, 10000);
+            const depth = this.readEffectNumber(mergedOptions, ['depth'], 8, -5000, 20000);
+            const halo = this.add.circle(px, py, radius, color, alphaStart).setDepth(depth);
+            const addBlend = mergedOptions.addBlend === undefined ? true : !!mergedOptions.addBlend;
+            if (addBlend) {
+                try { halo.setBlendMode(Phaser.BlendModes.ADD); } catch (e) { }
+            }
+            this.tweens.add({
+                targets: halo,
+                alpha: { from: alphaMin, to: alphaMax },
+                scaleX: { from: scaleMin, to: scaleMax },
+                scaleY: { from: scaleMin, to: scaleMax },
+                duration: Phaser.Math.Between(Math.min(durMin, durMax), Math.max(durMin, durMax)),
+                yoyo: true,
+                repeat: -1,
+                ease: 'Sine.easeInOut'
+            });
+            this.registerEffectFollower(target, halo);
+            return true;
+        }
+
+        if (effectName === 'halo') {
+            const radiusPx = this.readEffectNumber(mergedOptions, ['radiusPixels', 'radiusPx'], NaN);
+            const radiusTiles = this.readEffectNumber(mergedOptions, ['radiusTiles'], 0.7, 0.05, 20);
+            const radius = Number.isFinite(radiusPx)
+                ? Math.max(4, Math.floor(radiusPx))
+                : Math.max(12, Math.floor((Number(CONFIG.tileSize) || 64) * radiusTiles));
+            const color = this.parseEffectColor(mergedOptions.color, 0x8fd4ff);
+            const alpha = this.readEffectNumber(mergedOptions, ['alpha'], 0.16, 0, 1);
+            const depth = this.readEffectNumber(mergedOptions, ['depth'], 9, -5000, 20000);
+            const halo = this.add.circle(px, py, radius, color, alpha).setDepth(depth);
+            const addBlend = mergedOptions.addBlend === undefined ? true : !!mergedOptions.addBlend;
+            if (addBlend) {
+                try { halo.setBlendMode(Phaser.BlendModes.ADD); } catch (e) { }
+            }
+            this.registerEffectFollower(target, halo);
+            return true;
+        }
+
+        if (effectName === 'outline') {
+            const radiusPx = this.readEffectNumber(mergedOptions, ['radiusPixels', 'radiusPx'], NaN);
+            const radiusTiles = this.readEffectNumber(mergedOptions, ['radiusTiles'], 0.5, 0.05, 20);
+            const radius = Number.isFinite(radiusPx)
+                ? Math.max(4, Math.floor(radiusPx))
+                : Math.max(10, Math.floor((Number(CONFIG.tileSize) || 64) * radiusTiles));
+            const strokeWidth = this.readEffectNumber(mergedOptions, ['thickness', 'strokeWidth'], 2, 1, 20);
+            const strokeColor = this.parseEffectColor(mergedOptions.color, 0xf5f5f5);
+            const strokeAlpha = this.readEffectNumber(mergedOptions, ['strokeAlpha'], 0.65, 0, 1);
+            const alphaMin = this.readEffectNumber(mergedOptions, ['alphaMin'], 0.25, 0, 1);
+            const alphaMax = this.readEffectNumber(mergedOptions, ['alphaMax'], 0.65, 0, 1);
+            const duration = this.readEffectNumber(mergedOptions, ['duration', 'durationMs'], 650, 80, 10000);
+            const depth = this.readEffectNumber(mergedOptions, ['depth'], 11, -5000, 20000);
+            const ring = this.add.circle(px, py, radius, 0x000000, 0).setStrokeStyle(strokeWidth, strokeColor, strokeAlpha).setDepth(depth);
+            this.tweens.add({
+                targets: ring,
+                alpha: { from: alphaMin, to: alphaMax },
+                duration,
+                yoyo: true,
+                repeat: -1,
+                ease: 'Sine.easeInOut'
+            });
+            this.registerEffectFollower(target, ring);
+            return true;
+        }
+
+        return false;
     }
 
     updateEffectFollowers() {
@@ -5330,124 +5684,43 @@ class GameScene extends Phaser.Scene {
 
         effects.forEach((effectName) => {
             try {
+                const customDef = this.getCustomEffectDefinition(effectName);
+                const customDefaults = (customDef && customDef.defaults && typeof customDef.defaults === 'object' && !Array.isArray(customDef.defaults))
+                    ? customDef.defaults
+                    : {};
                 const options = this.getEffectOptions(effectName);
                 const localOptions = (inlineOptionsMap[effectName] && typeof inlineOptionsMap[effectName] === 'object' && !Array.isArray(inlineOptionsMap[effectName]))
                     ? inlineOptionsMap[effectName]
                     : {};
-                const mergedOptions = { ...options, ...localOptions };
+                const mergedOptions = { ...customDefaults, ...options, ...localOptions };
                 if (!this.isEffectEnabled(mergedOptions)) return;
 
-                if (effectName === 'pulse') {
-                    const pulseScale = this.readEffectNumber(mergedOptions, ['scale', 'scaleMultiplier'], 1.12, 1.01, 4);
-                    const pulseDuration = this.readEffectNumber(mergedOptions, ['duration', 'durationMs'], 430, 80, 10000);
-                    const baseScaleX = Number(target.scaleX || target.scale || 1) || 1;
-                    const baseScaleY = Number(target.scaleY || target.scale || 1) || 1;
-                    this.tweens.add({
-                        targets: target,
-                        scaleX: baseScaleX * pulseScale,
-                        scaleY: baseScaleY * pulseScale,
-                        duration: pulseDuration,
-                        yoyo: true,
-                        repeat: -1,
-                        ease: 'Sine.easeInOut'
-                    });
+                if (this.applyBuiltinTokenEffect(effectName, target, px, py, mergedOptions)) {
                     return;
                 }
 
-                if (effectName === 'float') {
-                    const ampPx = this.readEffectNumber(mergedOptions, ['amplitudePixels', 'amplitudePx'], NaN);
-                    const ampTiles = this.readEffectNumber(mergedOptions, ['amplitudeTiles'], 0.14, 0.01, 5);
-                    const amplitude = Number.isFinite(ampPx)
-                        ? Math.max(2, ampPx)
-                        : Math.max(4, Math.round((Number(CONFIG.tileSize) || 64) * ampTiles));
-                    const floatDuration = this.readEffectNumber(mergedOptions, ['duration', 'durationMs'], 760, 80, 10000);
-                    this.tweens.add({
-                        targets: target,
-                        y: (target.y || py) - amplitude,
-                        duration: floatDuration,
-                        yoyo: true,
-                        repeat: -1,
-                        ease: 'Sine.easeInOut'
-                    });
-                    return;
-                }
+                if (!customDef || typeof customDef.apply !== 'function') return;
 
-                if (effectName === 'lamp') {
-                    const radiusPx = this.readEffectNumber(mergedOptions, ['radiusPixels', 'radiusPx'], NaN);
-                    const radiusTiles = this.readEffectNumber(mergedOptions, ['radiusTiles'], 1.2, 0.1, 20);
-                    const radius = Number.isFinite(radiusPx)
-                        ? Math.max(6, Math.floor(radiusPx))
-                        : Math.max(18, Math.floor((Number(CONFIG.tileSize) || 64) * radiusTiles));
-                    const color = this.parseEffectColor(mergedOptions.color, 0xffdf8a);
-                    const alphaStart = this.readEffectNumber(mergedOptions, ['alpha', 'alphaStart'], 0.14, 0, 1);
-                    const alphaMin = this.readEffectNumber(mergedOptions, ['alphaMin'], 0.08, 0, 1);
-                    const alphaMax = this.readEffectNumber(mergedOptions, ['alphaMax'], 0.22, 0, 1);
-                    const scaleMin = this.readEffectNumber(mergedOptions, ['scaleMin'], 0.93, 0.1, 10);
-                    const scaleMax = this.readEffectNumber(mergedOptions, ['scaleMax'], 1.08, 0.1, 10);
-                    const durMin = this.readEffectNumber(mergedOptions, ['durationMin', 'durationMinMs'], 240, 30, 10000);
-                    const durMax = this.readEffectNumber(mergedOptions, ['durationMax', 'durationMaxMs'], 560, 30, 10000);
-                    const depth = this.readEffectNumber(mergedOptions, ['depth'], 8, -5000, 20000);
-                    const halo = this.add.circle(px, py, radius, color, alphaStart).setDepth(depth);
-                    const addBlend = mergedOptions.addBlend === undefined ? true : !!mergedOptions.addBlend;
-                    if (addBlend) {
-                        try { halo.setBlendMode(Phaser.BlendModes.ADD); } catch (e) { }
-                    }
-                    this.tweens.add({
-                        targets: halo,
-                        alpha: { from: alphaMin, to: alphaMax },
-                        scaleX: { from: scaleMin, to: scaleMax },
-                        scaleY: { from: scaleMin, to: scaleMax },
-                        duration: Phaser.Math.Between(Math.min(durMin, durMax), Math.max(durMin, durMax)),
-                        yoyo: true,
-                        repeat: -1,
-                        ease: 'Sine.easeInOut'
-                    });
-                    this.registerEffectFollower(target, halo);
-                    return;
-                }
+                const api = {
+                    scene: this,
+                    target,
+                    worldX: px,
+                    worldY: py,
+                    CONFIG,
+                    Phaser,
+                    add: this.add,
+                    tweens: this.tweens,
+                    time: this.time,
+                    registerFollower: (displayObject, offsetX = 0, offsetY = 0) => this.registerEffectFollower(target, displayObject, offsetX, offsetY),
+                    parseColor: (value, fallback) => this.parseEffectColor(value, fallback),
+                    readNumber: (opts, keys, fallback, min = null, max = null) => this.readEffectNumber(opts, keys, fallback, min, max)
+                };
 
-                if (effectName === 'halo') {
-                    const radiusPx = this.readEffectNumber(mergedOptions, ['radiusPixels', 'radiusPx'], NaN);
-                    const radiusTiles = this.readEffectNumber(mergedOptions, ['radiusTiles'], 0.7, 0.05, 20);
-                    const radius = Number.isFinite(radiusPx)
-                        ? Math.max(4, Math.floor(radiusPx))
-                        : Math.max(12, Math.floor((Number(CONFIG.tileSize) || 64) * radiusTiles));
-                    const color = this.parseEffectColor(mergedOptions.color, 0x8fd4ff);
-                    const alpha = this.readEffectNumber(mergedOptions, ['alpha'], 0.16, 0, 1);
-                    const depth = this.readEffectNumber(mergedOptions, ['depth'], 9, -5000, 20000);
-                    const halo = this.add.circle(px, py, radius, color, alpha).setDepth(depth);
-                    const addBlend = mergedOptions.addBlend === undefined ? true : !!mergedOptions.addBlend;
-                    if (addBlend) {
-                        try { halo.setBlendMode(Phaser.BlendModes.ADD); } catch (e) { }
-                    }
-                    this.registerEffectFollower(target, halo);
-                    return;
-                }
-
-                if (effectName === 'outline') {
-                    const radiusPx = this.readEffectNumber(mergedOptions, ['radiusPixels', 'radiusPx'], NaN);
-                    const radiusTiles = this.readEffectNumber(mergedOptions, ['radiusTiles'], 0.5, 0.05, 20);
-                    const radius = Number.isFinite(radiusPx)
-                        ? Math.max(4, Math.floor(radiusPx))
-                        : Math.max(10, Math.floor((Number(CONFIG.tileSize) || 64) * radiusTiles));
-                    const strokeWidth = this.readEffectNumber(mergedOptions, ['thickness', 'strokeWidth'], 2, 1, 20);
-                    const strokeColor = this.parseEffectColor(mergedOptions.color, 0xf5f5f5);
-                    const strokeAlpha = this.readEffectNumber(mergedOptions, ['strokeAlpha'], 0.65, 0, 1);
-                    const alphaMin = this.readEffectNumber(mergedOptions, ['alphaMin'], 0.25, 0, 1);
-                    const alphaMax = this.readEffectNumber(mergedOptions, ['alphaMax'], 0.65, 0, 1);
-                    const duration = this.readEffectNumber(mergedOptions, ['duration', 'durationMs'], 650, 80, 10000);
-                    const depth = this.readEffectNumber(mergedOptions, ['depth'], 11, -5000, 20000);
-                    const ring = this.add.circle(px, py, radius, 0x000000, 0).setStrokeStyle(strokeWidth, strokeColor, strokeAlpha).setDepth(depth);
-                    this.tweens.add({
-                        targets: ring,
-                        alpha: { from: alphaMin, to: alphaMax },
-                        duration,
-                        yoyo: true,
-                        repeat: -1,
-                        ease: 'Sine.easeInOut'
-                    });
-                    this.registerEffectFollower(target, ring);
-                }
+                customDef.apply(api, mergedOptions, {
+                    name: effectName,
+                    levelConfig: this.levelConfig || {},
+                    levelData: this.levelData || {}
+                });
             } catch (e) { }
         });
     }
@@ -7892,39 +8165,17 @@ class GameScene extends Phaser.Scene {
             this.toggleHeadlamp();
         }
 
-        // Action keys: try placing plank first, otherwise open nearby door when action pressed
+        // Action keys: execute data-driven interactions (inventory use + nearby object actions)
         try {
             const p1ActionPressed = Array.isArray(this.p1ActionKeys) && this.p1ActionKeys.some(k => Phaser.Input.Keyboard.JustDown(k));
             if (p1ActionPressed) {
-                const used = this.placePlankFor(this.player);
-                if (!used) {
-                    const doors = this.doors?.children?.entries || [];
-                    for (const door of doors) {
-                        if (!door || !door.active) continue;
-                        const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, door.x, door.y);
-                        if (dist <= CONFIG.tileSize * 1.1) {
-                            this.tryOpenDoor(this.player, door);
-                            break;
-                        }
-                    }
-                }
+                this.handlePlayerActionPress(this.player);
             }
         } catch (e) { }
         try {
             const p2ActionPressed = Array.isArray(this.p2ActionKeys) && this.p2ActionKeys.some(k => Phaser.Input.Keyboard.JustDown(k));
             if (p2ActionPressed) {
-                const used2 = this.placePlankFor(this.player2);
-                if (!used2) {
-                    const doors = this.doors?.children?.entries || [];
-                    for (const door of doors) {
-                        if (!door || !door.active) continue;
-                        const dist = Phaser.Math.Distance.Between(this.player2.x, this.player2.y, door.x, door.y);
-                        if (dist <= CONFIG.tileSize * 1.1) {
-                            this.tryOpenDoor(this.player2, door);
-                            break;
-                        }
-                    }
-                }
+                this.handlePlayerActionPress(this.player2);
             }
         } catch (e) { }
         // Check if on hole
@@ -7938,9 +8189,8 @@ class GameScene extends Phaser.Scene {
             this.goToPreviousLevel(forcedBackLevel);
         }
 
-        // Check proximity to doors for opening
+        // Legacy proximity bookkeeping kept for backward compatibility.
         this.checkDoorProximity();
-        // Check proximity to holes for placing planks (show action hint if player has planks)
         this.checkHoleProximity();
 
         // Update headlamp cone to follow player/camera direction
@@ -8934,10 +9184,503 @@ class GameScene extends Phaser.Scene {
         }
     }
 
+    getActionDistanceMaxPx(action, fallbackTiles = 1.1) {
+        const fallback = Math.max(0.5, Number(fallbackTiles) || 1.1);
+        const tiles = Number(action?.conditions?.distanceTilesMax);
+        const maxTiles = Number.isFinite(tiles) && tiles > 0 ? tiles : fallback;
+        return maxTiles * (Number(CONFIG.tileSize) || 64);
+    }
+
+    passesActionConditions(action, player, distancePx = 0) {
+        const conditions = (action?.conditions && typeof action.conditions === 'object' && !Array.isArray(action.conditions))
+            ? action.conditions
+            : {};
+
+        if (conditions.moving) {
+            const moving = !!(player?.body && (
+                Math.abs((player.body.velocity && player.body.velocity.x) || 0) > 10
+                || Math.abs((player.body.velocity && player.body.velocity.y) || 0) > 10
+            ));
+            if (!moving) return false;
+        }
+
+        const maxDistancePx = this.getActionDistanceMaxPx(action, 1.1);
+        if (Number.isFinite(Number(distancePx)) && Number(distancePx) > maxDistancePx) {
+            return false;
+        }
+
+        const requiresInventory = (conditions.requiresInventory && typeof conditions.requiresInventory === 'object' && !Array.isArray(conditions.requiresInventory))
+            ? conditions.requiresInventory
+            : {};
+        for (const [inventoryKey, rawAmount] of Object.entries(requiresInventory)) {
+            const needed = Math.max(0, Number(rawAmount) || 0);
+            if (needed <= 0) continue;
+            if (this.getInventoryCountForPlayer(inventoryKey, player) < needed) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    getNearbyActionableObjectEntries(player, triggerName = 'actionPressedNear') {
+        if (!player || !player.active) return [];
+        const groups = [this.doors, this.items, this.hole2Exits, this.walls];
+        const seen = new Set();
+        const entries = [];
+
+        for (const group of groups) {
+            const sprites = group?.children?.entries || [];
+            for (const sprite of sprites) {
+                if (!sprite || !sprite.active) continue;
+                if (seen.has(sprite)) continue;
+                seen.add(sprite);
+
+                const fallbackType = String(sprite.getData?.('type') || '').trim();
+                const definition = this.resolveObjectDefinitionForSprite(sprite, fallbackType);
+                const action = this.getActionForTrigger(definition, triggerName);
+                if (!action) continue;
+
+                const distancePx = Phaser.Math.Distance.Between(player.x, player.y, sprite.x, sprite.y);
+                const maxDistancePx = this.getActionDistanceMaxPx(action, 1.1);
+                if (distancePx > maxDistancePx) continue;
+
+                entries.push({ sprite, definition, action, distancePx });
+            }
+        }
+
+        entries.sort((a, b) => a.distancePx - b.distancePx);
+        return entries;
+    }
+
+    findNearestTileByType(player, tileType, maxDistanceTiles = 1.2) {
+        if (!player || !player.active) return null;
+        const wanted = String(tileType || '').trim().toLowerCase();
+        if (!wanted) return null;
+
+        const tileSize = Number(CONFIG.tileSize) || 64;
+        const maxTiles = Math.max(0.5, Number(maxDistanceTiles) || 1.2);
+        const maxDistancePx = maxTiles * tileSize;
+        const gridX = Math.floor((player.x - (this.mapOffsetX || 0)) / tileSize);
+        const gridY = Math.floor((player.y - (this.mapOffsetY || 0)) / tileSize);
+        const range = Math.max(1, Math.ceil(maxTiles) + 1);
+
+        let bestTile = null;
+        let bestDist = Number.POSITIVE_INFINITY;
+
+        for (let dy = -range; dy <= range; dy++) {
+            for (let dx = -range; dx <= range; dx++) {
+                const gx = gridX + dx;
+                const gy = gridY + dy;
+                if (!this.tiles?.[gy]?.[gx]) continue;
+                const tile = this.tiles[gy][gx];
+                if (!tile) continue;
+                if (String(tile.type || '').trim().toLowerCase() !== wanted) continue;
+                if (wanted === 'hole' && tile.coverSprite && tile.coverSprite.active) continue;
+
+                const worldX = (this.mapOffsetX || 0) + gx * tileSize + tileSize / 2;
+                const worldY = (this.mapOffsetY || 0) + gy * tileSize + tileSize / 2;
+                const dist = Phaser.Math.Distance.Between(player.x, player.y, worldX, worldY);
+                if (dist > maxDistancePx) continue;
+                if (dist < bestDist) {
+                    bestDist = dist;
+                    bestTile = { tile, gridX: gx, gridY: gy, distPx: dist };
+                }
+            }
+        }
+
+        return bestTile;
+    }
+
+    applyObjectReplaceBlock(sprite, definition, action, replaceCfg) {
+        if (!sprite || !replaceCfg || typeof replaceCfg !== 'object') return false;
+
+        const now = Number(this.time?.now) || Date.now();
+        const onUse = (replaceCfg.onUse && typeof replaceCfg.onUse === 'object' && !Array.isArray(replaceCfg.onUse))
+            ? replaceCfg.onUse
+            : {};
+        const onRestore = (replaceCfg.onRestore && typeof replaceCfg.onRestore === 'object' && !Array.isArray(replaceCfg.onRestore))
+            ? replaceCfg.onRestore
+            : {};
+
+        if (Number.isFinite(Number(onUse.frame)) && typeof sprite.setFrame === 'function') {
+            try { sprite.setFrame(Number(onUse.frame)); } catch (e) { }
+        }
+        if (onUse.state !== undefined && onUse.state !== null) {
+            try {
+                sprite._runtimeStateId = String(onUse.state || '').trim() || sprite._runtimeStateId;
+                if (sprite.setData) sprite.setData('runtimeState', sprite._runtimeStateId || null);
+            } catch (e) { }
+        }
+
+        const stateDurationMs = this.getStateTransitionTimerMs(definition, String(onUse?.state || ''));
+        const actionDurationMs = Number(action?.durationMs);
+        const explicitDurationMs = Number(replaceCfg.durationMs);
+        const restoreDelayMs = Number.isFinite(explicitDurationMs)
+            ? Math.max(0, explicitDurationMs)
+            : (Number.isFinite(stateDurationMs)
+                ? Math.max(0, stateDurationMs)
+                : (Number.isFinite(actionDurationMs) ? Math.max(0, actionDurationMs) : 0));
+
+        if (restoreDelayMs > 0 && (onRestore.frame !== undefined || onRestore.state !== undefined)) {
+            if (sprite._runtimeReplaceRestoreTimer?.remove) {
+                try { sprite._runtimeReplaceRestoreTimer.remove(false); } catch (e) { }
+            }
+            sprite._runtimeReplaceRestoreTimer = this.time.delayedCall(restoreDelayMs, () => {
+                if (!sprite || !sprite.active) return;
+                try {
+                    if (Number.isFinite(Number(onRestore.frame)) && typeof sprite.setFrame === 'function') {
+                        sprite.setFrame(Number(onRestore.frame));
+                    }
+                    if (onRestore.state !== undefined && onRestore.state !== null) {
+                        sprite._runtimeStateId = String(onRestore.state || '').trim() || sprite._runtimeStateId;
+                        if (sprite.setData) sprite.setData('runtimeState', sprite._runtimeStateId || null);
+                    }
+                    sprite._runtimeReplaceRestoreTimer = null;
+                } catch (e) { }
+            }, [], this);
+        }
+
+        sprite._runtimeReplaceLastRunMs = now;
+        return true;
+    }
+
+    resolveTeleportTarget(payload, player) {
+        const to = (payload?.to && typeof payload.to === 'object' && !Array.isArray(payload.to)) ? payload.to : {};
+        const tileSize = Number(CONFIG.tileSize) || 64;
+        const fallbackX = Number(player?.x) || 0;
+        const fallbackY = Number(player?.y) || 0;
+
+        if (Number.isFinite(Number(to.x)) && Number.isFinite(Number(to.y))) {
+            return { x: Number(to.x), y: Number(to.y) };
+        }
+
+        if (Number.isFinite(Number(to.gridX)) && Number.isFinite(Number(to.gridY))) {
+            return {
+                x: (this.mapOffsetX || 0) + Number(to.gridX) * tileSize + tileSize / 2,
+                y: (this.mapOffsetY || 0) + Number(to.gridY) * tileSize + tileSize / 2
+            };
+        }
+
+        if (Number.isFinite(Number(to.offsetTilesX)) || Number.isFinite(Number(to.offsetTilesY))) {
+            return {
+                x: fallbackX + (Number(to.offsetTilesX) || 0) * tileSize,
+                y: fallbackY + (Number(to.offsetTilesY) || 0) * tileSize
+            };
+        }
+
+        return null;
+    }
+
+    applyConfiguredObjectAction(player, entry, triggerName = 'actionPressedNear') {
+        const sprite = entry?.sprite;
+        const definition = entry?.definition;
+        const action = entry?.action;
+        if (!sprite || !action || !player || !player.active) return false;
+
+        const now = Number(this.time?.now) || Date.now();
+        const cooldownMs = Math.max(0, Number(action.cooldownMs) || 0);
+        if (cooldownMs > 0) {
+            const lastRun = Number(sprite._runtimeActionLastRunMs) || 0;
+            if (now - lastRun < cooldownMs) return false;
+        }
+        if (action.repeatable === false && sprite._runtimeActionExecuted) return false;
+        if (!this.passesActionConditions(action, player, entry?.distancePx)) return false;
+
+        const actionType = String(action.type || '').trim().toLowerCase();
+        const payload = (action.payload && typeof action.payload === 'object' && !Array.isArray(action.payload)) ? action.payload : {};
+        let executed = false;
+
+        if (actionType === 'unlockdoor') {
+            executed = !!this.tryOpenDoor(player, sprite);
+        } else if (actionType === 'spawneffect') {
+            const effectName = String(payload.effect || '').trim();
+            if (effectName) {
+                const effectOptions = (payload.effectOptions && typeof payload.effectOptions === 'object' && !Array.isArray(payload.effectOptions))
+                    ? payload.effectOptions
+                    : {};
+                try { this.applyTokenEffects(player, [effectName], player.x, player.y, { [effectName]: effectOptions }); } catch (e) { }
+                executed = true;
+            }
+        } else if (actionType === 'modifydynamite') {
+            const delta = Number.isFinite(Number(action.value)) ? Number(action.value) : 0;
+            if (delta !== 0) {
+                GAME_STATE.dynamiteCount = Math.max(0, (Number(GAME_STATE.dynamiteCount) || 0) + delta);
+                this.refreshHudIcons && this.refreshHudIcons();
+                executed = true;
+            }
+        } else if (actionType === 'replaceblock') {
+            const replaceCfg = (payload.replaceBlock && typeof payload.replaceBlock === 'object' && !Array.isArray(payload.replaceBlock))
+                ? payload.replaceBlock
+                : payload;
+            executed = this.applyObjectReplaceBlock(sprite, definition, action, replaceCfg);
+        } else if (actionType === 'setstate') {
+            const targetState = String(payload.state || action.targetState || action.value || '').trim();
+            if (targetState) {
+                try {
+                    sprite._runtimeStateId = targetState;
+                    if (sprite.setData) sprite.setData('runtimeState', targetState);
+                    if (Number.isFinite(Number(payload.frame)) && typeof sprite.setFrame === 'function') {
+                        sprite.setFrame(Number(payload.frame));
+                    }
+                    executed = true;
+                } catch (e) { }
+            }
+        } else if (actionType === 'teleport') {
+            const target = this.resolveTeleportTarget(payload, player);
+            if (target && Number.isFinite(target.x) && Number.isFinite(target.y)) {
+                try {
+                    if (player.body?.setVelocity) player.body.setVelocity(0, 0);
+                    player.setPosition(target.x, target.y);
+                    executed = true;
+                } catch (e) { }
+            }
+        } else if (actionType === 'addinventory') {
+            const inventoryKey = String(action.target || payload.target || '').trim();
+            const delta = Number.isFinite(Number(action.value)) ? Number(action.value) : 1;
+            if (inventoryKey) {
+                this.addInventoryForPlayer(inventoryKey, delta, player);
+                this.refreshHudIcons && this.refreshHudIcons();
+                executed = true;
+            }
+        }
+
+        if (!executed) return false;
+
+        sprite._runtimeActionLastRunMs = now;
+        sprite._runtimeActionExecuted = true;
+
+        // Support object state machine onEnter spawnEffect when trigger matches
+        try {
+            const fakeTile = { _runtimeStateId: sprite._runtimeStateId || null, _runtimeStateTimer: sprite._runtimeStateTimer || null };
+            this.runTileOnEnterEffects(fakeTile, action, definition, player, triggerName);
+            sprite._runtimeStateId = fakeTile._runtimeStateId || sprite._runtimeStateId;
+            sprite._runtimeStateTimer = fakeTile._runtimeStateTimer || null;
+        } catch (e) { }
+
+        return true;
+    }
+
+    getActionLabelForPlayer(player) {
+        const isPlayer2 = !!(this.player2 && player === this.player2);
+        const actionNames = isPlayer2
+            ? ((CONFIG.controlPanel?.player2?.action) || ['M'])
+            : ((CONFIG.controlPanel?.player1?.action) || ['Z']);
+        return Array.isArray(actionNames) ? String(actionNames[0] || '').trim() : String(actionNames || '').trim();
+    }
+
+    formatActionHintText(player, rawHint) {
+        const label = this.getActionLabelForPlayer(player) || '?';
+        const hint = String(rawHint || '').trim();
+        if (!hint) return `Premi [${label}] per interagire`;
+
+        if (hint.includes('{action}')) {
+            return hint.replaceAll('{action}', `[${label}]`);
+        }
+
+        if (/^premi\b/i.test(hint)) {
+            return hint.replace(/\bazione\b/gi, `[${label}]`);
+        }
+
+        return `Premi [${label}] ${hint}`;
+    }
+
+    getActionHintCandidateForPlayer(player, triggerName = 'actionPressedNear') {
+        if (!player || !player.active) return null;
+
+        const definitions = this.getRuntimeObjectCatalog();
+        for (const definition of definitions) {
+            if (!definition || typeof definition !== 'object') continue;
+
+            const collectAction = this.getActionForTrigger(definition, 'collect')
+                || (definition.action && String(definition.action.trigger || '').trim().toLowerCase() === 'collect' ? definition.action : null);
+            if (!collectAction || String(collectAction.type || '').trim().toLowerCase() !== 'addinventory') continue;
+
+            const payload = (collectAction.payload && typeof collectAction.payload === 'object' && !Array.isArray(collectAction.payload)) ? collectAction.payload : {};
+            const useAction = (payload.useAction && typeof payload.useAction === 'object' && !Array.isArray(payload.useAction)) ? payload.useAction : null;
+            if (!useAction) continue;
+            if (String(useAction.trigger || '').trim().toLowerCase() !== String(triggerName || '').trim().toLowerCase()) continue;
+
+            const onUse = (payload.onUse && typeof payload.onUse === 'object' && !Array.isArray(payload.onUse)) ? payload.onUse : {};
+            const consumeCfg = (onUse.consumeInventory && typeof onUse.consumeInventory === 'object' && !Array.isArray(onUse.consumeInventory)) ? onUse.consumeInventory : {};
+            const replaceCfg = (onUse.replaceBlock && typeof onUse.replaceBlock === 'object' && !Array.isArray(onUse.replaceBlock)) ? onUse.replaceBlock : {};
+
+            const consumeInventoryKey = String(consumeCfg.target || collectAction.target || '').trim();
+            const consumeAmount = Math.max(1, Number(consumeCfg.amount) || 1);
+            if (!consumeInventoryKey || this.getInventoryCountForPlayer(consumeInventoryKey, player) < consumeAmount) continue;
+
+            const maxDistanceTiles = Number.isFinite(Number(useAction.distanceTilesMax))
+                ? Math.max(0.5, Number(useAction.distanceTilesMax))
+                : (Number.isFinite(Number(collectAction?.conditions?.distanceTilesMax)) ? Math.max(0.5, Number(collectAction.conditions.distanceTilesMax)) : 1.2);
+            const targetCategory = String(useAction.whenNearCategory || replaceCfg.targetCategory || '').trim().toLowerCase();
+            const targetTileType = String(useAction.whenNearTileType || replaceCfg.targetTileType || payload.placeOn || '').trim().toLowerCase();
+            const configuredHint = String(useAction.hint || payload.hint || '').trim();
+
+            if (targetCategory) {
+                const nearby = this.getNearbyActionableObjectEntries(player, triggerName).find((nearEntry) => {
+                    const category = String(nearEntry.definition?.category || '').trim().toLowerCase();
+                    return category === targetCategory;
+                });
+                if (nearby) {
+                    return {
+                        text: this.formatActionHintText(player, configuredHint || 'per usare oggetto'),
+                        priority: 1,
+                        distancePx: Number(nearby.distancePx) || 0
+                    };
+                }
+            }
+
+            if (targetTileType) {
+                const nearTile = this.findNearestTileByType(player, targetTileType, maxDistanceTiles);
+                if (nearTile) {
+                    return {
+                        text: this.formatActionHintText(player, configuredHint || 'per usare oggetto'),
+                        priority: 2,
+                        distancePx: Number(nearTile.distPx) || 0
+                    };
+                }
+            }
+        }
+
+        const entries = this.getNearbyActionableObjectEntries(player, triggerName).filter((entry) => this.passesActionConditions(entry.action, player, entry.distancePx));
+        if (!entries.length) return null;
+
+        const nearest = entries[0];
+        const actionType = String(nearest.action?.type || '').trim().toLowerCase();
+        const payload = (nearest.action?.payload && typeof nearest.action.payload === 'object' && !Array.isArray(nearest.action.payload))
+            ? nearest.action.payload
+            : {};
+        const useAction = (payload.useAction && typeof payload.useAction === 'object' && !Array.isArray(payload.useAction)) ? payload.useAction : {};
+        const configuredHint = String(useAction.hint || payload.hint || '').trim();
+
+        let fallback = 'per interagire';
+        if (actionType === 'unlockdoor') fallback = 'per aprire';
+        else if (actionType === 'teleport') fallback = 'per teletrasportarti';
+        else if (actionType === 'spawneffect') fallback = 'per attivare effetto';
+
+        return {
+            text: this.formatActionHintText(player, configuredHint || fallback),
+            priority: 3,
+            distancePx: Number(nearest.distancePx) || 0
+        };
+    }
+
+    performConfiguredInventoryUse(player, triggerName = 'actionPressedNear') {
+        if (!player || !player.active) return false;
+
+        const definitions = this.getRuntimeObjectCatalog();
+        for (const definition of definitions) {
+            if (!definition || typeof definition !== 'object') continue;
+
+            const collectAction = this.getActionForTrigger(definition, 'collect') || (definition.action && String(definition.action.trigger || '').trim().toLowerCase() === 'collect' ? definition.action : null);
+            if (!collectAction || String(collectAction.type || '').trim().toLowerCase() !== 'addinventory') continue;
+
+            const payload = (collectAction.payload && typeof collectAction.payload === 'object' && !Array.isArray(collectAction.payload)) ? collectAction.payload : {};
+            const useAction = (payload.useAction && typeof payload.useAction === 'object' && !Array.isArray(payload.useAction)) ? payload.useAction : null;
+            if (!useAction) continue;
+            if (String(useAction.trigger || '').trim().toLowerCase() !== String(triggerName || '').trim().toLowerCase()) continue;
+
+            const onUse = (payload.onUse && typeof payload.onUse === 'object' && !Array.isArray(payload.onUse)) ? payload.onUse : {};
+            const consumeCfg = (onUse.consumeInventory && typeof onUse.consumeInventory === 'object' && !Array.isArray(onUse.consumeInventory)) ? onUse.consumeInventory : {};
+            const replaceCfg = (onUse.replaceBlock && typeof onUse.replaceBlock === 'object' && !Array.isArray(onUse.replaceBlock)) ? onUse.replaceBlock : {};
+
+            const consumeInventoryKey = String(consumeCfg.target || collectAction.target || '').trim();
+            if (!consumeInventoryKey) continue;
+            const consumeAmount = Math.max(1, Number(consumeCfg.amount) || 1);
+            if (this.getInventoryCountForPlayer(consumeInventoryKey, player) < consumeAmount) continue;
+
+            const maxDistanceTiles = Number.isFinite(Number(useAction.distanceTilesMax))
+                ? Math.max(0.5, Number(useAction.distanceTilesMax))
+                : (Number.isFinite(Number(collectAction?.conditions?.distanceTilesMax)) ? Math.max(0.5, Number(collectAction.conditions.distanceTilesMax)) : 1.2);
+
+            const targetCategory = String(useAction.whenNearCategory || replaceCfg.targetCategory || '').trim().toLowerCase();
+            const targetTileType = String(useAction.whenNearTileType || replaceCfg.targetTileType || payload.placeOn || '').trim().toLowerCase();
+
+            if (targetCategory) {
+                const nearby = this.getNearbyActionableObjectEntries(player, triggerName).filter((entry) => {
+                    const category = String(entry.definition?.category || '').trim().toLowerCase();
+                    return category === targetCategory;
+                });
+                const directTarget = nearby[0] || null;
+                if (directTarget) {
+                    if (this.applyConfiguredObjectAction(player, directTarget, triggerName)) {
+                        return true;
+                    }
+                }
+            }
+
+            if (targetTileType) {
+                const nearTile = this.findNearestTileByType(player, targetTileType, maxDistanceTiles);
+                if (!nearTile) continue;
+
+                if (!this.consumeInventoryForPlayer(consumeInventoryKey, consumeAmount, player)) {
+                    continue;
+                }
+
+                const replacementTileType = String(replaceCfg.toTileType || '').trim().toLowerCase();
+                if (replacementTileType) {
+                    this.applyTileTypeReplacement(nearTile.tile, replacementTileType);
+
+                    const replacementDurationMs = Math.max(0, Number(replaceCfg.durationMs) || 0);
+                    const restoreState = replaceCfg.restoreState;
+                    if (replacementDurationMs > 0 && restoreState !== null && restoreState !== undefined) {
+                        const restoreType = String(restoreState || targetTileType).trim().toLowerCase();
+                        this.time.delayedCall(replacementDurationMs, () => {
+                            try {
+                                if (!this.tiles?.[nearTile.gridY]?.[nearTile.gridX]) return;
+                                this.applyTileTypeReplacement(this.tiles[nearTile.gridY][nearTile.gridX], restoreType);
+                            } catch (e) { }
+                        });
+                    }
+
+                    // Persist plank placement in current level.
+                    if (targetTileType === 'hole' && replacementTileType === 'hole1') {
+                        try {
+                            GAME_STATE.placedPlanks = GAME_STATE.placedPlanks || [];
+                            GAME_STATE.placedPlanks.push({ level: Number(GAME_STATE.currentLevel) || 0, gridX: nearTile.gridX, gridY: nearTile.gridY });
+                            localStorage.setItem('blockHunterPlacedPlanks', JSON.stringify(GAME_STATE.placedPlanks));
+                        } catch (e) { }
+                    }
+                }
+
+                const soundKey = String(payload.sound || '').trim();
+                if (soundKey && this.sound) {
+                    try { this.sound.play(soundKey, { volume: 0.4 }); } catch (e) { }
+                }
+                this.refreshHudIcons && this.refreshHudIcons();
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    handlePlayerActionPress(player) {
+        if (!player || !player.active) return false;
+
+        if (this.performConfiguredInventoryUse(player, 'actionPressedNear')) {
+            return true;
+        }
+
+        const nearbyEntries = this.getNearbyActionableObjectEntries(player, 'actionPressedNear');
+        for (const entry of nearbyEntries) {
+            if (this.applyConfiguredObjectAction(player, entry, 'actionPressedNear')) {
+                return true;
+            }
+        }
+
+        // Optional fallback for old levels that still rely on legacy plank logic.
+        try {
+            if (this.placePlankFor(player)) return true;
+        } catch (e) { }
+
+        return false;
+    }
+
     tryOpenDoor(player, door) {
-        if (!door || !door.active) return;
-        if (door.getData('opening')) return;
-        if (!door.getData('locked')) return;
+        if (!door || !door.active) return false;
+        if (door.getData('opening')) return false;
+        if (!door.getData('locked')) return false;
         const doorDef = this.resolveObjectDefinitionForSprite(door, 'door') || this.getObjectDefinitionForType('door');
         const doorAction = this.getActionForTrigger(doorDef, 'actionPressedNear');
         const payload = (doorAction?.payload && typeof doorAction.payload === 'object' && !Array.isArray(doorAction.payload))
@@ -8952,7 +9695,7 @@ class GameScene extends Phaser.Scene {
             const needed = Math.max(0, Number(rawAmount) || 0);
             if (needed <= 0) continue;
             if (this.getInventoryCountForPlayer(inventoryKey, player) < needed) {
-                return;
+                return false;
             }
         }
 
@@ -8964,7 +9707,7 @@ class GameScene extends Phaser.Scene {
         const shouldConsume = doorAction ? doorAction.consumeOnUse !== false : true;
         if (consumeAmount > 0 && shouldConsume) {
             if (!this.consumeInventoryForPlayer(consumeInventoryKey, consumeAmount, player)) {
-                return;
+                return false;
             }
         }
 
@@ -9020,6 +9763,8 @@ class GameScene extends Phaser.Scene {
                 this.respawnKey();
             }
         });
+
+        return true;
     }
 
     respawnKey() {
@@ -10177,61 +10922,27 @@ class GameScene extends Phaser.Scene {
 
         this.refreshHudIcons();
 
-        // Update action hint: show when player1 or player2 is near a locked door and has a key
+        // Update action hint from data-driven interactions (objects + inventory useAction).
         try {
-            let hintShown = false;
-            const doors = this.doors?.children?.entries || [];
-            for (const door of doors) {
-                if (!door || !door.active) continue;
-                if (!door.getData || !door.getData('locked')) continue;
-                if (door.getData('opening')) continue;
-                // Prefer player1 hint if both nearby
-                if (door.getData('playerNearbyP1')) {
-                    // show P1 action label
-                    const actionNames = (CONFIG.controlPanel?.player1?.action) || ['Z'];
-                    const label = Array.isArray(actionNames) ? String(actionNames[0]) : String(actionNames);
-                    if (this.actionHint && this.actionHint.setText) {
-                        this.actionHint.setText(`Premi [${label}] per aprire`);
-                        this.actionHint.setVisible(true);
-                    }
-                    hintShown = true;
-                    break;
-                } else if (door.getData('playerNearbyP2')) {
-                    const actionNames2 = (CONFIG.controlPanel?.player2?.action) || ['M'];
-                    const label2 = Array.isArray(actionNames2) ? String(actionNames2[0]) : String(actionNames2);
-                    if (this.actionHint && this.actionHint.setText) {
-                        this.actionHint.setText(`Premi [${label2}] per aprire`);
-                        this.actionHint.setVisible(true);
-                    }
-                    hintShown = true;
-                    break;
-                }
-            }
+            const candidates = [];
+            const p1Candidate = this.getActionHintCandidateForPlayer(this.player, 'actionPressedNear');
+            if (p1Candidate) candidates.push({ ...p1Candidate, playerPriority: 1 });
+            const p2Candidate = this.getActionHintCandidateForPlayer(this.player2, 'actionPressedNear');
+            if (p2Candidate) candidates.push({ ...p2Candidate, playerPriority: 2 });
 
-            // If no door hint shown, check for nearby holes where player can place a plank
-            if (!hintShown) {
-                try {
-                    if (this.holeNearbyP1) {
-                        const actionNames = (CONFIG.controlPanel?.player1?.action) || ['Z'];
-                        const label = Array.isArray(actionNames) ? String(actionNames[0]) : String(actionNames);
-                        if (this.actionHint && this.actionHint.setText) {
-                            this.actionHint.setText(`Premi [${label}] per coprire la buca`);
-                            this.actionHint.setVisible(true);
-                        }
-                        hintShown = true;
-                    } else if (this.holeNearbyP2) {
-                        const actionNames2 = (CONFIG.controlPanel?.player2?.action) || ['M'];
-                        const label2 = Array.isArray(actionNames2) ? String(actionNames2[0]) : String(actionNames2);
-                        if (this.actionHint && this.actionHint.setText) {
-                            this.actionHint.setText(`Premi [${label2}] per coprire la buca`);
-                            this.actionHint.setVisible(true);
-                        }
-                        hintShown = true;
-                    }
-                } catch (e) { }
-            }
+            candidates.sort((a, b) => {
+                if (a.priority !== b.priority) return a.priority - b.priority;
+                if (a.playerPriority !== b.playerPriority) return a.playerPriority - b.playerPriority;
+                return (a.distancePx || 0) - (b.distancePx || 0);
+            });
 
-            if (!hintShown && this.actionHint) this.actionHint.setVisible(false);
+            const best = candidates[0] || null;
+            if (best && this.actionHint && this.actionHint.setText) {
+                this.actionHint.setText(String(best.text || '').trim());
+                this.actionHint.setVisible(true);
+            } else if (this.actionHint) {
+                this.actionHint.setVisible(false);
+            }
         } catch (e) { }
     }
 
@@ -11240,6 +11951,17 @@ async function inizialization() {
         }
         if (!Number.isFinite(Number(CONFIG.dynamiteSize)) || Number(CONFIG.dynamiteSize) <= 0) {
             CONFIG.dynamiteSize = Math.max(8, Math.round((Number(CONFIG.objectSize) || OBJECT_NATIVE_SIZE) * 0.6));
+        }
+
+        // Optional plugin-like effect library from data/Library/*
+        try {
+            const lib = await loadCustomEffectLibrary();
+            const loadedCount = Object.keys((lib && lib.effects) || {}).length;
+            if (loadedCount > 0) {
+                console.log(`[EffectLibrary] Loaded ${loadedCount} custom effects`);
+            }
+        } catch (e) {
+            console.warn('[EffectLibrary] bootstrap warning:', e);
         }
 
         // Resolve Phaser scale mode from config (defaults to FIT)
