@@ -273,6 +273,61 @@ function parseJsonObjectSafe(text) {
     }
 }
 
+function parseJsonArraySafe(text) {
+    const raw = String(text ?? '').trim();
+    if (!raw) return { ok: true, value: [] };
+    try {
+        const parsed = JSON.parse(raw);
+        if (!Array.isArray(parsed)) {
+            return { ok: false, value: [], message: 'Gli stati devono essere un array JSON ([]).' };
+        }
+        return { ok: true, value: parsed };
+    } catch (err) {
+        return { ok: false, value: [], message: `JSON stati non valido: ${err.message}` };
+    }
+}
+
+function normalizeAction(rawAction) {
+    const a = isPlainObject(rawAction) ? rawAction : {};
+    const trigger = String(a.trigger ?? a.on ?? 'collect').trim() || 'collect';
+    const type = String(a.type ?? a.actionType ?? 'none').trim() || 'none';
+    const target = String(a.target ?? '').trim();
+    const value = Number.isFinite(Number(a.value)) ? Number(a.value) : 0;
+    const durationMs = Number.isFinite(Number(a.durationMs)) ? Math.max(0, Number(a.durationMs)) : 0;
+    const cooldownMs = Number.isFinite(Number(a.cooldownMs)) ? Math.max(0, Number(a.cooldownMs)) : 0;
+    const consumeOnUse = a.consumeOnUse !== undefined ? !!a.consumeOnUse : false;
+    const repeatable = a.repeatable !== undefined ? !!a.repeatable : true;
+    const conditions = isPlainObject(a.conditions) ? a.conditions : {};
+    const payload = isPlainObject(a.payload) ? a.payload : {};
+    return {
+        trigger,
+        type,
+        target,
+        value,
+        durationMs,
+        cooldownMs,
+        consumeOnUse,
+        repeatable,
+        conditions,
+        payload
+    };
+}
+
+function normalizeStates(rawStates) {
+    const arr = Array.isArray(rawStates) ? rawStates : [];
+    return arr
+        .filter((it) => isPlainObject(it))
+        .map((it) => ({
+            id: String(it.id ?? '').trim(),
+            label: String(it.label ?? '').trim(),
+            initial: !!it.initial,
+            onEnter: Array.isArray(it.onEnter) ? it.onEnter : [],
+            onExit: Array.isArray(it.onExit) ? it.onExit : [],
+            transitions: Array.isArray(it.transitions) ? it.transitions : []
+        }))
+        .filter((it) => it.id);
+}
+
 function getNumberRangeForKey(pathKey, currentValue) {
     const key = String(pathKey || '').toLowerCase();
     const n = Number(currentValue);
@@ -626,6 +681,19 @@ function createDefaultObjectMapping(seedName = '') {
             countFromLevelKey: null,
             speedFromLevelKeys: []
         },
+        action: {
+            trigger: 'collect',
+            type: 'none',
+            target: '',
+            value: 0,
+            durationMs: 0,
+            cooldownMs: 0,
+            consumeOnUse: false,
+            repeatable: true,
+            conditions: {},
+            payload: {}
+        },
+        states: [],
         advanced: {}
     };
 }
@@ -636,7 +704,7 @@ function getObjectMappingKnownKeys() {
         'imageSrc', 'image', 'textureKey', 'defaultFrame', 'contactType',
         'dynamic', 'frameCount', 'useOppositeSide', 'mirrorHorizontal',
         'frames', 'contactScore', 'movement', 'staticScore', 'sizePx',
-        'spawn', 'advanced', 'collision', 'render', 'tile', 'wall', 'actor',
+        'spawn', 'action', 'states', 'advanced', 'collision', 'render', 'tile', 'wall', 'actor',
         'pickup', 'effects', 'tags', 'params'
     ]);
 }
@@ -708,6 +776,8 @@ function normalizeObjectMapping(raw) {
     const movement = isPlainObject(inObj.movement) ? inObj.movement : {};
     const sizePx = isPlainObject(inObj.sizePx) ? inObj.sizePx : {};
     const spawn = normalizeSpawn(inObj.spawn);
+    const action = normalizeAction(inObj.action);
+    const states = normalizeStates(inObj.states);
     const advanced = buildAdvancedFromRawObject(inObj);
     const collision = isPlainObject(inObj.collision) ? inObj.collision : {};
     const render = isPlainObject(inObj.render) ? inObj.render : {};
@@ -753,6 +823,8 @@ function normalizeObjectMapping(raw) {
             height: Math.max(1, parseNumber(sizePx.height, 64))
         },
         spawn,
+        action,
+        states,
         advanced
     };
 }
@@ -1359,6 +1431,199 @@ function createObjectMapCard(mapping) {
     spawnBlock.appendChild(spawnGrid);
     card.appendChild(spawnBlock);
 
+    const actionBlock = document.createElement('div');
+    actionBlock.style.marginTop = '8px';
+    actionBlock.innerHTML = '<div class="objmap-subtitle">Action (meccanica oggetto)</div>';
+    const actionGrid = document.createElement('div');
+    actionGrid.className = 'objmap-grid2';
+
+    const actionTriggerWrap = document.createElement('div');
+    actionTriggerWrap.innerHTML = '<label>Trigger</label>';
+    const actionTrigger = document.createElement('select');
+    actionTrigger.className = 'obj-action-trigger';
+    ['collect', 'enterTile', 'actionButton', 'proximity', 'hitByDynamite', 'timer', 'none'].forEach((name) => {
+        const op = document.createElement('option');
+        op.value = name;
+        op.textContent = name;
+        actionTrigger.appendChild(op);
+    });
+    actionTrigger.value = String(m.action?.trigger || 'collect');
+    actionTriggerWrap.appendChild(actionTrigger);
+
+    const actionTypeWrap = document.createElement('div');
+    actionTypeWrap.innerHTML = '<label>Action type</label>';
+    const actionType = document.createElement('select');
+    actionType.className = 'obj-action-type';
+    ['none', 'addInventory', 'consumeInventory', 'modifyScore', 'modifyLives', 'modifyDynamite', 'setSlowFactor', 'transformTile', 'openDoor', 'placePlank', 'spawnObject', 'custom'].forEach((name) => {
+        const op = document.createElement('option');
+        op.value = name;
+        op.textContent = name;
+        actionType.appendChild(op);
+    });
+    actionType.value = String(m.action?.type || 'none');
+    actionTypeWrap.appendChild(actionType);
+
+    const actionTargetWrap = document.createElement('div');
+    actionTargetWrap.innerHTML = '<label>Target</label>';
+    const actionTarget = document.createElement('input');
+    actionTarget.className = 'obj-action-target';
+    actionTarget.type = 'text';
+    actionTarget.placeholder = 'es. keysCount, woodenCount, playerSlowFactor';
+    actionTarget.value = String(m.action?.target || '');
+    actionTargetWrap.appendChild(actionTarget);
+
+    const actionValueWrap = document.createElement('div');
+    actionValueWrap.innerHTML = '<label>Value</label>';
+    const actionValue = document.createElement('input');
+    actionValue.className = 'obj-action-value';
+    actionValue.type = 'number';
+    actionValue.step = '1';
+    actionValue.value = String(parseNumber(m.action?.value, 0));
+    actionValueWrap.appendChild(actionValue);
+
+    const actionDurationWrap = document.createElement('div');
+    actionDurationWrap.innerHTML = '<label>Duration ms</label>';
+    const actionDuration = document.createElement('input');
+    actionDuration.className = 'obj-action-duration';
+    actionDuration.type = 'number';
+    actionDuration.step = '1';
+    actionDuration.min = '0';
+    actionDuration.value = String(parseNumber(m.action?.durationMs, 0));
+    actionDurationWrap.appendChild(actionDuration);
+
+    const actionCooldownWrap = document.createElement('div');
+    actionCooldownWrap.innerHTML = '<label>Cooldown ms</label>';
+    const actionCooldown = document.createElement('input');
+    actionCooldown.className = 'obj-action-cooldown';
+    actionCooldown.type = 'number';
+    actionCooldown.step = '1';
+    actionCooldown.min = '0';
+    actionCooldown.value = String(parseNumber(m.action?.cooldownMs, 0));
+    actionCooldownWrap.appendChild(actionCooldown);
+
+    const actionFlagsWrap = document.createElement('div');
+    actionFlagsWrap.style.display = 'flex';
+    actionFlagsWrap.style.gap = '10px';
+    actionFlagsWrap.style.flexWrap = 'wrap';
+    actionFlagsWrap.innerHTML = '<label style="display:flex;align-items:center;gap:6px;"><input class="obj-action-consume" type="checkbox" style="width:auto;">consumeOnUse</label><label style="display:flex;align-items:center;gap:6px;"><input class="obj-action-repeatable" type="checkbox" style="width:auto;">repeatable</label>';
+    actionFlagsWrap.querySelector('.obj-action-consume').checked = !!m.action?.consumeOnUse;
+    actionFlagsWrap.querySelector('.obj-action-repeatable').checked = m.action?.repeatable !== false;
+
+    actionGrid.appendChild(actionTriggerWrap);
+    actionGrid.appendChild(actionTypeWrap);
+    actionGrid.appendChild(actionTargetWrap);
+    actionGrid.appendChild(actionValueWrap);
+    actionGrid.appendChild(actionDurationWrap);
+    actionGrid.appendChild(actionCooldownWrap);
+    actionGrid.appendChild(actionFlagsWrap);
+    actionBlock.appendChild(actionGrid);
+
+    const presetWrap = document.createElement('div');
+    presetWrap.className = 'objmap-preview-actions';
+    const presetKeyBtn = document.createElement('button');
+    presetKeyBtn.type = 'button';
+    presetKeyBtn.textContent = 'Preset Key';
+    const presetWoodBtn = document.createElement('button');
+    presetWoodBtn.type = 'button';
+    presetWoodBtn.textContent = 'Preset Wooden';
+    const presetWaterBtn = document.createElement('button');
+    presetWaterBtn.type = 'button';
+    presetWaterBtn.textContent = 'Preset Water';
+    presetWrap.appendChild(presetKeyBtn);
+    presetWrap.appendChild(presetWoodBtn);
+    presetWrap.appendChild(presetWaterBtn);
+    actionBlock.appendChild(presetWrap);
+
+    const actionConditionsWrap = document.createElement('div');
+    actionConditionsWrap.style.marginTop = '6px';
+    actionConditionsWrap.innerHTML = '<label>Action conditions JSON</label>';
+    const actionConditionsInput = document.createElement('textarea');
+    actionConditionsInput.className = 'obj-action-conditions';
+    actionConditionsInput.rows = 3;
+    actionConditionsInput.style.width = '100%';
+    actionConditionsInput.value = formatAdvancedJson(m.action?.conditions || {});
+    actionConditionsWrap.appendChild(actionConditionsInput);
+    actionBlock.appendChild(actionConditionsWrap);
+
+    const actionPayloadWrap = document.createElement('div');
+    actionPayloadWrap.style.marginTop = '6px';
+    actionPayloadWrap.innerHTML = '<label>Action payload JSON</label>';
+    const actionPayloadInput = document.createElement('textarea');
+    actionPayloadInput.className = 'obj-action-payload';
+    actionPayloadInput.rows = 3;
+    actionPayloadInput.style.width = '100%';
+    actionPayloadInput.value = formatAdvancedJson(m.action?.payload || {});
+    actionPayloadWrap.appendChild(actionPayloadInput);
+    actionBlock.appendChild(actionPayloadWrap);
+
+    const statesWrap = document.createElement('div');
+    statesWrap.style.marginTop = '6px';
+    statesWrap.innerHTML = '<label>States JSON (array)</label>';
+    const statesInput = document.createElement('textarea');
+    statesInput.className = 'obj-states-json';
+    statesInput.rows = 6;
+    statesInput.style.width = '100%';
+    statesInput.value = JSON.stringify(Array.isArray(m.states) ? m.states : [], null, 2);
+    statesWrap.appendChild(statesInput);
+    actionBlock.appendChild(statesWrap);
+
+    const applyPreset = (preset) => {
+        if (preset === 'key') {
+            actionTrigger.value = 'collect';
+            actionType.value = 'addInventory';
+            actionTarget.value = 'keysCount';
+            actionValue.value = '1';
+            actionDuration.value = '0';
+            actionCooldown.value = '0';
+            actionFlagsWrap.querySelector('.obj-action-consume').checked = true;
+            actionFlagsWrap.querySelector('.obj-action-repeatable').checked = true;
+            actionConditionsInput.value = JSON.stringify({}, null, 2);
+            actionPayloadInput.value = JSON.stringify({ scoreDelta: 5, sound: 'coin_sfx' }, null, 2);
+            statesInput.value = JSON.stringify([
+                { id: 'idle', initial: true, transitions: [{ event: 'collect', to: 'collected' }] },
+                { id: 'collected', onEnter: [{ type: 'destroySelf' }], transitions: [] }
+            ], null, 2);
+        }
+        if (preset === 'wooden') {
+            actionTrigger.value = 'collect';
+            actionType.value = 'addInventory';
+            actionTarget.value = 'woodenCount';
+            actionValue.value = '1';
+            actionDuration.value = '0';
+            actionCooldown.value = '0';
+            actionFlagsWrap.querySelector('.obj-action-consume').checked = true;
+            actionFlagsWrap.querySelector('.obj-action-repeatable').checked = true;
+            actionConditionsInput.value = JSON.stringify({}, null, 2);
+            actionPayloadInput.value = JSON.stringify({ scoreDelta: 5, sound: 'select_sfx', canPlaceOn: 'hole' }, null, 2);
+            statesInput.value = JSON.stringify([
+                { id: 'idle', initial: true, transitions: [{ event: 'collect', to: 'collected' }] },
+                { id: 'collected', onEnter: [{ type: 'destroySelf' }], transitions: [] }
+            ], null, 2);
+        }
+        if (preset === 'water') {
+            actionTrigger.value = 'enterTile';
+            actionType.value = 'modifyDynamite';
+            actionTarget.value = 'dynamiteCount';
+            actionValue.value = '-10';
+            actionDuration.value = '2500';
+            actionCooldown.value = '1000';
+            actionFlagsWrap.querySelector('.obj-action-consume').checked = false;
+            actionFlagsWrap.querySelector('.obj-action-repeatable').checked = true;
+            actionConditionsInput.value = JSON.stringify({ moving: true }, null, 2);
+            actionPayloadInput.value = JSON.stringify({ wetDurationMs: 2500, splash: true }, null, 2);
+            statesInput.value = JSON.stringify([
+                { id: 'idle', initial: true, transitions: [{ event: 'enterTile', to: 'wet' }] },
+                { id: 'wet', onEnter: [{ type: 'spawnEffect', effect: 'splash' }], transitions: [{ event: 'timer', to: 'idle', afterMs: 2500 }] }
+            ], null, 2);
+        }
+    };
+
+    presetKeyBtn.addEventListener('click', () => applyPreset('key'));
+    presetWoodBtn.addEventListener('click', () => applyPreset('wooden'));
+    presetWaterBtn.addEventListener('click', () => applyPreset('water'));
+
+    card.appendChild(actionBlock);
+
     const advancedBlock = document.createElement('div');
     advancedBlock.style.marginTop = '8px';
     advancedBlock.innerHTML = '<label>Advanced JSON (parametri liberi: collision, tile, wall, actor, pickup, effects, render, tags...)</label>';
@@ -1444,10 +1709,25 @@ function collectObjectMappingsFromEditor() {
         const getCheck = (sel) => !!card.querySelector(sel)?.checked;
         const dirs = ['up', 'down', 'left', 'right'].filter((d) => !!card.querySelector(`.obj-dir-${d}`)?.checked);
         const advancedRaw = parseJsonObjectSafe(getVal('.obj-advanced-json'));
+        const actionConditionsRaw = parseJsonObjectSafe(getVal('.obj-action-conditions'));
+        const actionPayloadRaw = parseJsonObjectSafe(getVal('.obj-action-payload'));
+        const statesRaw = parseJsonArraySafe(getVal('.obj-states-json'));
 
         if (!advancedRaw.ok) {
             setObjectMapStatus(advancedRaw.message, true);
             throw new Error(advancedRaw.message);
+        }
+        if (!actionConditionsRaw.ok) {
+            setObjectMapStatus(actionConditionsRaw.message, true);
+            throw new Error(actionConditionsRaw.message);
+        }
+        if (!actionPayloadRaw.ok) {
+            setObjectMapStatus(actionPayloadRaw.message, true);
+            throw new Error(actionPayloadRaw.message);
+        }
+        if (!statesRaw.ok) {
+            setObjectMapStatus(statesRaw.message, true);
+            throw new Error(statesRaw.message);
         }
 
         const normalized = normalizeObjectMapping({
@@ -1493,10 +1773,27 @@ function collectObjectMappingsFromEditor() {
                 fromMapToken: getCheck('.obj-spawn-from-map'),
                 countFromLevelKey: getVal('.obj-spawn-count-key') || null,
                 speedFromLevelKeys: parseCsvList(getVal('.obj-spawn-speed-keys'))
+            },
+            action: {
+                trigger: getVal('.obj-action-trigger') || 'collect',
+                type: getVal('.obj-action-type') || 'none',
+                target: getVal('.obj-action-target'),
+                value: getNum('.obj-action-value', 0),
+                durationMs: getNum('.obj-action-duration', 0),
+                cooldownMs: getNum('.obj-action-cooldown', 0),
+                consumeOnUse: getCheck('.obj-action-consume'),
+                repeatable: getCheck('.obj-action-repeatable'),
+                conditions: actionConditionsRaw.value,
+                payload: actionPayloadRaw.value
             }
         });
 
-        return mergeMappingWithAdvanced(normalized, advancedRaw.value);
+        const withStates = {
+            ...normalized,
+            states: normalizeStates(statesRaw.value)
+        };
+
+        return mergeMappingWithAdvanced(withStates, advancedRaw.value);
     }).filter((m) => m.key);
 
     OBJECT_MAP_EDITOR_STATE.items = out;

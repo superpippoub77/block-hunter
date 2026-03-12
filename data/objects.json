@@ -216,6 +216,51 @@
 			"countFromLevelKey": null,
 			"speedFromLevelKeys": []
 		},
+		"action": {
+			"trigger": "enterTile",
+			"type": "modifyDynamite",
+			"target": "dynamiteCount",
+			"value": -10,
+			"durationMs": 2500,
+			"cooldownMs": 1000,
+			"consumeOnUse": false,
+			"repeatable": true,
+			"conditions": {
+				"moving": true
+			},
+			"payload": {
+				"wetDurationMs": 2500,
+				"splash": true
+			}
+		},
+		"states": [
+			{
+				"id": "idle",
+				"initial": true,
+				"transitions": [
+					{
+						"event": "enterTile",
+						"to": "wet"
+					}
+				]
+			},
+			{
+				"id": "wet",
+				"onEnter": [
+					{
+						"type": "spawnEffect",
+						"effect": "splash"
+					}
+				],
+				"transitions": [
+					{
+						"event": "timer",
+						"to": "idle",
+						"afterMs": 2500
+					}
+				]
+			}
+		],
 		"tile": {
 			"type": "water",
 			"walkable": true,
@@ -267,6 +312,43 @@
 			"countFromLevelKey": null,
 			"speedFromLevelKeys": []
 		},
+		"action": {
+			"trigger": "enterTile",
+			"type": "setSlowFactor",
+			"target": "playerMove",
+			"value": 0.0,
+			"durationMs": 3000,
+			"cooldownMs": 1000,
+			"consumeOnUse": false,
+			"repeatable": true,
+			"conditions": {},
+			"payload": {
+				"mudHalo": true,
+				"immuneAfterMs": 1000
+			}
+		},
+		"states": [
+			{
+				"id": "idle",
+				"initial": true,
+				"transitions": [
+					{
+						"event": "enterTile",
+						"to": "stuck"
+					}
+				]
+			},
+			{
+				"id": "stuck",
+				"transitions": [
+					{
+						"event": "timer",
+						"to": "idle",
+						"afterMs": 3000
+					}
+				]
+			}
+		],
 		"tile": {
 			"type": "mud",
 			"walkable": true,
@@ -328,6 +410,116 @@
 		}
 	},
 	{
+		"key": "door_locked",
+		"token": "door",
+		"category": "door",
+		"entityType": "door",
+		"imageSrc": "assets/images/objects/door.png",
+		"textureKey": "objects",
+		"defaultFrame": 5,
+		"contactType": "edge",
+		"dynamic": false,
+		"frameCount": 1,
+		"useOppositeSide": false,
+		"frames": {
+			"idle": {
+				"up": "5",
+				"down": "5",
+				"left": "5",
+				"right": "5"
+			},
+			"move": {
+				"up": "",
+				"down": "",
+				"left": "",
+				"right": ""
+			}
+		},
+		"contactScore": 0,
+		"movement": {
+			"automatic": false,
+			"directions": [],
+			"minStep": 0,
+			"maxStep": 0,
+			"pauseMs": 0
+		},
+		"staticScore": 0,
+		"sizePx": {
+			"width": 64,
+			"height": 64
+		},
+		"spawn": {
+			"fromMapToken": true,
+			"countFromLevelKey": null,
+			"speedFromLevelKeys": []
+		},
+		"action": {
+			"trigger": "actionPressedNear",
+			"type": "unlockDoor",
+			"target": "door_locked",
+			"value": 1,
+			"durationMs": 10000,
+			"cooldownMs": 0,
+			"consumeOnUse": true,
+			"repeatable": true,
+			"conditions": {
+				"requiresInventory": {
+					"keysCount": 1
+				},
+				"distanceTilesMax": 1.1
+			},
+			"payload": {
+				"useAction": {
+					"source": "playerAction",
+					"inputProfile": "CONFIG.controlPanel.player.action",
+					"hint": "Premi azione per aprire"
+				},
+				"consume": {
+					"inventory": "keysCount",
+					"amount": 1
+				},
+				"replaceBlock": {
+					"onUse": {
+						"frame": 12,
+						"state": "open"
+					},
+					"onRestore": {
+						"frame": 5,
+						"state": "locked"
+					}
+				},
+				"respawnPickupKey": true
+			}
+		},
+		"states": [
+			{
+				"id": "locked",
+				"initial": true,
+				"transitions": [
+					{
+						"event": "actionPressedNear",
+						"to": "open"
+					}
+				]
+			},
+			{
+				"id": "open",
+				"transitions": [
+					{
+						"event": "timer",
+						"to": "locked",
+						"afterMs": 10000
+					}
+				]
+			}
+		],
+		"collision": {
+			"contactType": "edge",
+			"radiusMultiplier": 0.45,
+			"proximityTiles": 0.9
+		}
+	},
+	{
 		"key": "pickup_key",
 		"token": "k",
 		"category": "pickup",
@@ -371,9 +563,172 @@
 			"countFromLevelKey": null,
 			"speedFromLevelKeys": []
 		},
+		"action": {
+			"trigger": "collect",
+			"type": "addInventory",
+			"target": "keysCount",
+			"value": 1,
+			"durationMs": 0,
+			"cooldownMs": 0,
+			"consumeOnUse": true,
+			"repeatable": true,
+			"conditions": {},
+			"payload": {
+				"scoreDelta": 5,
+				"sound": "coin_sfx",
+				"useAction": {
+					"source": "playerAction",
+					"inputProfile": "CONFIG.controlPanel.player.action",
+					"whenNearCategory": "door",
+					"trigger": "actionPressedNear"
+				},
+				"onUse": {
+					"consumeInventory": {
+						"target": "keysCount",
+						"amount": 1
+					},
+					"replaceBlock": {
+						"targetCategory": "door",
+						"toState": "open",
+						"durationMs": 10000,
+						"restoreState": "locked"
+					}
+				}
+			}
+		},
+		"states": [
+			{
+				"id": "idle",
+				"initial": true,
+				"transitions": [
+					{
+						"event": "collect",
+						"to": "collected"
+					}
+				]
+			},
+			{
+				"id": "collected",
+				"onEnter": [
+					{
+						"type": "destroySelf"
+					}
+				],
+				"transitions": []
+			}
+		],
 		"pickup": {
 			"keysDelta": 1,
 			"score": 0,
+			"removeOnCollect": true,
+			"floating": true
+		},
+		"effects": {
+			"onSpawn": ["float"]
+		}
+	},
+	{
+		"key": "pickup_wooden",
+		"token": "wooden",
+		"category": "pickup",
+		"entityType": "wooden",
+		"imageSrc": "assets/images/objects/wooden.png",
+		"textureKey": "objects",
+		"defaultFrame": 10,
+		"contactType": "edge",
+		"dynamic": false,
+		"frameCount": 1,
+		"useOppositeSide": false,
+		"frames": {
+			"idle": {
+				"up": "10",
+				"down": "10",
+				"left": "10",
+				"right": "10"
+			},
+			"move": {
+				"up": "",
+				"down": "",
+				"left": "",
+				"right": ""
+			}
+		},
+		"contactScore": 0,
+		"movement": {
+			"automatic": false,
+			"directions": [],
+			"minStep": 0,
+			"maxStep": 0,
+			"pauseMs": 0
+		},
+		"staticScore": 0,
+		"sizePx": {
+			"width": 64,
+			"height": 64
+		},
+		"spawn": {
+			"fromMapToken": true,
+			"countFromLevelKey": null,
+			"speedFromLevelKeys": []
+		},
+		"action": {
+			"trigger": "collect",
+			"type": "addInventory",
+			"target": "woodenCount",
+			"value": 1,
+			"durationMs": 0,
+			"cooldownMs": 0,
+			"consumeOnUse": true,
+			"repeatable": true,
+			"conditions": {},
+			"payload": {
+				"scoreDelta": 5,
+				"sound": "select_sfx",
+				"placeOn": "hole",
+				"useAction": {
+					"source": "playerAction",
+					"inputProfile": "CONFIG.controlPanel.player.action",
+					"whenNearTileType": "hole",
+					"trigger": "actionPressedNear"
+				},
+				"onUse": {
+					"consumeInventory": {
+						"target": "woodenCount",
+						"amount": 1
+					},
+					"replaceBlock": {
+						"targetTileType": "hole",
+						"toTileType": "hole1",
+						"durationMs": 0,
+						"restoreState": null
+					}
+				}
+			}
+		},
+		"states": [
+			{
+				"id": "idle",
+				"initial": true,
+				"transitions": [
+					{
+						"event": "collect",
+						"to": "collected"
+					}
+				]
+			},
+			{
+				"id": "collected",
+				"onEnter": [
+					{
+						"type": "destroySelf"
+					}
+				],
+				"transitions": []
+			}
+		],
+		"pickup": {
+			"woodenDelta": 1,
+			"score": 5,
 			"removeOnCollect": true,
 			"floating": true
 		},
