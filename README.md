@@ -29,6 +29,39 @@ python -m http.server 8000
 # poi apri nel browser: http://localhost:8000/
 ```
 
+## Build desktop Windows (.exe)
+
+Il progetto ora include un wrapper Electron per generare una versione Windows installabile.
+
+Prerequisiti:
+
+- Node.js 18+ e npm
+
+Comandi:
+
+```bash
+# dalla root del progetto
+npm install
+
+# avvio in modalita desktop (sviluppo)
+npm run desktop:start
+
+# genera installer Windows in release/
+npm run build:win
+
+# alternativa senza installer (ZIP), utile anche da Linux senza wine
+npm run build:win:zip
+```
+
+Output atteso:
+
+- `npm run build:win` -> cartella `release/` con installer `.exe` (target NSIS)
+- `npm run build:win:zip` -> archivio `release/*.zip` con app Windows portabile
+
+Nota:
+
+- la build NSIS (`build:win`) da Linux richiede `wine` installato.
+
 Note sugli asset
 
 - Sprite sheet: `images/sprite.png` è attesa come griglia 4×4. Se presente, il gioco usa le dimensioni effettive delle celle (pixel-perfect) scalate da `SIZE_SCALE` per disegnare i tile del muro e altri elementi.
