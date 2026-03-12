@@ -169,8 +169,10 @@ function parseRepeatValue(value, fallback = 1) {
 }
 
 function buildApiUrl(path) {
-    const clean = String(path ?? '').replace(/^\/+/, '');
-    return `${API_BASE_PATH}/${clean}`;
+    const clean = String(path ?? '').replace(/^\/+|\/+$/g, '');
+    // Always hit directory-style PHP endpoints with a trailing slash
+    // to avoid server-side canonical redirects that may downgrade scheme.
+    return `${API_BASE_PATH}/${clean}/`;
 }
 
 async function fetchJsonListWithFallback(primaryUrl, fallbackUrl) {
