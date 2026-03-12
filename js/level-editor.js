@@ -1454,7 +1454,7 @@ function createObjectMapCard(mapping) {
     actionTypeWrap.innerHTML = '<label>Action type</label>';
     const actionType = document.createElement('select');
     actionType.className = 'obj-action-type';
-    ['none', 'addInventory', 'consumeInventory', 'modifyScore', 'modifyLives', 'modifyDynamite', 'setSlowFactor', 'transformTile', 'openDoor', 'placePlank', 'spawnObject', 'custom'].forEach((name) => {
+    ['none', 'addInventory', 'consumeInventory', 'modifyScore', 'modifyLives', 'modifyDynamite', 'setSlowFactor', 'transformTile', 'openDoor', 'placePlank', 'spawnObject', 'goToPreviousLevel', 'custom'].forEach((name) => {
         const op = document.createElement('option');
         op.value = name;
         op.textContent = name;
@@ -1529,9 +1529,21 @@ function createObjectMapCard(mapping) {
     const presetWaterBtn = document.createElement('button');
     presetWaterBtn.type = 'button';
     presetWaterBtn.textContent = 'Preset Water';
+    const presetMudBtn = document.createElement('button');
+    presetMudBtn.type = 'button';
+    presetMudBtn.textContent = 'Preset Mud';
+    const presetSandBtn = document.createElement('button');
+    presetSandBtn.type = 'button';
+    presetSandBtn.textContent = 'Preset Sand';
+    const presetBackBtn = document.createElement('button');
+    presetBackBtn.type = 'button';
+    presetBackBtn.textContent = 'Preset Back';
     presetWrap.appendChild(presetKeyBtn);
     presetWrap.appendChild(presetWoodBtn);
     presetWrap.appendChild(presetWaterBtn);
+    presetWrap.appendChild(presetMudBtn);
+    presetWrap.appendChild(presetSandBtn);
+    presetWrap.appendChild(presetBackBtn);
     actionBlock.appendChild(presetWrap);
 
     const actionConditionsWrap = document.createElement('div');
@@ -1554,7 +1566,169 @@ function createObjectMapCard(mapping) {
     actionPayloadInput.style.width = '100%';
     actionPayloadInput.value = formatAdvancedJson(m.action?.payload || {});
     actionPayloadWrap.appendChild(actionPayloadInput);
+
+    const payloadVisualWrap = document.createElement('div');
+    payloadVisualWrap.style.marginTop = '6px';
+    payloadVisualWrap.innerHTML = '<div class="objmap-subtitle">Payload visual params (tile)</div>';
+    const payloadVisualGrid = document.createElement('div');
+    payloadVisualGrid.className = 'objmap-grid2';
+
+    const splashEnabledWrap = document.createElement('div');
+    splashEnabledWrap.innerHTML = '<label style="display:flex;align-items:center;gap:8px;"><input class="obj-pay-splash-enabled" type="checkbox" style="width:auto;">Splash</label>';
+    const splashBurstsWrap = document.createElement('div');
+    splashBurstsWrap.innerHTML = '<label>Splash bursts</label><input class="obj-pay-splash-bursts" type="number" min="1" step="1">';
+    const splashIntervalWrap = document.createElement('div');
+    splashIntervalWrap.innerHTML = '<label>Splash interval ms</label><input class="obj-pay-splash-interval" type="number" min="0" step="1">';
+    const splashDropletWrap = document.createElement('div');
+    splashDropletWrap.innerHTML = '<label>Splash droplet qty</label><input class="obj-pay-splash-drops" type="number" min="1" step="1">';
+    const splashCooldownWrap = document.createElement('div');
+    splashCooldownWrap.innerHTML = '<label>Splash cooldown ms</label><input class="obj-pay-splash-cooldown" type="number" min="0" step="1">';
+    const splashColorWrap = document.createElement('div');
+    splashColorWrap.innerHTML = '<label>Splash color</label><input class="obj-pay-splash-color" type="text" placeholder="#88ccff">';
+    const splashRingColorWrap = document.createElement('div');
+    splashRingColorWrap.innerHTML = '<label>Splash ring color</label><input class="obj-pay-splash-ring-color" type="text" placeholder="#3399ff">';
+
+    const wetEnabledWrap = document.createElement('div');
+    wetEnabledWrap.innerHTML = '<label style="display:flex;align-items:center;gap:8px;"><input class="obj-pay-wet-enabled" type="checkbox" style="width:auto;">Wet overlay</label>';
+    const wetDurationWrap = document.createElement('div');
+    wetDurationWrap.innerHTML = '<label>Wet duration ms</label><input class="obj-pay-wet-duration" type="number" min="0" step="1">';
+    const wetColorWrap = document.createElement('div');
+    wetColorWrap.innerHTML = '<label>Wet color</label><input class="obj-pay-wet-color" type="text" placeholder="#3399ff">';
+    const wetAlphaWrap = document.createElement('div');
+    wetAlphaWrap.innerHTML = '<label>Wet alpha</label><input class="obj-pay-wet-alpha" type="number" min="0" max="1" step="0.01">';
+    const wetSizeWrap = document.createElement('div');
+    wetSizeWrap.innerHTML = '<label>Wet size multiplier</label><input class="obj-pay-wet-size" type="number" min="0" step="0.01">';
+
+    const mudHaloWrap = document.createElement('div');
+    mudHaloWrap.innerHTML = '<label style="display:flex;align-items:center;gap:8px;"><input class="obj-pay-mud-halo" type="checkbox" style="width:auto;">Mud halo</label>';
+    const mudImmuneWrap = document.createElement('div');
+    mudImmuneWrap.innerHTML = '<label>Mud immune after ms</label><input class="obj-pay-mud-immune" type="number" min="0" step="1">';
+    const mudStainEnabledWrap = document.createElement('div');
+    mudStainEnabledWrap.innerHTML = '<label style="display:flex;align-items:center;gap:8px;"><input class="obj-pay-mud-stain-enabled" type="checkbox" style="width:auto;">Mud stain</label>';
+    const mudStainDurationWrap = document.createElement('div');
+    mudStainDurationWrap.innerHTML = '<label>Mud stain duration ms</label><input class="obj-pay-mud-stain-duration" type="number" min="0" step="1">';
+    const mudStainColorWrap = document.createElement('div');
+    mudStainColorWrap.innerHTML = '<label>Mud stain color</label><input class="obj-pay-mud-stain-color" type="text" placeholder="#552200">';
+    const mudStainAlphaWrap = document.createElement('div');
+    mudStainAlphaWrap.innerHTML = '<label>Mud stain alpha</label><input class="obj-pay-mud-stain-alpha" type="number" min="0" max="1" step="0.01">';
+    const mudStainSizeWrap = document.createElement('div');
+    mudStainSizeWrap.innerHTML = '<label>Mud stain size multiplier</label><input class="obj-pay-mud-stain-size" type="number" min="0" step="0.01">';
+
+    const sandHaloWrap = document.createElement('div');
+    sandHaloWrap.innerHTML = '<label style="display:flex;align-items:center;gap:8px;"><input class="obj-pay-sand-halo" type="checkbox" style="width:auto;">Sand halo</label>';
+    const sandHaloColorWrap = document.createElement('div');
+    sandHaloColorWrap.innerHTML = '<label>Sand halo color</label><input class="obj-pay-sand-halo-color" type="text" placeholder="#ffeaa7">';
+    const sandHaloAlphaWrap = document.createElement('div');
+    sandHaloAlphaWrap.innerHTML = '<label>Sand halo alpha</label><input class="obj-pay-sand-halo-alpha" type="number" min="0" max="1" step="0.01">';
+
+    [
+        splashEnabledWrap, splashBurstsWrap, splashIntervalWrap, splashDropletWrap, splashCooldownWrap, splashColorWrap, splashRingColorWrap,
+        wetEnabledWrap, wetDurationWrap, wetColorWrap, wetAlphaWrap, wetSizeWrap,
+        mudHaloWrap, mudImmuneWrap, mudStainEnabledWrap, mudStainDurationWrap, mudStainColorWrap, mudStainAlphaWrap, mudStainSizeWrap,
+        sandHaloWrap, sandHaloColorWrap, sandHaloAlphaWrap
+    ].forEach((n) => payloadVisualGrid.appendChild(n));
+    payloadVisualWrap.appendChild(payloadVisualGrid);
+    actionPayloadWrap.appendChild(payloadVisualWrap);
     actionBlock.appendChild(actionPayloadWrap);
+
+    const setPayloadVisualFields = (payloadValue) => {
+        const payload = isPlainObject(payloadValue) ? payloadValue : {};
+        const splash = payload.splash;
+        const splashObj = isPlainObject(splash) ? splash : {};
+        actionPayloadWrap.querySelector('.obj-pay-splash-enabled').checked = !!(isPlainObject(splash) || splash === true);
+        actionPayloadWrap.querySelector('.obj-pay-splash-bursts').value = String(parseNumber(splashObj.bursts, 3));
+        actionPayloadWrap.querySelector('.obj-pay-splash-interval').value = String(parseNumber(splashObj.intervalMs, 120));
+        actionPayloadWrap.querySelector('.obj-pay-splash-drops').value = String(parseNumber(splashObj.dropletQty, 5));
+        actionPayloadWrap.querySelector('.obj-pay-splash-cooldown').value = String(parseNumber(splashObj.cooldownMs, 600));
+        actionPayloadWrap.querySelector('.obj-pay-splash-color').value = String(splashObj.color ?? '#88ccff');
+        actionPayloadWrap.querySelector('.obj-pay-splash-ring-color').value = String(splashObj.ringColor ?? '#3399ff');
+
+        actionPayloadWrap.querySelector('.obj-pay-wet-enabled').checked = !!payload.wetOverlay;
+        actionPayloadWrap.querySelector('.obj-pay-wet-duration').value = String(parseNumber(payload.wetDurationMs, 2500));
+        actionPayloadWrap.querySelector('.obj-pay-wet-color').value = String(payload.wetColor ?? '#3399ff');
+        actionPayloadWrap.querySelector('.obj-pay-wet-alpha').value = String(parseNumber(payload.wetAlpha, 0.22));
+        actionPayloadWrap.querySelector('.obj-pay-wet-size').value = String(parseNumber(payload.wetSizeMultiplier, 0.84));
+
+        actionPayloadWrap.querySelector('.obj-pay-mud-halo').checked = !!payload.mudHalo;
+        actionPayloadWrap.querySelector('.obj-pay-mud-immune').value = String(parseNumber(payload.immuneAfterMs, 1000));
+        actionPayloadWrap.querySelector('.obj-pay-mud-stain-enabled').checked = !!payload.mudStain;
+        actionPayloadWrap.querySelector('.obj-pay-mud-stain-duration').value = String(parseNumber(payload.mudStainDurationMs, 6000));
+        actionPayloadWrap.querySelector('.obj-pay-mud-stain-color').value = String(payload.mudStainColor ?? '#552200');
+        actionPayloadWrap.querySelector('.obj-pay-mud-stain-alpha').value = String(parseNumber(payload.mudStainAlpha, 0.28));
+        actionPayloadWrap.querySelector('.obj-pay-mud-stain-size').value = String(parseNumber(payload.mudStainSizeMultiplier, 0.9));
+
+        actionPayloadWrap.querySelector('.obj-pay-sand-halo').checked = !!payload.sandHalo;
+        actionPayloadWrap.querySelector('.obj-pay-sand-halo-color').value = String(payload.sandHaloColor ?? '#ffeaa7');
+        actionPayloadWrap.querySelector('.obj-pay-sand-halo-alpha').value = String(parseNumber(payload.sandHaloAlpha, 0.32));
+    };
+
+    actionPayloadInput.addEventListener('change', () => {
+        const parsed = parseJsonObjectSafe(actionPayloadInput.value);
+        if (parsed.ok) {
+            setPayloadVisualFields(parsed.value);
+        }
+        refreshActionPayloadSummary();
+    });
+
+    actionPayloadInput.addEventListener('input', () => {
+        refreshActionPayloadSummary();
+    });
+
+    setPayloadVisualFields(m.action?.payload || {});
+
+    const actionSummaryWrap = document.createElement('div');
+    actionSummaryWrap.className = 'objmap-preview-meta obj-action-summary';
+    actionSummaryWrap.style.marginTop = '6px';
+    actionSummaryWrap.style.borderTop = '1px dashed rgba(255,255,255,0.2)';
+    actionSummaryWrap.style.paddingTop = '6px';
+    actionBlock.appendChild(actionSummaryWrap);
+
+    const refreshActionPayloadSummary = () => {
+        const trigger = actionTrigger.value || 'none';
+        const type = actionType.value || 'none';
+        const target = actionTarget.value ? ` -> ${actionTarget.value}` : '';
+        const val = String(actionValue.value || '').trim();
+        const duration = parseNumber(actionDuration.value, 0);
+        const cooldown = parseNumber(actionCooldown.value, 0);
+
+        const tags = [];
+        if (getCheck('.obj-pay-splash-enabled')) {
+            tags.push(`splash ${getNum('.obj-pay-splash-bursts', 3)}x/${getNum('.obj-pay-splash-interval', 120)}ms`);
+        }
+        if (getCheck('.obj-pay-wet-enabled')) {
+            tags.push(`wet ${getNum('.obj-pay-wet-duration', 2500)}ms`);
+        }
+        if (getCheck('.obj-pay-mud-halo')) {
+            tags.push(`mud halo`);
+        }
+        if (getCheck('.obj-pay-mud-stain-enabled')) {
+            tags.push(`mud stain ${getNum('.obj-pay-mud-stain-duration', 6000)}ms`);
+        }
+        if (getCheck('.obj-pay-sand-halo')) {
+            tags.push(`sand halo`);
+        }
+
+        const parsedPayload = parseJsonObjectSafe(actionPayloadInput.value);
+        const payloadInfo = parsedPayload.ok
+            ? `payload keys: ${Object.keys(parsedPayload.value || {}).length}`
+            : 'payload JSON non valido';
+
+        actionSummaryWrap.textContent = `Action: ${trigger} -> ${type}${target} (value: ${val || '0'}, duration: ${duration}ms, cooldown: ${cooldown}ms) | ${payloadInfo}${tags.length ? ` | fx: ${tags.join(', ')}` : ''}`;
+    };
+
+    const summarySelectors = [
+        '.obj-action-trigger', '.obj-action-type', '.obj-action-target', '.obj-action-value', '.obj-action-duration', '.obj-action-cooldown',
+        '.obj-pay-splash-enabled', '.obj-pay-splash-bursts', '.obj-pay-splash-interval', '.obj-pay-splash-drops', '.obj-pay-splash-cooldown',
+        '.obj-pay-wet-enabled', '.obj-pay-wet-duration', '.obj-pay-wet-color', '.obj-pay-wet-alpha', '.obj-pay-wet-size',
+        '.obj-pay-mud-halo', '.obj-pay-mud-immune', '.obj-pay-mud-stain-enabled', '.obj-pay-mud-stain-duration', '.obj-pay-mud-stain-color', '.obj-pay-mud-stain-alpha', '.obj-pay-mud-stain-size',
+        '.obj-pay-sand-halo', '.obj-pay-sand-halo-color', '.obj-pay-sand-halo-alpha'
+    ];
+    summarySelectors.forEach((sel) => {
+        const node = actionBlock.querySelector(sel);
+        if (!node) return;
+        node.addEventListener('input', refreshActionPayloadSummary);
+        node.addEventListener('change', refreshActionPayloadSummary);
+    });
 
     const statesWrap = document.createElement('div');
     statesWrap.style.marginTop = '6px';
@@ -1583,6 +1757,7 @@ function createObjectMapCard(mapping) {
                 { id: 'idle', initial: true, transitions: [{ event: 'collect', to: 'collected' }] },
                 { id: 'collected', onEnter: [{ type: 'destroySelf' }], transitions: [] }
             ], null, 2);
+            refreshActionPayloadSummary();
         }
         if (preset === 'wooden') {
             actionTrigger.value = 'collect';
@@ -1599,6 +1774,7 @@ function createObjectMapCard(mapping) {
                 { id: 'idle', initial: true, transitions: [{ event: 'collect', to: 'collected' }] },
                 { id: 'collected', onEnter: [{ type: 'destroySelf' }], transitions: [] }
             ], null, 2);
+            refreshActionPayloadSummary();
         }
         if (preset === 'water') {
             actionTrigger.value = 'enterTile';
@@ -1610,17 +1786,89 @@ function createObjectMapCard(mapping) {
             actionFlagsWrap.querySelector('.obj-action-consume').checked = false;
             actionFlagsWrap.querySelector('.obj-action-repeatable').checked = true;
             actionConditionsInput.value = JSON.stringify({ moving: true }, null, 2);
-            actionPayloadInput.value = JSON.stringify({ wetDurationMs: 2500, splash: true }, null, 2);
+            actionPayloadInput.value = JSON.stringify({
+                wetDurationMs: 2500,
+                wetOverlay: true,
+                wetColor: '#3399ff',
+                wetAlpha: 0.22,
+                wetSizeMultiplier: 0.84,
+                splash: { bursts: 3, intervalMs: 120, dropletQty: 5, cooldownMs: 600, color: '#88ccff', ringColor: '#3399ff' }
+            }, null, 2);
             statesInput.value = JSON.stringify([
                 { id: 'idle', initial: true, transitions: [{ event: 'enterTile', to: 'wet' }] },
                 { id: 'wet', onEnter: [{ type: 'spawnEffect', effect: 'splash' }], transitions: [{ event: 'timer', to: 'idle', afterMs: 2500 }] }
             ], null, 2);
+            setPayloadVisualFields(parseJsonObjectSafe(actionPayloadInput.value).value || {});
+            refreshActionPayloadSummary();
+        }
+        if (preset === 'mud') {
+            actionTrigger.value = 'enterTile';
+            actionType.value = 'setSlowFactor';
+            actionTarget.value = 'playerMove';
+            actionValue.value = '0';
+            actionDuration.value = '3000';
+            actionCooldown.value = '1000';
+            actionFlagsWrap.querySelector('.obj-action-consume').checked = false;
+            actionFlagsWrap.querySelector('.obj-action-repeatable').checked = true;
+            actionConditionsInput.value = JSON.stringify({}, null, 2);
+            actionPayloadInput.value = JSON.stringify({
+                mudHalo: true,
+                immuneAfterMs: 1000,
+                mudStain: true,
+                mudStainDurationMs: 6000,
+                mudStainColor: '#552200',
+                mudStainAlpha: 0.28,
+                mudStainSizeMultiplier: 0.9
+            }, null, 2);
+            statesInput.value = JSON.stringify([
+                { id: 'idle', initial: true, transitions: [{ event: 'enterTile', to: 'stuck' }] },
+                { id: 'stuck', transitions: [{ event: 'timer', to: 'idle', afterMs: 3000 }] }
+            ], null, 2);
+            setPayloadVisualFields(parseJsonObjectSafe(actionPayloadInput.value).value || {});
+            refreshActionPayloadSummary();
+        }
+        if (preset === 'sand') {
+            actionTrigger.value = 'enterTile';
+            actionType.value = 'setSlowFactor';
+            actionTarget.value = 'playerMove';
+            actionValue.value = '0.5';
+            actionDuration.value = '20000';
+            actionCooldown.value = '500';
+            actionFlagsWrap.querySelector('.obj-action-consume').checked = false;
+            actionFlagsWrap.querySelector('.obj-action-repeatable').checked = true;
+            actionConditionsInput.value = JSON.stringify({ moving: true }, null, 2);
+            actionPayloadInput.value = JSON.stringify({ sandHalo: true, sandHaloColor: '#ffeaa7', sandHaloAlpha: 0.32 }, null, 2);
+            statesInput.value = JSON.stringify([
+                { id: 'idle', initial: true, transitions: [{ event: 'enterTile', to: 'slow' }] },
+                { id: 'slow', transitions: [{ event: 'timer', to: 'idle', afterMs: 20000 }] }
+            ], null, 2);
+            setPayloadVisualFields(parseJsonObjectSafe(actionPayloadInput.value).value || {});
+            refreshActionPayloadSummary();
+        }
+        if (preset === 'back') {
+            actionTrigger.value = 'enterTile';
+            actionType.value = 'goToPreviousLevel';
+            actionTarget.value = 'level';
+            actionValue.value = '1';
+            actionDuration.value = '0';
+            actionCooldown.value = '0';
+            actionFlagsWrap.querySelector('.obj-action-consume').checked = false;
+            actionFlagsWrap.querySelector('.obj-action-repeatable').checked = true;
+            actionConditionsInput.value = JSON.stringify({}, null, 2);
+            actionPayloadInput.value = JSON.stringify({}, null, 2);
+            statesInput.value = JSON.stringify([{ id: 'active', initial: true, transitions: [] }], null, 2);
+            setPayloadVisualFields(parseJsonObjectSafe(actionPayloadInput.value).value || {});
+            refreshActionPayloadSummary();
         }
     };
 
     presetKeyBtn.addEventListener('click', () => applyPreset('key'));
     presetWoodBtn.addEventListener('click', () => applyPreset('wooden'));
     presetWaterBtn.addEventListener('click', () => applyPreset('water'));
+    presetMudBtn.addEventListener('click', () => applyPreset('mud'));
+    presetSandBtn.addEventListener('click', () => applyPreset('sand'));
+    presetBackBtn.addEventListener('click', () => applyPreset('back'));
+    refreshActionPayloadSummary();
 
     card.appendChild(actionBlock);
 
@@ -1730,6 +1978,71 @@ function collectObjectMappingsFromEditor() {
             throw new Error(statesRaw.message);
         }
 
+        const actionPayloadValue = isPlainObject(actionPayloadRaw.value) ? { ...actionPayloadRaw.value } : {};
+        const splashEnabled = getCheck('.obj-pay-splash-enabled');
+        if (splashEnabled) {
+            actionPayloadValue.splash = {
+                bursts: getNum('.obj-pay-splash-bursts', 3),
+                intervalMs: getNum('.obj-pay-splash-interval', 120),
+                dropletQty: getNum('.obj-pay-splash-drops', 5),
+                cooldownMs: getNum('.obj-pay-splash-cooldown', 600),
+                color: getVal('.obj-pay-splash-color') || '#88ccff',
+                ringColor: getVal('.obj-pay-splash-ring-color') || '#3399ff'
+            };
+        } else {
+            delete actionPayloadValue.splash;
+        }
+
+        const wetEnabled = getCheck('.obj-pay-wet-enabled');
+        if (wetEnabled) {
+            actionPayloadValue.wetOverlay = true;
+            actionPayloadValue.wetDurationMs = getNum('.obj-pay-wet-duration', 2500);
+            actionPayloadValue.wetColor = getVal('.obj-pay-wet-color') || '#3399ff';
+            actionPayloadValue.wetAlpha = getNum('.obj-pay-wet-alpha', 0.22);
+            actionPayloadValue.wetSizeMultiplier = getNum('.obj-pay-wet-size', 0.84);
+        } else {
+            delete actionPayloadValue.wetOverlay;
+            delete actionPayloadValue.wetDurationMs;
+            delete actionPayloadValue.wetColor;
+            delete actionPayloadValue.wetAlpha;
+            delete actionPayloadValue.wetSizeMultiplier;
+        }
+
+        const mudHaloEnabled = getCheck('.obj-pay-mud-halo');
+        if (mudHaloEnabled) {
+            actionPayloadValue.mudHalo = true;
+            actionPayloadValue.immuneAfterMs = getNum('.obj-pay-mud-immune', 1000);
+        } else {
+            delete actionPayloadValue.mudHalo;
+            delete actionPayloadValue.immuneAfterMs;
+        }
+
+        const mudStainEnabled = getCheck('.obj-pay-mud-stain-enabled');
+        if (mudStainEnabled) {
+            actionPayloadValue.mudStain = true;
+            actionPayloadValue.mudStainDurationMs = getNum('.obj-pay-mud-stain-duration', 6000);
+            actionPayloadValue.mudStainColor = getVal('.obj-pay-mud-stain-color') || '#552200';
+            actionPayloadValue.mudStainAlpha = getNum('.obj-pay-mud-stain-alpha', 0.28);
+            actionPayloadValue.mudStainSizeMultiplier = getNum('.obj-pay-mud-stain-size', 0.9);
+        } else {
+            delete actionPayloadValue.mudStain;
+            delete actionPayloadValue.mudStainDurationMs;
+            delete actionPayloadValue.mudStainColor;
+            delete actionPayloadValue.mudStainAlpha;
+            delete actionPayloadValue.mudStainSizeMultiplier;
+        }
+
+        const sandHaloEnabled = getCheck('.obj-pay-sand-halo');
+        if (sandHaloEnabled) {
+            actionPayloadValue.sandHalo = true;
+            actionPayloadValue.sandHaloColor = getVal('.obj-pay-sand-halo-color') || '#ffeaa7';
+            actionPayloadValue.sandHaloAlpha = getNum('.obj-pay-sand-halo-alpha', 0.32);
+        } else {
+            delete actionPayloadValue.sandHalo;
+            delete actionPayloadValue.sandHaloColor;
+            delete actionPayloadValue.sandHaloAlpha;
+        }
+
         const normalized = normalizeObjectMapping({
             key: getVal('.obj-key'),
             token: getVal('.obj-token'),
@@ -1784,7 +2097,7 @@ function collectObjectMappingsFromEditor() {
                 consumeOnUse: getCheck('.obj-action-consume'),
                 repeatable: getCheck('.obj-action-repeatable'),
                 conditions: actionConditionsRaw.value,
-                payload: actionPayloadRaw.value
+                payload: actionPayloadValue
             }
         });
 

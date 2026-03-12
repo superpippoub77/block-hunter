@@ -230,7 +230,18 @@
 			},
 			"payload": {
 				"wetDurationMs": 2500,
-				"splash": true
+				"wetOverlay": true,
+				"wetColor": "#3399ff",
+				"wetAlpha": 0.22,
+				"wetSizeMultiplier": 0.84,
+				"splash": {
+					"bursts": 3,
+					"intervalMs": 120,
+					"dropletQty": 5,
+					"cooldownMs": 600,
+					"color": "#88ccff",
+					"ringColor": "#3399ff"
+				}
 			}
 		},
 		"states": [
@@ -324,7 +335,12 @@
 			"conditions": {},
 			"payload": {
 				"mudHalo": true,
-				"immuneAfterMs": 1000
+				"immuneAfterMs": 1000,
+				"mudStain": true,
+				"mudStainDurationMs": 6000,
+				"mudStainColor": "#552200",
+				"mudStainAlpha": 0.28,
+				"mudStainSizeMultiplier": 0.9
 			}
 		},
 		"states": [
@@ -351,6 +367,167 @@
 		],
 		"tile": {
 			"type": "mud",
+			"walkable": true,
+			"invisible": false,
+			"noTile": false
+		}
+	},
+	{
+		"key": "tile_sand",
+		"token": "sand",
+		"category": "tile",
+		"entityType": "tile",
+		"imageSrc": "assets/images/tiles.png",
+		"textureKey": "tiles",
+		"defaultFrame": 2,
+		"contactType": "edge",
+		"dynamic": false,
+		"frameCount": 1,
+		"useOppositeSide": false,
+		"frames": {
+			"idle": {
+				"up": "2",
+				"down": "2",
+				"left": "2",
+				"right": "2"
+			},
+			"move": {
+				"up": "",
+				"down": "",
+				"left": "",
+				"right": ""
+			}
+		},
+		"contactScore": 0,
+		"movement": {
+			"automatic": false,
+			"directions": [],
+			"minStep": 0,
+			"maxStep": 0,
+			"pauseMs": 0
+		},
+		"staticScore": 0,
+		"sizePx": {
+			"width": 64,
+			"height": 64
+		},
+		"spawn": {
+			"fromMapToken": true,
+			"countFromLevelKey": null,
+			"speedFromLevelKeys": []
+		},
+		"action": {
+			"trigger": "enterTile",
+			"type": "setSlowFactor",
+			"target": "playerMove",
+			"value": 0.5,
+			"durationMs": 20000,
+			"cooldownMs": 500,
+			"consumeOnUse": false,
+			"repeatable": true,
+			"conditions": {
+				"moving": true
+			},
+			"payload": {
+				"sandHalo": true,
+				"sandHaloColor": "#ffeaa7",
+				"sandHaloAlpha": 0.32
+			}
+		},
+		"states": [
+			{
+				"id": "idle",
+				"initial": true,
+				"transitions": [
+					{
+						"event": "enterTile",
+						"to": "slow"
+					}
+				]
+			},
+			{
+				"id": "slow",
+				"transitions": [
+					{
+						"event": "timer",
+						"to": "idle",
+						"afterMs": 20000
+					}
+				]
+			}
+		],
+		"tile": {
+			"type": "sand",
+			"walkable": true,
+			"invisible": false,
+			"noTile": false
+		}
+	},
+	{
+		"key": "tile_back",
+		"token": "back",
+		"category": "tile",
+		"entityType": "tile",
+		"imageSrc": "assets/images/tiles.png",
+		"textureKey": "tiles",
+		"defaultFrame": 3,
+		"contactType": "edge",
+		"dynamic": false,
+		"frameCount": 1,
+		"useOppositeSide": false,
+		"frames": {
+			"idle": {
+				"up": "3",
+				"down": "3",
+				"left": "3",
+				"right": "3"
+			},
+			"move": {
+				"up": "",
+				"down": "",
+				"left": "",
+				"right": ""
+			}
+		},
+		"contactScore": 0,
+		"movement": {
+			"automatic": false,
+			"directions": [],
+			"minStep": 0,
+			"maxStep": 0,
+			"pauseMs": 0
+		},
+		"staticScore": 0,
+		"sizePx": {
+			"width": 64,
+			"height": 64
+		},
+		"spawn": {
+			"fromMapToken": true,
+			"countFromLevelKey": null,
+			"speedFromLevelKeys": []
+		},
+		"action": {
+			"trigger": "enterTile",
+			"type": "goToPreviousLevel",
+			"target": "level",
+			"value": 1,
+			"durationMs": 0,
+			"cooldownMs": 0,
+			"consumeOnUse": false,
+			"repeatable": true,
+			"conditions": {},
+			"payload": {}
+		},
+		"states": [
+			{
+				"id": "active",
+				"initial": true,
+				"transitions": []
+			}
+		],
+		"tile": {
+			"type": "back",
 			"walkable": true,
 			"invisible": false,
 			"noTile": false

@@ -548,6 +548,7 @@ class PreloadScene extends Phaser.Scene {
                 this.load.json(`level${num}`, `data/level/level${num}.json`);
             }
         }
+        this.load.json('objectsCatalog', 'data/objects.json');
 
         // Load background images for each master level (level1.png, level2.png, ...)
         for (let master = 1; master <= 5; master++) {
@@ -2194,6 +2195,7 @@ class GameScene extends Phaser.Scene {
         // Get level data from JSON
         const levelFileName = getLevelFileName(GAME_STATE.currentLevel);
         this.levelData = this.cache.json.get(levelFileName);
+        this.initializeObjectCatalog();
 
         // Get level config (rules for boulders, etc.)
         this.levelConfig = LEVEL_CONFIG.levels[GAME_STATE.currentLevel];
@@ -3502,6 +3504,7 @@ class GameScene extends Phaser.Scene {
                 }
 
                 if (!tileNoTile && (type === 'key' || type === 'pepita' || type === 'heart' || type === 'dynamite' || type === 'skeleton' || type === 'cart' || type === 'helmet' || type === 'wooden') && this.items) {
+                    const objectDef = this.getObjectDefinitionForType(type);
                     let frame = OBJECT_FRAMES.wall;
                     if (type === 'key') frame = OBJECT_FRAMES.key;
                     else if (type === 'pepita') frame = OBJECT_FRAMES.pepita;
@@ -3510,12 +3513,16 @@ class GameScene extends Phaser.Scene {
                     else if (type === 'wooden') frame = OBJECT_FRAMES.wooden;
                     else if (type === 'cart') frame = OBJECT_FRAMES.cart;
                     else if (type === 'helmet') frame = OBJECT_FRAMES.helmet;
+                    if (Number.isFinite(Number(objectDef?.defaultFrame))) {
+                        frame = Number(objectDef.defaultFrame);
+                    }
+                    const itemTexture = String(objectDef?.textureKey || 'objects');
                     // Keep map token visuals as `objects` until revealed; actual skeleton
                     // will be spawned when the tile is revealed.
                     const itemSprite = this.items.create(
                         offsetX + x * CONFIG.tileSize + CONFIG.tileSize / 2,
                         offsetY + y * CONFIG.tileSize + CONFIG.tileSize / 2,
-                        'objects',
+                        itemTexture,
                         frame
                     );
                     // Keep item at original sprite size and prefer a circular body centered on the item so pickups/poles behave by center contact
@@ -3564,6 +3571,7 @@ class GameScene extends Phaser.Scene {
                         }
                     }
                     itemSprite.setData('type', type);
+                    this.assignObjectDefinitionToSprite(itemSprite, objectDef || type);
                     // contact type/spec from config for items
                     try {
                         const specItem = resolveContactSpec(type === 'gem' ? 'gem' : 'item');
@@ -4577,6 +4585,559 @@ class GameScene extends Phaser.Scene {
         this.createGemPickupAt(worldX, worldY);
     }
 
+    initializeObjectCatalog() {
+        try {
+            const rawCatalog = this.cache?.json?.get('objectsCatalog');
+            this.runtimeObjectCatalog = Array.isArray(rawCatalog) ? rawCatalog.filter((entry) => entry && typeof entry === 'object') : [];
+        } catch (e) {
+            this.runtimeObjectCatalog = [];
+        }
+    }
+
+    getRuntimeObjectCatalog() {
+        if (!Array.isArray(this.runtimeObjectCatalog)) {
+            this.initializeObjectCatalog();
+        }
+        return Array.isArray(this.runtimeObjectCatalog) ? this.runtimeObjectCatalog : [];
+    }
+
+    findObjectDefinition(matcher) {
+        if (typeof matcher !== 'function') return null;
+        const list = this.getRuntimeObjectCatalog();
+        for (const entry of list) {
+            try {
+                if (matcher(entry)) return entry;
+            } catch (e) { }
+        }
+        return null;
+    }
+
+    getObjectDefinitionForType(type) {
+        const normalized = String(type || '').trim().toLowerCase();
+        if (!normalized) return null;
+
+        const byEntity = this.findObjectDefinition((entry) => String(entry.entityType || '').trim().toLowerCase() === normalized);
+        if (byEntity) return byEntity;
+
+        const byCategory = this.findObjectDefinition((entry) => String(entry.category || '').trim().toLowerCase() === normalized);
+        if (byCategory) return byCategory;
+
+        const byToken = this.findObjectDefinition((entry) => String(entry.token || '').trim().toLowerCase() === normalized);
+        if (byToken) return byToken;
+
+        return null;
+    }
+
+    resolveObjectDefinitionForSprite(sprite, fallbackType = '') {
+        try {
+            const objectKey = sprite?.getData?.('objectKey');
+            if (objectKey) {
+                const byKey = this.findObjectDefinition((entry) => String(entry.key || '').trim() === String(objectKey));
+                if (byKey) return byKey;
+            }
+        } catch (e) { }
+        return this.getObjectDefinitionForType(fallbackType);
+    }
+
+    assignObjectDefinitionToSprite(sprite, typeOrDefinition) {
+        if (!sprite || !sprite.setData) return null;
+        const definition = (typeOrDefinition && typeof typeOrDefinition === 'object' && !Array.isArray(typeOrDefinition))
+            ? typeOrDefinition
+            : this.getObjectDefinitionForType(typeOrDefinition);
+        if (!definition) return null;
+
+        try {
+            sprite.setData('objectKey', definition.key || null);
+            sprite.setData('objectToken', definition.token || null);
+        } catch (e) { }
+        return definition;
+    }
+
+    resolveInventorySlotForPlayer(baseInventoryKey, player) {
+        const key = String(baseInventoryKey || '').trim();
+        if (!key) return null;
+
+        if ((Number(GAME_STATE.players) || 1) === 2) {
+            if (key === 'keysCount') {
+                if (player === this.player) return 'keysP1';
+                if (player === this.player2) return 'keysP2';
+            }
+            if (key === 'woodenCount') {
+                if (player === this.player) return 'woodenP1';
+                if (player === this.player2) return 'woodenP2';
+            }
+        }
+        return key;
+    }
+
+    getInventoryCountForPlayer(baseInventoryKey, player) {
+        const slot = this.resolveInventorySlotForPlayer(baseInventoryKey, player);
+        if (!slot) return 0;
+        return Number(GAME_STATE[slot]) || 0;
+    }
+
+    addInventoryForPlayer(baseInventoryKey, delta, player) {
+        const slot = this.resolveInventorySlotForPlayer(baseInventoryKey, player);
+        if (!slot) return 0;
+        const amount = Number(delta) || 0;
+        const nextValue = (Number(GAME_STATE[slot]) || 0) + amount;
+        GAME_STATE[slot] = nextValue;
+        return nextValue;
+    }
+
+    consumeInventoryForPlayer(baseInventoryKey, amount, player) {
+        const slot = this.resolveInventorySlotForPlayer(baseInventoryKey, player);
+        if (!slot) return false;
+        const needed = Math.max(0, Number(amount) || 0);
+        const current = Number(GAME_STATE[slot]) || 0;
+        if (current < needed) return false;
+        GAME_STATE[slot] = Math.max(0, current - needed);
+        return true;
+    }
+
+    getActionForTrigger(definition, triggerName) {
+        if (!definition || typeof definition !== 'object') return null;
+        const action = definition.action;
+        if (!action || typeof action !== 'object') return null;
+        const actionTrigger = String(action.trigger || '').trim().toLowerCase();
+        const trigger = String(triggerName || '').trim().toLowerCase();
+        if (actionTrigger && trigger && actionTrigger !== trigger) return null;
+        return action;
+    }
+
+    getStateTransitionTimerMs(definition, fromStateId = null) {
+        if (!definition || !Array.isArray(definition.states)) return null;
+        const normalizedFrom = String(fromStateId || '').trim().toLowerCase();
+        for (const state of definition.states) {
+            if (!state || typeof state !== 'object') continue;
+            const stateId = String(state.id || '').trim().toLowerCase();
+            if (normalizedFrom && stateId !== normalizedFrom) continue;
+            const transitions = Array.isArray(state.transitions) ? state.transitions : [];
+            for (const transition of transitions) {
+                if (!transition || typeof transition !== 'object') continue;
+                if (String(transition.event || '').trim().toLowerCase() !== 'timer') continue;
+                const afterMs = Number(transition.afterMs);
+                if (Number.isFinite(afterMs) && afterMs >= 0) {
+                    return afterMs;
+                }
+            }
+        }
+        return null;
+    }
+
+    applyTileTypeReplacement(tileRef, nextType) {
+        if (!tileRef) return;
+        const t = String(nextType || '').trim().toLowerCase();
+        if (!t) return;
+
+        if (t === 'hole1' || t === 'hole_cover') {
+            tileRef.type = 'floor';
+            try { if (tileRef.sprite?.setFrame) tileRef.sprite.setFrame(TILE_FRAMES.hole_cover); } catch (e) { }
+            try { if (tileRef.sprite?.setData) tileRef.sprite.setData('covered', true); } catch (e) { }
+            tileRef.coverSprite = tileRef.sprite || null;
+            return;
+        }
+
+        if (t === 'hole') {
+            tileRef.type = 'hole';
+            try { if (tileRef.sprite?.setFrame) tileRef.sprite.setFrame(TILE_FRAMES.hole); } catch (e) { }
+            try { if (tileRef.sprite?.setData) tileRef.sprite.setData('covered', false); } catch (e) { }
+            return;
+        }
+
+        if (TILE_FRAMES[t] !== undefined) {
+            tileRef.type = t;
+            try { if (tileRef.sprite?.setFrame) tileRef.sprite.setFrame(TILE_FRAMES[t]); } catch (e) { }
+            return;
+        }
+
+        if (t === 'floor') {
+            tileRef.type = 'floor';
+            try { if (tileRef.sprite?.setFrame) tileRef.sprite.setFrame(TILE_FRAMES.floor); } catch (e) { }
+        }
+    }
+
+    getDoorActionRequirement() {
+        const doorDef = this.getObjectDefinitionForType('door');
+        const action = this.getActionForTrigger(doorDef, 'actionPressedNear');
+        if (!action) return { inventoryKey: 'keysCount', amount: 1 };
+
+        const requiresInventory = (action.conditions && typeof action.conditions === 'object' && !Array.isArray(action.conditions))
+            ? action.conditions.requiresInventory
+            : null;
+        if (requiresInventory && typeof requiresInventory === 'object' && !Array.isArray(requiresInventory)) {
+            const firstEntry = Object.entries(requiresInventory)[0];
+            if (firstEntry) {
+                return {
+                    inventoryKey: String(firstEntry[0] || 'keysCount'),
+                    amount: Math.max(0, Number(firstEntry[1]) || 0)
+                };
+            }
+        }
+
+        const consume = action.payload && typeof action.payload === 'object' ? action.payload.consume : null;
+        if (consume && typeof consume === 'object') {
+            return {
+                inventoryKey: String(consume.inventory || 'keysCount'),
+                amount: Math.max(0, Number(consume.amount) || 0)
+            };
+        }
+
+        return { inventoryKey: 'keysCount', amount: 1 };
+    }
+
+    applyConfiguredCollectAction(player, item, type) {
+        const definition = this.resolveObjectDefinitionForSprite(item, type);
+        const action = this.getActionForTrigger(definition, 'collect');
+        if (!action) return false;
+        if (String(action.type || '').trim().toLowerCase() !== 'addinventory') return false;
+
+        const targetInventory = String(action.target || '').trim();
+        const fallbackInventory = type === 'key' ? 'keysCount' : (type === 'wooden' ? 'woodenCount' : '');
+        const inventoryKey = targetInventory || fallbackInventory;
+        if (!inventoryKey) return false;
+
+        const amount = Number(action.value);
+        const delta = Number.isFinite(amount) ? amount : 1;
+        this.addInventoryForPlayer(inventoryKey, delta, player);
+
+        const payload = (action.payload && typeof action.payload === 'object' && !Array.isArray(action.payload)) ? action.payload : {};
+        const scoreDelta = Number(payload.scoreDelta);
+        if (Number.isFinite(scoreDelta) && scoreDelta !== 0) {
+            this.addScore(scoreDelta, item?.x, item?.y);
+        }
+        const soundKey = String(payload.sound || '').trim();
+        if (soundKey && this.sound) {
+            try { this.sound.play(soundKey, { volume: 0.45 }); } catch (e) { }
+        }
+
+        if (type === 'key') {
+            this.lastKeyPos = { x: item?.x, y: item?.y };
+            if (this.levelStats) {
+                this.levelStats.keysCollected = (Number(this.levelStats.keysCollected) || 0) + 1;
+            }
+        }
+
+        if (type === 'wooden' && this.levelStats) {
+            this.levelStats.woodenCollected = (Number(this.levelStats.woodenCollected) || 0) + 1;
+        }
+
+        return true;
+    }
+
+    getObjectDefinitionForTileType(tileType) {
+        const normalized = String(tileType || '').trim().toLowerCase();
+        if (!normalized) return null;
+        return this.findObjectDefinition((entry) => {
+            if (!entry || typeof entry !== 'object') return false;
+            const explicitTileType = String(entry.tile?.type || '').trim().toLowerCase();
+            if (explicitTileType && explicitTileType === normalized) return true;
+            const token = String(entry.token || '').trim().toLowerCase();
+            if (token && token === normalized) return true;
+            const entityType = String(entry.entityType || '').trim().toLowerCase();
+            if (entityType && entityType === normalized) return true;
+            return false;
+        });
+    }
+
+    getTileWorldCenterFromPlayer(player) {
+        const tileSize = Number(CONFIG.tileSize) || 32;
+        const gridX = Math.floor(((player?.x || 0) - (this.mapOffsetX || 0)) / tileSize);
+        const gridY = Math.floor(((player?.y || 0) - (this.mapOffsetY || 0)) / tileSize);
+        return {
+            gridX,
+            gridY,
+            worldX: (this.mapOffsetX || 0) + gridX * tileSize + tileSize / 2,
+            worldY: (this.mapOffsetY || 0) + gridY * tileSize + tileSize / 2
+        };
+    }
+
+    spawnTileSplashEffect(player, payload) {
+        if (!player) return;
+        const splashCfg = (payload && typeof payload.splash === 'object' && !Array.isArray(payload.splash)) ? payload.splash : {};
+        const moving = !!(player.body && (Math.abs((player.body.velocity && player.body.velocity.x) || 0) > 10 || Math.abs((player.body.velocity && player.body.velocity.y) || 0) > 10));
+        if (!moving) return;
+
+        const cooldownMs = Math.max(0, Number(splashCfg.cooldownMs) || 600);
+        if (player._runtimeSplashCooldownUntil && player._runtimeSplashCooldownUntil > (Number(this.time?.now) || Date.now())) {
+            return;
+        }
+
+        const sx = Math.round(player.x || 0);
+        const sy = Math.round((player.y || 0) + ((player.displayHeight || CONFIG.playerSize || 16) / 2));
+        const dropletQty = Math.max(1, Number(splashCfg.dropletQty) || 6);
+        const bursts = Math.max(1, Number(splashCfg.bursts) || 2);
+        const interval = Math.max(20, Number(splashCfg.intervalMs) || 120);
+        const color = this.parseEffectColor(splashCfg.color, 0x88ccff);
+        const ringColor = this.parseEffectColor(splashCfg.ringColor, 0x3399ff);
+
+        const runBurst = () => {
+            for (let i = 0; i < dropletQty; i++) {
+                try {
+                    const w = Phaser.Math.Between(1, 2);
+                    const h = Phaser.Math.Between(4, 8);
+                    const drop = this.add.rectangle(sx, sy, w, h, color, 1).setDepth(910).setOrigin(0.5);
+                    drop.setAngle(Phaser.Math.Between(-40, 40));
+                    const angle = Phaser.Math.DegToRad(Phaser.Math.Between(-120, -60));
+                    const speed = Phaser.Math.Between(40, 100);
+                    const tx = Math.round(sx + Math.cos(angle) * speed);
+                    const ty = Math.round(sy + Math.sin(angle) * speed / 2);
+                    const dur = Phaser.Math.Between(300, 520);
+                    this.tweens.add({
+                        targets: drop,
+                        x: tx,
+                        y: ty,
+                        alpha: 0,
+                        duration: dur,
+                        ease: 'Cubic.easeOut',
+                        onComplete: () => { try { drop.destroy(); } catch (e) { } }
+                    });
+                } catch (e) { }
+            }
+            try {
+                const ring = this.add.circle(sx, sy, 4, ringColor, 0.28).setDepth(909);
+                this.tweens.add({
+                    targets: ring,
+                    scaleX: 6,
+                    scaleY: 4,
+                    alpha: 0,
+                    duration: 420,
+                    ease: 'Cubic.easeOut',
+                    onComplete: () => { try { ring.destroy(); } catch (e) { } }
+                });
+            } catch (e) { }
+        };
+
+        for (let b = 0; b < bursts; b++) {
+            try {
+                this.time.delayedCall(b * interval, runBurst, [], this);
+            } catch (e) { }
+        }
+        player._runtimeSplashCooldownUntil = (Number(this.time?.now) || Date.now()) + cooldownMs;
+    }
+
+    applyTileOverlayEffect(tile, player, payload, options = {}) {
+        if (!tile || !player || !payload || typeof payload !== 'object') return;
+        const key = String(options.key || 'overlay');
+        const color = this.parseEffectColor(options.color, 0x3399ff);
+        const alpha = Number.isFinite(Number(options.alpha)) ? Number(options.alpha) : 0.22;
+        const durationMs = Math.max(0, Number(options.durationMs) || 2500);
+        const sizeMul = Number.isFinite(Number(options.sizeMultiplier)) ? Number(options.sizeMultiplier) : 0.84;
+
+        if (tile[`_${key}Active`]) return;
+        const center = this.getTileWorldCenterFromPlayer(player);
+        const radius = Math.floor((Number(CONFIG.tileSize) || 32) * sizeMul * 0.5);
+        let sprite = null;
+        try {
+            sprite = this.add.circle(center.worldX, center.worldY, Math.max(6, radius), color, alpha).setDepth(Math.round(center.worldY) - 5);
+            tile[`_${key}Active`] = true;
+            tile[`_${key}Sprite`] = sprite;
+            this.time.delayedCall(durationMs, () => {
+                try { if (sprite && sprite.destroy) sprite.destroy(); } catch (e) { }
+                tile[`_${key}Active`] = false;
+                tile[`_${key}Sprite`] = null;
+            }, [], this);
+        } catch (e) { }
+    }
+
+    runTileOnEnterEffects(tile, action, definition, player, triggerName = 'enterTile') {
+        const payload = (action?.payload && typeof action.payload === 'object' && !Array.isArray(action.payload)) ? action.payload : {};
+
+        if (payload.splash) {
+            try { this.spawnTileSplashEffect(player, payload); } catch (e) { }
+        }
+
+        if (!!payload.mudHalo) {
+            try {
+                const haloKey = (this.player2 && player === this.player2) ? 'player2MudHalo' : 'playerMudHalo';
+                if (!this[haloKey]) {
+                    this[haloKey] = this.add.circle(player.x, player.y, (player.displayWidth || 16) * 0.8, 0x663300, 0.28).setDepth(900);
+                }
+            } catch (e) { }
+        }
+
+        if (!!payload.sandHalo) {
+            try {
+                const haloKey = (this.player2 && player === this.player2) ? 'player2SandHalo' : 'playerSandHalo';
+                if (!this[haloKey]) {
+                    const color = this.parseEffectColor(payload.sandHaloColor, 0xffeaa7);
+                    const alpha = Number.isFinite(Number(payload.sandHaloAlpha)) ? Number(payload.sandHaloAlpha) : 0.32;
+                    this[haloKey] = this.add.circle(player.x, player.y, (player.displayWidth || 16) * 0.9, color, alpha).setDepth(900);
+                    try { this[haloKey].setBlendMode(Phaser.BlendModes.ADD); } catch (e) { }
+                }
+            } catch (e) { }
+        }
+
+        if (payload.wetDurationMs || payload.wetOverlay) {
+            this.applyTileOverlayEffect(tile, player, payload, {
+                key: 'wet',
+                color: payload.wetColor || 0x3399ff,
+                alpha: Number.isFinite(Number(payload.wetAlpha)) ? Number(payload.wetAlpha) : 0.22,
+                durationMs: Number(payload.wetDurationMs) || 2500,
+                sizeMultiplier: Number(payload.wetSizeMultiplier) || 0.84
+            });
+        }
+
+        if (payload.mudStainDurationMs || payload.mudStain) {
+            this.applyTileOverlayEffect(tile, player, payload, {
+                key: 'mudStain',
+                color: payload.mudStainColor || 0x552200,
+                alpha: Number.isFinite(Number(payload.mudStainAlpha)) ? Number(payload.mudStainAlpha) : 0.28,
+                durationMs: Number(payload.mudStainDurationMs) || ((Number(action?.durationMs) || 3000) * 2),
+                sizeMultiplier: Number(payload.mudStainSizeMultiplier) || 0.9
+            });
+        }
+
+        const states = Array.isArray(definition?.states) ? definition.states : [];
+        const initialState = states.find((state) => state && typeof state === 'object' && state.initial)
+            || states[0]
+            || null;
+        const currentStateId = String(tile?._runtimeStateId || initialState?.id || '').trim();
+        const currentState = states.find((state) => String(state?.id || '').trim() === currentStateId) || initialState;
+        const transitions = Array.isArray(currentState?.transitions) ? currentState.transitions : [];
+        const trigger = String(triggerName || '').trim().toLowerCase();
+        const nextTransition = transitions.find((transition) => String(transition?.event || '').trim().toLowerCase() === trigger) || null;
+        const targetStateId = String(nextTransition?.to || currentState?.id || '').trim();
+        const targetState = states.find((state) => String(state?.id || '').trim() === targetStateId) || currentState;
+
+        if (tile) {
+            tile._runtimeStateId = targetStateId || currentStateId;
+            if (tile._runtimeStateTimer && tile._runtimeStateTimer.remove) {
+                try { tile._runtimeStateTimer.remove(false); } catch (e) { }
+                tile._runtimeStateTimer = null;
+            }
+
+            const timerTransition = Array.isArray(targetState?.transitions)
+                ? targetState.transitions.find((transition) => String(transition?.event || '').trim().toLowerCase() === 'timer' && Number.isFinite(Number(transition?.afterMs)))
+                : null;
+            if (timerTransition && this.time) {
+                const afterMs = Math.max(0, Number(timerTransition.afterMs) || 0);
+                const restoreTo = String(timerTransition.to || '').trim();
+                tile._runtimeStateTimer = this.time.delayedCall(afterMs, () => {
+                    try { tile._runtimeStateId = restoreTo || currentStateId || null; } catch (e) { }
+                    tile._runtimeStateTimer = null;
+                }, [], this);
+            }
+        }
+
+        const onEnterList = Array.isArray(targetState?.onEnter) ? targetState.onEnter : [];
+        for (const effect of onEnterList) {
+            if (!effect || typeof effect !== 'object') continue;
+            if (String(effect.type || '').trim().toLowerCase() !== 'spawneffect') continue;
+            const effectName = String(effect.effect || '').trim().toLowerCase();
+            if (!effectName) continue;
+            try {
+                this.applyTokenEffects(player, [effectName], player?.x, player?.y, {});
+            } catch (e) { }
+        }
+    }
+
+    applyConfiguredTileAction(tile, player, triggerName = 'enterTile') {
+        if (!tile || !player || !player.active) return false;
+
+        const definition = this.getObjectDefinitionForTileType(tile.type);
+        const action = this.getActionForTrigger(definition, triggerName);
+        if (!action) return false;
+
+        const now = Number(this.time?.now) || Date.now();
+        const cooldownMs = Math.max(0, Number(action.cooldownMs) || 0);
+        if (cooldownMs > 0) {
+            const lastRun = Number(tile._runtimeActionLastRunMs) || 0;
+            if (now - lastRun < cooldownMs) {
+                return true;
+            }
+        }
+
+        const conditions = (action.conditions && typeof action.conditions === 'object' && !Array.isArray(action.conditions)) ? action.conditions : {};
+        if (action.repeatable === false && tile._runtimeActionExecuted) {
+            return true;
+        }
+        if (conditions.moving) {
+            const moving = !!(player?.body && (Math.abs((player.body.velocity && player.body.velocity.x) || 0) > 10 || Math.abs((player.body.velocity && player.body.velocity.y) || 0) > 10));
+            if (!moving) return true;
+        }
+
+        const actionType = String(action.type || '').trim().toLowerCase();
+        const value = Number(action.value);
+        const durationMs = Math.max(0, Number(action.durationMs) || 0);
+        const isPlayer2 = !!(this.player2 && player === this.player2);
+        const slowKey = isPlayer2 ? 'player2SlowFactor' : 'playerSlowFactor';
+        const slowTimerKey = isPlayer2 ? 'player2SlowTimer' : 'playerSlowTimer';
+        const mudActiveKey = isPlayer2 ? 'player2MudActive' : 'playerMudActive';
+        const mudTimerKey = isPlayer2 ? 'player2MudTimer' : 'playerMudTimer';
+        const mudImmuneKey = isPlayer2 ? 'player2MudImmune' : 'playerMudImmune';
+        const mudImmuneTimerKey = isPlayer2 ? 'player2MudImmuneTimer' : 'playerMudImmuneTimer';
+        const mudHaloKey = isPlayer2 ? 'player2MudHalo' : 'playerMudHalo';
+
+        if (actionType === 'modifydynamite') {
+            const delta = Number.isFinite(value) ? value : 0;
+            GAME_STATE.dynamiteCount = Math.max(0, (Number(GAME_STATE.dynamiteCount) || 0) + delta);
+            this.refreshHudIcons && this.refreshHudIcons();
+            try {
+                if (delta !== 0 && this.showScorePopup) {
+                    this.showScorePopup(delta, player.x, player.y);
+                }
+            } catch (e) { }
+        } else if (actionType === 'setslowfactor') {
+            const slowFactor = Number.isFinite(value) ? value : 1;
+            this[slowKey] = Phaser.Math.Clamp(slowFactor, 0, 3);
+            if (durationMs > 0) {
+                if (this[slowTimerKey]) {
+                    try { this[slowTimerKey].remove(false); } catch (e) { }
+                }
+                this[slowTimerKey] = this.time.delayedCall(durationMs, () => {
+                    this[slowKey] = 1;
+                    this[slowTimerKey] = null;
+                    try { if (this[mudHaloKey]) { this[mudHaloKey].destroy(); this[mudHaloKey] = null; } } catch (e) { }
+                    try {
+                        const sandHaloKey = isPlayer2 ? 'player2SandHalo' : 'playerSandHalo';
+                        if (this[sandHaloKey]) {
+                            this[sandHaloKey].destroy();
+                            this[sandHaloKey] = null;
+                        }
+                    } catch (e) { }
+                }, [], this);
+            }
+
+            // Mud-style immobilization when factor is zero or near zero
+            if (this[slowKey] <= 0.001) {
+                this[mudActiveKey] = true;
+                try { if (player.body) { player.body.setVelocity(0, 0); player.body.setEnable(false); } } catch (e) { }
+                if (durationMs > 0) {
+                    if (this[mudTimerKey]) { try { this[mudTimerKey].remove(false); } catch (e) { } }
+                    this[mudTimerKey] = this.time.delayedCall(durationMs, () => {
+                        this[mudActiveKey] = false;
+                        try { if (player.body) player.body.setEnable(true); } catch (e) { }
+                        try { this[mudImmuneKey] = true; } catch (e) { }
+                        try {
+                            if (this[mudImmuneTimerKey]) { try { this[mudImmuneTimerKey].remove(false); } catch (e) { } }
+                            const immuneAfterMs = Math.max(0, Number(action.payload?.immuneAfterMs) || 1000);
+                            this[mudImmuneTimerKey] = this.time.delayedCall(immuneAfterMs, () => {
+                                try { this[mudImmuneKey] = false; } catch (e) { }
+                                this[mudImmuneTimerKey] = null;
+                            }, [], this);
+                        } catch (e) { }
+                    }, [], this);
+                }
+            }
+        } else if (actionType === 'gotopreviouslevel') {
+            const forcedBackLevel = Number.isFinite(Number(action.payload?.backTargetLevelIndex))
+                ? Number(action.payload.backTargetLevelIndex)
+                : (Number.isFinite(Number(tile.backTargetLevelIndex)) ? Number(tile.backTargetLevelIndex) : null);
+            try { this.goToPreviousLevel(forcedBackLevel); } catch (e) { }
+        } else if (actionType === 'spawneffect') {
+            const effectName = String(action.payload?.effect || '').trim();
+            if (effectName) {
+                try { this.applyTokenEffects(player, [effectName], player.x, player.y, {}); } catch (e) { }
+            }
+        }
+
+        this.runTileOnEnterEffects(tile, action, definition, player, triggerName);
+        tile._runtimeActionLastRunMs = now;
+        tile._runtimeActionExecuted = true;
+        return true;
+    }
+
     spawnKey() {
         const x = Phaser.Math.Between(2, this.mapCols - 3);
         const y = Phaser.Math.Between(2, this.mapRows - 3);
@@ -4584,8 +5145,10 @@ class GameScene extends Phaser.Scene {
         const worldX = this.mapOffsetX + x * CONFIG.tileSize + CONFIG.tileSize / 2;
         const worldY = this.mapOffsetY + y * CONFIG.tileSize + CONFIG.tileSize / 2;
 
-        // Use key sprite from objects.png (frame 8)
-        const keySprite = this.items.create(worldX, worldY, 'objects', OBJECT_FRAMES.key);
+        const keyDef = this.getObjectDefinitionForType('key');
+        const keyTexture = String(keyDef?.textureKey || 'objects');
+        const keyFrame = Number.isFinite(Number(keyDef?.defaultFrame)) ? Number(keyDef.defaultFrame) : OBJECT_FRAMES.key;
+        const keySprite = this.items.create(worldX, worldY, keyTexture, keyFrame);
         // Keep key at original size
         if (keySprite.body) {
             keySprite.body.setSize(Math.floor(keySprite.displayWidth || keySprite.width), Math.floor(keySprite.displayHeight || keySprite.height));
@@ -4596,12 +5159,16 @@ class GameScene extends Phaser.Scene {
             keySprite.body.setSize(Math.floor(keySprite.displayWidth || keySprite.width), Math.floor(keySprite.displayHeight || keySprite.height));
         }
         keySprite.setData('type', 'key');
+        this.assignObjectDefinitionToSprite(keySprite, keyDef || 'key');
         this.applyKeyFloatingEffect(keySprite);
         this.lastKeyPos = { x: worldX, y: worldY };
     }
 
     spawnKeyAt(x, y) {
-        const keySprite = this.items.create(x, y, 'objects', OBJECT_FRAMES.key);
+        const keyDef = this.getObjectDefinitionForType('key');
+        const keyTexture = String(keyDef?.textureKey || 'objects');
+        const keyFrame = Number.isFinite(Number(keyDef?.defaultFrame)) ? Number(keyDef.defaultFrame) : OBJECT_FRAMES.key;
+        const keySprite = this.items.create(x, y, keyTexture, keyFrame);
         // Keep key at original size
         if (keySprite.body) {
             keySprite.body.setSize(Math.floor(keySprite.displayWidth || keySprite.width), Math.floor(keySprite.displayHeight || keySprite.height));
@@ -4612,6 +5179,7 @@ class GameScene extends Phaser.Scene {
             keySprite.body.setSize(Math.floor(keySprite.displayWidth || keySprite.width), Math.floor(keySprite.displayHeight || keySprite.height));
         }
         keySprite.setData('type', 'key');
+        this.assignObjectDefinitionToSprite(keySprite, keyDef || 'key');
         this.applyKeyFloatingEffect(keySprite);
         this.lastKeyPos = { x, y };
     }
@@ -4903,11 +5471,17 @@ class GameScene extends Phaser.Scene {
 
     setupDoor(door) {
         if (!door) return;
+        const doorDef = this.getObjectDefinitionForType('door');
         // Apply object size (pixels) converted to scale factor to door
         const doorScaleFactor = CONFIG.objectSize / OBJECT_NATIVE_SIZE;
         door.setScale(doorScaleFactor);
+        if (Number.isFinite(Number(doorDef?.defaultFrame)) && typeof door.setFrame === 'function') {
+            try { door.setFrame(Number(doorDef.defaultFrame)); } catch (e) { }
+        }
         door.setData('locked', true);
         door.setData('opening', false);
+        door.setData('type', 'door');
+        this.assignObjectDefinitionToSprite(door, doorDef || 'door');
         if (door.body) {
             door.body.setSize(Math.floor(door.displayWidth || door.width), Math.floor(door.displayHeight || door.height));
         }
@@ -6792,12 +7366,22 @@ class GameScene extends Phaser.Scene {
         if (this.cartPowerActive) {
             speed *= 2;
         }
+        let speedP2 = CONFIG.playerSpeed;
+        if (this.player2SlowFactor && this.player2SlowFactor !== 1) {
+            speedP2 *= this.player2SlowFactor;
+        }
+        if (this.cartPowerActive) {
+            speedP2 *= 2;
+        }
 
         // Check tile under player and trigger tile-specific effects (sand, water, mud, back)
         const tile = this.getTileAt(this.player.x, this.player.y);
+        const tileP2 = (this.player2 && this.player2.active) ? this.getTileAt(this.player2.x, this.player2.y) : null;
         if (tile && tile.type) {
             // Sand slow
             if (tile.type === 'sand') {
+            const handledByConfig = this.applyConfiguredTileAction(tile, this.player, 'enterTile');
+            if (!handledByConfig) {
             try {
                 if (!this.playerSandActive) {
                     this.playerSandActive = true;
@@ -6822,9 +7406,12 @@ class GameScene extends Phaser.Scene {
                 }
             } catch (e) { /* ignore sand effect errors */ }
             }
+            }
 
             // Water: deduct dynamite once per tile when stepped on
             if (tile.type === 'water') {
+                const handledByConfig = this.applyConfiguredTileAction(tile, this.player, 'enterTile');
+                if (!handledByConfig) {
                 try {
                     // visual splash effect at player position
                     try {
@@ -6915,10 +7502,13 @@ class GameScene extends Phaser.Scene {
                         }
                     } catch (e) { }
                 } catch (e) { }
+                }
             }
 
             // Mud: freeze player for 3 seconds
             if (tile.type === 'mud') {
+                const handledByConfig = this.applyConfiguredTileAction(tile, this.player, 'enterTile');
+                if (!handledByConfig) {
                 try {
                     // don't re-trigger mud while immune (grace period after free)
                     if (this.playerMudImmune) {
@@ -7017,15 +7607,24 @@ class GameScene extends Phaser.Scene {
                         }
                     } catch (e) { }
                 } catch (e) { }
+                }
             }
 
             // Back level token: return to previous level
             if (tile.type === 'back') {
-                try {
-                    const forcedBackLevel = Number.isFinite(Number(tile.backTargetLevelIndex)) ? Number(tile.backTargetLevelIndex) : null;
-                    this.goToPreviousLevel(forcedBackLevel);
-                } catch (e) { }
+                const handledByConfig = this.applyConfiguredTileAction(tile, this.player, 'enterTile');
+                if (!handledByConfig) {
+                    try {
+                        const forcedBackLevel = Number.isFinite(Number(tile.backTargetLevelIndex)) ? Number(tile.backTargetLevelIndex) : null;
+                        this.goToPreviousLevel(forcedBackLevel);
+                    } catch (e) { }
+                }
             }
+        }
+
+        // Player 2 tile actions (data-driven only)
+        if (tileP2 && tileP2.type && this.player2 && this.player2.active) {
+            try { this.applyConfiguredTileAction(tileP2, this.player2, 'enterTile'); } catch (e) { }
         }
 
         // Apply velocities, with sliding when rain is active
@@ -7049,8 +7648,8 @@ class GameScene extends Phaser.Scene {
         // apply velocity for player2 if present (same sliding effect)
         try {
             if (this.player2 && this.player2.active) {
-                const desired2X = p2VelocityX * speed;
-                const desired2Y = p2VelocityY * speed;
+                const desired2X = p2VelocityX * speedP2;
+                const desired2Y = p2VelocityY * speedP2;
                 if (this.rainActive && this.currentRain) {
                     const intensity2 = Number(this.currentRain.intensity) || 1;
                     let traction2 = 0.35 / intensity2;
@@ -7377,6 +7976,9 @@ class GameScene extends Phaser.Scene {
     checkDoorProximity() {
         if (!this.doors || !this.player) return;
         const doors = this.doors.children?.entries || [];
+        const doorRequirement = this.getDoorActionRequirement();
+        const reqInventory = String(doorRequirement.inventoryKey || 'keysCount');
+        const reqAmount = Math.max(1, Number(doorRequirement.amount) || 1);
         // Do not auto-open doors; require pressing the configured 'action' button.
         for (const door of doors) {
             try { if (!door || !door.active) continue; } catch (e) { continue; }
@@ -7388,8 +7990,8 @@ class GameScene extends Phaser.Scene {
 
             // Player 1 proximity & key check
             try {
-                const hasKeyP1 = (Number(GAME_STATE.players) === 2) ? ((Number(GAME_STATE.keysP1) || 0) > 0) : ((Number(GAME_STATE.keysCount) || 0) > 0);
-                if (hasKeyP1 && this.player) {
+                const hasRequiredP1 = this.getInventoryCountForPlayer(reqInventory, this.player) >= reqAmount;
+                if (hasRequiredP1 && this.player) {
                     const dist1 = Phaser.Math.Distance.Between(this.player.x, this.player.y, door.x, door.y);
                     if (dist1 <= CONFIG.tileSize * 1.1) {
                         try { door.setData && door.setData('playerNearbyP1', true); } catch (e) { }
@@ -7400,8 +8002,8 @@ class GameScene extends Phaser.Scene {
             // Player 2 proximity & key check (if present)
             try {
                 if (this.player2) {
-                    const hasKeyP2 = (Number(GAME_STATE.keysP2) || 0) > 0;
-                    if (hasKeyP2) {
+                    const hasRequiredP2 = this.getInventoryCountForPlayer(reqInventory, this.player2) >= reqAmount;
+                    if (hasRequiredP2) {
                         const dist2 = Phaser.Math.Distance.Between(this.player2.x, this.player2.y, door.x, door.y);
                         if (dist2 <= CONFIG.tileSize * 1.1) {
                             try { door.setData && door.setData('playerNearbyP2', true); } catch (e) { }
@@ -7419,6 +8021,21 @@ class GameScene extends Phaser.Scene {
             this.holeNearbyP2 = false;
             this.holeNearbyTileP1 = null;
             this.holeNearbyTileP2 = null;
+
+            const woodenDef = this.getObjectDefinitionForType('wooden');
+            const woodenAction = this.getActionForTrigger(woodenDef, 'collect') || (woodenDef && woodenDef.action ? woodenDef.action : null);
+            const onUse = (woodenAction?.payload?.onUse && typeof woodenAction.payload.onUse === 'object' && !Array.isArray(woodenAction.payload.onUse))
+                ? woodenAction.payload.onUse
+                : {};
+            const consumeCfg = (onUse.consumeInventory && typeof onUse.consumeInventory === 'object' && !Array.isArray(onUse.consumeInventory))
+                ? onUse.consumeInventory
+                : {};
+            const replaceCfg = (onUse.replaceBlock && typeof onUse.replaceBlock === 'object' && !Array.isArray(onUse.replaceBlock))
+                ? onUse.replaceBlock
+                : {};
+            const neededInventory = String(consumeCfg.target || woodenAction?.target || 'woodenCount');
+            const neededAmount = Math.max(1, Number(consumeCfg.amount) || 1);
+            const targetTileType = String(replaceCfg.targetTileType || woodenAction?.payload?.placeOn || 'hole').trim().toLowerCase();
 
             const checkNearby = (player) => {
                 if (!player || !player.active) return null;
@@ -7440,7 +8057,7 @@ class GameScene extends Phaser.Scene {
                             const worldX = this.mapOffsetX + gx * CONFIG.tileSize + CONFIG.tileSize / 2;
                             const worldY = this.mapOffsetY + gy * CONFIG.tileSize + CONFIG.tileSize / 2;
                             const dist = Phaser.Math.Distance.Between(px, py, worldX, worldY);
-                            if (dist <= CONFIG.tileSize * 1.2) return t;
+                            if (dist <= CONFIG.tileSize * 1.2 && String(t.type || '').trim().toLowerCase() === targetTileType) return t;
                         }
                     }
                 }
@@ -7450,7 +8067,7 @@ class GameScene extends Phaser.Scene {
             // Player 1
             if (this.player) {
                 const tileP1 = checkNearby(this.player);
-                const hasWoodP1 = (Number(GAME_STATE.players) === 2) ? ((Number(GAME_STATE.woodenP1) || 0) > 0) : ((Number(GAME_STATE.woodenCount) || 0) > 0);
+                const hasWoodP1 = this.getInventoryCountForPlayer(neededInventory, this.player) >= neededAmount;
                 if (tileP1 && hasWoodP1) {
                     this.holeNearbyP1 = true;
                     this.holeNearbyTileP1 = tileP1;
@@ -7460,7 +8077,7 @@ class GameScene extends Phaser.Scene {
             // Player 2
             if (this.player2) {
                 const tileP2 = checkNearby(this.player2);
-                const hasWoodP2 = (Number(GAME_STATE.woodenP2) || 0) > 0;
+                const hasWoodP2 = this.getInventoryCountForPlayer(neededInventory, this.player2) >= neededAmount;
                 if (tileP2 && hasWoodP2) {
                     this.holeNearbyP2 = true;
                     this.holeNearbyTileP2 = tileP2;
@@ -7536,6 +8153,7 @@ class GameScene extends Phaser.Scene {
 
         const createItemFromType = (itemType) => {
             if (!this.items) return;
+            const objectDef = this.getObjectDefinitionForType(itemType);
             const frame = itemType === 'key'
                 ? OBJECT_FRAMES.key
                 : (itemType === 'pepita'
@@ -7543,13 +8161,16 @@ class GameScene extends Phaser.Scene {
                     : (itemType === 'dynamite'
                         ? OBJECT_FRAMES.dynamite_chest
                         : (itemType === 'cart' ? OBJECT_FRAMES.cart : (itemType === 'helmet' ? OBJECT_FRAMES.helmet : OBJECT_FRAMES.wall))));
-            const itemSprite = this.items.create(worldX, worldY, 'objects', frame);
+            const resolvedFrame = Number.isFinite(Number(objectDef?.defaultFrame)) ? Number(objectDef.defaultFrame) : frame;
+            const textureKey = String(objectDef?.textureKey || 'objects');
+            const itemSprite = this.items.create(worldX, worldY, textureKey, resolvedFrame);
             const objectScaleFactor = CONFIG.objectSize / OBJECT_NATIVE_SIZE;
             itemSprite.setScale(objectScaleFactor);
             if (itemSprite.body) {
                 itemSprite.body.setSize(Math.floor(itemSprite.displayWidth || itemSprite.width), Math.floor(itemSprite.displayHeight || itemSprite.height));
             }
             itemSprite.setData('type', itemType);
+            this.assignObjectDefinitionToSprite(itemSprite, objectDef || itemType);
             itemSprite.setData('gridX', gridX);
             itemSprite.setData('gridY', gridY);
             try { this.applyTokenEffects(itemSprite, revealCell.effects, worldX, worldY, revealCell.effectOptions); } catch (e) { }
@@ -8159,23 +8780,26 @@ class GameScene extends Phaser.Scene {
         const gridY = item.getData('gridY');
 
         if (type === 'key') {
-            this.addScore(5, item.x, item.y);
-            try { if (this.sound) this.sound.play('coin_sfx', { volume: 0.45 }); } catch (e) { }
-            // Award key to the collecting player in 2-player mode, otherwise to global inventory
-            if (Number(GAME_STATE.players) === 2) {
-                if (player === this.player) {
-                    GAME_STATE.keysP1 = (Number(GAME_STATE.keysP1) || 0) + 1;
-                } else if (player === this.player2) {
-                    GAME_STATE.keysP2 = (Number(GAME_STATE.keysP2) || 0) + 1;
+            const handledByConfig = this.applyConfiguredCollectAction(player, item, type);
+            if (!handledByConfig) {
+                this.addScore(5, item.x, item.y);
+                try { if (this.sound) this.sound.play('coin_sfx', { volume: 0.45 }); } catch (e) { }
+                // Award key to the collecting player in 2-player mode, otherwise to global inventory
+                if (Number(GAME_STATE.players) === 2) {
+                    if (player === this.player) {
+                        GAME_STATE.keysP1 = (Number(GAME_STATE.keysP1) || 0) + 1;
+                    } else if (player === this.player2) {
+                        GAME_STATE.keysP2 = (Number(GAME_STATE.keysP2) || 0) + 1;
+                    } else {
+                        GAME_STATE.keysCount = (Number(GAME_STATE.keysCount) || 0) + 1;
+                    }
                 } else {
                     GAME_STATE.keysCount = (Number(GAME_STATE.keysCount) || 0) + 1;
                 }
-            } else {
-                GAME_STATE.keysCount = (Number(GAME_STATE.keysCount) || 0) + 1;
-            }
-            this.lastKeyPos = { x: item.x, y: item.y };
-            if (this.levelStats) {
-                this.levelStats.keysCollected = (Number(this.levelStats.keysCollected) || 0) + 1;
+                this.lastKeyPos = { x: item.x, y: item.y };
+                if (this.levelStats) {
+                    this.levelStats.keysCollected = (Number(this.levelStats.keysCollected) || 0) + 1;
+                }
             }
         } else if (type === 'dynamite') {
             GAME_STATE.dynamiteCount += 5;
@@ -8206,21 +8830,24 @@ class GameScene extends Phaser.Scene {
         }
 
         else if (type === 'wooden') {
-            // Wooden plank pickup: increase plank count (per-player in 2-player mode)
-            this.addScore(5, item.x, item.y);
-            if (Number(GAME_STATE.players) === 2) {
-                if (player === this.player) {
-                    GAME_STATE.woodenP1 = (Number(GAME_STATE.woodenP1) || 0) + 1;
-                } else if (player === this.player2) {
-                    GAME_STATE.woodenP2 = (Number(GAME_STATE.woodenP2) || 0) + 1;
+            const handledByConfig = this.applyConfiguredCollectAction(player, item, type);
+            if (!handledByConfig) {
+                // Wooden plank pickup: increase plank count (per-player in 2-player mode)
+                this.addScore(5, item.x, item.y);
+                if (Number(GAME_STATE.players) === 2) {
+                    if (player === this.player) {
+                        GAME_STATE.woodenP1 = (Number(GAME_STATE.woodenP1) || 0) + 1;
+                    } else if (player === this.player2) {
+                        GAME_STATE.woodenP2 = (Number(GAME_STATE.woodenP2) || 0) + 1;
+                    } else {
+                        GAME_STATE.woodenCount = (Number(GAME_STATE.woodenCount) || 0) + 1;
+                    }
                 } else {
                     GAME_STATE.woodenCount = (Number(GAME_STATE.woodenCount) || 0) + 1;
                 }
-            } else {
-                GAME_STATE.woodenCount = (Number(GAME_STATE.woodenCount) || 0) + 1;
-            }
-            if (this.levelStats) {
-                this.levelStats.woodenCollected = (Number(this.levelStats.woodenCollected) || 0) + 1;
+                if (this.levelStats) {
+                    this.levelStats.woodenCollected = (Number(this.levelStats.woodenCollected) || 0) + 1;
+                }
             }
         }
 
@@ -8311,29 +8938,52 @@ class GameScene extends Phaser.Scene {
         if (!door || !door.active) return;
         if (door.getData('opening')) return;
         if (!door.getData('locked')) return;
-        // Determine keys count for this player (support per-player inventories)
-        const playersCount = Number(GAME_STATE.players) || 1;
-        if (playersCount === 2) {
-            if (player === this.player) {
-                if ((Number(GAME_STATE.keysP1) || 0) <= 0) return;
-                GAME_STATE.keysP1 = Math.max(0, (Number(GAME_STATE.keysP1) || 0) - 1);
-            } else if (player === this.player2) {
-                if ((Number(GAME_STATE.keysP2) || 0) <= 0) return;
-                GAME_STATE.keysP2 = Math.max(0, (Number(GAME_STATE.keysP2) || 0) - 1);
-            } else {
-                if ((Number(GAME_STATE.keysCount) || 0) <= 0) return;
-                GAME_STATE.keysCount = Math.max(0, (Number(GAME_STATE.keysCount) || 0) - 1);
+        const doorDef = this.resolveObjectDefinitionForSprite(door, 'door') || this.getObjectDefinitionForType('door');
+        const doorAction = this.getActionForTrigger(doorDef, 'actionPressedNear');
+        const payload = (doorAction?.payload && typeof doorAction.payload === 'object' && !Array.isArray(doorAction.payload))
+            ? doorAction.payload
+            : {};
+        const requiresInventory = (doorAction?.conditions?.requiresInventory && typeof doorAction.conditions.requiresInventory === 'object' && !Array.isArray(doorAction.conditions.requiresInventory))
+            ? doorAction.conditions.requiresInventory
+            : {};
+
+        const requiredEntries = Object.entries(requiresInventory);
+        for (const [inventoryKey, rawAmount] of requiredEntries) {
+            const needed = Math.max(0, Number(rawAmount) || 0);
+            if (needed <= 0) continue;
+            if (this.getInventoryCountForPlayer(inventoryKey, player) < needed) {
+                return;
             }
-        } else {
-            if ((Number(GAME_STATE.keysCount) || 0) <= 0) return;
-            GAME_STATE.keysCount = Math.max(0, (Number(GAME_STATE.keysCount) || 0) - 1);
         }
+
+        const consumeConfig = (payload.consume && typeof payload.consume === 'object' && !Array.isArray(payload.consume))
+            ? payload.consume
+            : null;
+        const consumeInventoryKey = String(consumeConfig?.inventory || requiredEntries[0]?.[0] || 'keysCount');
+        const consumeAmount = Math.max(0, Number(consumeConfig?.amount ?? requiredEntries[0]?.[1] ?? doorAction?.value ?? 1) || 0);
+        const shouldConsume = doorAction ? doorAction.consumeOnUse !== false : true;
+        if (consumeAmount > 0 && shouldConsume) {
+            if (!this.consumeInventoryForPlayer(consumeInventoryKey, consumeAmount, player)) {
+                return;
+            }
+        }
+
+        const replaceBlock = (payload.replaceBlock && typeof payload.replaceBlock === 'object' && !Array.isArray(payload.replaceBlock))
+            ? payload.replaceBlock
+            : {};
+        const openFrame = Number.isFinite(Number(replaceBlock.onUse?.frame)) ? Number(replaceBlock.onUse.frame) : OBJECT_FRAMES.hole1;
+        const restoreFrame = Number.isFinite(Number(replaceBlock.onRestore?.frame)) ? Number(replaceBlock.onRestore.frame) : OBJECT_FRAMES.door;
+        const stateDurationMs = this.getStateTransitionTimerMs(doorDef, String(replaceBlock.onUse?.state || 'open'));
+        const actionDurationMs = Number(doorAction?.durationMs);
+        const openDurationMs = Number.isFinite(stateDurationMs)
+            ? stateDurationMs
+            : (Number.isFinite(actionDurationMs) ? Math.max(0, actionDurationMs) : 10000);
+
         door.setData('opening', true);
         door.setData('locked', false);
         try {
-            // Replace door visually with hole1 frame while opened (row 4, col 2)
             if (typeof door.setFrame === 'function') {
-                door.setFrame(OBJECT_FRAMES.hole1);
+                door.setFrame(openFrame);
             }
             if (door.body) {
                 // disable collisions while open
@@ -8344,13 +8994,12 @@ class GameScene extends Phaser.Scene {
             }
         } catch (e) { }
 
-        // Respawn key and re-close door after 10 seconds
-        this.time.delayedCall(10000, () => {
+        this.time.delayedCall(openDurationMs, () => {
             if (!door) return;
             try {
                 // Restore door frame and re-enable collisions when re-closing
                 if (typeof door.setFrame === 'function') {
-                    door.setFrame(OBJECT_FRAMES.door);
+                    door.setFrame(restoreFrame);
                 }
                 if (door.enableBody) {
                     door.enableBody(false, door.x, door.y, true, true);
@@ -8367,7 +9016,9 @@ class GameScene extends Phaser.Scene {
                 door.setData('opening', false);
             } catch (e) { }
 
-            this.respawnKey();
+            if (payload.respawnPickupKey !== false) {
+                this.respawnKey();
+            }
         });
     }
 
@@ -8579,46 +9230,48 @@ class GameScene extends Phaser.Scene {
             const baseGX = Math.floor((px - (this.mapOffsetX || 0)) / CONFIG.tileSize);
             const baseGY = Math.floor((py - (this.mapOffsetY || 0)) / CONFIG.tileSize);
 
+            const woodenDef = this.getObjectDefinitionForType('wooden');
+            const woodenAction = this.getActionForTrigger(woodenDef, 'collect') || (woodenDef && woodenDef.action ? woodenDef.action : null);
+            const woodenPayload = (woodenAction?.payload && typeof woodenAction.payload === 'object' && !Array.isArray(woodenAction.payload))
+                ? woodenAction.payload
+                : {};
+            const onUse = (woodenPayload.onUse && typeof woodenPayload.onUse === 'object' && !Array.isArray(woodenPayload.onUse))
+                ? woodenPayload.onUse
+                : {};
+            const consumeCfg = (onUse.consumeInventory && typeof onUse.consumeInventory === 'object' && !Array.isArray(onUse.consumeInventory))
+                ? onUse.consumeInventory
+                : {};
+            const replaceCfg = (onUse.replaceBlock && typeof onUse.replaceBlock === 'object' && !Array.isArray(onUse.replaceBlock))
+                ? onUse.replaceBlock
+                : {};
+
+            const consumeInventoryKey = String(consumeCfg.target || woodenAction?.target || 'woodenCount');
+            const consumeAmount = Math.max(1, Number(consumeCfg.amount) || 1);
+            const targetTileType = String(replaceCfg.targetTileType || woodenPayload.placeOn || 'hole').trim().toLowerCase();
+            const replacementTileType = String(replaceCfg.toTileType || 'hole1').trim().toLowerCase();
+            const replacementDurationMs = Math.max(0, Number(replaceCfg.durationMs) || 0);
+            const restoreState = replaceCfg.restoreState;
+
             for (let oy = -1; oy <= 1 && !used; oy++) {
                 for (let ox = -1; ox <= 1 && !used; ox++) {
                     const gx = baseGX + ox;
                     const gy = baseGY + oy;
                     if (!this.tiles[gy] || !this.tiles[gy][gx]) continue;
                     const tt = this.tiles[gy][gx];
-                    if (tt && tt.type === 'hole') {
-                        // Determine wooden plank count for this player (support per-player inventories)
-                        const playersCount = Number(GAME_STATE.players) || 1;
-                        let availableWood = 0;
-                        if (playersCount === 2) {
-                            if (player === this.player) availableWood = Number(GAME_STATE.woodenP1) || 0;
-                            else if (player === this.player2) availableWood = Number(GAME_STATE.woodenP2) || 0;
-                            else availableWood = Number(GAME_STATE.woodenCount) || 0;
-                        } else {
-                            availableWood = Number(GAME_STATE.woodenCount) || 0;
-                        }
-                        if (availableWood > 0) {
-                            // consume one from the proper slot
-                            if (playersCount === 2) {
-                                if (player === this.player) GAME_STATE.woodenP1 = Math.max(0, (Number(GAME_STATE.woodenP1) || 0) - 1);
-                                else if (player === this.player2) GAME_STATE.woodenP2 = Math.max(0, (Number(GAME_STATE.woodenP2) || 0) - 1);
-                                else GAME_STATE.woodenCount = Math.max(0, (Number(GAME_STATE.woodenCount) || 0) - 1);
-                            } else {
-                                GAME_STATE.woodenCount = Math.max(0, (Number(GAME_STATE.woodenCount) || 0) - 1);
-                            }
-                            tt.type = 'floor';
-                            try { if (tt.sprite && tt.sprite.setFrame) tt.sprite.setFrame(TILE_FRAMES.hole_cover); } catch (e) { }
-                            try { if (tt.sprite && tt.sprite.setData) tt.sprite.setData('covered', true); } catch (e) { }
+                    if (tt && String(tt.type || '').trim().toLowerCase() === targetTileType) {
+                        const available = this.getInventoryCountForPlayer(consumeInventoryKey, player);
+                        if (available >= consumeAmount && this.consumeInventoryForPlayer(consumeInventoryKey, consumeAmount, player)) {
+                            this.applyTileTypeReplacement(tt, replacementTileType);
 
-                            // Use tiles.png hole_cover frame for visual cover instead of separate plank image
-                            try {
-                                if (tt.sprite && tt.sprite.setFrame) {
-                                    tt.sprite.setFrame(TILE_FRAMES.hole_cover);
-                                    tt.sprite.setData && tt.sprite.setData('covered', true);
-                                    tt.coverSprite = tt.sprite;
-                                } else {
-                                    tt.coverSprite = null;
-                                }
-                            } catch (e) { }
+                            if (replacementDurationMs > 0 && restoreState !== null && restoreState !== undefined) {
+                                const restoreType = String(restoreState || targetTileType).trim().toLowerCase();
+                                this.time.delayedCall(replacementDurationMs, () => {
+                                    try {
+                                        if (!this.tiles[gy] || !this.tiles[gy][gx]) return;
+                                        this.applyTileTypeReplacement(this.tiles[gy][gx], restoreType);
+                                    } catch (e) { }
+                                });
+                            }
 
                             // persist placed plank for this level
                             try {
