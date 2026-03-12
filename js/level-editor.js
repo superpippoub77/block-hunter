@@ -2910,7 +2910,7 @@ class LevelEditorScene extends Phaser.Scene {
         this.load
             .spritesheet('tiles', 'images/tiles.png', { frameWidth: 64, frameHeight: 64 })
             .spritesheet('wall_tiles', 'images/wall_completed.png', { frameWidth: 64, frameHeight: 64 })
-            .spritesheet('objects', 'images/obj_game.png', { frameWidth: 64, frameHeight: 64 })
+            .spritesheet('objects', 'images/objects.png', { frameWidth: 64, frameHeight: 64 })
             .spritesheet('ghost_anim', 'images/ghost.png', { frameWidth: 64, frameHeight: 64 })
             .spritesheet('bat_anim', 'images/batpng.png', { frameWidth: 64, frameHeight: 64 });
 

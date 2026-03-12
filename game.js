@@ -704,7 +704,7 @@ class PreloadScene extends Phaser.Scene {
             // Row 2: dynamite_chest, door, gem, stones
             // Row 3: key, sand_pile, ghost, pepita
             // Row 4: skull...wall, hole1, hole2, explosion
-            .spritesheet('objects', 'images/obj_game.png', defaultFrame)
+            .spritesheet('objects', 'images/objects.png', defaultFrame)
             // Front walking animation spritesheet (1 row, 7 frames, 172x135 each)
             // Bat flying animation spritesheet (1 row, 6 frames)
             .spritesheet('bat', 'images/bat.png', defaultFrame)
