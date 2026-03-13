@@ -1,0 +1,20 @@
+{
+  "effects": [
+    {
+      "name": "sparkle",
+      "entry": "data/library/sparkle/effect.js"
+    },
+    {
+      "name": "orbit_ring",
+      "entry": "data/library/orbit_ring/effect.js"
+    },
+    {
+      "name": "player_throw_arc",
+      "entry": "data/library/player_throw_arc/effect.js"
+    },
+    {
+      "name": "player_bounce_orb",
+      "entry": "data/Librlibraryary/player_bounce_orb/effect.js"
+    }
+  ]
+}

@@ -412,7 +412,7 @@ function getPaletteItemsFromObjectMappings() {
         const keyLabel = String(raw.key ?? '').trim();
         const category = String(raw.category ?? '').trim().toLowerCase();
         const label = keyLabel ? `${keyLabel}` : token;
-        const item = { token, label };
+        const item = { token, label, category };
 
         if (category === 'tile') {
             tiles.push(item);
@@ -434,6 +434,127 @@ function refreshObjectMappingsAvailability() {
     return OBJECT_MAPPINGS_READY;
 }
 
+function getObjectMappingByToken(token) {
+    const normalized = normalizeToken(token);
+    const rows = Array.isArray(OBJECT_MAP_EDITOR_STATE.items) ? OBJECT_MAP_EDITOR_STATE.items : [];
+    for (let i = 0; i < rows.length; i++) {
+        const row = rows[i];
+        if (!row || typeof row !== 'object') continue;
+        const rowToken = normalizeToken(String(row.token ?? row.mapToken ?? '').trim());
+        if (rowToken && rowToken === normalized) return row;
+    }
+    return null;
+}
+
+function getObjectMappingRenderSpec(token) {
+    const row = getObjectMappingByToken(token);
+    if (!row || typeof row !== 'object') return null;
+    const sizePx = (row.sizePx && typeof row.sizePx === 'object') ? row.sizePx : {};
+    return {
+        row,
+        category: String(row.category ?? '').trim().toLowerCase(),
+        imageSrc: String(row.imageSrc ?? row.image ?? '').trim(),
+        textureKey: String(row.textureKey ?? '').trim(),
+        frame: Math.max(0, parseNumber(row.defaultFrame, 0)),
+        frameW: Math.max(1, parseNumber(sizePx.width, 64)),
+        frameH: Math.max(1, parseNumber(sizePx.height, 64))
+    };
+}
+
+function buildObjectMappingTextureKey(spec) {
+    const keyBase = String(spec?.row?.key ?? spec?.row?.token ?? spec?.textureKey ?? 'object')
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9_]+/g, '_')
+        .replace(/^_+|_+$/g, '') || 'object';
+    return `objmap_${keyBase}`;
+}
+
+function ensureObjectMappingTextureLoaded(scene, spec) {
+    if (!scene || !spec) return null;
+    if (!spec.imageSrc) return null;
+
+    const runtimeKey = buildObjectMappingTextureKey(spec);
+    if (scene.textures?.exists(runtimeKey)) return runtimeKey;
+
+    if (!scene.__objMapPendingTextureLoads) {
+        scene.__objMapPendingTextureLoads = new Set();
+    }
+    if (scene.__objMapPendingTextureLoads.has(runtimeKey)) return runtimeKey;
+
+    const frameWidth = Math.max(1, parseNumber(spec.frameW, 64));
+    const frameHeight = Math.max(1, parseNumber(spec.frameH, 64));
+
+    try {
+        scene.__objMapPendingTextureLoads.add(runtimeKey);
+        scene.load.spritesheet(runtimeKey, spec.imageSrc, {
+            frameWidth,
+            frameHeight
+        });
+        scene.load.once('complete', () => {
+            try { scene.__objMapPendingTextureLoads.delete(runtimeKey); } catch (e) { }
+            try { scene.renderGrid(); } catch (e) { }
+            try { drawMiniMapPreview(scene); } catch (e) { }
+            try { buildDomPalette(); } catch (e) { }
+        });
+        scene.load.start();
+    } catch (e) {
+        try { scene.__objMapPendingTextureLoads.delete(runtimeKey); } catch (_e) { }
+    }
+
+    return runtimeKey;
+}
+
+function resolveTokenVisualFromMappings(scene, token) {
+    const spec = getObjectMappingRenderSpec(token);
+    if (!spec) return null;
+    if (spec.category === 'wall') return null;
+
+    const runtimeTexture = ensureObjectMappingTextureLoaded(scene, spec);
+    const candidates = [runtimeTexture, spec.textureKey].filter(Boolean);
+    for (let i = 0; i < candidates.length; i++) {
+        const texture = candidates[i];
+        if (scene?.textures?.exists(texture)) {
+            return {
+                texture,
+                frame: spec.frame,
+                category: spec.category
+            };
+        }
+    }
+    return null;
+}
+
+function queueObjectMappingsSpritesheets(scene, rawList) {
+    if (!scene || !Array.isArray(rawList) || !rawList.length) return 0;
+    if (!scene.__queuedObjectMappingSheets) {
+        scene.__queuedObjectMappingSheets = new Set();
+    }
+
+    let queued = 0;
+    rawList.forEach((raw) => {
+        const norm = normalizeObjectMapping(raw);
+        const imageSrc = String(norm.imageSrc || '').trim();
+        if (!imageSrc) return;
+
+        const frameWidth = Math.max(1, parseNumber(norm.sizePx?.width, 64));
+        const frameHeight = Math.max(1, parseNumber(norm.sizePx?.height, 64));
+        const runtimeKey = buildObjectMappingTextureKey({ row: norm, textureKey: norm.textureKey });
+        const textureAlias = String(norm.textureKey || '').trim();
+        const keysToQueue = [runtimeKey, textureAlias].filter(Boolean);
+
+        keysToQueue.forEach((key) => {
+            if (scene.textures?.exists(key)) return;
+            if (scene.__queuedObjectMappingSheets.has(key)) return;
+            scene.__queuedObjectMappingSheets.add(key);
+            scene.load.spritesheet(key, imageSrc, { frameWidth, frameHeight });
+            queued++;
+        });
+    });
+
+    return queued;
+}
+
 function openObjectMapDialog(message = '', isError = false) {
     const objectMapModal = el('objectMapModal');
     if (objectMapModal) objectMapModal.classList.add('open');
@@ -451,11 +572,11 @@ function ensureObjectMappingsReadyOrPrompt(reason = '') {
 
 const OBJECT_MAPPINGS_EXAMPLE = [
     {
-        key: 'ghost_alpha',
+        key: 'ghost_hunter',
         token: 'ghost',
         category: 'enemy',
         entityType: 'ghost',
-        imageSrc: 'assets/images/objects/ghost_alpha.png',
+        imageSrc: 'assets/images/objects/ghost.png',
         textureKey: 'ghost',
         defaultFrame: 0,
         contactType: 'edge',
@@ -515,7 +636,7 @@ const OBJECT_MAPPINGS_EXAMPLE = [
         token: 'bat',
         category: 'enemy',
         entityType: 'bat',
-        imageSrc: 'assets/images/objects/bat_hunter.png',
+        imageSrc: 'assets/images/objects/bat.png',
         textureKey: 'bat',
         defaultFrame: 0,
         contactType: 'edge',
@@ -564,71 +685,11 @@ const OBJECT_MAPPINGS_EXAMPLE = [
         }
     },
     {
-        key: 'ancient_idol',
-        token: 'idol',
-        category: 'collectible',
-        entityType: 'pickup',
-        imageSrc: 'assets/images/objects/ancient_idol.png',
-        textureKey: 'objects',
-        defaultFrame: 11,
-        contactType: 'center-front',
-        dynamic: false,
-        frameCount: 1,
-        useOppositeSide: false,
-        frames: {
-            idle: {
-                up: '0',
-                down: '0',
-                left: '0',
-                right: '0'
-            },
-            move: {
-                up: '',
-                down: '',
-                left: '',
-                right: ''
-            }
-        },
-        contactScore: 15,
-        movement: {
-            automatic: false,
-            directions: [],
-            minStep: 0,
-            maxStep: 0,
-            pauseMs: 0
-        },
-        staticScore: 120,
-        sizePx: {
-            width: 96,
-            height: 96
-        },
-        spawn: {
-            fromMapToken: true,
-            countFromLevelKey: null,
-            speedFromLevelKeys: []
-        },
-        advanced: {
-            pickup: {
-                gemsDelta: 0,
-                livesDelta: 0,
-                keysDelta: 0,
-                dynamiteDelta: 0,
-                score: 120,
-                removeOnCollect: true
-            },
-            collision: {
-                contactType: 'center-front',
-                radiusMultiplier: 0.45,
-                proximityTiles: 0.9
-            }
-        }
-    },
-    {
         key: 'wall_variant',
         token: 'w0010',
         category: 'wall',
         entityType: 'wall',
-        imageSrc: 'assets/images/foreground/wall_completed.png',
+        imageSrc: 'assets/images/objects/wall.png',
         textureKey: 'wall_tiles',
         defaultFrame: 1,
         contactType: 'edge',
@@ -682,7 +743,7 @@ const OBJECT_MAPPINGS_EXAMPLE = [
         token: 'water',
         category: 'tile',
         entityType: 'tile',
-        imageSrc: 'assets/images/tiles.png',
+        imageSrc: 'assets/images/objects/tiles.png',
         textureKey: 'tiles',
         defaultFrame: 4,
         contactType: 'edge',
@@ -2977,12 +3038,37 @@ class LevelEditorScene extends Phaser.Scene {
     }
 
     preload() {
-        this.load
-            .spritesheet('tiles', 'images/tiles.png', { frameWidth: 64, frameHeight: 64 })
-            .spritesheet('wall_tiles', 'images/wall_completed.png', { frameWidth: 64, frameHeight: 64 })
-            .spritesheet('objects', 'images/objects.png', { frameWidth: 64, frameHeight: 64 })
-            .spritesheet('ghost_anim', 'images/ghost.png', { frameWidth: 64, frameHeight: 64 })
-            .spritesheet('bat_anim', 'images/batpng.png', { frameWidth: 64, frameHeight: 64 });
+        const objectsCatalogCandidates = buildStaticPathCandidates(OBJECTS_JSON_PATH);
+
+        objectsCatalogCandidates.forEach((url, idx) => {
+            const key = `objects_catalog_preload_${idx}`;
+            this.load.json(key, url);
+        });
+
+        if (!this.__objectsCatalogPreloadBound) {
+            this.__objectsCatalogPreloadBound = true;
+            this.__objectsCatalogPreloadResolved = false;
+
+            this.load.on('filecomplete', (key, type, data) => {
+                if (type !== 'json') return;
+                if (!String(key || '').startsWith('objects_catalog_preload_')) return;
+                if (this.__objectsCatalogPreloadResolved) return;
+
+                const list = Array.isArray(data) ? data : [];
+                if (!list.length) return;
+
+                this.__objectsCatalogPreloadResolved = true;
+
+                try {
+                    OBJECT_MAP_EDITOR_STATE.items = list.map((it) => normalizeObjectMapping(it));
+                    refreshObjectMappingsAvailability();
+                } catch (e) { /* ignore */ }
+
+                try {
+                    queueObjectMappingsSpritesheets(this, list);
+                } catch (e) { /* ignore */ }
+            });
+        }
 
         // preload possible game backgrounds so the editor can offer them
         // Fallback default background (game_bg.png is not present in this repo)
@@ -3900,6 +3986,14 @@ class LevelEditorScene extends Phaser.Scene {
 
     tokenToRenderInfo(token) {
         const baseToken = getRenderableTokenBase(token);
+        const mappedVisual = resolveTokenVisualFromMappings(this, baseToken);
+        if (mappedVisual) {
+            if (mappedVisual.category === 'tile') {
+                return { kind: 'tile', texture: mappedVisual.texture, frame: mappedVisual.frame };
+            }
+            return { kind: 'obj', texture: mappedVisual.texture, frame: mappedVisual.frame };
+        }
+
         const raw = String(baseToken ?? '').trim().toLowerCase();
         if (/^exit(\[[^\]]+\])?$/.test(raw)) {
             return { kind: 'obj', frame: OBJECT_FRAMES.exit };
@@ -3983,7 +4077,8 @@ class LevelEditorScene extends Phaser.Scene {
         }
 
         if (info.kind === 'obj') {
-            const obj = this.add.sprite(x, y, 'objects', info.frame);
+            const texture = info.texture || 'objects';
+            const obj = this.add.sprite(x, y, texture, info.frame);
             obj.setScale(scale * 0.9);
             if (invisible) obj.setAlpha(0.35);
             container.add(obj);
@@ -4230,6 +4325,11 @@ function drawMiniMapFrame(scene, ctx, textureKey, frameIndex, x, y, size, opts =
 
 function drawMiniMapToken(scene, ctx, token, x, y, size, opts = {}) {
     const baseToken = getRenderableTokenBase(token);
+    const mappedVisual = resolveTokenVisualFromMappings(scene, baseToken);
+    if (mappedVisual) {
+        return drawMiniMapFrame(scene, ctx, mappedVisual.texture, mappedVisual.frame, x, y, size, { alpha: opts.alpha });
+    }
+
     const raw = String(baseToken ?? '').trim().toLowerCase();
     if (/^exit(\[[^\]]+\])?$/.test(raw)) {
         return drawMiniMapFrame(scene, ctx, 'objects', OBJECT_FRAMES.exit, x, y, size, { alpha: opts.alpha });
@@ -6581,17 +6681,34 @@ function buildDomPalette() {
 
     const dynamicGroups = getPaletteItemsFromObjectMappings();
 
-    dynamicGroups.tiles.forEach((it) => {
-        if (!tilesContainer) return;
-        const elItem = makePaletteItem(it.label || it.token, normalizeToken(it.token));
-        tilesContainer.appendChild(elItem);
-    });
+    const appendItemsByCategory = (container, items, fallbackTitle = 'other') => {
+        if (!container || !Array.isArray(items) || !items.length) return;
+        const byCategory = new Map();
+        items.forEach((it) => {
+            const category = String(it?.category || fallbackTitle || 'other').trim().toLowerCase() || 'other';
+            if (!byCategory.has(category)) byCategory.set(category, []);
+            byCategory.get(category).push(it);
+        });
 
-    dynamicGroups.objects.forEach((it) => {
-        if (!objectsContainer) return;
-        const elItem = makePaletteItem(it.label || it.token, normalizeToken(it.token));
-        objectsContainer.appendChild(elItem);
-    });
+        Array.from(byCategory.keys()).sort((a, b) => a.localeCompare(b, 'it')).forEach((category) => {
+            const title = document.createElement('div');
+            title.className = 'tiny';
+            title.style.margin = '6px 0 2px 0';
+            title.style.color = '#9fcfff';
+            title.textContent = `[${category}]`;
+            container.appendChild(title);
+
+            const list = byCategory.get(category) || [];
+            list.sort((a, b) => String(a.token).localeCompare(String(b.token), 'it'));
+            list.forEach((it) => {
+                const elItem = makePaletteItem(it.label || it.token, normalizeToken(it.token));
+                container.appendChild(elItem);
+            });
+        });
+    };
+
+    appendItemsByCategory(tilesContainer, dynamicGroups.tiles, 'tile');
+    appendItemsByCategory(objectsContainer, dynamicGroups.objects, 'object');
 
     // populate walls
     if (wallsContainer) {
