@@ -1,0 +1,15 @@
+{
+  "startup": {
+    "enableFrontScenes": true,
+    "coinMode": "arcade",
+    "initialCredits": 0
+  },
+  "attractMode": {
+    "enabled": false,
+    "canvas": {
+      "width": 800,
+      "height": 600
+    },
+    "elements": []
+  }
+}

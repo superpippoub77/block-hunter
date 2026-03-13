@@ -32,6 +32,7 @@ const BG_MANIFEST_PATH = 'data/images-scenes-game-background.json';
 const FG_MANIFEST_PATH = 'data/images-scenes-game-foreground.json';
 const MUSIC_MANIFEST_PATH = 'data/music-scenes-game.json';
 const CONFIG_JSON_PATH = 'data/config.json';
+const START_JSON_PATH = 'data/start.json';
 const OBJECTS_JSON_PATH = 'data/objects.json';
 const LEVELS_DIR_PATH = 'data/level';
 
@@ -397,6 +398,33 @@ function setPathValue(target, pathParts, value) {
 
 let CONFIG_EDITOR_STATE = {
     loadedConfig: null
+};
+
+const START_EDITOR_DEFAULT = {
+    startup: {
+        enableFrontScenes: true,
+        coinMode: 'arcade',
+        initialCredits: 0
+    },
+    attractMode: {
+        enabled: false,
+        canvas: { width: 800, height: 600 },
+        elements: []
+    }
+};
+
+let START_EDITOR_STATE = {
+    loadedStart: deepClone(START_EDITOR_DEFAULT),
+    selectedElementId: null,
+    drag: {
+        active: false,
+        elementId: null,
+        startX: 0,
+        startY: 0,
+        baseX: 0,
+        baseY: 0
+    },
+    attractAssets: []
 };
 
 let OBJECT_MAP_EDITOR_STATE = {
@@ -2649,6 +2677,502 @@ async function saveConfigEditor() {
     } catch (e) {
         setConfigStatus(`Errore salvataggio config: ${e.message}`, true);
     }
+}
+
+function setStartStatus(message, isError = false) {
+    const node = el('startStatusText');
+    if (!node) return;
+    node.style.color = isError ? '#ff9fa7' : '#8ee89f';
+    node.textContent = message || '';
+}
+
+function sanitizeStartCoinMode(raw) {
+    const mode = String(raw || 'arcade').trim().toLowerCase();
+    return mode === 'freeplay' ? 'freeplay' : 'arcade';
+}
+
+function normalizeStartElement(raw, index = 0) {
+    const inObj = isPlainObject(raw) ? raw : {};
+    const type = String(inObj.type || 'image').trim().toLowerCase() === 'text' ? 'text' : 'image';
+    const id = String(inObj.id || `el_${Date.now()}_${index}`).trim() || `el_${Date.now()}_${index}`;
+    return {
+        id,
+        type,
+        src: String(inObj.src || '').trim(),
+        text: String(inObj.text || '').trim(),
+        color: String(inObj.color || '#ffffff').trim() || '#ffffff',
+        fontSize: Math.max(8, parseNumber(inObj.fontSize, 24)),
+        x: Math.max(0, parseNumber(inObj.x, 80)),
+        y: Math.max(0, parseNumber(inObj.y, 80)),
+        w: Math.max(8, parseNumber(inObj.w, type === 'text' ? 220 : 180)),
+        h: Math.max(8, parseNumber(inObj.h, type === 'text' ? 48 : 120)),
+        effect: String(inObj.effect || 'none').trim() || 'none',
+        delayMs: Math.max(0, parseNumber(inObj.delayMs, 0)),
+        durationMs: Math.max(0, parseNumber(inObj.durationMs, 1000)),
+        order: Math.max(0, Math.floor(parseNumber(inObj.order, index)))
+    };
+}
+
+function normalizeStartConfig(raw) {
+    const root = isPlainObject(raw) ? raw : {};
+    const startup = isPlainObject(root.startup) ? root.startup : {};
+    const attractMode = isPlainObject(root.attractMode) ? root.attractMode : {};
+    const canvas = isPlainObject(attractMode.canvas) ? attractMode.canvas : {};
+    const elementsRaw = Array.isArray(attractMode.elements) ? attractMode.elements : [];
+    const elements = elementsRaw.map((it, idx) => normalizeStartElement(it, idx));
+
+    return {
+        startup: {
+            enableFrontScenes: startup.enableFrontScenes !== false,
+            coinMode: sanitizeStartCoinMode(startup.coinMode),
+            initialCredits: Math.max(0, Math.floor(parseNumber(startup.initialCredits, 0)))
+        },
+        attractMode: {
+            enabled: !!attractMode.enabled,
+            canvas: {
+                width: Math.max(320, Math.floor(parseNumber(canvas.width, 800))),
+                height: Math.max(200, Math.floor(parseNumber(canvas.height, 600)))
+            },
+            elements: elements.sort((a, b) => a.order - b.order)
+        }
+    };
+}
+
+function getSelectedStartElement() {
+    const list = START_EDITOR_STATE.loadedStart?.attractMode?.elements;
+    if (!Array.isArray(list)) return null;
+    return list.find((it) => it.id === START_EDITOR_STATE.selectedElementId) || null;
+}
+
+function renderStartElementInputs() {
+    const selected = getSelectedStartElement();
+    const xNode = el('startElementX');
+    const yNode = el('startElementY');
+    const wNode = el('startElementW');
+    const hNode = el('startElementH');
+    const effectNode = el('startElementEffect');
+    const colorNode = el('startElementColor');
+    const fontNode = el('startElementFontSize');
+    const delayNode = el('startElementDelayMs');
+    const durationNode = el('startElementDurationMs');
+    const textNode = el('startElementText');
+
+    const disabled = !selected;
+    [xNode, yNode, wNode, hNode, effectNode, colorNode, fontNode, delayNode, durationNode, textNode]
+        .forEach((node) => {
+            if (!node) return;
+            node.disabled = disabled;
+        });
+
+    if (!selected) {
+        if (textNode) textNode.value = '';
+        return;
+    }
+
+    if (xNode) xNode.value = String(Math.round(selected.x));
+    if (yNode) yNode.value = String(Math.round(selected.y));
+    if (wNode) wNode.value = String(Math.round(selected.w));
+    if (hNode) hNode.value = String(Math.round(selected.h));
+    if (effectNode) effectNode.value = selected.effect || 'none';
+    if (colorNode) colorNode.value = selected.color || '#ffffff';
+    if (fontNode) fontNode.value = String(Math.round(selected.fontSize || 24));
+    if (delayNode) delayNode.value = String(Math.round(selected.delayMs || 0));
+    if (durationNode) durationNode.value = String(Math.round(selected.durationMs || 1000));
+    if (textNode) textNode.value = selected.text || '';
+}
+
+function applyStartFormFromState() {
+    const cfg = normalizeStartConfig(START_EDITOR_STATE.loadedStart);
+    START_EDITOR_STATE.loadedStart = cfg;
+
+    const startup = cfg.startup;
+    const attract = cfg.attractMode;
+
+    const enableFront = el('startEnableFrontScenes');
+    const coinMode = el('startCoinMode');
+    const initialCredits = el('startInitialCredits');
+    const attractEnabled = el('startAttractEnabled');
+    const canvasW = el('startCanvasWidth');
+    const canvasH = el('startCanvasHeight');
+
+    if (enableFront) enableFront.checked = !!startup.enableFrontScenes;
+    if (coinMode) coinMode.value = sanitizeStartCoinMode(startup.coinMode);
+    if (initialCredits) {
+        initialCredits.value = String(Math.max(0, startup.initialCredits || 0));
+        initialCredits.disabled = sanitizeStartCoinMode(startup.coinMode) === 'freeplay';
+    }
+    if (attractEnabled) attractEnabled.checked = !!attract.enabled;
+    if (canvasW) canvasW.value = String(attract.canvas.width);
+    if (canvasH) canvasH.value = String(attract.canvas.height);
+
+    if (!START_EDITOR_STATE.selectedElementId && attract.elements.length) {
+        START_EDITOR_STATE.selectedElementId = attract.elements[0].id;
+    }
+    if (START_EDITOR_STATE.selectedElementId) {
+        const exists = attract.elements.some((it) => it.id === START_EDITOR_STATE.selectedElementId);
+        if (!exists) START_EDITOR_STATE.selectedElementId = attract.elements[0]?.id || null;
+    }
+
+    renderStartAttractStage();
+    renderStartTimelineList();
+    renderStartElementInputs();
+}
+
+function renderStartAttractStage() {
+    const stage = el('startAttractStage');
+    if (!stage) return;
+
+    const cfg = START_EDITOR_STATE.loadedStart || START_EDITOR_DEFAULT;
+    const attract = cfg.attractMode || START_EDITOR_DEFAULT.attractMode;
+    const canvasW = Math.max(320, parseNumber(attract.canvas?.width, 800));
+    const canvasH = Math.max(200, parseNumber(attract.canvas?.height, 600));
+
+    stage.style.width = `${canvasW}px`;
+    stage.style.height = `${canvasH}px`;
+    stage.innerHTML = '';
+
+    const list = Array.isArray(attract.elements) ? attract.elements.slice().sort((a, b) => a.order - b.order) : [];
+    list.forEach((entry) => {
+        const node = document.createElement('div');
+        node.className = 'start-node';
+        if (entry.id === START_EDITOR_STATE.selectedElementId) node.classList.add('selected');
+        node.dataset.id = entry.id;
+        node.style.left = `${Math.round(entry.x)}px`;
+        node.style.top = `${Math.round(entry.y)}px`;
+        node.style.width = `${Math.max(8, Math.round(entry.w))}px`;
+        node.style.height = `${Math.max(8, Math.round(entry.h))}px`;
+
+        if (entry.type === 'text') {
+            const textNode = document.createElement('div');
+            textNode.className = 'start-text';
+            textNode.textContent = entry.text || 'TEXT';
+            textNode.style.color = entry.color || '#ffffff';
+            textNode.style.fontSize = `${Math.max(8, parseNumber(entry.fontSize, 24))}px`;
+            node.appendChild(textNode);
+        } else {
+            const imgNode = document.createElement('img');
+            imgNode.src = entry.src || '';
+            imgNode.alt = entry.id;
+            node.appendChild(imgNode);
+        }
+
+        node.addEventListener('click', (ev) => {
+            ev.stopPropagation();
+            START_EDITOR_STATE.selectedElementId = entry.id;
+            renderStartAttractStage();
+            renderStartTimelineList();
+            renderStartElementInputs();
+        });
+
+        node.addEventListener('pointerdown', (ev) => {
+            ev.preventDefault();
+            ev.stopPropagation();
+            START_EDITOR_STATE.selectedElementId = entry.id;
+            START_EDITOR_STATE.drag.active = true;
+            START_EDITOR_STATE.drag.elementId = entry.id;
+            START_EDITOR_STATE.drag.startX = ev.clientX;
+            START_EDITOR_STATE.drag.startY = ev.clientY;
+            START_EDITOR_STATE.drag.baseX = parseNumber(entry.x, 0);
+            START_EDITOR_STATE.drag.baseY = parseNumber(entry.y, 0);
+            try { node.setPointerCapture(ev.pointerId); } catch (_e) { }
+            renderStartAttractStage();
+            renderStartTimelineList();
+            renderStartElementInputs();
+        });
+
+        stage.appendChild(node);
+    });
+
+    stage.onclick = () => {
+        START_EDITOR_STATE.selectedElementId = null;
+        renderStartAttractStage();
+        renderStartTimelineList();
+        renderStartElementInputs();
+    };
+}
+
+function renderStartTimelineList() {
+    const listNode = el('startTimelineList');
+    if (!listNode) return;
+    listNode.innerHTML = '';
+
+    const items = Array.isArray(START_EDITOR_STATE.loadedStart?.attractMode?.elements)
+        ? START_EDITOR_STATE.loadedStart.attractMode.elements.slice().sort((a, b) => a.order - b.order)
+        : [];
+
+    if (!items.length) {
+        const empty = document.createElement('div');
+        empty.className = 'tiny';
+        empty.textContent = 'Nessun elemento timeline. Aggiungi immagini o testi.';
+        listNode.appendChild(empty);
+        return;
+    }
+
+    items.forEach((entry, index) => {
+        const row = document.createElement('div');
+        row.className = 'start-timeline-item';
+        if (entry.id === START_EDITOR_STATE.selectedElementId) row.classList.add('is-selected');
+
+        const title = document.createElement('div');
+        title.className = 'tiny';
+        title.style.color = '#c8e8ff';
+        title.textContent = `${index + 1}. ${entry.type === 'text' ? 'Text' : 'Image'} - ${entry.id}`;
+        row.appendChild(title);
+
+        const grid = document.createElement('div');
+        grid.className = 'grid2';
+
+        const orderInput = document.createElement('input');
+        orderInput.type = 'number';
+        orderInput.min = '0';
+        orderInput.step = '1';
+        orderInput.value = String(entry.order);
+        orderInput.addEventListener('input', () => {
+            entry.order = Math.max(0, Math.floor(parseNumber(orderInput.value, entry.order)));
+            renderStartTimelineList();
+            renderStartAttractStage();
+        });
+        const orderWrap = document.createElement('div');
+        orderWrap.innerHTML = '<label>order</label>';
+        orderWrap.appendChild(orderInput);
+
+        const delayInput = document.createElement('input');
+        delayInput.type = 'number';
+        delayInput.min = '0';
+        delayInput.step = '10';
+        delayInput.value = String(entry.delayMs || 0);
+        delayInput.addEventListener('input', () => {
+            entry.delayMs = Math.max(0, parseNumber(delayInput.value, entry.delayMs));
+            renderStartElementInputs();
+        });
+        const delayWrap = document.createElement('div');
+        delayWrap.innerHTML = '<label>delayMs</label>';
+        delayWrap.appendChild(delayInput);
+
+        grid.appendChild(orderWrap);
+        grid.appendChild(delayWrap);
+        row.appendChild(grid);
+
+        row.addEventListener('click', () => {
+            START_EDITOR_STATE.selectedElementId = entry.id;
+            renderStartTimelineList();
+            renderStartAttractStage();
+            renderStartElementInputs();
+        });
+
+        listNode.appendChild(row);
+    });
+}
+
+function createStartElement(partial = {}) {
+    const id = `attract_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
+    return normalizeStartElement({ id, ...partial });
+}
+
+function addStartImageElement() {
+    const cfg = START_EDITOR_STATE.loadedStart;
+    if (!cfg || !cfg.attractMode) return;
+    const src = String(el('startAttractAssetSelect')?.value || '').trim();
+    if (!src) {
+        setStartStatus('Seleziona prima un asset attractmode da aggiungere.', true);
+        return;
+    }
+    const list = cfg.attractMode.elements;
+    const entry = createStartElement({
+        type: 'image',
+        src,
+        x: 80 + (list.length * 12),
+        y: 80 + (list.length * 12),
+        w: 220,
+        h: 150,
+        order: list.length
+    });
+    list.push(entry);
+    START_EDITOR_STATE.selectedElementId = entry.id;
+    applyStartFormFromState();
+    setStartStatus('Elemento immagine aggiunto.');
+}
+
+function addStartTextElement() {
+    const cfg = START_EDITOR_STATE.loadedStart;
+    if (!cfg || !cfg.attractMode) return;
+    const text = String(el('startAddTextValue')?.value || '').trim() || 'TEXT';
+    const color = String(el('startAddTextColor')?.value || '#ffffff').trim() || '#ffffff';
+    const fontSize = Math.max(8, parseNumber(el('startAddTextSize')?.value, 24));
+    const list = cfg.attractMode.elements;
+    const entry = createStartElement({
+        type: 'text',
+        text,
+        color,
+        fontSize,
+        x: 90 + (list.length * 10),
+        y: 90 + (list.length * 10),
+        w: Math.max(140, text.length * Math.max(8, fontSize * 0.45)),
+        h: Math.max(40, fontSize * 1.8),
+        order: list.length
+    });
+    list.push(entry);
+    START_EDITOR_STATE.selectedElementId = entry.id;
+    applyStartFormFromState();
+    setStartStatus('Elemento testo aggiunto.');
+}
+
+function removeSelectedStartElement() {
+    const cfg = START_EDITOR_STATE.loadedStart;
+    if (!cfg || !cfg.attractMode) return;
+    const id = START_EDITOR_STATE.selectedElementId;
+    if (!id) {
+        setStartStatus('Nessun elemento selezionato.', true);
+        return;
+    }
+    const prevLen = cfg.attractMode.elements.length;
+    cfg.attractMode.elements = cfg.attractMode.elements.filter((it) => it.id !== id);
+    if (cfg.attractMode.elements.length === prevLen) return;
+    cfg.attractMode.elements.forEach((it, idx) => {
+        it.order = idx;
+    });
+    START_EDITOR_STATE.selectedElementId = cfg.attractMode.elements[0]?.id || null;
+    applyStartFormFromState();
+    setStartStatus('Elemento rimosso.');
+}
+
+function updateSelectedStartElementFromInputs() {
+    const selected = getSelectedStartElement();
+    if (!selected) return;
+
+    selected.x = Math.max(0, parseNumber(el('startElementX')?.value, selected.x));
+    selected.y = Math.max(0, parseNumber(el('startElementY')?.value, selected.y));
+    selected.w = Math.max(8, parseNumber(el('startElementW')?.value, selected.w));
+    selected.h = Math.max(8, parseNumber(el('startElementH')?.value, selected.h));
+    selected.effect = String(el('startElementEffect')?.value || selected.effect || 'none').trim() || 'none';
+    selected.color = String(el('startElementColor')?.value || selected.color || '#ffffff').trim() || '#ffffff';
+    selected.fontSize = Math.max(8, parseNumber(el('startElementFontSize')?.value, selected.fontSize || 24));
+    selected.delayMs = Math.max(0, parseNumber(el('startElementDelayMs')?.value, selected.delayMs || 0));
+    selected.durationMs = Math.max(0, parseNumber(el('startElementDurationMs')?.value, selected.durationMs || 1000));
+    selected.text = String(el('startElementText')?.value || selected.text || '').trim();
+
+    renderStartAttractStage();
+    renderStartTimelineList();
+}
+
+function collectStartConfigFromForm() {
+    const cfg = START_EDITOR_STATE.loadedStart || deepClone(START_EDITOR_DEFAULT);
+    cfg.startup.enableFrontScenes = !!el('startEnableFrontScenes')?.checked;
+    cfg.startup.coinMode = sanitizeStartCoinMode(el('startCoinMode')?.value);
+    cfg.startup.initialCredits = Math.max(0, Math.floor(parseNumber(el('startInitialCredits')?.value, 0)));
+    cfg.attractMode.enabled = !!el('startAttractEnabled')?.checked;
+    cfg.attractMode.canvas.width = Math.max(320, Math.floor(parseNumber(el('startCanvasWidth')?.value, 800)));
+    cfg.attractMode.canvas.height = Math.max(200, Math.floor(parseNumber(el('startCanvasHeight')?.value, 600)));
+    cfg.attractMode.elements = (Array.isArray(cfg.attractMode.elements) ? cfg.attractMode.elements : [])
+        .map((it, idx) => normalizeStartElement(it, idx))
+        .sort((a, b) => a.order - b.order);
+    START_EDITOR_STATE.loadedStart = cfg;
+    return normalizeStartConfig(cfg);
+}
+
+async function loadStartEditor() {
+    const candidates = buildStaticPathCandidates(START_JSON_PATH);
+    let loaded = null;
+    let source = '';
+    let lastError = null;
+
+    for (const candidate of candidates) {
+        try {
+            const resp = await fetch(candidate, { cache: 'no-store' });
+            if (!resp.ok) {
+                lastError = new Error(`HTTP ${resp.status} su ${candidate}`);
+                continue;
+            }
+            loaded = await resp.json();
+            source = candidate;
+            break;
+        } catch (err) {
+            lastError = err;
+        }
+    }
+
+    if (!loaded) {
+        loaded = deepClone(START_EDITOR_DEFAULT);
+        source = 'default';
+    }
+
+    START_EDITOR_STATE.loadedStart = normalizeStartConfig(loaded);
+
+    try {
+        const attractList = await fetchJsonListWithFallback(buildApiUrl('images/attractmode'), 'data/images-scenes-attractmode.json');
+        START_EDITOR_STATE.attractAssets = Array.isArray(attractList) ? attractList : [];
+    } catch (_e) {
+        START_EDITOR_STATE.attractAssets = [];
+    }
+
+    const assetsSelect = el('startAttractAssetSelect');
+    if (assetsSelect) {
+        assetsSelect.innerHTML = '<option value="">(nessuna)</option>';
+        START_EDITOR_STATE.attractAssets.forEach((path) => {
+            const value = String(path || '').trim();
+            if (!value) return;
+            const op = document.createElement('option');
+            op.value = value;
+            op.textContent = value.split('/').pop() || value;
+            assetsSelect.appendChild(op);
+        });
+    }
+
+    applyStartFormFromState();
+    if (source === 'default' && lastError) {
+        setStartStatus(`start.json non trovato: uso default (${lastError.message}).`, true);
+    } else {
+        setStartStatus(`Configurazione start caricata da ${source}.`);
+    }
+}
+
+async function saveStartEditor() {
+    try {
+        const payload = collectStartConfigFromForm();
+        const resp = await fetch(buildApiUrl('start'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        const body = await resp.json().catch(() => ({}));
+        if (!resp.ok || body.ok === false) {
+            throw new Error(body.error || `HTTP ${resp.status}`);
+        }
+        const backupFile = body.backupFile ? ` Backup: ${body.backupFile}` : '';
+        setStartStatus(`start.json salvato.${backupFile}`);
+    } catch (e) {
+        setStartStatus(`Errore salvataggio start.json: ${e.message}`, true);
+    }
+}
+
+function bindStartEditorInteractions() {
+    const stage = el('startAttractStage');
+    if (!stage || stage.dataset.boundStartDrag === '1') return;
+    stage.dataset.boundStartDrag = '1';
+
+    window.addEventListener('pointermove', (ev) => {
+        const drag = START_EDITOR_STATE.drag;
+        if (!drag.active || !drag.elementId) return;
+        const selected = getSelectedStartElement();
+        if (!selected || selected.id !== drag.elementId) return;
+
+        const cfg = START_EDITOR_STATE.loadedStart;
+        const canvasW = Math.max(320, parseNumber(cfg?.attractMode?.canvas?.width, 800));
+        const canvasH = Math.max(200, parseNumber(cfg?.attractMode?.canvas?.height, 600));
+
+        const nextX = drag.baseX + (ev.clientX - drag.startX);
+        const nextY = drag.baseY + (ev.clientY - drag.startY);
+        selected.x = clamp(Math.round(nextX), 0, Math.max(0, canvasW - selected.w));
+        selected.y = clamp(Math.round(nextY), 0, Math.max(0, canvasH - selected.h));
+
+        renderStartAttractStage();
+        renderStartElementInputs();
+    });
+
+    window.addEventListener('pointerup', () => {
+        START_EDITOR_STATE.drag.active = false;
+        START_EDITOR_STATE.drag.elementId = null;
+    });
 }
 
 function tokenToMiniMapColor(token) {
@@ -5660,10 +6184,15 @@ function bindUI() {
     const saveAsNewLevelFileBtn = el('saveAsNewLevelFileBtn');
     const importJsonFile = el('importJsonFile');
     const openConfigDialogBtn = el('openConfigDialogBtn');
+    const openStartDialogBtn = el('openStartDialogBtn');
     const closeConfigDialogBtn = el('closeConfigDialogBtn');
+    const closeStartDialogBtn = el('closeStartDialogBtn');
     const reloadConfigBtn = el('reloadConfigBtn');
+    const reloadStartBtn = el('reloadStartBtn');
     const saveConfigBtn = el('saveConfigBtn');
+    const saveStartBtn = el('saveStartBtn');
     const configModal = el('configModal');
+    const startConfigModal = el('startConfigModal');
     const openObjectMapDialogBtn = el('openObjectMapDialogBtn');
     const openFileManagerBtn = el('openFileManagerBtn');
     const closeFileManagerBtn = el('closeFileManagerBtn');
@@ -6051,6 +6580,118 @@ function bindUI() {
             }
         });
     }
+
+    if (openStartDialogBtn) {
+        openStartDialogBtn.addEventListener('click', async () => {
+            if (startConfigModal) startConfigModal.classList.add('open');
+            bindStartEditorInteractions();
+            await loadStartEditor();
+        });
+    }
+
+    if (closeStartDialogBtn) {
+        closeStartDialogBtn.addEventListener('click', () => {
+            if (startConfigModal) startConfigModal.classList.remove('open');
+        });
+    }
+
+    if (reloadStartBtn) {
+        reloadStartBtn.addEventListener('click', async () => {
+            await loadStartEditor();
+        });
+    }
+
+    if (saveStartBtn) {
+        saveStartBtn.addEventListener('click', async () => {
+            await saveStartEditor();
+        });
+    }
+
+    if (startConfigModal) {
+        startConfigModal.addEventListener('click', (ev) => {
+            if (ev.target === startConfigModal) {
+                startConfigModal.classList.remove('open');
+            }
+        });
+    }
+
+    const startEnableFrontScenes = el('startEnableFrontScenes');
+    if (startEnableFrontScenes) {
+        startEnableFrontScenes.addEventListener('change', () => {
+            collectStartConfigFromForm();
+        });
+    }
+
+    const startCoinMode = el('startCoinMode');
+    if (startCoinMode) {
+        startCoinMode.addEventListener('change', () => {
+            collectStartConfigFromForm();
+            applyStartFormFromState();
+        });
+    }
+
+    const startInitialCredits = el('startInitialCredits');
+    if (startInitialCredits) {
+        startInitialCredits.addEventListener('input', () => {
+            collectStartConfigFromForm();
+        });
+    }
+
+    const startAttractEnabled = el('startAttractEnabled');
+    if (startAttractEnabled) {
+        startAttractEnabled.addEventListener('change', () => {
+            collectStartConfigFromForm();
+        });
+    }
+
+    const startCanvasWidth = el('startCanvasWidth');
+    if (startCanvasWidth) {
+        startCanvasWidth.addEventListener('input', () => {
+            collectStartConfigFromForm();
+            renderStartAttractStage();
+        });
+    }
+
+    const startCanvasHeight = el('startCanvasHeight');
+    if (startCanvasHeight) {
+        startCanvasHeight.addEventListener('input', () => {
+            collectStartConfigFromForm();
+            renderStartAttractStage();
+        });
+    }
+
+    const startAddImageBtn = el('startAddImageBtn');
+    if (startAddImageBtn) {
+        startAddImageBtn.addEventListener('click', () => addStartImageElement());
+    }
+
+    const startAddTextBtn = el('startAddTextBtn');
+    if (startAddTextBtn) {
+        startAddTextBtn.addEventListener('click', () => addStartTextElement());
+    }
+
+    const startRemoveElementBtn = el('startRemoveElementBtn');
+    if (startRemoveElementBtn) {
+        startRemoveElementBtn.addEventListener('click', () => removeSelectedStartElement());
+    }
+
+    [
+        'startElementX',
+        'startElementY',
+        'startElementW',
+        'startElementH',
+        'startElementEffect',
+        'startElementColor',
+        'startElementFontSize',
+        'startElementDelayMs',
+        'startElementDurationMs',
+        'startElementText'
+    ].forEach((id) => {
+        const node = el(id);
+        if (!node) return;
+        node.addEventListener('input', () => updateSelectedStartElementFromInputs());
+        node.addEventListener('change', () => updateSelectedStartElementFromInputs());
+    });
 
     if (openObjectMapDialogBtn) {
         openObjectMapDialogBtn.addEventListener('click', () => {

@@ -223,6 +223,176 @@ const GAME_FONT = '"Press Start 2P"';
 const HUD_DEPTH = 10000;
 // Translations
 const TRANSLATIONS = {};
+
+const STARTUP_DEFAULTS = {
+    startup: {
+        enableFrontScenes: true,
+        coinMode: 'arcade',
+        initialCredits: 0
+    },
+    attractMode: {
+        enabled: false,
+        canvas: {
+            width: 800,
+            height: 600
+        },
+        elements: []
+    }
+};
+
+const STARTUP_SETTINGS = JSON.parse(JSON.stringify(STARTUP_DEFAULTS));
+
+function normalizeStartupElement(raw, index = 0) {
+    const inObj = (raw && typeof raw === 'object' && !Array.isArray(raw)) ? raw : {};
+    const type = String(inObj.type || 'image').trim().toLowerCase() === 'text' ? 'text' : 'image';
+    return {
+        id: String(inObj.id || `el_${index}`),
+        type,
+        src: String(inObj.src || '').trim(),
+        text: String(inObj.text || '').trim(),
+        color: String(inObj.color || '#ffffff').trim() || '#ffffff',
+        fontSize: Math.max(8, Number(inObj.fontSize) || 24),
+        x: Math.max(0, Number(inObj.x) || 0),
+        y: Math.max(0, Number(inObj.y) || 0),
+        w: Math.max(8, Number(inObj.w) || (type === 'text' ? 220 : 180)),
+        h: Math.max(8, Number(inObj.h) || (type === 'text' ? 48 : 120)),
+        effect: String(inObj.effect || 'none').trim() || 'none',
+        delayMs: Math.max(0, Number(inObj.delayMs) || 0),
+        durationMs: Math.max(0, Number(inObj.durationMs) || 1000),
+        order: Math.max(0, Math.floor(Number(inObj.order) || index))
+    };
+}
+
+function normalizeStartupSettings(raw) {
+    const root = (raw && typeof raw === 'object' && !Array.isArray(raw)) ? raw : {};
+    const startup = (root.startup && typeof root.startup === 'object' && !Array.isArray(root.startup)) ? root.startup : {};
+    const attractMode = (root.attractMode && typeof root.attractMode === 'object' && !Array.isArray(root.attractMode)) ? root.attractMode : {};
+    const canvas = (attractMode.canvas && typeof attractMode.canvas === 'object' && !Array.isArray(attractMode.canvas)) ? attractMode.canvas : {};
+    const mode = String(startup.coinMode || 'arcade').trim().toLowerCase() === 'freeplay' ? 'freeplay' : 'arcade';
+
+    return {
+        startup: {
+            enableFrontScenes: startup.enableFrontScenes !== false,
+            coinMode: mode,
+            initialCredits: Math.max(0, Math.floor(Number(startup.initialCredits) || 0))
+        },
+        attractMode: {
+            enabled: !!attractMode.enabled,
+            canvas: {
+                width: Math.max(320, Math.floor(Number(canvas.width) || 800)),
+                height: Math.max(200, Math.floor(Number(canvas.height) || 600))
+            },
+            elements: (Array.isArray(attractMode.elements) ? attractMode.elements : [])
+                .map((it, idx) => normalizeStartupElement(it, idx))
+                .sort((a, b) => a.order - b.order)
+        }
+    };
+}
+
+function applyStartupSettings(raw) {
+    const normalized = normalizeStartupSettings(raw);
+    Object.assign(STARTUP_SETTINGS.startup, normalized.startup);
+    STARTUP_SETTINGS.attractMode.enabled = normalized.attractMode.enabled;
+    STARTUP_SETTINGS.attractMode.canvas = { ...normalized.attractMode.canvas };
+    STARTUP_SETTINGS.attractMode.elements = normalized.attractMode.elements.slice();
+}
+
+async function loadStartupSettings() {
+    try {
+        const resp = await fetch('data/start.json', { cache: 'no-store' });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const parsed = await resp.json();
+        applyStartupSettings(parsed);
+    } catch (err) {
+        applyStartupSettings(STARTUP_DEFAULTS);
+        console.warn('[StartConfig] fallback defaults:', err);
+    }
+}
+
+function isFreePlayMode() {
+    return String(STARTUP_SETTINGS.startup?.coinMode || '').toLowerCase() === 'freeplay';
+}
+
+function isFrontScenesEnabled() {
+    return STARTUP_SETTINGS.startup?.enableFrontScenes !== false;
+}
+
+function playConfiguredAttractElementTween(scene, node, element) {
+    const effect = String(element.effect || 'none').trim();
+    const duration = Math.max(0, Number(element.durationMs) || 1000);
+    const delay = Math.max(0, Number(element.delayMs) || 0);
+
+    if (!scene || !node || !scene.tweens) return;
+
+    if (effect === 'fadeIn') {
+        node.setAlpha(0);
+        scene.tweens.add({ targets: node, alpha: 1, duration, delay, ease: 'Sine.easeOut' });
+        return;
+    }
+    if (effect === 'slideLeft') {
+        const baseX = Number(node.x) || 0;
+        node.setAlpha(0);
+        node.setX(baseX - 40);
+        scene.tweens.add({ targets: node, x: baseX, alpha: 1, duration, delay, ease: 'Cubic.easeOut' });
+        return;
+    }
+    if (effect === 'pulse') {
+        scene.time.delayedCall(delay, () => {
+            if (!node || !node.active) return;
+            scene.tweens.add({ targets: node, scaleX: 1.08, scaleY: 1.08, duration: Math.max(120, duration), yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+        });
+        return;
+    }
+    if (effect === 'blink') {
+        scene.time.delayedCall(delay, () => {
+            if (!node || !node.active) return;
+            scene.tweens.add({ targets: node, alpha: 0.2, duration: Math.max(120, duration), yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+        });
+        return;
+    }
+
+    node.setAlpha(1);
+}
+
+function applyConfiguredAttractLayout(scene) {
+    const cfg = STARTUP_SETTINGS.attractMode;
+    if (!scene || !cfg || cfg.enabled !== true) return;
+    const elements = Array.isArray(cfg.elements) ? cfg.elements.slice().sort((a, b) => a.order - b.order) : [];
+    if (!elements.length) return;
+
+    const camera = scene.cameras?.main;
+    const virtualW = Math.max(320, Number(cfg.canvas?.width) || 800);
+    const virtualH = Math.max(200, Number(cfg.canvas?.height) || 600);
+    const viewW = Number(camera?.width) || 800;
+    const viewH = Number(camera?.height) || 600;
+    const scaleX = viewW / virtualW;
+    const scaleY = viewH / virtualH;
+
+    elements.forEach((element) => {
+        try {
+            const px = (Number(element.x) || 0) * scaleX;
+            const py = (Number(element.y) || 0) * scaleY;
+            const pw = Math.max(4, (Number(element.w) || 1) * scaleX);
+            const ph = Math.max(4, (Number(element.h) || 1) * scaleY);
+            let node = null;
+
+            if (element.type === 'text') {
+                node = scene.add.text(px, py, element.text || '', {
+                    fontSize: `${Math.max(8, Number(element.fontSize) || 24) * ((scaleX + scaleY) * 0.5)}px`,
+                    fill: String(element.color || '#ffffff'),
+                    fontFamily: GAME_FONT,
+                    align: 'center'
+                }).setOrigin(0, 0).setDepth(65);
+            } else if (element.src) {
+                node = scene.add.image(px + (pw / 2), py + (ph / 2), element.src).setDisplaySize(pw, ph).setDepth(65);
+            }
+
+            if (node) playConfiguredAttractElementTween(scene, node, element);
+        } catch (_e) {
+            // Ignore malformed attract entries.
+        }
+    });
+}
 // Load configuration from /data/config.json
 // Rimosso: la configurazione viene caricata solo tramite loadConfigAndStartGame
 
@@ -883,7 +1053,11 @@ class PreloadScene extends Phaser.Scene {
                 return;
             }
 
-            this.scene.start('AttractScene');
+            if (isFrontScenesEnabled()) {
+                this.scene.start('AttractScene');
+            } else {
+                this.scene.start('LevelSelectScene');
+            }
         });
     }
 }
@@ -891,7 +1065,286 @@ class PreloadScene extends Phaser.Scene {
 // ============================================================================
 // ATTRACT SCENE
 // ============================================================================
-class AttractScene extends Phaser.Scene {
+class SharedFrontendScene extends Phaser.Scene {
+    constructor(sceneKey) {
+        super(sceneKey);
+        this.languages = ['it', 'fr', 'de', 'en', 'us', 'ja', 'es', 'zh'];
+        this.currentLangIndex = 0;
+    }
+
+    initializeSharedFrontState({ resetLanguage = false } = {}) {
+        const currentLanguage = String(GAME_STATE.language || '').trim().toLowerCase();
+        if (resetLanguage || !this.languages.includes(currentLanguage)) {
+            this.currentLangIndex = 0;
+            GAME_STATE.language = this.languages[0];
+            return;
+        }
+
+        this.currentLangIndex = this.languages.indexOf(currentLanguage);
+        GAME_STATE.language = this.languages[this.currentLangIndex];
+    }
+
+    createSharedFrontUi() {
+        try {
+            this.creditManager = createCreditsManager(this, {
+                gameState: GAME_STATE,
+                config: CONFIG,
+                hudDepth: HUD_DEPTH,
+                font: GAME_FONT,
+                x: 400
+            });
+        } catch (e) {
+            this.creditManager = null;
+            // Fallback minimale se il modulo non è disponibile.
+            this.coinText = this.add.text(400, 520, '', {
+                fontSize: '24px',
+                fill: '#ffee00ff',
+                fontFamily: GAME_FONT
+            }).setOrigin(0.5).setDepth(HUD_DEPTH).setScrollFactor(0);
+            this.coinPanel = null;
+            this.player1Text = this.add.text(150, 550, '', {
+                fontSize: '18px',
+                fill: '#666666',
+                fontFamily: GAME_FONT
+            }).setOrigin(0.5).setDepth(HUD_DEPTH).setScrollFactor(0);
+            this.player1Panel = null;
+            this.player2Text = this.add.text(650, 550, '', {
+                fontSize: '18px',
+                fill: '#666666',
+                fontFamily: GAME_FONT
+            }).setOrigin(0.5).setDepth(HUD_DEPTH).setScrollFactor(0);
+            this.player2Panel = null;
+        }
+
+        this.carousel = createLanguageCarousel(this, {
+            languages: this.languages,
+            index: this.currentLangIndex,
+            x: 400,
+            y: 560,
+            hudDepth: HUD_DEPTH,
+            font: GAME_FONT,
+            onRequestChange: (dir) => {
+                if (typeof this.changeLanguage === 'function') this.changeLanguage(dir);
+                else this.changeSharedLanguage(dir);
+            }
+        });
+    }
+
+    bindSharedFrontKeys(options = {}) {
+        const onCoinInsert = (typeof options.onCoinInsert === 'function')
+            ? options.onCoinInsert
+            : (() => this.insertSharedCoin());
+        const onStartGame = (typeof options.onStartGame === 'function')
+            ? options.onStartGame
+            : ((players) => this.startSharedGame(players));
+        const onLanguageChange = (typeof options.onLanguageChange === 'function')
+            ? options.onLanguageChange
+            : ((dir) => this.changeSharedLanguage(dir));
+        const onInteraction = (typeof options.onInteraction === 'function')
+            ? options.onInteraction
+            : null;
+
+        this.input.keyboard.on('keydown-FIVE', () => {
+            onCoinInsert();
+            if (onInteraction) onInteraction('coin');
+        });
+        this.input.keyboard.on('keydown-SIX', () => {
+            onCoinInsert();
+            if (onInteraction) onInteraction('coin');
+        });
+
+        this.input.keyboard.on('keydown-ONE', () => {
+            onStartGame(1);
+            if (onInteraction) onInteraction('start');
+        });
+        this.input.keyboard.on('keydown-TWO', () => {
+            onStartGame(2);
+            if (onInteraction) onInteraction('start');
+        });
+
+        this.input.keyboard.on('keydown-LEFT', () => {
+            onLanguageChange(-1);
+            if (onInteraction) onInteraction('language');
+        });
+        this.input.keyboard.on('keydown-RIGHT', () => {
+            onLanguageChange(1);
+            if (onInteraction) onInteraction('language');
+        });
+
+        if (typeof options.onConfig === 'function') {
+            this.input.keyboard.on('keydown-T', () => {
+                options.onConfig();
+                if (onInteraction) onInteraction('config');
+            });
+        }
+
+        if (typeof options.onSpace === 'function') {
+            this.input.keyboard.on('keydown-SPACE', () => {
+                options.onSpace();
+                if (onInteraction) onInteraction('space');
+            });
+        }
+
+        if (typeof options.onEsc === 'function') {
+            this.input.keyboard.on('keydown-ESC', () => {
+                options.onEsc();
+                if (onInteraction) onInteraction('esc');
+            });
+        }
+
+        if (typeof options.onUnhandledKey === 'function') {
+            const handledKeys = new Set(['1', '2', '5', '6', 'ARROWLEFT', 'ARROWRIGHT', 'T', ' ', 'ESCAPE']);
+            this.input.keyboard.on('keydown', (event) => {
+                const key = this.normalizeSharedFrontKey(event);
+                if (handledKeys.has(key)) return;
+                if (onInteraction) onInteraction('key', event);
+                options.onUnhandledKey(event);
+            });
+        }
+    }
+
+    normalizeSharedFrontKey(event) {
+        const rawKey = String(event?.key || event?.code || '').trim().toUpperCase();
+        if (rawKey === 'SPACEBAR') return ' ';
+        return rawKey;
+    }
+
+    updateSharedFrontUi() {
+        const t = TRANSLATIONS[GAME_STATE.language] || {};
+        const insertCoin = t.insert_coin || 'INSERT COIN';
+        const credit = t.credit || 'CREDIT';
+        const freePlay = t.free_play || 'FREE PLAY';
+        const player1 = t.player1 || 'PLAYER 1';
+        const player2 = t.player2 || 'PLAYER 2';
+        const credits = Number(GAME_STATE.credits) || 0;
+        const freeplay = isFreePlayMode();
+
+        if (this.coinText) {
+            if (freeplay) this.coinText.setText(freePlay);
+            else if (credits <= 0) this.coinText.setText(insertCoin);
+            else this.coinText.setText(`${credit} ${credits}`);
+        }
+        if (this.player1Text) {
+            this.player1Text.setText(player1).setStyle({ fill: (freeplay || credits >= 1) ? '#00ff00' : '#666666' });
+        }
+        if (this.player2Text) {
+            this.player2Text.setText(player2).setStyle({ fill: (freeplay || credits >= 2) ? '#00ff00' : '#666666' });
+        }
+
+        if (this.coinPanel) drawTextPanel(this.coinPanel, this.coinText, { paddingX: 14, paddingY: 8 });
+        if (this.player1Panel) {
+            if (credits >= 1) drawTextPanel(this.player1Panel, this.player1Text, { paddingX: 10, paddingY: 6 });
+            else this.player1Panel.clear();
+        }
+        if (this.player2Panel) {
+            if (credits >= 2) drawTextPanel(this.player2Panel, this.player2Text, { paddingX: 10, paddingY: 6 });
+            else this.player2Panel.clear();
+        }
+    }
+
+    insertSharedCoin({ volume = 0.45, onAfter = null } = {}) {
+        if (isFreePlayMode()) {
+            if (typeof this.updateUI === 'function') this.updateUI();
+            else this.updateSharedFrontUi();
+            if (typeof onAfter === 'function') onAfter(GAME_STATE.credits);
+            return;
+        }
+
+        try {
+            if (this.creditManager && typeof this.creditManager.insertCoin === 'function') {
+                this.creditManager.insertCoin({ volume });
+            } else {
+                if (this.sound) this.sound.play('coin_sfx', { volume });
+                GAME_STATE.credits = (Number(GAME_STATE.credits) || 0) + 1;
+            }
+        } catch (e) { }
+
+        if (typeof this.updateUI === 'function') this.updateUI();
+        else this.updateSharedFrontUi();
+
+        if (typeof onAfter === 'function') onAfter(GAME_STATE.credits);
+    }
+
+    startSharedGame(players, options = {}) {
+        const requestedPlayers = Number(players) === 2 ? 2 : 1;
+        if (isFreePlayMode()) {
+            if (typeof options.onBeforeStart === 'function') options.onBeforeStart(requestedPlayers);
+            resetGameStateForNewRun(requestedPlayers);
+            this.scene.start(options.startScene || 'LevelSelectScene');
+            return true;
+        }
+
+        const credits = Number(GAME_STATE.credits) || 0;
+        if (credits < requestedPlayers) {
+            if (typeof options.onInsufficientCredits === 'function') options.onInsufficientCredits(requestedPlayers);
+            return false;
+        }
+
+        if (typeof options.onBeforeStart === 'function') options.onBeforeStart(requestedPlayers);
+
+        GAME_STATE.credits = credits - requestedPlayers;
+        resetGameStateForNewRun(requestedPlayers);
+        this.scene.start(options.startScene || 'LevelSelectScene');
+        return true;
+    }
+
+    changeSharedLanguage(dir, options = {}) {
+        if (this.sound && options.playSelectSfx !== false) {
+            this.sound.play('select_sfx', { volume: 0.4 });
+        }
+
+        this.currentLangIndex = (this.currentLangIndex + dir + this.languages.length) % this.languages.length;
+        GAME_STATE.language = this.languages[this.currentLangIndex];
+
+        if (this.carousel && typeof this.carousel.setIndex === 'function') {
+            this.carousel.setIndex(this.currentLangIndex, dir);
+        } else if (this.flagSprite) {
+            this.flagSprite.setFrame(this.currentLangIndex);
+        }
+
+        this.animateSharedFlagChange(dir);
+
+        loadTranslations(GAME_STATE.language, () => {
+            if (typeof options.onAfter === 'function') options.onAfter(GAME_STATE.language);
+            else if (typeof this.updateUI === 'function') this.updateUI();
+            else this.updateSharedFrontUi();
+        });
+    }
+
+    animateSharedFlagChange(dir) {
+        try {
+            if (this.flagSprite) {
+                const dirSign = (dir > 0) ? 1 : -1;
+                const baseX = Number(this.flagSprite.baseX) || Number(this.flagSprite.x) || 400;
+                this.flagSprite.x = baseX;
+                this.tweens.add({
+                    targets: this.flagSprite,
+                    x: baseX + (dirSign * 28),
+                    angle: dirSign * 6,
+                    scaleX: 1.15,
+                    scaleY: 0.95,
+                    duration: 140,
+                    yoyo: true,
+                    ease: 'Cubic.easeOut',
+                    onComplete: () => {
+                        try {
+                            this.flagSprite.x = baseX;
+                            this.flagSprite.setAngle(0);
+                            this.flagSprite.setScale(1, 1);
+                        } catch (e) { }
+                    }
+                });
+            }
+        } catch (e) { }
+
+        try {
+            if (dir > 0 && this.pulseArrow) this.pulseArrow(this.rightArrow);
+            else if (dir < 0 && this.pulseArrow) this.pulseArrow(this.leftArrow);
+        } catch (e) { }
+    }
+}
+
+class AttractScene extends SharedFrontendScene {
     constructor() {
         super('AttractScene');
     }
@@ -902,9 +1355,7 @@ class AttractScene extends Phaser.Scene {
             gameMusic.stop();
         }
 
-        this.languages = ['it', 'fr', 'de', 'en', 'us', 'ja', 'es', 'zh'];
-        this.currentLangIndex = 0;
-        GAME_STATE.language = this.languages[0];
+        this.initializeSharedFrontState({ resetLanguage: true });
 
         // Intro music before gameplay
         playLoopAudioSafely(this, 'intro_bgm', 0.35);
@@ -918,6 +1369,9 @@ class AttractScene extends Phaser.Scene {
 
             // credit (place in attract mode bottom-right like other non-game scenes)
             try { addSpikeCredit(this); } catch (e) { }
+
+        // Optional runtime-configured attract overlay from data/start.json
+        try { applyConfiguredAttractLayout(this); } catch (e) { }
 
         // Title image (loaded from images/title.png)
         this.titleImage = this.add.image(400, -120, 'title').setOrigin(0.5);
@@ -1056,21 +1510,7 @@ class AttractScene extends Phaser.Scene {
         // Legend of objects removed by request (was showing object icons and descriptions).
         // If you want to re-enable it later, restore the legend block here.
 
-        // Panels and UI elements (HUD placed on top using HUD_DEPTH)
-        try {
-            this.creditManager = createCreditsManager(this, { gameState: GAME_STATE, config: CONFIG, hudDepth: HUD_DEPTH, font: GAME_FONT, x: 400 });
-        } catch (e) {
-            // fallback: create minimal texts directly
-            this.coinText = this.add.text(400, 520, '', { fontSize: '24px', fill: '#ffee00ff', fontFamily: GAME_FONT }).setOrigin(0.5).setDepth(HUD_DEPTH).setScrollFactor(0);
-            this.coinPanel = null;
-            this.player1Text = this.add.text(150, 550, '', { fontSize: '18px', fill: '#666666', fontFamily: GAME_FONT }).setOrigin(0.5).setDepth(HUD_DEPTH).setScrollFactor(0);
-            this.player1Panel = null;
-            this.player2Text = this.add.text(650, 550, '', { fontSize: '18px', fill: '#666666', fontFamily: GAME_FONT }).setOrigin(0.5).setDepth(HUD_DEPTH).setScrollFactor(0);
-            this.player2Panel = null;
-        }
-
-        // Language selector with flags (use shared language carousel module)
-        this.carousel = createLanguageCarousel(this, { languages: this.languages, index: this.currentLangIndex, x: 400, y: 560, hudDepth: HUD_DEPTH, font: GAME_FONT });
+        this.createSharedFrontUi();
 
         // Signature text for attract mode
         // signature text removed from bottom-center in AttractScene (keep credit via addSpikeCredit)
@@ -1098,39 +1538,13 @@ class AttractScene extends Phaser.Scene {
     }
 
     setupInput() {
-        // Coin insert (route to creditManager if available)
-        this.input.keyboard.on('keydown-FIVE', () => {
-            try {
-                if (this.creditManager && typeof this.creditManager.insertCoin === 'function') {
-                    this.creditManager.insertCoin();
-                } else {
-                    this.insertCoin();
-                }
-            } catch (e) { this.insertCoin(); }
+        this.bindSharedFrontKeys({
+            onCoinInsert: () => this.insertCoin(),
+            onStartGame: (players) => this.startGame(players),
+            onLanguageChange: (dir) => this.changeLanguage(dir),
+            onConfig: () => this.openConfig(),
+            onInteraction: () => this.resetTimeout()
         });
-        this.input.keyboard.on('keydown-SIX', () => {
-            try {
-                if (this.creditManager && typeof this.creditManager.insertCoin === 'function') {
-                    this.creditManager.insertCoin();
-                } else {
-                    this.insertCoin();
-                }
-            } catch (e) { this.insertCoin(); }
-        });
-
-        // Start game
-        this.input.keyboard.on('keydown-ONE', () => this.startGame(1));
-        this.input.keyboard.on('keydown-TWO', () => this.startGame(2));
-
-        // Language change
-        this.input.keyboard.on('keydown-LEFT', () => this.changeLanguage(-1));
-        this.input.keyboard.on('keydown-RIGHT', () => this.changeLanguage(1));
-
-        // Config page
-        this.input.keyboard.on('keydown-T', () => this.openConfig());
-
-        // Any key resets timeout
-        this.input.keyboard.on('keydown', () => this.resetTimeout());
     }
 
     // Toggle between instructions and story with a fade animation
@@ -1163,75 +1577,25 @@ class AttractScene extends Phaser.Scene {
     }
 
     insertCoin() {
-        // prefer creditManager implementation if present
-        try {
-            if (this.creditManager && typeof this.creditManager.insertCoin === 'function') {
-                this.creditManager.insertCoin({ volume: 0.45 });
-                return;
-            }
-        } catch (e) { }
-
-        if (this.sound) {
-            this.sound.play('coin_sfx', { volume: 0.45 });
-        }
-        GAME_STATE.credits++;
-        this.updateUI();
-        this.resetTimeout();
+        super.insertSharedCoin({ onAfter: () => this.resetTimeout() });
     }
 
     startGame(players) {
-        if (GAME_STATE.credits >= players) {
-            const intro = this.sound.get('intro_bgm');
-            if (intro && intro.isPlaying) {
-                intro.stop();
+        return super.startSharedGame(players, {
+            onBeforeStart: () => {
+                const intro = this.sound.get('intro_bgm');
+                if (intro && intro.isPlaying) intro.stop();
             }
-            GAME_STATE.credits -= players;
-            resetGameStateForNewRun(players);
-            this.scene.start('LevelSelectScene');
-        }
+        });
     }
 
     changeLanguage(dir) {
-        if (this.sound) {
-            this.sound.play('select_sfx', { volume: 0.4 });
-        }
-        this.currentLangIndex = (this.currentLangIndex + dir + this.languages.length) % this.languages.length;
-        GAME_STATE.language = this.languages[this.currentLangIndex];
-
-        // Update flag sprite frame
-        if (this.flagSprite) {
-            this.flagSprite.setFrame(this.currentLangIndex);
-        }
-
-        // swish effect: quick slide + small tilt when changing flag
-        try {
-            if (this.flagSprite) {
-                const dirSign = (dir > 0) ? 1 : -1;
-                this.tweens.add({
-                    targets: this.flagSprite,
-                    x: this.flagSprite.x + (dirSign * 28),
-                    angle: dirSign * 6,
-                    scaleX: 1.15,
-                    scaleY: 0.95,
-                    duration: 140,
-                    yoyo: true,
-                    ease: 'Cubic.easeOut',
-                    onComplete: () => { try { this.flagSprite.setAngle(0); this.flagSprite.setScale(1,1); } catch (e) { } }
-                });
+        super.changeSharedLanguage(dir, {
+            onAfter: () => {
+                this.updateUI();
+                this.resetTimeout();
             }
-        } catch (e) { }
-
-        // visual feedback: pulse and yellow the appropriate arrow
-        try {
-            if (dir > 0) this.pulseArrow && this.pulseArrow(this.rightArrow);
-            else if (dir < 0) this.pulseArrow && this.pulseArrow(this.leftArrow);
-        } catch (e) { }
-
-        // Carica il nuovo dizionario e aggiorna la UI solo dopo il caricamento
-        loadTranslations(GAME_STATE.language, () => {
-            this.updateUI();
         });
-        this.resetTimeout();
     }
 
     updateUI() {
@@ -1257,51 +1621,7 @@ class AttractScene extends Phaser.Scene {
         const displayedText = (this.showingStory) ? (story || instructions) : instructions;
         this.instructionsText.setText(displayedText);
 
-        // Make sure UI texts are above panels
-        this.coinText.setDepth(HUD_DEPTH);
-        this.player1Text.setDepth(HUD_DEPTH);
-        this.player2Text.setDepth(HUD_DEPTH);
-
-        // Draw/update panels: coin always visible, player panels visible only when active
-        if (this.coinPanel) drawTextPanel(this.coinPanel, this.coinText, { paddingX: 14, paddingY: 8 });
-
-        if (this.player1Panel) {
-            if (GAME_STATE.credits >= 1) {
-                // Highlight player panel when active
-                drawTextPanel(this.player1Panel, this.player1Text, { paddingX: 10, paddingY: 6 });
-            } else {
-                // hide when inactive
-                this.player1Panel.clear();
-            }
-        }
-
-        if (this.player2Panel) {
-            if (GAME_STATE.credits >= 2) {
-                drawTextPanel(this.player2Panel, this.player2Text, { paddingX: 10, paddingY: 6 });
-            } else {
-                this.player2Panel.clear();
-            }
-        }
-
-        // Language is now shown via flag sprite, not text
-
-        if (GAME_STATE.credits === 0) {
-            this.coinText.setText(insertCoin);
-        } else {
-            this.coinText.setText(credit + ' ' + GAME_STATE.credits);
-        }
-
-        if (GAME_STATE.credits >= 1) {
-            this.player1Text.setText(player1).setStyle({ fill: '#00ff00' });
-        } else {
-            this.player1Text.setText(player1).setStyle({ fill: '#666666' });
-        }
-
-        if (GAME_STATE.credits >= 2) {
-            this.player2Text.setText(player2).setStyle({ fill: '#00ff00' });
-        } else {
-            this.player2Text.setText(player2).setStyle({ fill: '#666666' });
-        }
+        this.updateSharedFrontUi();
     }
 
     resetTimeout() {
@@ -1317,7 +1637,7 @@ class AttractScene extends Phaser.Scene {
 // ============================================================================
 // TOP TEN SCENE
 // ============================================================================
-class TopTenScene extends Phaser.Scene {
+class TopTenScene extends SharedFrontendScene {
     constructor() {
         super('TopTenScene');
     }
@@ -1339,6 +1659,7 @@ class TopTenScene extends Phaser.Scene {
             fill: '#ffff00',
             fontFamily: GAME_FONT
         }).setOrigin(0.5);
+        this.topTitleText = topTitle;
 
         // credit
         try { addSpikeCredit(this); } catch (e) { }
@@ -1353,9 +1674,9 @@ class TopTenScene extends Phaser.Scene {
         const scoreColLabel = t.score_label || t.scoreLabel || 'Score';
 
         const headerStyle = { fontSize: '18px', fill: '#bfeaff', fontFamily: GAME_FONT };
-        this.add.text(150, 130, nameColLabel, headerStyle).setOrigin(0, 0.5);
-        this.add.text(420, 130, levelColLabel, headerStyle).setOrigin(0.5, 0.5);
-        this.add.text(650, 130, scoreColLabel, headerStyle).setOrigin(1, 0.5);
+        this.topNameHeaderText = this.add.text(150, 130, nameColLabel, headerStyle).setOrigin(0, 0.5);
+        this.topLevelHeaderText = this.add.text(420, 130, levelColLabel, headerStyle).setOrigin(0.5, 0.5);
+        this.topScoreHeaderText = this.add.text(650, 130, scoreColLabel, headerStyle).setOrigin(1, 0.5);
 
         let y = 150;
         GAME_STATE.topScores.forEach((entry, i) => {
@@ -1444,201 +1765,58 @@ class TopTenScene extends Phaser.Scene {
             this.scene.start('CreditsScene');
         });
 
-        // --- Add attract-style UI (credits, player panels, language flag)
-        // Keep selections visible while Top Ten is displayed
-        this.languages = ['it', 'fr', 'de', 'en', 'us', 'ja', 'es', 'zh'];
-        this.currentLangIndex = Math.max(0, this.languages.indexOf(GAME_STATE.language));
-        if (!GAME_STATE.language) GAME_STATE.language = this.languages[this.currentLangIndex];
+        this.initializeSharedFrontState();
+        this.createSharedFrontUi();
 
-        // Coin/credits (HUD placed on top)
-        this.coinText = this.add.text(400, 520, '', {
-            fontSize: '24px',
-            fill: '#ffee00ff',
-            fontFamily: GAME_FONT
-        }).setOrigin(0.5).setDepth(HUD_DEPTH).setScrollFactor(0);
-        // remove decorative panel under coin text
-        this.coinPanel = null;
-
-        // Player labels (no decorative panels)
-        this.player1Text = this.add.text(150, 550, '', {
-            fontSize: '18px',
-            fill: '#666666',
-            fontFamily: GAME_FONT
-        }).setOrigin(0.5).setDepth(HUD_DEPTH).setScrollFactor(0);
-        this.player1Panel = null;
-        this.player2Text = this.add.text(650, 550, '', {
-            fontSize: '18px',
-            fill: '#666666',
-            fontFamily: GAME_FONT
-        }).setOrigin(0.5).setDepth(HUD_DEPTH).setScrollFactor(0);
-        this.player2Panel = null;
-
-        // Flags (language selector display)
-        this.flagSprite = this.add.sprite(400, 560, 'flags', this.currentLangIndex).setOrigin(0.5).setDepth(HUD_DEPTH).setScrollFactor(0);
-        this.tweens.add({
-            targets: this.flagSprite,
-            scaleX: 1.05,
-            scaleY: 0.98,
-            angle: -2,
-            duration: 400,
-            yoyo: true,
-            repeat: -1,
-            ease: 'Sine.easeInOut'
-        });
-
-        // Left/Right arrows for language selection (keep visible during Top Ten)
-        try {
-            this.topLeftArrow = this.add.text(320, 560, '◄', {
-                fontSize: '24px',
-                fill: '#ffffff',
-                fontFamily: GAME_FONT
-            }).setOrigin(0.5).setInteractive().setDepth(HUD_DEPTH).setScrollFactor(0).on('pointerdown', () => this.changeLanguage(-1));
-            this.topRightArrow = this.add.text(480, 560, '►', {
-                fontSize: '24px',
-                fill: '#ffffff',
-                fontFamily: GAME_FONT
-            }).setOrigin(0.5).setInteractive().setDepth(HUD_DEPTH).setScrollFactor(0).on('pointerdown', () => this.changeLanguage(1));
-
-            // helper for TopTen pulse feedback
-            this.pulseTopArrow = (arrow) => {
-                if (!arrow) return;
-                try {
-                    const orig = (arrow.style && arrow.style.fill) || '#ffffff';
-                    arrow.setStyle && arrow.setStyle({ fill: '#ffff00' });
-                    this.tweens.add({ targets: arrow, scaleX: 1.6, scaleY: 1.6, duration: 120, yoyo: true, ease: 'Sine.easeOut', onComplete: () => {
-                        try { arrow.setStyle && arrow.setStyle({ fill: orig }); } catch (e) { }
-                    }});
-                } catch (e) { }
-            };
-        } catch (e) { /* ignore if font not ready */ }
-
-        // Input handlers for coin insert / language change
         this.setupInput();
 
-        // Load translations then update UI
         loadTranslations(GAME_STATE.language, () => {
             this.updateUI();
         });
     }
 
     setupInput() {
-        // Coin insert (NUM 5/6)
-        this.input.keyboard.on('keydown-FIVE', () => this.insertCoin());
-        this.input.keyboard.on('keydown-SIX', () => this.insertCoin());
-
-        // Start game (allow starting from TopTen via 1/2)
-        this.input.keyboard.on('keydown-ONE', () => this.scene.start('LevelSelectScene'));
-        this.input.keyboard.on('keydown-TWO', () => this.scene.start('LevelSelectScene'));
-
-        // Language change while on Top Ten
-        this.input.keyboard.on('keydown-LEFT', () => this.changeLanguage(-1));
-        this.input.keyboard.on('keydown-RIGHT', () => this.changeLanguage(1));
-
-        // Any key may return to attract (reset timer handled in AttractScene)
-        this.input.keyboard.on('keydown', () => {
-            // immediate return to attract so players can interact normally
-            this.scene.start('AttractScene');
+        this.bindSharedFrontKeys({
+            onCoinInsert: () => this.insertCoin(),
+            onStartGame: (players) => this.startGame(players),
+            onLanguageChange: (dir) => this.changeLanguage(dir),
+            onUnhandledKey: () => this.scene.start('AttractScene')
         });
+    }
+
+    startGame(players) {
+        return super.startSharedGame(players);
     }
 
     changeLanguage(dir) {
-        this.currentLangIndex = (this.currentLangIndex + dir + this.languages.length) % this.languages.length;
-        GAME_STATE.language = this.languages[this.currentLangIndex];
-        if (this.flagSprite) this.flagSprite.setFrame(this.currentLangIndex);
-        // swish effect for TopTen flag change
-        try {
-            if (this.flagSprite) {
-                const dirSign = (dir > 0) ? 1 : -1;
-                this.tweens.add({
-                    targets: this.flagSprite,
-                    x: this.flagSprite.x + (dirSign * 28),
-                    angle: dirSign * 6,
-                    scaleX: 1.15,
-                    scaleY: 0.95,
-                    duration: 140,
-                    yoyo: true,
-                    ease: 'Cubic.easeOut',
-                    onComplete: () => { try { this.flagSprite.setAngle(0); this.flagSprite.setScale(1,1); } catch (e) { } }
-                });
-            }
-        } catch (e) { }
-        // visual feedback for TopTen
-        try {
-            if (dir > 0) this.pulseTopArrow && this.pulseTopArrow(this.topRightArrow);
-            else if (dir < 0) this.pulseTopArrow && this.pulseTopArrow(this.topLeftArrow);
-        } catch (e) { }
-        loadTranslations(GAME_STATE.language, () => {
-            // Refresh texts that depend on translations
-            // Update top title
-            const t = TRANSLATIONS[GAME_STATE.language] || {};
-            const topTenTitle = t.topTen || 'CLASSIFICA';
-            // find the top title text node and update if present
-            try {
-                if (this.children) {
-                    this.children.list.forEach(ch => {
-                        if (ch && ch.text && (ch.text === 'CLASSIFICA' || ch.text === TRANSLATIONS[this.previousLang]?.topTen || false)) {
-                            ch.setText(topTenTitle);
-                        }
-                    });
-                }
-            } catch (e) { }
-            this.updateUI();
-        });
+        super.changeSharedLanguage(dir, { onAfter: () => this.updateUI() });
     }
 
     insertCoin() {
-        if (this.sound) this.sound.play('coin_sfx', { volume: 0.45 });
-        GAME_STATE.credits++;
-        this.updateUI();
+        super.insertSharedCoin();
     }
 
     updateUI() {
         const t = TRANSLATIONS[GAME_STATE.language] || {};
-        const insertCoin = t.insert_coin || 'INSERT COIN';
-        const credit = t.credit || 'CREDIT';
-        const player1 = t.player1 || 'PLAYER 1';
-        const player2 = t.player2 || 'PLAYER 2';
-
-        if (GAME_STATE.credits === 0) {
-            this.coinText.setText(insertCoin);
-        } else {
-            this.coinText.setText(credit + ' ' + GAME_STATE.credits);
-        }
-
-        if (GAME_STATE.credits >= 1) {
-            this.player1Text.setText(player1).setStyle({ fill: '#00ff00' });
-        } else {
-            this.player1Text.setText(player1).setStyle({ fill: '#666666' });
-        }
-
-        if (GAME_STATE.credits >= 2) {
-            this.player2Text.setText(player2).setStyle({ fill: '#00ff00' });
-        } else {
-            this.player2Text.setText(player2).setStyle({ fill: '#666666' });
-        }
-
-        // Draw panels
-        if (this.coinPanel) drawTextPanel(this.coinPanel, this.coinText, { paddingX: 14, paddingY: 8 });
-        if (this.player1Panel) {
-            if (GAME_STATE.credits >= 1) drawTextPanel(this.player1Panel, this.player1Text, { paddingX: 10, paddingY: 6 });
-            else this.player1Panel.clear();
-        }
-        if (this.player2Panel) {
-            if (GAME_STATE.credits >= 2) drawTextPanel(this.player2Panel, this.player2Text, { paddingX: 10, paddingY: 6 });
-            else this.player2Panel.clear();
-        }
+        if (this.topTitleText) this.topTitleText.setText(t.topTen || 'CLASSIFICA');
+        if (this.topNameHeaderText) this.topNameHeaderText.setText(t.name_label || t.name || t.player_name || 'Name');
+        if (this.topLevelHeaderText) this.topLevelHeaderText.setText(t.level_label || t.levelLabel || 'Lev');
+        if (this.topScoreHeaderText) this.topScoreHeaderText.setText(t.score_label || t.scoreLabel || 'Score');
+        if (this.topTitlePanel && this.topTitleText) drawTextPanel(this.topTitlePanel, this.topTitleText, { paddingX: 18, paddingY: 10, radius: 8 });
+        this.updateSharedFrontUi();
     }
 }
 
 // CREDITS SCENE
 // ---------------------------------------------------------------------------
-class CreditsScene extends Phaser.Scene {
+class CreditsScene extends SharedFrontendScene {
     constructor() {
         super('CreditsScene');
     }
 
     create() {
         const t = TRANSLATIONS[GAME_STATE.language] || {};
+        this.initializeSharedFrontState();
         // Background
         this.add.image(400, 300, 'bg').setDisplaySize(800, 600);
         // Overlay panel
@@ -1647,7 +1825,8 @@ class CreditsScene extends Phaser.Scene {
             this.add.rectangle((CONFIG.width || 800) / 2, (CONFIG.height || 600) / 2, (CONFIG.width || 800), (CONFIG.height || 600), 0x000000, overlayAlpha).setDepth(0.1);
         } catch (e) { }
 
-        const title = this.add.text(400, 80, 'SVILUPPATORI', { fontSize: '26px', fill: '#ffff00', fontFamily: GAME_FONT }).setOrigin(0.5);
+        const title = this.add.text(400, 80, t.credits_title || t.credits || 'SVILUPPATORI', { fontSize: '26px', fill: '#ffff00', fontFamily: GAME_FONT }).setOrigin(0.5);
+        this.creditsTitleText = title;
         this.titlePanel = this.add.graphics();
         drawTextPanel(this.titlePanel, title, { paddingX: 18, paddingY: 10, radius: 8 });
 
@@ -1677,113 +1856,62 @@ class CreditsScene extends Phaser.Scene {
             this.scene.start('AttractScene');
         });
 
-        // --- Add attract-style UI for Credits scene: language selector + insert coin/player activation
-        this.languages = ['it', 'fr', 'de', 'en', 'us', 'ja', 'es', 'zh'];
-        this.currentLangIndex = Math.max(0, this.languages.indexOf(GAME_STATE.language));
-        if (!GAME_STATE.language) GAME_STATE.language = this.languages[this.currentLangIndex];
+        this.createSharedFrontUi();
+        this.setupInput();
 
-        // Coin/credits HUD
-        try {
-            this.coinText = this.add.text(400, 520, '', { fontSize: '24px', fill: '#ffee00ff', fontFamily: GAME_FONT }).setOrigin(0.5).setDepth(HUD_DEPTH).setScrollFactor(0);
-        } catch (e) { this.coinText = null; }
-        this.coinPanel = null;
+        loadTranslations(GAME_STATE.language, () => { this.updateUI(); });
+    }
 
-        try { this.player1Text = this.add.text(150, 550, '', { fontSize: '18px', fill: '#666666', fontFamily: GAME_FONT }).setOrigin(0.5).setDepth(HUD_DEPTH).setScrollFactor(0); } catch (e) { this.player1Text = null; }
-        this.player1Panel = null;
-        try { this.player2Text = this.add.text(650, 550, '', { fontSize: '18px', fill: '#666666', fontFamily: GAME_FONT }).setOrigin(0.5).setDepth(HUD_DEPTH).setScrollFactor(0); } catch (e) { this.player2Text = null; }
-        this.player2Panel = null;
+    setupInput() {
+        this.bindSharedFrontKeys({
+            onCoinInsert: () => this.insertCoin(),
+            onStartGame: (players) => this.startGame(players),
+            onLanguageChange: (dir) => this.changeLanguage(dir),
+            onSpace: () => this.scene.start('AttractScene'),
+            onEsc: () => this.scene.start('AttractScene'),
+            onInteraction: () => this.resetCreditsTimer()
+        });
+    }
 
-        // Flag sprite and arrows
-        try {
-            this.flagSprite = this.add.sprite(400, 560, 'flags', this.currentLangIndex).setOrigin(0.5).setDepth(HUD_DEPTH).setScrollFactor(0);
-            this.tweens.add({ targets: this.flagSprite, scaleX: 1.05, scaleY: 0.98, angle: -2, duration: 400, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+    startGame(players) {
+        return super.startSharedGame(players, {
+            onBeforeStart: () => {
+                try {
+                    const intro = this.sound.get('intro_bgm');
+                    if (intro && intro.isPlaying) intro.stop();
+                } catch (e) { }
+            },
+            onInsufficientCredits: () => this.scene.start('AttractScene')
+        });
+    }
 
-            this.leftArrow = this.add.text(320, 560, '◄', { fontSize: '24px', fill: '#ffffff', fontFamily: GAME_FONT }).setOrigin(0.5).setInteractive().setDepth(HUD_DEPTH).setScrollFactor(0).on('pointerdown', () => this.changeLangCredits(-1));
-            this.rightArrow = this.add.text(480, 560, '►', { fontSize: '24px', fill: '#ffffff', fontFamily: GAME_FONT }).setOrigin(0.5).setInteractive().setDepth(HUD_DEPTH).setScrollFactor(0).on('pointerdown', () => this.changeLangCredits(1));
-        } catch (e) { }
-
-        // Helper pulse for arrow feedback
-        this.pulseCreditsArrow = (arrow) => {
-            if (!arrow) return;
-            try {
-                const orig = (arrow.style && arrow.style.fill) || '#ffffff';
-                arrow.setStyle && arrow.setStyle({ fill: '#ffff00' });
-                this.tweens.add({ targets: arrow, scaleX: 1.6, scaleY: 1.6, duration: 120, yoyo: true, ease: 'Sine.easeOut', onComplete: () => {
-                    try { arrow.setStyle && arrow.setStyle({ fill: orig }); } catch (e) { }
-                }});
-            } catch (e) { }
-        };
-
-        // Input handlers for coin insert / language change in Credits
-        this.input.keyboard.on('keydown-FIVE', () => this.insertCoinCredits());
-        this.input.keyboard.on('keydown-SIX', () => this.insertCoinCredits());
-        this.input.keyboard.on('keydown-LEFT', () => this.changeLangCredits(-1));
-        this.input.keyboard.on('keydown-RIGHT', () => this.changeLangCredits(1));
-
-        // Allow starting the game from Credits if credits available
-        this.startGameFromCredits = (players) => {
-            if ((Number(GAME_STATE.credits) || 0) >= players) {
-                try { const intro = this.sound.get('intro_bgm'); if (intro && intro.isPlaying) intro.stop(); } catch (e) {}
-                GAME_STATE.credits = (Number(GAME_STATE.credits) || 0) - players;
-                resetGameStateForNewRun(players);
-                this.scene.start('LevelSelectScene');
-            } else {
-                this.scene.start('AttractScene');
+    changeLanguage(dir) {
+        super.changeSharedLanguage(dir, {
+            onAfter: () => {
+                this.updateUI();
+                this.resetCreditsTimer();
             }
-        };
-        this.input.keyboard.on('keydown-ONE', () => this.startGameFromCredits(1));
-        this.input.keyboard.on('keydown-TWO', () => this.startGameFromCredits(2));
+        });
+    }
 
-        // Space/Esc return to attract
-        this.input.keyboard.once('keydown-SPACE', () => this.scene.start('AttractScene'));
-        this.input.keyboard.once('keydown-ESC', () => this.scene.start('AttractScene'));
+    insertCoin() {
+        super.insertSharedCoin({ onAfter: () => this.resetCreditsTimer() });
+    }
 
-        // Implement language change for Credits scene
-        this.changeLangCredits = (dir) => {
-            if (this.sound) this.sound.play('select_sfx', { volume: 0.4 });
-            this.currentLangIndex = (this.currentLangIndex + dir + this.languages.length) % this.languages.length;
-            GAME_STATE.language = this.languages[this.currentLangIndex];
-            if (this.flagSprite) this.flagSprite.setFrame(this.currentLangIndex);
-            try {
-                const dirSign = (dir > 0) ? 1 : -1;
-                if (this.flagSprite) this.tweens.add({ targets: this.flagSprite, x: this.flagSprite.x + (dirSign * 28), angle: dirSign * 6, scaleX: 1.15, scaleY: 0.95, duration: 140, yoyo: true, ease: 'Cubic.easeOut', onComplete: () => { try { this.flagSprite.setAngle(0); this.flagSprite.setScale(1,1); } catch (e) {} } });
-            } catch (e) { }
-            try { if (dir > 0) this.pulseCreditsArrow && this.pulseCreditsArrow(this.rightArrow); else if (dir < 0) this.pulseCreditsArrow && this.pulseCreditsArrow(this.leftArrow); } catch (e) {}
-            loadTranslations(GAME_STATE.language, () => { this.updateCreditsUI(); });
-            this.resetCreditsTimer();
-        };
+    updateUI() {
+        const t = TRANSLATIONS[GAME_STATE.language] || {};
+        if (this.creditsTitleText) {
+            this.creditsTitleText.setText(t.credits_title || t.credits || 'SVILUPPATORI');
+        }
+        if (this.titlePanel && this.creditsTitleText) {
+            drawTextPanel(this.titlePanel, this.creditsTitleText, { paddingX: 18, paddingY: 10, radius: 8 });
+        }
+        this.updateSharedFrontUi();
+    }
 
-        // Insert coin for Credits scene
-        this.insertCoinCredits = () => {
-            try { if (this.sound) this.sound.play('coin_sfx', { volume: 0.45 }); } catch (e) {}
-            GAME_STATE.credits = (Number(GAME_STATE.credits) || 0) + 1;
-            this.updateCreditsUI();
-            this.resetCreditsTimer();
-        };
-
-        // Update UI for Credits scene
-        this.updateCreditsUI = () => {
-            const t2 = TRANSLATIONS[GAME_STATE.language] || {};
-            const insertCoin = t2.insert_coin || 'INSERT COIN';
-            const credit = t2.credit || 'CREDIT';
-            const player1 = t2.player1 || 'PLAYER 1';
-            const player2 = t2.player2 || 'PLAYER 2';
-
-            if (this.coinText) {
-                if ((Number(GAME_STATE.credits) || 0) <= 0) this.coinText.setText(insertCoin);
-                else this.coinText.setText(credit + ' ' + (Number(GAME_STATE.credits) || 0));
-            }
-            if (this.player1Text) this.player1Text.setText((Number(GAME_STATE.credits) || 0) >= 1 ? player1 : player1).setStyle({ fill: (Number(GAME_STATE.credits) || 0) >= 1 ? '#00ff00' : '#666666' });
-            if (this.player2Text) this.player2Text.setText((Number(GAME_STATE.credits) || 0) >= 2 ? player2 : player2).setStyle({ fill: (Number(GAME_STATE.credits) || 0) >= 2 ? '#00ff00' : '#666666' });
-        };
-
-        this.resetCreditsTimer = () => {
-            try { if (this.creditsTimer) this.creditsTimer.remove(); } catch (e) {}
-            this.creditsTimer = this.time.delayedCall(this.creditsTimeoutSecs, () => { this.scene.start('AttractScene'); });
-        };
-
-        // Load translations and refresh UI initially
-        loadTranslations(GAME_STATE.language, () => { this.updateCreditsUI(); });
+    resetCreditsTimer() {
+        try { if (this.creditsTimer) this.creditsTimer.remove(); } catch (e) { }
+        this.creditsTimer = this.time.delayedCall(this.creditsTimeoutSecs, () => { this.scene.start('AttractScene'); });
     }
 }
 
@@ -11478,6 +11606,10 @@ async function inizialization() {
     try {
         const response = await fetch('data/config.json');
         const cfg = await response.json();
+
+        // Load startup/front-end behavior from data/start.json (optional).
+        await loadStartupSettings();
+
         // Copy all config keys to CONFIG
         Object.assign(CONFIG, cfg);
         // tokenMap: allow mapping single-letter tokens (eg. 'X') to full tokens (eg. 'w00')
@@ -11544,6 +11676,12 @@ async function inizialization() {
         stateKeys.forEach(k => {
             if (cfg[k] !== undefined) GAME_STATE[k] = cfg[k];
         });
+
+        if (isFreePlayMode()) {
+            GAME_STATE.credits = Number.MAX_SAFE_INTEGER;
+        } else {
+            GAME_STATE.credits = Math.max(0, Math.floor(Number(STARTUP_SETTINGS.startup?.initialCredits) || Number(GAME_STATE.credits) || 0));
+        }
 
         // Try to load top scores from server API; fallback to config.json topScores if API not available
         try {

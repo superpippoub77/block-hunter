@@ -166,6 +166,112 @@
             box-shadow: 0 12px 36px rgba(0, 0, 0, 0.45);
         }
 
+        .start-dialog {
+            width: min(1220px, 97vw);
+            max-height: 94vh;
+            overflow: auto;
+            border: 1px solid #40608d;
+            border-radius: 8px;
+            background: #0a1326;
+            padding: 12px;
+            box-shadow: 0 12px 36px rgba(0, 0, 0, 0.45);
+        }
+
+        .start-grid {
+            display: grid;
+            grid-template-columns: 340px minmax(500px, 1fr);
+            gap: 10px;
+            margin-top: 8px;
+        }
+
+        .start-card {
+            border: 1px solid #2f517f;
+            border-radius: 6px;
+            background: rgba(11, 22, 42, 0.8);
+            padding: 8px;
+        }
+
+        .start-card h3 {
+            margin-bottom: 8px;
+            font-size: 10px;
+            color: #cae7ff;
+        }
+
+        .start-stage-wrap {
+            border: 1px solid #355d90;
+            border-radius: 6px;
+            background: #051027;
+            min-height: 420px;
+            max-height: 560px;
+            overflow: auto;
+            padding: 6px;
+        }
+
+        .start-stage {
+            position: relative;
+            background: radial-gradient(circle at 50% 40%, rgba(36, 68, 115, 0.45), rgba(7, 16, 34, 0.95));
+            border: 1px solid #243f68;
+            image-rendering: pixelated;
+            image-rendering: crisp-edges;
+        }
+
+        .start-node {
+            position: absolute;
+            border: 1px dashed rgba(191, 230, 255, 0.65);
+            cursor: move;
+            user-select: none;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            background: rgba(0, 0, 0, 0.08);
+        }
+
+        .start-node.selected {
+            border-color: #ffe08f;
+            box-shadow: 0 0 0 1px rgba(255, 224, 143, 0.75) inset;
+        }
+
+        .start-node img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            pointer-events: none;
+        }
+
+        .start-node .start-text {
+            width: 100%;
+            text-align: center;
+            white-space: pre-wrap;
+            word-break: break-word;
+            pointer-events: none;
+            padding: 4px;
+            line-height: 1.2;
+        }
+
+        .start-timeline {
+            margin-top: 8px;
+            display: grid;
+            gap: 6px;
+            max-height: 220px;
+            overflow: auto;
+            padding-right: 2px;
+        }
+
+        .start-timeline-item {
+            border: 1px solid #355986;
+            border-radius: 4px;
+            padding: 6px;
+            background: rgba(10, 24, 44, 0.75);
+            display: grid;
+            gap: 6px;
+        }
+
+        .start-timeline-item.is-selected {
+            border-color: #ffe08f;
+            background: rgba(45, 37, 20, 0.45);
+        }
+
         .objmap-dialog {
             width: min(1100px, 96vw);
             max-height: 92vh;
@@ -724,6 +830,7 @@
                 <div style="display:flex; gap:6px;">
                     <button id="openFileManagerBtn" class="icon-btn" type="button" title="Gestione file">FILE</button>
                     <button id="openObjectMapDialogBtn" class="icon-btn" type="button" title="Mappaggio oggetti">OBJ</button>
+                    <button id="openStartDialogBtn" class="icon-btn" type="button" title="Config startup e attract">START</button>
                     <button id="openConfigDialogBtn" class="icon-btn" type="button" title="Configura game config">&#9881;</button>
                 </div>
             </div>
@@ -1425,6 +1532,152 @@
                 </section>
             </div>
             <div class="status" id="fileManagerStatusText"></div>
+        </div>
+    </div>
+
+    <div id="startConfigModal" class="config-modal">
+        <div class="start-dialog">
+            <div class="config-toolbar">
+                <h2 style="margin:0; font-size:12px; color:#d7ebff;">Startup Config (data/start.json)</h2>
+                <div style="display:flex; gap:6px;">
+                    <button id="reloadStartBtn" type="button">Ricarica</button>
+                    <button id="saveStartBtn" type="button">Salva</button>
+                    <button id="closeStartDialogBtn" type="button">Chiudi</button>
+                </div>
+            </div>
+
+            <div class="start-grid">
+                <section class="start-card">
+                    <h3>Avvio gioco</h3>
+                    <label style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
+                        <input id="startEnableFrontScenes" type="checkbox" style="width:auto;">
+                        Abilita Attract + TopTen + Credits all'avvio
+                    </label>
+
+                    <div style="margin-bottom:8px;">
+                        <label for="startCoinMode">Modalita crediti</label>
+                        <select id="startCoinMode">
+                            <option value="arcade">Arcade (insert coin)</option>
+                            <option value="freeplay">Free Play</option>
+                        </select>
+                    </div>
+
+                    <div style="margin-bottom:8px;">
+                        <label for="startInitialCredits">Crediti iniziali (solo arcade)</label>
+                        <input id="startInitialCredits" type="number" min="0" step="1" value="0">
+                    </div>
+
+                    <label style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
+                        <input id="startAttractEnabled" type="checkbox" style="width:auto;">
+                        Abilita layout custom Attract
+                    </label>
+
+                    <div class="grid2" style="margin-bottom:8px;">
+                        <div>
+                            <label for="startCanvasWidth">Canvas width</label>
+                            <input id="startCanvasWidth" type="number" min="320" max="3840" step="1" value="800">
+                        </div>
+                        <div>
+                            <label for="startCanvasHeight">Canvas height</label>
+                            <input id="startCanvasHeight" type="number" min="200" max="2160" step="1" value="600">
+                        </div>
+                    </div>
+
+                    <h3 style="margin-top:10px;">Aggiungi elemento Attract</h3>
+                    <div style="margin-bottom:8px;">
+                        <label for="startAttractAssetSelect">Immagine (assets/images/scenes/attractmode)</label>
+                        <select id="startAttractAssetSelect">
+                            <option value="">(nessuna)</option>
+                        </select>
+                    </div>
+                    <div class="btn-row" style="margin-bottom:8px;">
+                        <button id="startAddImageBtn" type="button">Aggiungi Immagine</button>
+                        <button id="startRemoveElementBtn" type="button">Rimuovi selezionato</button>
+                    </div>
+
+                    <div style="margin-bottom:8px;">
+                        <label for="startAddTextValue">Testo</label>
+                        <textarea id="startAddTextValue" style="min-height:60px;">INSERT COIN</textarea>
+                    </div>
+                    <div class="grid2" style="margin-bottom:8px;">
+                        <div>
+                            <label for="startAddTextColor">Colore testo</label>
+                            <input id="startAddTextColor" type="color" value="#ffffff">
+                        </div>
+                        <div>
+                            <label for="startAddTextSize">Font size</label>
+                            <input id="startAddTextSize" type="number" min="8" max="180" step="1" value="24">
+                        </div>
+                    </div>
+                    <button id="startAddTextBtn" type="button">Aggiungi Testo</button>
+
+                    <div class="tiny" style="margin-top:10px;">Drag & Drop sul canvas per posizionare gli elementi. Ogni elemento ha delay/duration/effect per la timeline.</div>
+                </section>
+
+                <section class="start-card">
+                    <h3>Canvas Attract + Timeline</h3>
+                    <div class="start-stage-wrap">
+                        <div id="startAttractStage" class="start-stage"></div>
+                    </div>
+
+                    <div class="grid2" style="margin-top:8px;">
+                        <div>
+                            <label for="startElementX">X</label>
+                            <input id="startElementX" type="number" step="1">
+                        </div>
+                        <div>
+                            <label for="startElementY">Y</label>
+                            <input id="startElementY" type="number" step="1">
+                        </div>
+                        <div>
+                            <label for="startElementW">Width</label>
+                            <input id="startElementW" type="number" min="1" step="1">
+                        </div>
+                        <div>
+                            <label for="startElementH">Height</label>
+                            <input id="startElementH" type="number" min="1" step="1">
+                        </div>
+                    </div>
+
+                    <div class="grid2" style="margin-top:8px;">
+                        <div>
+                            <label for="startElementEffect">Effetto</label>
+                            <select id="startElementEffect">
+                                <option value="none">none</option>
+                                <option value="fadeIn">fadeIn</option>
+                                <option value="slideLeft">slideLeft</option>
+                                <option value="pulse">pulse</option>
+                                <option value="blink">blink</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label for="startElementColor">Colore testo</label>
+                            <input id="startElementColor" type="color" value="#ffffff">
+                        </div>
+                        <div>
+                            <label for="startElementFontSize">Font size testo</label>
+                            <input id="startElementFontSize" type="number" min="8" max="180" step="1" value="24">
+                        </div>
+                        <div>
+                            <label for="startElementDelayMs">Delay ms</label>
+                            <input id="startElementDelayMs" type="number" min="0" step="10" value="0">
+                        </div>
+                        <div>
+                            <label for="startElementDurationMs">Duration ms</label>
+                            <input id="startElementDurationMs" type="number" min="0" step="10" value="1000">
+                        </div>
+                    </div>
+
+                    <div style="margin-top:8px;">
+                        <label for="startElementText">Contenuto testo elemento selezionato</label>
+                        <textarea id="startElementText" style="min-height:56px;"></textarea>
+                    </div>
+
+                    <div id="startTimelineList" class="start-timeline"></div>
+                </section>
+            </div>
+
+            <div class="status" id="startStatusText"></div>
         </div>
     </div>
 
