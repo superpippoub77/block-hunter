@@ -3685,7 +3685,7 @@ class LevelEditorScene extends Phaser.Scene {
 
     createPalette() {
         // If DOM palette exists, skip drawing the in-canvas palette to avoid duplication.
-        if (typeof document !== 'undefined' && document.getElementById('domPalette-tiles')) {
+        if (typeof document !== 'undefined' && document.querySelector('.left-panel .accordion')) {
             return;
         }
 
@@ -6670,54 +6670,69 @@ function buildDomPalette() {
 
         try { applyRightPanelFieldLayout(); } catch (e) {}
     if (typeof document === 'undefined') return;
-    const tilesContainer = el('domPalette-tiles');
-    const objectsContainer = el('domPalette-objects');
-    const wallsContainer = el('domPalette-walls');
-    if (!tilesContainer && !objectsContainer && !wallsContainer) return;
+    const leftPanel = document.querySelector('.left-panel');
+    if (!leftPanel) return;
 
-    if (tilesContainer) tilesContainer.innerHTML = '';
-    if (objectsContainer) objectsContainer.innerHTML = '';
-    if (wallsContainer) wallsContainer.innerHTML = '';
+    const hintNode = leftPanel.querySelector(':scope > .tiny');
+    Array.from(leftPanel.querySelectorAll(':scope > .accordion')).forEach((node) => node.remove());
 
-    const dynamicGroups = getPaletteItemsFromObjectMappings();
+    const byCategory = new Map();
+    const seen = new Set();
+    const rows = Array.isArray(OBJECT_MAP_EDITOR_STATE.items) ? OBJECT_MAP_EDITOR_STATE.items : [];
 
-    const appendItemsByCategory = (container, items, fallbackTitle = 'other') => {
-        if (!container || !Array.isArray(items) || !items.length) return;
-        const byCategory = new Map();
-        items.forEach((it) => {
-            const category = String(it?.category || fallbackTitle || 'other').trim().toLowerCase() || 'other';
-            if (!byCategory.has(category)) byCategory.set(category, []);
-            byCategory.get(category).push(it);
+    rows.forEach((raw) => {
+        if (!raw || typeof raw !== 'object') return;
+        const tokenRaw = String(raw.token ?? raw.mapToken ?? '').trim();
+        if (!tokenRaw) return;
+
+        const token = normalizeToken(tokenRaw);
+        if (!token || token === '-') return;
+
+        const dedupeKey = token.toLowerCase();
+        if (seen.has(dedupeKey)) return;
+        seen.add(dedupeKey);
+
+        const category = String(raw.category ?? 'other').trim().toLowerCase() || 'other';
+        const label = String(raw.key ?? '').trim() || token;
+        if (!byCategory.has(category)) byCategory.set(category, []);
+        byCategory.get(category).push({ token, label });
+    });
+
+    // Keep wall variants available under wall category.
+    WALL_PALETTE_ITEMS.forEach((it) => {
+        const token = normalizeToken(it.token);
+        const dedupeKey = token.toLowerCase();
+        if (seen.has(dedupeKey)) return;
+        seen.add(dedupeKey);
+        if (!byCategory.has('wall')) byCategory.set('wall', []);
+        byCategory.get('wall').push({ token, label: it.label || it.token });
+    });
+
+    const categoryNames = Array.from(byCategory.keys()).sort((a, b) => a.localeCompare(b, 'it'));
+    categoryNames.forEach((category) => {
+        const accordion = document.createElement('div');
+        accordion.className = 'accordion';
+
+        const header = document.createElement('h3');
+        header.dataset.group = category;
+        header.textContent = category;
+
+        const content = document.createElement('div');
+        content.className = 'content';
+        content.style.display = 'none';
+
+        const list = byCategory.get(category) || [];
+        list.sort((a, b) => String(a.token).localeCompare(String(b.token), 'it'));
+        list.forEach((it) => {
+            content.appendChild(makePaletteItem(it.label || it.token, normalizeToken(it.token)));
         });
 
-        Array.from(byCategory.keys()).sort((a, b) => a.localeCompare(b, 'it')).forEach((category) => {
-            const title = document.createElement('div');
-            title.className = 'tiny';
-            title.style.margin = '6px 0 2px 0';
-            title.style.color = '#9fcfff';
-            title.textContent = `[${category}]`;
-            container.appendChild(title);
+        accordion.appendChild(header);
+        accordion.appendChild(content);
 
-            const list = byCategory.get(category) || [];
-            list.sort((a, b) => String(a.token).localeCompare(String(b.token), 'it'));
-            list.forEach((it) => {
-                const elItem = makePaletteItem(it.label || it.token, normalizeToken(it.token));
-                container.appendChild(elItem);
-            });
-        });
-    };
-
-    appendItemsByCategory(tilesContainer, dynamicGroups.tiles, 'tile');
-    appendItemsByCategory(objectsContainer, dynamicGroups.objects, 'object');
-
-    // populate walls
-    if (wallsContainer) {
-        WALL_PALETTE_ITEMS.forEach((it) => {
-            const tokenNorm = normalizeToken(it.token);
-            const elItem = makePaletteItem(it.label || it.token, tokenNorm);
-            wallsContainer.appendChild(elItem);
-        });
-    }
+        if (hintNode) leftPanel.insertBefore(accordion, hintNode);
+        else leftPanel.appendChild(accordion);
+    });
 
     // accordion toggles
     const accHeads = Array.from(document.querySelectorAll('.accordion h3'));
