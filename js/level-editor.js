@@ -25,6 +25,8 @@ const STORAGE_KEY = 'blockHunterLevelEditorState';
 const WALL_TOKEN_REGEX = /^w(\d)(\d)(\d)([hv0])$/i;
 const BG_ASSETS_DIR = 'assets/images/scenes/game/background';
 const FG_ASSETS_DIR = 'assets/images/scenes/game/foreground';
+const OBJECTS_ASSETS_DIR = 'assets/images/objects';
+const ATTRACT_ASSETS_DIR = 'assets/images/scenes/attractmode';
 const API_BASE_PATH = 'api';
 const BG_MANIFEST_PATH = 'data/images-scenes-game-background.json';
 const FG_MANIFEST_PATH = 'data/images-scenes-game-foreground.json';
@@ -5575,12 +5577,18 @@ function bindUI() {
         bgSelected: '',
         fgSelected: '',
         musicSelected: '',
+        objSelected: '',
+        attractSelected: '',
         bgSearch: '',
         fgSearch: '',
         musicSearch: '',
+        objSearch: '',
+        attractSearch: '',
         bgList: [],
         fgList: [],
-        musicList: []
+        musicList: [],
+        objList: [],
+        attractList: []
     };
 
     function setFileManagerStatus(message, isError = false) {
@@ -5657,8 +5665,12 @@ function bindUI() {
         const bgPath = getFilePathByName(FILE_MANAGER_STATE.bgList, FILE_MANAGER_STATE.bgSelected);
         const fgPath = getFilePathByName(FILE_MANAGER_STATE.fgList, FILE_MANAGER_STATE.fgSelected);
         const musicPath = getFilePathByName(FILE_MANAGER_STATE.musicList, FILE_MANAGER_STATE.musicSelected);
+        const objPath = getFilePathByName(FILE_MANAGER_STATE.objList, FILE_MANAGER_STATE.objSelected);
+        const attractPath = getFilePathByName(FILE_MANAGER_STATE.attractList, FILE_MANAGER_STATE.attractSelected);
         renderImagePreview('fmBgPreview', bgPath);
         renderImagePreview('fmFgPreview', fgPath);
+        renderImagePreview('fmObjPreview', objPath);
+        renderImagePreview('fmAttractPreview', attractPath);
         renderMusicPreview('fmMusicPreview', musicPath);
     }
 
@@ -5717,6 +5729,16 @@ function bindUI() {
             renderFileManagerLists();
         }, isMusicFileInUse);
 
+        renderFileManagerList('fmObjList', FILE_MANAGER_STATE.objList, FILE_MANAGER_STATE.objSelected, FILE_MANAGER_STATE.objSearch, (name) => {
+            FILE_MANAGER_STATE.objSelected = name;
+            renderFileManagerLists();
+        }, isObjectFileInUse);
+
+        renderFileManagerList('fmAttractList', FILE_MANAGER_STATE.attractList, FILE_MANAGER_STATE.attractSelected, FILE_MANAGER_STATE.attractSearch, (name) => {
+            FILE_MANAGER_STATE.attractSelected = name;
+            renderFileManagerLists();
+        }, isAttractFileInUse);
+
         refreshManagerPreviews();
     }
 
@@ -5741,23 +5763,31 @@ function bindUI() {
     }
 
     async function refreshFileManagerData() {
-        const [bgList, fgList, musicList] = await Promise.all([
+        const [bgList, fgList, musicList, objList, attractList] = await Promise.all([
             fetchJsonListWithFallback(buildApiUrl('images/background'), BG_MANIFEST_PATH),
             fetchJsonListWithFallback(buildApiUrl('images/foreground'), FG_MANIFEST_PATH),
-            fetchJsonListWithFallback(buildApiUrl('music'), MUSIC_MANIFEST_PATH)
+            fetchJsonListWithFallback(buildApiUrl('music'), MUSIC_MANIFEST_PATH),
+            fetchJsonListWithFallback(buildApiUrl('images/objects'), ''),
+            fetchJsonListWithFallback(buildApiUrl('images/attractmode'), '')
         ]);
 
         FILE_MANAGER_STATE.bgList = bgList;
         FILE_MANAGER_STATE.fgList = fgList;
         FILE_MANAGER_STATE.musicList = musicList;
+        FILE_MANAGER_STATE.objList = objList;
+        FILE_MANAGER_STATE.attractList = attractList;
 
         const bgNames = new Set(bgList.map((p) => String(p).split('/').pop()));
         const fgNames = new Set(fgList.map((p) => String(p).split('/').pop()));
         const musicNames = new Set(musicList.map((p) => String(p).split('/').pop()));
+        const objNames = new Set(objList.map((p) => String(p).split('/').pop()));
+        const attractNames = new Set(attractList.map((p) => String(p).split('/').pop()));
 
         if (!bgNames.has(FILE_MANAGER_STATE.bgSelected)) FILE_MANAGER_STATE.bgSelected = '';
         if (!fgNames.has(FILE_MANAGER_STATE.fgSelected)) FILE_MANAGER_STATE.fgSelected = '';
         if (!musicNames.has(FILE_MANAGER_STATE.musicSelected)) FILE_MANAGER_STATE.musicSelected = '';
+        if (!objNames.has(FILE_MANAGER_STATE.objSelected)) FILE_MANAGER_STATE.objSelected = '';
+        if (!attractNames.has(FILE_MANAGER_STATE.attractSelected)) FILE_MANAGER_STATE.attractSelected = '';
 
         renderFileManagerLists();
     }
@@ -5978,6 +6008,20 @@ function bindUI() {
             renderFileManagerLists();
         });
     }
+    const fmObjSearch = el('fmObjSearch');
+    if (fmObjSearch) {
+        fmObjSearch.addEventListener('input', () => {
+            FILE_MANAGER_STATE.objSearch = String(fmObjSearch.value || '');
+            renderFileManagerLists();
+        });
+    }
+    const fmAttractSearch = el('fmAttractSearch');
+    if (fmAttractSearch) {
+        fmAttractSearch.addEventListener('input', () => {
+            FILE_MANAGER_STATE.attractSearch = String(fmAttractSearch.value || '');
+            renderFileManagerLists();
+        });
+    }
 
     const fmBgUploadBtn = el('fmBgUploadBtn');
     if (fmBgUploadBtn) {
@@ -6006,6 +6050,26 @@ function bindUI() {
                 await uploadFromManagerInput('music', 'fmMusicInput', 'musicSelected');
             } catch (e) {
                 setFileManagerStatus(`Errore upload musica: ${e.message}`, true);
+            }
+        });
+    }
+    const fmObjUploadBtn = el('fmObjUploadBtn');
+    if (fmObjUploadBtn) {
+        fmObjUploadBtn.addEventListener('click', async () => {
+            try {
+                await uploadFromManagerInput('images/objects', 'fmObjInput', 'objSelected');
+            } catch (e) {
+                setFileManagerStatus(`Errore upload objects: ${e.message}`, true);
+            }
+        });
+    }
+    const fmAttractUploadBtn = el('fmAttractUploadBtn');
+    if (fmAttractUploadBtn) {
+        fmAttractUploadBtn.addEventListener('click', async () => {
+            try {
+                await uploadFromManagerInput('images/attractmode', 'fmAttractInput', 'attractSelected');
+            } catch (e) {
+                setFileManagerStatus(`Errore upload attractmode: ${e.message}`, true);
             }
         });
     }
@@ -6040,6 +6104,26 @@ function bindUI() {
             }
         });
     }
+    const fmObjDeleteBtn = el('fmObjDeleteBtn');
+    if (fmObjDeleteBtn) {
+        fmObjDeleteBtn.addEventListener('click', async () => {
+            try {
+                await deleteFromManager('images/objects', FILE_MANAGER_STATE.objSelected, isObjectFileInUse, 'Seleziona un file objects da eliminare.');
+            } catch (e) {
+                setFileManagerStatus(`Errore eliminazione objects: ${e.message}`, true);
+            }
+        });
+    }
+    const fmAttractDeleteBtn = el('fmAttractDeleteBtn');
+    if (fmAttractDeleteBtn) {
+        fmAttractDeleteBtn.addEventListener('click', async () => {
+            try {
+                await deleteFromManager('images/attractmode', FILE_MANAGER_STATE.attractSelected, isAttractFileInUse, 'Seleziona un file attractmode da eliminare.');
+            } catch (e) {
+                setFileManagerStatus(`Errore eliminazione attractmode: ${e.message}`, true);
+            }
+        });
+    }
 
     const fmBgRenameBtn = el('fmBgRenameBtn');
     if (fmBgRenameBtn) {
@@ -6071,10 +6155,32 @@ function bindUI() {
             }
         });
     }
+    const fmObjRenameBtn = el('fmObjRenameBtn');
+    if (fmObjRenameBtn) {
+        fmObjRenameBtn.addEventListener('click', async () => {
+            try {
+                await renameFromManager('images/objects', 'objSelected', isObjectFileInUse, 'Seleziona un file objects da rinominare.');
+            } catch (e) {
+                setFileManagerStatus(`Errore rinomina objects: ${e.message}`, true);
+            }
+        });
+    }
+    const fmAttractRenameBtn = el('fmAttractRenameBtn');
+    if (fmAttractRenameBtn) {
+        fmAttractRenameBtn.addEventListener('click', async () => {
+            try {
+                await renameFromManager('images/attractmode', 'attractSelected', isAttractFileInUse, 'Seleziona un file attractmode da rinominare.');
+            } catch (e) {
+                setFileManagerStatus(`Errore rinomina attractmode: ${e.message}`, true);
+            }
+        });
+    }
 
     bindDropzone('fmBgDropzone', 'images/background', 'bgSelected');
     bindDropzone('fmFgDropzone', 'images/foreground', 'fgSelected');
     bindDropzone('fmMusicDropzone', 'music', 'musicSelected');
+    bindDropzone('fmObjDropzone', 'images/objects', 'objSelected');
+    bindDropzone('fmAttractDropzone', 'images/attractmode', 'attractSelected');
     if (closeObjectMapDialogBtn) {
         closeObjectMapDialogBtn.addEventListener('click', () => {
             if (objectMapModal) objectMapModal.classList.remove('open');
@@ -6678,6 +6784,21 @@ function bindUI() {
         const selected = String(el('levelMusic')?.value || '').trim();
         if (!selected) return false;
         return selected.split('/').pop() === clean;
+    }
+
+    function isObjectFileInUse(fileName) {
+        const clean = String(fileName || '').trim();
+        if (!clean) return false;
+        const full = `${OBJECTS_ASSETS_DIR}/${clean}`;
+        const list = Array.isArray(OBJECT_MAP_EDITOR_STATE?.items) ? OBJECT_MAP_EDITOR_STATE.items : [];
+        return list.some((it) => {
+            const src = String(it?.imageSrc || '').trim();
+            return src === full || src.split('/').pop() === clean;
+        });
+    }
+
+    function isAttractFileInUse(_fileName) {
+        return false;
     }
 
     function refreshAssetUsageBadges() {

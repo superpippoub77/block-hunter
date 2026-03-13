@@ -266,7 +266,7 @@
 
         .filemgr-grid {
             display: grid;
-            grid-template-columns: repeat(3, minmax(260px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
             gap: 10px;
             margin-top: 8px;
         }
@@ -1412,6 +1412,34 @@
                     <div class="filemgr-row">
                         <button id="fmMusicRenameBtn" type="button">Rinomina</button>
                         <button id="fmMusicDeleteBtn" type="button">Elimina selezionato</button>
+                    </div>
+                </section>
+
+                <section class="filemgr-card">
+                    <h3 class="filemgr-title">Images: Objects</h3>
+                    <input id="fmObjSearch" class="filemgr-search" type="text" placeholder="Cerca file...">
+                    <input id="fmObjInput" type="file" accept=".png,.jpg,.jpeg,.gif,.webp,.svg">
+                    <button id="fmObjUploadBtn" type="button">Carica selezionato</button>
+                    <div id="fmObjDropzone" class="filemgr-dropzone">Trascina qui file immagine<br>oppure usa Seleziona file</div>
+                    <div id="fmObjList" class="filemgr-list"></div>
+                    <div id="fmObjPreview" class="filemgr-preview">Nessun file selezionato</div>
+                    <div class="filemgr-row">
+                        <button id="fmObjRenameBtn" type="button">Rinomina</button>
+                        <button id="fmObjDeleteBtn" type="button">Elimina selezionato</button>
+                    </div>
+                </section>
+
+                <section class="filemgr-card">
+                    <h3 class="filemgr-title">Images: Attractmode</h3>
+                    <input id="fmAttractSearch" class="filemgr-search" type="text" placeholder="Cerca file...">
+                    <input id="fmAttractInput" type="file" accept=".png,.jpg,.jpeg,.gif,.webp,.svg">
+                    <button id="fmAttractUploadBtn" type="button">Carica selezionato</button>
+                    <div id="fmAttractDropzone" class="filemgr-dropzone">Trascina qui file immagine<br>oppure usa Seleziona file</div>
+                    <div id="fmAttractList" class="filemgr-list"></div>
+                    <div id="fmAttractPreview" class="filemgr-preview">Nessun file selezionato</div>
+                    <div class="filemgr-row">
+                        <button id="fmAttractRenameBtn" type="button">Rinomina</button>
+                        <button id="fmAttractDeleteBtn" type="button">Elimina selezionato</button>
                     </div>
                 </section>
             </div>

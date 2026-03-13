@@ -596,6 +596,64 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // API: list image files in /assets/images/objects folder
+  if (req.url && req.url.startsWith('/api/images/objects')) {
+    const objOpts = {
+      dirPath: path.join(ROOT_DIR, 'assets', 'images', 'objects'),
+      publicPrefix: 'assets/images/objects',
+      allowedExt: new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg'])
+    };
+
+    if (req.method === 'GET') {
+      listImagesInDir(objOpts.dirPath, objOpts.publicPrefix, (list) => {
+        sendJson(res, 200, list);
+      });
+      return;
+    }
+
+    if (req.method === 'POST') {
+      handleAssetUpload(req, res, objOpts);
+      return;
+    }
+
+    if (req.method === 'DELETE') {
+      handleAssetDelete(req, res, objOpts);
+      return;
+    }
+
+    sendJson(res, 405, { ok: false, error: 'method not allowed' });
+    return;
+  }
+
+  // API: list image files in /assets/images/scenes/attractmode folder
+  if (req.url && req.url.startsWith('/api/images/attractmode')) {
+    const attrOpts = {
+      dirPath: path.join(ROOT_DIR, 'assets', 'images', 'scenes', 'attractmode'),
+      publicPrefix: 'assets/images/scenes/attractmode',
+      allowedExt: new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg'])
+    };
+
+    if (req.method === 'GET') {
+      listImagesInDir(attrOpts.dirPath, attrOpts.publicPrefix, (list) => {
+        sendJson(res, 200, list);
+      });
+      return;
+    }
+
+    if (req.method === 'POST') {
+      handleAssetUpload(req, res, attrOpts);
+      return;
+    }
+
+    if (req.method === 'DELETE') {
+      handleAssetDelete(req, res, attrOpts);
+      return;
+    }
+
+    sendJson(res, 405, { ok: false, error: 'method not allowed' });
+    return;
+  }
+
   // API: list image files in /images folder (legacy)
   if (req.url && req.url.startsWith('/api/images')) {
     if (req.method !== 'GET') {
