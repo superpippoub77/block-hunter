@@ -23,12 +23,12 @@ const OBJECT_FRAMES = {
 
 const STORAGE_KEY = 'blockHunterLevelEditorState';
 const WALL_TOKEN_REGEX = /^w(\d)(\d)(\d)([hv0])$/i;
-const BG_ASSETS_DIR = 'assets/images/background';
-const FG_ASSETS_DIR = 'assets/images/foreground';
+const BG_ASSETS_DIR = 'assets/images/scenes/game/background';
+const FG_ASSETS_DIR = 'assets/images/scenes/game/foreground';
 const API_BASE_PATH = 'api';
-const BG_MANIFEST_PATH = 'data/background-images.json';
-const FG_MANIFEST_PATH = 'data/foreground-images.json';
-const MUSIC_MANIFEST_PATH = 'data/music-files.json';
+const BG_MANIFEST_PATH = 'data/images-scenes-game-background.json';
+const FG_MANIFEST_PATH = 'data/images-scenes-game-foreground.json';
+const MUSIC_MANIFEST_PATH = 'data/music-scenes-game.json';
 const CONFIG_JSON_PATH = 'data/config.json';
 const OBJECTS_JSON_PATH = 'data/objects.json';
 const LEVELS_DIR_PATH = 'data/level';
@@ -2743,7 +2743,7 @@ function renderEffectLibraryButtons() {
 }
 
 async function loadEffectLibraryForEditor() {
-    const candidates = ['data/Library/manifest.json', 'Data/Library/manifest.json'];
+    const candidates = ['data/library/manifest.json', 'data/library/manifest.json'];
     for (const p of candidates) {
         try {
             const resp = await fetch(p, { cache: 'no-store' });
@@ -2768,7 +2768,7 @@ async function loadEffectLibraryForEditor() {
     EDITOR_EFFECT_LIBRARY_STATE.effects = [];
     EDITOR_EFFECT_LIBRARY_STATE.source = '';
     renderEffectLibraryButtons();
-    setEffectLibraryStatus('Manifest libreria effetti non trovato (data/Library/manifest.json).', true);
+    setEffectLibraryStatus('Manifest libreria effetti non trovato (data/library/manifest.json).', true);
     return [];
 }
 
