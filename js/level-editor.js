@@ -169,6 +169,23 @@ function parseRepeatValue(value, fallback = 1) {
     return Math.max(1, Math.floor(parsed));
 }
 
+function fileToBase64(file) {
+    return new Promise((resolve, reject) => {
+        try {
+            const reader = new FileReader();
+            reader.onload = () => {
+                const result = String(reader.result || '');
+                const commaIdx = result.indexOf(',');
+                resolve(commaIdx >= 0 ? result.slice(commaIdx + 1) : result);
+            };
+            reader.onerror = () => reject(new Error('impossibile leggere il file selezionato'));
+            reader.readAsDataURL(file);
+        } catch (e) {
+            reject(e);
+        }
+    });
+}
+
 function buildApiUrl(path) {
     const clean = String(path ?? '').replace(/^\/+|\/+$/g, '');
     // Always hit directory-style PHP endpoints with a trailing slash
@@ -6142,6 +6159,107 @@ function bindUI() {
         }
     }
 
+    function syncLayerSelectsFromMaster(masterId, rowSelector, selectClass) {
+        const master = el(masterId);
+        if (!master) return;
+        const masterOptions = Array.from(master.options).map((o) => ({ value: o.value, label: o.textContent }));
+        const selects = Array.from(document.querySelectorAll(`${rowSelector} select.${selectClass}`));
+        selects.forEach((sel) => {
+            const prev = String(sel.value || '').trim();
+            sel.innerHTML = '';
+            masterOptions.forEach((opt) => {
+                const o = document.createElement('option');
+                o.value = opt.value;
+                o.textContent = opt.label;
+                sel.appendChild(o);
+            });
+            if (prev && masterOptions.some((o) => o.value === prev)) {
+                sel.value = prev;
+            }
+        });
+    }
+
+    function updateInUseBadge(badgeId, inUse, inUseText, freeText) {
+        const badge = el(badgeId);
+        if (!badge) return;
+        badge.textContent = inUse ? inUseText : freeText;
+        badge.style.color = inUse ? '#ffd27a' : '#9de8ff';
+    }
+
+    function isBgFileInUse(fileName) {
+        const clean = String(fileName || '').trim();
+        if (!clean) return false;
+        const target = `${BG_ASSETS_DIR}/${clean}`;
+        const layers = readBackgroundLayersFromDOM() || [];
+        return layers.some((layer) => String(layer?.src || '').trim() === target);
+    }
+
+    function isFgFileInUse(fileName) {
+        const clean = String(fileName || '').trim();
+        if (!clean) return false;
+        const target = `${FG_ASSETS_DIR}/${clean}`;
+        const layers = readForegroundLayersFromDOM() || [];
+        return layers.some((layer) => String(layer?.src || '').trim() === target);
+    }
+
+    function isMusicFileInUse(fileName) {
+        const clean = String(fileName || '').trim();
+        if (!clean) return false;
+        const selected = String(el('levelMusic')?.value || '').trim();
+        if (!selected) return false;
+        return selected.split('/').pop() === clean;
+    }
+
+    function refreshAssetUsageBadges() {
+        const bgFile = String(el('bgImageSelect')?.value || '').trim();
+        const fgFile = String(el('fgImageSelect')?.value || '').trim();
+        const musicPath = String(el('levelMusic')?.value || '').trim();
+        const musicFile = musicPath ? musicPath.split('/').pop() : '';
+
+        updateInUseBadge('bgInUseBadge', isBgFileInUse(bgFile), 'In uso nel livello', 'Non usato nel livello');
+        updateInUseBadge('fgInUseBadge', isFgFileInUse(fgFile), 'In uso nel livello', 'Non usato nel livello');
+        updateInUseBadge('musicInUseBadge', isMusicFileInUse(musicFile), 'In uso nel livello', 'Nessuna traccia attiva');
+    }
+
+    async function uploadAsset(endpoint, fileInputId) {
+        const input = el(fileInputId);
+        const file = input?.files?.[0];
+        if (!file) {
+            setStatus('Seleziona un file prima del caricamento.', true);
+            return null;
+        }
+        const base64 = await fileToBase64(file);
+        const response = await fetch(buildApiUrl(endpoint), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                fileName: file.name,
+                contentBase64: base64
+            })
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || !payload?.ok) {
+            throw new Error(payload?.error || `upload fallito (${response.status})`);
+        }
+        if (input) input.value = '';
+        return payload;
+    }
+
+    async function deleteAsset(endpoint, fileName) {
+        const clean = String(fileName || '').trim();
+        if (!clean) {
+            throw new Error('nessun file selezionato');
+        }
+        const response = await fetch(`${buildApiUrl(endpoint)}?file=${encodeURIComponent(clean)}`, {
+            method: 'DELETE'
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || !payload?.ok) {
+            throw new Error(payload?.error || `eliminazione fallita (${response.status})`);
+        }
+        return payload;
+    }
+
     try { populateMusicOptions(); } catch (e) {}
     try { populateLevelFileOptions(); } catch (e) {}
 
@@ -6172,12 +6290,165 @@ function bindUI() {
                     const o = document.createElement('option'); o.value = name; o.textContent = name; fgSel.appendChild(o);
                 });
             }
+
+            syncLayerSelectsFromMaster('bgImageSelect', '#bgLayersContainer .bg-layer', 'bg-src');
+            syncLayerSelectsFromMaster('fgImageSelect', '#fgLayersContainer .fg-layer', 'fg-src');
+            refreshAssetUsageBadges();
         } catch (e) {
             // ignore
         }
     }
 
     try { populateImageOptions(); } catch (e) {}
+
+    const bgImageSelect = el('bgImageSelect');
+    if (bgImageSelect) {
+        bgImageSelect.addEventListener('change', refreshAssetUsageBadges);
+    }
+
+    const fgImageSelect = el('fgImageSelect');
+    if (fgImageSelect) {
+        fgImageSelect.addEventListener('change', refreshAssetUsageBadges);
+    }
+
+    const levelMusicSelect = el('levelMusic');
+    if (levelMusicSelect) {
+        levelMusicSelect.addEventListener('change', refreshAssetUsageBadges);
+    }
+
+    const bgUploadBtn = el('bgUploadBtn');
+    if (bgUploadBtn) {
+        bgUploadBtn.addEventListener('click', async () => {
+            try {
+                const payload = await uploadAsset('images/background', 'bgUploadInput');
+                await populateImageOptions();
+                const bgSel = el('bgImageSelect');
+                const fileName = String(payload?.file || '').split('/').pop() || '';
+                if (bgSel && fileName) bgSel.value = fileName;
+                refreshAssetUsageBadges();
+                setStatus(`Background caricato: ${fileName}`);
+            } catch (e) {
+                setStatus(`Errore upload background: ${e.message}`, true);
+            }
+        });
+    }
+
+    const fgUploadBtn = el('fgUploadBtn');
+    if (fgUploadBtn) {
+        fgUploadBtn.addEventListener('click', async () => {
+            try {
+                const payload = await uploadAsset('images/foreground', 'fgUploadInput');
+                await populateImageOptions();
+                const fgSel = el('fgImageSelect');
+                const fileName = String(payload?.file || '').split('/').pop() || '';
+                if (fgSel && fileName) fgSel.value = fileName;
+                refreshAssetUsageBadges();
+                setStatus(`Foreground caricato: ${fileName}`);
+            } catch (e) {
+                setStatus(`Errore upload foreground: ${e.message}`, true);
+            }
+        });
+    }
+
+    const bgDeleteBtn = el('bgDeleteBtn');
+    if (bgDeleteBtn) {
+        bgDeleteBtn.addEventListener('click', async () => {
+            try {
+                const bgSel = el('bgImageSelect');
+                const fileName = String(bgSel?.value || '').trim();
+                if (!fileName) {
+                    setStatus('Seleziona un background da eliminare.', true);
+                    return;
+                }
+                if (isBgFileInUse(fileName)) {
+                    setStatus('Background in uso nel livello: rimuovilo dai layer prima di eliminarlo.', true);
+                    return;
+                }
+                if (!window.confirm(`Eliminare definitivamente il background "${fileName}"?`)) {
+                    return;
+                }
+                await deleteAsset('images/background', fileName);
+                await populateImageOptions();
+                refreshAssetUsageBadges();
+                setStatus(`Background eliminato: ${fileName}`);
+            } catch (e) {
+                setStatus(`Errore eliminazione background: ${e.message}`, true);
+            }
+        });
+    }
+
+    const fgDeleteBtn = el('fgDeleteBtn');
+    if (fgDeleteBtn) {
+        fgDeleteBtn.addEventListener('click', async () => {
+            try {
+                const fgSel = el('fgImageSelect');
+                const fileName = String(fgSel?.value || '').trim();
+                if (!fileName) {
+                    setStatus('Seleziona un foreground da eliminare.', true);
+                    return;
+                }
+                if (isFgFileInUse(fileName)) {
+                    setStatus('Foreground in uso nel livello: rimuovilo dai layer prima di eliminarlo.', true);
+                    return;
+                }
+                if (!window.confirm(`Eliminare definitivamente il foreground "${fileName}"?`)) {
+                    return;
+                }
+                await deleteAsset('images/foreground', fileName);
+                await populateImageOptions();
+                refreshAssetUsageBadges();
+                setStatus(`Foreground eliminato: ${fileName}`);
+            } catch (e) {
+                setStatus(`Errore eliminazione foreground: ${e.message}`, true);
+            }
+        });
+    }
+
+    const musicUploadBtn = el('musicUploadBtn');
+    if (musicUploadBtn) {
+        musicUploadBtn.addEventListener('click', async () => {
+            try {
+                const payload = await uploadAsset('music', 'musicUploadInput');
+                await populateMusicOptions();
+                const sel = el('levelMusic');
+                const filePath = String(payload?.file || '').trim();
+                if (sel && filePath) sel.value = filePath;
+                refreshAssetUsageBadges();
+                setStatus(`Musica caricata: ${filePath.split('/').pop() || filePath}`);
+            } catch (e) {
+                setStatus(`Errore upload musica: ${e.message}`, true);
+            }
+        });
+    }
+
+    const musicDeleteBtn = el('musicDeleteBtn');
+    if (musicDeleteBtn) {
+        musicDeleteBtn.addEventListener('click', async () => {
+            try {
+                const sel = el('levelMusic');
+                const selectedPath = String(sel?.value || '').trim();
+                const fileName = selectedPath ? selectedPath.split('/').pop() : '';
+                if (!fileName) {
+                    setStatus('Seleziona una traccia da eliminare.', true);
+                    return;
+                }
+                if (isMusicFileInUse(fileName)) {
+                    setStatus('Traccia in uso nel livello: seleziona (none) prima di eliminarla.', true);
+                    return;
+                }
+                if (!window.confirm(`Eliminare definitivamente la traccia "${fileName}"?`)) {
+                    return;
+                }
+                await deleteAsset('music', fileName);
+                await populateMusicOptions();
+                if (sel) sel.value = '';
+                refreshAssetUsageBadges();
+                setStatus(`Musica eliminata: ${fileName}`);
+            } catch (e) {
+                setStatus(`Errore eliminazione musica: ${e.message}`, true);
+            }
+        });
+    }
     
     // zoom slider
     const zoomSlider = el('zoomSlider');
@@ -6236,6 +6507,7 @@ function bindUI() {
             const scene = getScene();
             scene?.updateEditorBackgroundImage?.(true);
             drawMiniMapPreview(scene);
+            refreshAssetUsageBadges();
         };
         bgLayerContainer.addEventListener('input', onBgLayerChange);
         bgLayerContainer.addEventListener('change', onBgLayerChange);
@@ -6247,10 +6519,13 @@ function bindUI() {
             const scene = getScene();
             scene?.updateEditorBackgroundImage?.(true);
             drawMiniMapPreview(scene);
+            refreshAssetUsageBadges();
         };
         fgLayerContainer.addEventListener('input', onFgLayerChange);
         fgLayerContainer.addEventListener('change', onFgLayerChange);
     }
+
+    try { refreshAssetUsageBadges(); } catch (e) {}
 
     // auto-grid-from-background toggle
     const autoGridChk = el('autoGridFromBg');

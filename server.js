@@ -43,6 +43,149 @@ function listImagesInDir(dirPath, publicPrefix, callback) {
   });
 }
 
+function listAudioInDir(dirPath, publicPrefix, callback) {
+  fs.readdir(dirPath, (err, files) => {
+    if (err) {
+      callback([]);
+      return;
+    }
+    const audioExt = new Set([".mp3", ".ogg", ".wav", ".m4a", ".aac"]);
+    const list = (files || [])
+      .filter((f) => audioExt.has(path.extname(f).toLowerCase()))
+      .map((f) => path.posix.join(publicPrefix, f));
+    callback(list);
+  });
+}
+
+function readJsonBody(req, callback) {
+  let body = "";
+  req.on("data", (chunk) => {
+    body += chunk.toString();
+  });
+  req.on("end", () => {
+    try {
+      const parsed = JSON.parse(body || "{}");
+      callback(null, parsed);
+    } catch (_e) {
+      callback(new Error("invalid json"), null);
+    }
+  });
+}
+
+function sanitizeFileName(raw) {
+  const base = path.basename(String(raw || "").trim());
+  if (!base || base === "." || base === "..") return "";
+  if (!/^[a-z0-9._-]+$/i.test(base)) return "";
+  return base;
+}
+
+function getRequestFileParam(reqUrl) {
+  try {
+    const reqUrlObj = new URL(reqUrl || "/", "http://localhost");
+    return sanitizeFileName(reqUrlObj.searchParams.get("file") || "");
+  } catch (_e) {
+    return "";
+  }
+}
+
+function extractBase64Payload(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  const commaIdx = raw.indexOf(",");
+  return commaIdx >= 0 ? raw.slice(commaIdx + 1) : raw;
+}
+
+function sendJson(res, status, payload) {
+  res.writeHead(status, { "Content-Type": "application/json; charset=utf-8" });
+  res.end(JSON.stringify(payload));
+}
+
+function handleAssetUpload(req, res, options) {
+  readJsonBody(req, (bodyErr, payload) => {
+    if (bodyErr) {
+      sendJson(res, 400, { ok: false, error: "invalid json" });
+      return;
+    }
+
+    const fileName = sanitizeFileName(payload?.fileName || "");
+    if (!fileName) {
+      sendJson(res, 400, { ok: false, error: "invalid fileName" });
+      return;
+    }
+
+    const ext = path.extname(fileName).toLowerCase();
+    if (!options.allowedExt.has(ext)) {
+      sendJson(res, 400, { ok: false, error: "unsupported file extension" });
+      return;
+    }
+
+    const base64Payload = extractBase64Payload(payload?.contentBase64 || "");
+    if (!base64Payload) {
+      sendJson(res, 400, { ok: false, error: "missing contentBase64" });
+      return;
+    }
+
+    let fileBuffer;
+    try {
+      fileBuffer = Buffer.from(base64Payload, "base64");
+    } catch (_e) {
+      sendJson(res, 400, { ok: false, error: "invalid base64 payload" });
+      return;
+    }
+
+    if (!fileBuffer || !fileBuffer.length) {
+      sendJson(res, 400, { ok: false, error: "empty file payload" });
+      return;
+    }
+
+    try {
+      fs.mkdirSync(options.dirPath, { recursive: true });
+    } catch (_e) {}
+
+    const targetPath = path.join(options.dirPath, fileName);
+    fs.writeFile(targetPath, fileBuffer, (writeErr) => {
+      if (writeErr) {
+        sendJson(res, 500, { ok: false, error: writeErr.message });
+        return;
+      }
+      sendJson(res, 200, {
+        ok: true,
+        file: path.posix.join(options.publicPrefix, fileName),
+      });
+    });
+  });
+}
+
+function handleAssetDelete(req, res, options) {
+  const fileName = getRequestFileParam(req.url || "");
+  if (!fileName) {
+    sendJson(res, 400, { ok: false, error: "missing file query param" });
+    return;
+  }
+
+  const ext = path.extname(fileName).toLowerCase();
+  if (!options.allowedExt.has(ext)) {
+    sendJson(res, 400, { ok: false, error: "unsupported file extension" });
+    return;
+  }
+
+  const targetPath = path.join(options.dirPath, fileName);
+  fs.unlink(targetPath, (unlinkErr) => {
+    if (unlinkErr) {
+      if (unlinkErr.code === "ENOENT") {
+        sendJson(res, 404, { ok: false, error: "file not found" });
+        return;
+      }
+      sendJson(res, 500, { ok: false, error: unlinkErr.message });
+      return;
+    }
+    sendJson(res, 200, {
+      ok: true,
+      file: path.posix.join(options.publicPrefix, fileName),
+    });
+  });
+}
+
 function safeResolvePath(urlPath) {
   const decoded = decodeURIComponent(urlPath.split("?")[0]);
   const requestedPath = decoded === "/" ? "/index.html" : decoded;
@@ -265,23 +408,30 @@ const server = http.createServer((req, res) => {
 
   // API: list music files in /music folder
   if (req.url && req.url.startsWith('/api/music')) {
-    if (req.method !== 'GET') {
-      res.writeHead(405, { 'Content-Type': 'application/json; charset=utf-8' });
-      res.end(JSON.stringify({ ok: false, error: 'method not allowed' }));
+    const musicOpts = {
+      dirPath: path.join(ROOT_DIR, 'assets', 'music', 'scenes', 'game'),
+      publicPrefix: 'assets/music/scenes/game',
+      allowedExt: new Set(['.mp3', '.ogg', '.wav', '.m4a', '.aac'])
+    };
+
+    if (req.method === 'GET') {
+      listAudioInDir(musicOpts.dirPath, musicOpts.publicPrefix, (list) => {
+        sendJson(res, 200, list);
+      });
       return;
     }
-    const musicDir = path.join(ROOT_DIR, 'music');
-    fs.readdir(musicDir, (err, files) => {
-      if (err) {
-        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-        res.end(JSON.stringify([]));
-        return;
-      }
-      const audioExt = new Set(['.mp3', '.ogg', '.wav', '.m4a', '.aac']);
-      const list = (files || []).filter(f => audioExt.has(path.extname(f).toLowerCase())).map(f => path.posix.join('music', f));
-      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-      res.end(JSON.stringify(list));
-    });
+
+    if (req.method === 'POST') {
+      handleAssetUpload(req, res, musicOpts);
+      return;
+    }
+
+    if (req.method === 'DELETE') {
+      handleAssetDelete(req, res, musicOpts);
+      return;
+    }
+
+    sendJson(res, 405, { ok: false, error: 'method not allowed' });
     return;
   }
 
@@ -351,31 +501,59 @@ const server = http.createServer((req, res) => {
 
   // API: list image files in /assets/images/background folder
   if (req.url && req.url.startsWith('/api/images/background')) {
-    if (req.method !== 'GET') {
-      res.writeHead(405, { 'Content-Type': 'application/json; charset=utf-8' });
-      res.end(JSON.stringify({ ok: false, error: 'method not allowed' }));
+    const bgOpts = {
+      dirPath: path.join(ROOT_DIR, 'assets', 'images', 'scenes', 'game', 'background'),
+      publicPrefix: 'assets/images/scenes/game/background',
+      allowedExt: new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg'])
+    };
+
+    if (req.method === 'GET') {
+      listImagesInDir(bgOpts.dirPath, bgOpts.publicPrefix, (list) => {
+        sendJson(res, 200, list);
+      });
       return;
     }
-    const bgDir = path.join(ROOT_DIR, 'assets', 'images', 'background');
-    listImagesInDir(bgDir, 'assets/images/background', (list) => {
-      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-      res.end(JSON.stringify(list));
-    });
+
+    if (req.method === 'POST') {
+      handleAssetUpload(req, res, bgOpts);
+      return;
+    }
+
+    if (req.method === 'DELETE') {
+      handleAssetDelete(req, res, bgOpts);
+      return;
+    }
+
+    sendJson(res, 405, { ok: false, error: 'method not allowed' });
     return;
   }
 
   // API: list image files in /assets/images/foreground folder
   if (req.url && req.url.startsWith('/api/images/foreground')) {
-    if (req.method !== 'GET') {
-      res.writeHead(405, { 'Content-Type': 'application/json; charset=utf-8' });
-      res.end(JSON.stringify({ ok: false, error: 'method not allowed' }));
+    const fgOpts = {
+      dirPath: path.join(ROOT_DIR, 'assets', 'images', 'scenes', 'game', 'foreground'),
+      publicPrefix: 'assets/images/scenes/game/foreground',
+      allowedExt: new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg'])
+    };
+
+    if (req.method === 'GET') {
+      listImagesInDir(fgOpts.dirPath, fgOpts.publicPrefix, (list) => {
+        sendJson(res, 200, list);
+      });
       return;
     }
-    const fgDir = path.join(ROOT_DIR, 'assets', 'images', 'foreground');
-    listImagesInDir(fgDir, 'assets/images/foreground', (list) => {
-      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-      res.end(JSON.stringify(list));
-    });
+
+    if (req.method === 'POST') {
+      handleAssetUpload(req, res, fgOpts);
+      return;
+    }
+
+    if (req.method === 'DELETE') {
+      handleAssetDelete(req, res, fgOpts);
+      return;
+    }
+
+    sendJson(res, 405, { ok: false, error: 'method not allowed' });
     return;
   }
 

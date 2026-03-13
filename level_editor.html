@@ -679,13 +679,19 @@
                             <button id="bgEnableAllBtn" type="button">Attiva tutti BG</button>
                             <button id="bgDisableAllBtn" type="button">Disattiva tutti BG</button>
                         </div>
-                        <div style="display:none; gap:6px; margin-bottom:6px; align-items:center;">
+                        <div style="display:flex; gap:6px; margin-bottom:6px; align-items:center; flex-wrap:wrap;">
+                            <input id="bgUploadInput" type="file" accept=".png,.jpg,.jpeg,.gif,.webp,.svg" style="flex:1; min-width:220px;" />
+                            <button id="bgUploadBtn" type="button">Carica BG</button>
+                            <button id="bgDeleteBtn" type="button">Elimina BG selezionato</button>
+                        </div>
+                        <div style="display:flex; gap:6px; margin-bottom:6px; align-items:center; flex-wrap:wrap;">
                             <select id="bgImageSelect" style="flex:1;">
                                 <option value="">-- scegli immagine background --</option>
                                 <option value="bg_10.png">bg_10.png (assets/images/background)</option>
                                 <option value="bg_11png">bg_11png (assets/images/background)</option>
                                 <option value="bg_12.png">bg_12.png (assets/images/background)</option>
                             </select>
+                            <span id="bgInUseBadge" class="tiny" style="white-space:nowrap;">Non usato nel livello</span>
                         </div>
                         <div id="bgLayersContainer"></div>
                         <button id="addBgLayerBtn" type="button" style="margin-top:6px;">Aggiungi Background
@@ -699,13 +705,19 @@
                             <button id="fgEnableAllBtn" type="button">Attiva tutti FG</button>
                             <button id="fgDisableAllBtn" type="button">Disattiva tutti FG</button>
                         </div>
-                        <div style="display:none; gap:6px; margin-bottom:6px; align-items:center;">
+                        <div style="display:flex; gap:6px; margin-bottom:6px; align-items:center; flex-wrap:wrap;">
+                            <input id="fgUploadInput" type="file" accept=".png,.jpg,.jpeg,.gif,.webp,.svg" style="flex:1; min-width:220px;" />
+                            <button id="fgUploadBtn" type="button">Carica FG</button>
+                            <button id="fgDeleteBtn" type="button">Elimina FG selezionato</button>
+                        </div>
+                        <div style="display:flex; gap:6px; margin-bottom:6px; align-items:center; flex-wrap:wrap;">
                             <select id="fgImageSelect" style="flex:1;">
                                 <option value="">-- scegli immagine foreground --</option>
                                 <option value="fg_stones.png">fg_stones.png (assets/images/foreground)</option>
                                 <option value="fg_stones_bat.png">fg_stones_bat.png (assets/images/foreground)</option>
                                 <option value="fg_stones_bat_lux.png">fg_stones_bat_lux.png (assets/images/foreground)</option>
                             </select>
+                            <span id="fgInUseBadge" class="tiny" style="white-space:nowrap;">Non usato nel livello</span>
                         </div>
                         <div id="fgLayersContainer"></div>
                         <button id="addFgLayerBtn" type="button" style="margin-top:6px;">Aggiungi Foreground
@@ -1098,7 +1110,7 @@
                 <h2>Musica</h2>
                 <div style="margin-top:6px; display:flex; gap:8px; align-items:center;">
                     <div style="flex:1;">
-                        <label for="levelMusic">Background Music (data/music)</label>
+                        <label for="levelMusic">Background Music (assets/music/scenes/game)</label>
                         <select id="levelMusic">
                             <option value="">(none)</option>
                             <option value="data/music/intro.mp3">intro.mp3</option>
@@ -1121,10 +1133,16 @@
                             <option value="data/music/coin.mp3">coin.mp3</option>
                         </select>
                     </div>
+                    <span id="musicInUseBadge" class="tiny" style="white-space:nowrap;">Nessuna traccia attiva</span>
                     <div style="flex:0 0 auto; display:flex; gap:6px; align-items:center;">
                         <label style="display:none;">Preview</label>
                         <button id="previewMusicBtn" type="button" title="Preview">Preview</button>
                     </div>
+                </div>
+                <div style="margin-top:8px; display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
+                    <input id="musicUploadInput" type="file" accept=".mp3,.ogg,.wav,.m4a,.aac" style="flex:1; min-width:220px;" />
+                    <button id="musicUploadBtn" type="button">Carica Musica</button>
+                    <button id="musicDeleteBtn" type="button">Elimina Musica selezionata</button>
                 </div>
                 <div style="display:flex; gap:6px; margin-top:8px;">
                     <button id="playMusicBtn" type="button">Play</button>
