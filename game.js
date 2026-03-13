@@ -236,7 +236,8 @@ const STARTUP_DEFAULTS = {
             width: 800,
             height: 600
         },
-        elements: []
+        elements: [],
+        plugins: []
     }
 };
 
@@ -268,6 +269,23 @@ function normalizeStartupSettings(raw) {
     const startup = (root.startup && typeof root.startup === 'object' && !Array.isArray(root.startup)) ? root.startup : {};
     const attractMode = (root.attractMode && typeof root.attractMode === 'object' && !Array.isArray(root.attractMode)) ? root.attractMode : {};
     const canvas = (attractMode.canvas && typeof attractMode.canvas === 'object' && !Array.isArray(attractMode.canvas)) ? attractMode.canvas : {};
+    const plugins = (Array.isArray(attractMode.plugins) ? attractMode.plugins : [])
+        .map((plugin, idx) => {
+            const p = (plugin && typeof plugin === 'object' && !Array.isArray(plugin)) ? plugin : {};
+            return {
+                id: String(p.id || '').trim(),
+                enabled: p.enabled !== false,
+                x: Math.max(0, Number(p.x) || 0),
+                y: Math.max(0, Number(p.y) || 0),
+                w: Math.max(10, Number(p.w) || 10),
+                h: Math.max(10, Number(p.h) || 10),
+                effect: String(p.effect || 'none').trim() || 'none',
+                delayMs: Math.max(0, Number(p.delayMs) || 0),
+                durationMs: Math.max(0, Number(p.durationMs) || 1000),
+                order: Math.max(0, Math.floor(Number(p.order) || idx))
+            };
+        })
+        .sort((a, b) => a.order - b.order);
     const mode = String(startup.coinMode || 'arcade').trim().toLowerCase() === 'freeplay' ? 'freeplay' : 'arcade';
 
     return {
@@ -284,7 +302,8 @@ function normalizeStartupSettings(raw) {
             },
             elements: (Array.isArray(attractMode.elements) ? attractMode.elements : [])
                 .map((it, idx) => normalizeStartupElement(it, idx))
-                .sort((a, b) => a.order - b.order)
+                .sort((a, b) => a.order - b.order),
+            plugins
         }
     };
 }
@@ -295,6 +314,7 @@ function applyStartupSettings(raw) {
     STARTUP_SETTINGS.attractMode.enabled = normalized.attractMode.enabled;
     STARTUP_SETTINGS.attractMode.canvas = { ...normalized.attractMode.canvas };
     STARTUP_SETTINGS.attractMode.elements = normalized.attractMode.elements.slice();
+    STARTUP_SETTINGS.attractMode.plugins = normalized.attractMode.plugins.slice();
 }
 
 async function loadStartupSettings() {
@@ -370,6 +390,7 @@ function applyConfiguredAttractLayout(scene) {
 
     elements.forEach((element) => {
         try {
+            if (String(element.type || '').toLowerCase() === 'plugin') return;
             const px = (Number(element.x) || 0) * scaleX;
             const py = (Number(element.y) || 0) * scaleY;
             const pw = Math.max(4, (Number(element.w) || 1) * scaleX);
@@ -390,6 +411,66 @@ function applyConfiguredAttractLayout(scene) {
             if (node) playConfiguredAttractElementTween(scene, node, element);
         } catch (_e) {
             // Ignore malformed attract entries.
+        }
+    });
+}
+
+function applyConfiguredAttractPlugins(scene) {
+    const cfg = STARTUP_SETTINGS.attractMode;
+    if (!scene || !cfg) return;
+
+    const camera = scene.cameras?.main;
+    const virtualW = Math.max(320, Number(cfg.canvas?.width) || 800);
+    const virtualH = Math.max(200, Number(cfg.canvas?.height) || 600);
+    const viewW = Number(camera?.width) || 800;
+    const viewH = Number(camera?.height) || 600;
+    const scaleX = viewW / virtualW;
+    const scaleY = viewH / virtualH;
+
+    const plugins = Array.isArray(cfg.plugins) ? cfg.plugins : [];
+    plugins.forEach((plugin) => {
+        if (!plugin || plugin.enabled === false) return;
+        const id = String(plugin.id || '').trim().toLowerCase();
+        const x = (Number(plugin.x) || 0) * scaleX;
+        const y = (Number(plugin.y) || 0) * scaleY;
+        const w = Math.max(10, (Number(plugin.w) || 10) * scaleX);
+        const h = Math.max(10, (Number(plugin.h) || 10) * scaleY);
+        const scale = Math.max(0.2, Math.min(4, Math.min(w / 220, h / 28)));
+
+        const applyToText = (node, center = true) => {
+            if (!node || !node.setPosition) return;
+            if (center && node.setOrigin) node.setOrigin(0.5);
+            node.setPosition(center ? (x + w / 2) : x, y + h / 2);
+            if (node.setScale) node.setScale(scale);
+        };
+
+        if (id === 'insertcoin' || id === 'credits') {
+            applyToText(scene.coinText, true);
+            return;
+        }
+        if (id === 'players') {
+            if (scene.player1Text && scene.player2Text) {
+                scene.player1Text.setPosition(x + (w * 0.2), y + h / 2);
+                scene.player2Text.setPosition(x + (w * 0.8), y + h / 2);
+                scene.player1Text.setScale(scale);
+                scene.player2Text.setScale(scale);
+            }
+            return;
+        }
+        if (id === 'language') {
+            if (scene.flagSprite) {
+                scene.flagSprite.baseX = x + (w / 2);
+                scene.flagSprite.setPosition(x + (w / 2), y + h / 2);
+                scene.flagSprite.setScale(scale, scale);
+            }
+            if (scene.leftArrow) {
+                scene.leftArrow.setPosition((x + (w / 2)) - (80 * scale), y + h / 2);
+                scene.leftArrow.setScale(scale);
+            }
+            if (scene.rightArrow) {
+                scene.rightArrow.setPosition((x + (w / 2)) + (80 * scale), y + h / 2);
+                scene.rightArrow.setScale(scale);
+            }
         }
     });
 }
@@ -1511,6 +1592,7 @@ class AttractScene extends SharedFrontendScene {
         // If you want to re-enable it later, restore the legend block here.
 
         this.createSharedFrontUi();
+        try { applyConfiguredAttractPlugins(this); } catch (e) { }
 
         // Signature text for attract mode
         // signature text removed from bottom-center in AttractScene (keep credit via addSpikeCredit)
@@ -1532,6 +1614,7 @@ class AttractScene extends SharedFrontendScene {
                 callbackScope: this
             });
             this.updateUI();
+            try { applyConfiguredAttractPlugins(this); } catch (e) { }
             this.resetTimeout();
             // Attract-mode decorative stones disabled (removed)
         });

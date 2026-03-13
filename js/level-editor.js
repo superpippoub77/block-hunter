@@ -409,20 +409,32 @@ const START_EDITOR_DEFAULT = {
     attractMode: {
         enabled: false,
         canvas: { width: 800, height: 600 },
-        elements: []
+        elements: [],
+        plugins: []
     }
+};
+
+const ATTRACT_PLUGIN_PRESETS = {
+    insertCoin: { label: 'Insert Coin / Credit', x: 400, y: 520, w: 240, h: 34 },
+    credits: { label: 'Credits Label', x: 400, y: 486, w: 220, h: 28 },
+    language: { label: 'Language Selector', x: 400, y: 560, w: 170, h: 30 },
+    players: { label: 'Player 1 / Player 2', x: 400, y: 548, w: 520, h: 28 }
 };
 
 let START_EDITOR_STATE = {
     loadedStart: deepClone(START_EDITOR_DEFAULT),
     selectedElementId: null,
+    previewTimer: null,
     drag: {
         active: false,
+        mode: 'move',
         elementId: null,
         startX: 0,
         startY: 0,
         baseX: 0,
-        baseY: 0
+        baseY: 0,
+        baseW: 0,
+        baseH: 0
     },
     attractAssets: []
 };
@@ -2693,22 +2705,48 @@ function sanitizeStartCoinMode(raw) {
 
 function normalizeStartElement(raw, index = 0) {
     const inObj = isPlainObject(raw) ? raw : {};
-    const type = String(inObj.type || 'image').trim().toLowerCase() === 'text' ? 'text' : 'image';
+    const typeRaw = String(inObj.type || 'image').trim().toLowerCase();
+    const type = (typeRaw === 'text' || typeRaw === 'plugin') ? typeRaw : 'image';
     const id = String(inObj.id || `el_${Date.now()}_${index}`).trim() || `el_${Date.now()}_${index}`;
+    const pluginId = String(inObj.pluginId || '').trim();
+    const pluginPreset = ATTRACT_PLUGIN_PRESETS[pluginId] || null;
     return {
         id,
         type,
+        pluginId,
         src: String(inObj.src || '').trim(),
-        text: String(inObj.text || '').trim(),
+        text: String(inObj.text || pluginPreset?.label || '').trim(),
         color: String(inObj.color || '#ffffff').trim() || '#ffffff',
         fontSize: Math.max(8, parseNumber(inObj.fontSize, 24)),
-        x: Math.max(0, parseNumber(inObj.x, 80)),
-        y: Math.max(0, parseNumber(inObj.y, 80)),
-        w: Math.max(8, parseNumber(inObj.w, type === 'text' ? 220 : 180)),
-        h: Math.max(8, parseNumber(inObj.h, type === 'text' ? 48 : 120)),
+        x: Math.max(0, parseNumber(inObj.x, pluginPreset?.x ?? 80)),
+        y: Math.max(0, parseNumber(inObj.y, pluginPreset?.y ?? 80)),
+        w: Math.max(8, parseNumber(inObj.w, pluginPreset?.w ?? (type === 'text' ? 220 : 180))),
+        h: Math.max(8, parseNumber(inObj.h, pluginPreset?.h ?? (type === 'text' ? 48 : 120))),
         effect: String(inObj.effect || 'none').trim() || 'none',
         delayMs: Math.max(0, parseNumber(inObj.delayMs, 0)),
         durationMs: Math.max(0, parseNumber(inObj.durationMs, 1000)),
+        order: Math.max(0, Math.floor(parseNumber(inObj.order, index)))
+    };
+}
+
+function normalizeStartPlugin(raw, index = 0) {
+    const inObj = isPlainObject(raw) ? raw : {};
+    const id = String(inObj.id || '').trim();
+    const preset = ATTRACT_PLUGIN_PRESETS[id] || ATTRACT_PLUGIN_PRESETS.insertCoin;
+    const effect = String(inObj.effect || 'none').trim() || 'none';
+    const delayMs = Math.max(0, parseNumber(inObj.delayMs, 0));
+    const durationMs = Math.max(0, parseNumber(inObj.durationMs, 1000));
+    return {
+        id: id || 'insertCoin',
+        enabled: inObj.enabled !== false,
+        x: Math.max(0, parseNumber(inObj.x, preset.x)),
+        y: Math.max(0, parseNumber(inObj.y, preset.y)),
+        w: Math.max(10, parseNumber(inObj.w, preset.w)),
+        h: Math.max(10, parseNumber(inObj.h, preset.h)),
+        label: String(inObj.label || preset.label).trim() || preset.label,
+        effect,
+        delayMs,
+        durationMs,
         order: Math.max(0, Math.floor(parseNumber(inObj.order, index)))
     };
 }
@@ -2719,7 +2757,27 @@ function normalizeStartConfig(raw) {
     const attractMode = isPlainObject(root.attractMode) ? root.attractMode : {};
     const canvas = isPlainObject(attractMode.canvas) ? attractMode.canvas : {};
     const elementsRaw = Array.isArray(attractMode.elements) ? attractMode.elements : [];
+    const pluginsRaw = Array.isArray(attractMode.plugins) ? attractMode.plugins : [];
     const elements = elementsRaw.map((it, idx) => normalizeStartElement(it, idx));
+    const plugins = pluginsRaw.map((it, idx) => normalizeStartPlugin(it, idx));
+
+    plugins.forEach((plugin, idx) => {
+        const existing = elements.some((elItem) => elItem.type === 'plugin' && elItem.pluginId === plugin.id);
+        if (existing) return;
+        elements.push(normalizeStartElement({
+            type: 'plugin',
+            pluginId: plugin.id,
+            text: plugin.label,
+            x: plugin.x,
+            y: plugin.y,
+            w: plugin.w,
+            h: plugin.h,
+            effect: plugin.effect,
+            delayMs: plugin.delayMs,
+            durationMs: plugin.durationMs,
+            order: Number(plugin.order) || idx
+        }, elements.length + idx));
+    });
 
     return {
         startup: {
@@ -2733,7 +2791,8 @@ function normalizeStartConfig(raw) {
                 width: Math.max(320, Math.floor(parseNumber(canvas.width, 800))),
                 height: Math.max(200, Math.floor(parseNumber(canvas.height, 600)))
             },
-            elements: elements.sort((a, b) => a.order - b.order)
+            elements: elements.sort((a, b) => a.order - b.order),
+            plugins: plugins.sort((a, b) => a.order - b.order)
         }
     };
 }
@@ -2742,6 +2801,30 @@ function getSelectedStartElement() {
     const list = START_EDITOR_STATE.loadedStart?.attractMode?.elements;
     if (!Array.isArray(list)) return null;
     return list.find((it) => it.id === START_EDITOR_STATE.selectedElementId) || null;
+}
+
+function syncStartPluginsFromElements() {
+    const cfg = START_EDITOR_STATE.loadedStart;
+    if (!cfg || !cfg.attractMode) return;
+    const items = Array.isArray(cfg.attractMode.elements) ? cfg.attractMode.elements : [];
+    const plugins = [];
+    items.forEach((item, idx) => {
+        if (item.type !== 'plugin') return;
+        plugins.push(normalizeStartPlugin({
+            id: item.pluginId,
+            enabled: true,
+            x: item.x,
+            y: item.y,
+            w: item.w,
+            h: item.h,
+            label: item.text,
+            effect: item.effect,
+            delayMs: item.delayMs,
+            durationMs: item.durationMs,
+            order: Number(item.order) || idx
+        }, idx));
+    });
+    cfg.attractMode.plugins = plugins;
 }
 
 function renderStartElementInputs() {
@@ -2813,6 +2896,7 @@ function applyStartFormFromState() {
         if (!exists) START_EDITOR_STATE.selectedElementId = attract.elements[0]?.id || null;
     }
 
+    syncStartPluginsFromElements();
     renderStartAttractStage();
     renderStartTimelineList();
     renderStartElementInputs();
@@ -2835,6 +2919,7 @@ function renderStartAttractStage() {
     list.forEach((entry) => {
         const node = document.createElement('div');
         node.className = 'start-node';
+        if (entry.type === 'plugin') node.classList.add('plugin');
         if (entry.id === START_EDITOR_STATE.selectedElementId) node.classList.add('selected');
         node.dataset.id = entry.id;
         node.style.left = `${Math.round(entry.x)}px`;
@@ -2842,7 +2927,15 @@ function renderStartAttractStage() {
         node.style.width = `${Math.max(8, Math.round(entry.w))}px`;
         node.style.height = `${Math.max(8, Math.round(entry.h))}px`;
 
-        if (entry.type === 'text') {
+        if (entry.type === 'plugin') {
+            const textNode = document.createElement('div');
+            textNode.className = 'start-text';
+            const pluginLabel = ATTRACT_PLUGIN_PRESETS[entry.pluginId]?.label || entry.text || entry.pluginId || 'plugin';
+            textNode.textContent = pluginLabel;
+            textNode.style.color = '#a8d8ff';
+            textNode.style.fontSize = `${Math.max(10, parseNumber(entry.fontSize, 16))}px`;
+            node.appendChild(textNode);
+        } else if (entry.type === 'text') {
             const textNode = document.createElement('div');
             textNode.className = 'start-text';
             textNode.textContent = entry.text || 'TEXT';
@@ -2855,6 +2948,25 @@ function renderStartAttractStage() {
             imgNode.alt = entry.id;
             node.appendChild(imgNode);
         }
+
+        const resizeHandle = document.createElement('div');
+        resizeHandle.className = 'start-resize-handle';
+        resizeHandle.title = 'Resize';
+        resizeHandle.addEventListener('pointerdown', (ev) => {
+            ev.preventDefault();
+            ev.stopPropagation();
+            START_EDITOR_STATE.selectedElementId = entry.id;
+            START_EDITOR_STATE.drag.active = true;
+            START_EDITOR_STATE.drag.mode = 'resize';
+            START_EDITOR_STATE.drag.elementId = entry.id;
+            START_EDITOR_STATE.drag.startX = ev.clientX;
+            START_EDITOR_STATE.drag.startY = ev.clientY;
+            START_EDITOR_STATE.drag.baseW = parseNumber(entry.w, 80);
+            START_EDITOR_STATE.drag.baseH = parseNumber(entry.h, 40);
+            START_EDITOR_STATE.drag.baseX = parseNumber(entry.x, 0);
+            START_EDITOR_STATE.drag.baseY = parseNumber(entry.y, 0);
+        });
+        node.appendChild(resizeHandle);
 
         node.addEventListener('click', (ev) => {
             ev.stopPropagation();
@@ -2869,11 +2981,14 @@ function renderStartAttractStage() {
             ev.stopPropagation();
             START_EDITOR_STATE.selectedElementId = entry.id;
             START_EDITOR_STATE.drag.active = true;
+            START_EDITOR_STATE.drag.mode = 'move';
             START_EDITOR_STATE.drag.elementId = entry.id;
             START_EDITOR_STATE.drag.startX = ev.clientX;
             START_EDITOR_STATE.drag.startY = ev.clientY;
             START_EDITOR_STATE.drag.baseX = parseNumber(entry.x, 0);
             START_EDITOR_STATE.drag.baseY = parseNumber(entry.y, 0);
+            START_EDITOR_STATE.drag.baseW = parseNumber(entry.w, 80);
+            START_EDITOR_STATE.drag.baseH = parseNumber(entry.h, 40);
             try { node.setPointerCapture(ev.pointerId); } catch (_e) { }
             renderStartAttractStage();
             renderStartTimelineList();
@@ -2916,7 +3031,8 @@ function renderStartTimelineList() {
         const title = document.createElement('div');
         title.className = 'tiny';
         title.style.color = '#c8e8ff';
-        title.textContent = `${index + 1}. ${entry.type === 'text' ? 'Text' : 'Image'} - ${entry.id}`;
+        const kind = entry.type === 'text' ? 'Text' : (entry.type === 'plugin' ? `Plugin:${entry.pluginId || 'custom'}` : 'Image');
+        title.textContent = `${index + 1}. ${kind} - ${entry.id}`;
         row.appendChild(title);
 
         const grid = document.createElement('div');
@@ -3017,6 +3133,143 @@ function addStartTextElement() {
     setStartStatus('Elemento testo aggiunto.');
 }
 
+function addStartPluginElement() {
+    const cfg = START_EDITOR_STATE.loadedStart;
+    if (!cfg || !cfg.attractMode) return;
+    const pluginId = String(el('startPluginSelect')?.value || '').trim();
+    const preset = ATTRACT_PLUGIN_PRESETS[pluginId];
+    if (!preset) {
+        setStartStatus('Plugin non valido.', true);
+        return;
+    }
+
+    const already = (cfg.attractMode.elements || []).find((it) => it.type === 'plugin' && it.pluginId === pluginId);
+    if (already) {
+        START_EDITOR_STATE.selectedElementId = already.id;
+        applyStartFormFromState();
+        setStartStatus('Plugin gia presente: selezionato elemento esistente.');
+        return;
+    }
+
+    const list = cfg.attractMode.elements;
+    const entry = createStartElement({
+        type: 'plugin',
+        pluginId,
+        text: preset.label,
+        color: '#a8d8ff',
+        fontSize: 16,
+        x: preset.x,
+        y: preset.y,
+        w: preset.w,
+        h: preset.h,
+        order: list.length
+    });
+    list.push(entry);
+    START_EDITOR_STATE.selectedElementId = entry.id;
+    applyStartFormFromState();
+    setStartStatus(`Plugin aggiunto: ${preset.label}.`);
+}
+
+function stopStartPreviewPlayback() {
+    if (START_EDITOR_STATE.previewTimer) {
+        clearTimeout(START_EDITOR_STATE.previewTimer);
+        START_EDITOR_STATE.previewTimer = null;
+    }
+    const previewStage = el('startPreviewStage');
+    if (previewStage) previewStage.innerHTML = '';
+}
+
+function animatePreviewNode(node, entry) {
+    if (!node) return;
+    const effect = String(entry.effect || 'none').trim();
+    const delayMs = Math.max(0, parseNumber(entry.delayMs, 0));
+    const durationMs = Math.max(100, parseNumber(entry.durationMs, 1000));
+
+    if (effect === 'fadeIn') {
+        node.animate([
+            { opacity: 0 },
+            { opacity: 1 }
+        ], { duration: durationMs, delay: delayMs, fill: 'forwards', easing: 'ease-out' });
+        return;
+    }
+    if (effect === 'slideLeft') {
+        node.animate([
+            { opacity: 0, transform: 'translateX(-40px)' },
+            { opacity: 1, transform: 'translateX(0)' }
+        ], { duration: durationMs, delay: delayMs, fill: 'forwards', easing: 'ease-out' });
+        return;
+    }
+    if (effect === 'pulse') {
+        node.animate([
+            { transform: 'scale(1)' },
+            { transform: 'scale(1.08)' },
+            { transform: 'scale(1)' }
+        ], { duration: durationMs, delay: delayMs, iterations: Infinity, easing: 'ease-in-out' });
+        return;
+    }
+    if (effect === 'blink') {
+        node.animate([
+            { opacity: 1 },
+            { opacity: 0.25 },
+            { opacity: 1 }
+        ], { duration: durationMs, delay: delayMs, iterations: Infinity, easing: 'ease-in-out' });
+    }
+}
+
+function playStartPreview() {
+    collectStartConfigFromForm();
+    const modal = el('startPreviewModal');
+    const stage = el('startPreviewStage');
+    if (!modal || !stage) return;
+
+    stopStartPreviewPlayback();
+    modal.classList.add('open');
+
+    const cfg = normalizeStartConfig(START_EDITOR_STATE.loadedStart);
+    const attract = cfg.attractMode;
+    stage.style.width = `${attract.canvas.width}px`;
+    stage.style.height = `${attract.canvas.height}px`;
+
+    const list = Array.isArray(attract.elements) ? attract.elements.slice().sort((a, b) => a.order - b.order) : [];
+    list.forEach((entry) => {
+        const node = document.createElement('div');
+        node.className = 'start-preview-node';
+        node.style.left = `${Math.round(entry.x)}px`;
+        node.style.top = `${Math.round(entry.y)}px`;
+        node.style.width = `${Math.max(8, Math.round(entry.w))}px`;
+        node.style.height = `${Math.max(8, Math.round(entry.h))}px`;
+
+        if (entry.type === 'text') {
+            node.style.color = entry.color || '#ffffff';
+            node.style.fontSize = `${Math.max(8, parseNumber(entry.fontSize, 24))}px`;
+            node.style.textAlign = 'center';
+            node.style.whiteSpace = 'pre-wrap';
+            node.style.lineHeight = '1.2';
+            node.style.padding = '4px';
+            node.textContent = entry.text || '';
+        } else if (entry.type === 'plugin') {
+            node.style.border = '1px solid #88baf0';
+            node.style.background = 'rgba(20,40,70,0.45)';
+            node.style.color = '#bfe1ff';
+            node.style.fontSize = '14px';
+            node.textContent = ATTRACT_PLUGIN_PRESETS[entry.pluginId]?.label || entry.text || 'Plugin';
+        } else {
+            const img = document.createElement('img');
+            img.src = entry.src || '';
+            img.alt = entry.id;
+            node.appendChild(img);
+        }
+
+        stage.appendChild(node);
+        animatePreviewNode(node, entry);
+    });
+
+    // Soft auto-stop to avoid runaway preview loops when left open.
+    START_EDITOR_STATE.previewTimer = setTimeout(() => {
+        START_EDITOR_STATE.previewTimer = null;
+    }, 120000);
+}
+
 function removeSelectedStartElement() {
     const cfg = START_EDITOR_STATE.loadedStart;
     if (!cfg || !cfg.attractMode) return;
@@ -3066,6 +3319,7 @@ function collectStartConfigFromForm() {
     cfg.attractMode.elements = (Array.isArray(cfg.attractMode.elements) ? cfg.attractMode.elements : [])
         .map((it, idx) => normalizeStartElement(it, idx))
         .sort((a, b) => a.order - b.order);
+    syncStartPluginsFromElements();
     START_EDITOR_STATE.loadedStart = cfg;
     return normalizeStartConfig(cfg);
 }
@@ -3162,8 +3416,15 @@ function bindStartEditorInteractions() {
 
         const nextX = drag.baseX + (ev.clientX - drag.startX);
         const nextY = drag.baseY + (ev.clientY - drag.startY);
-        selected.x = clamp(Math.round(nextX), 0, Math.max(0, canvasW - selected.w));
-        selected.y = clamp(Math.round(nextY), 0, Math.max(0, canvasH - selected.h));
+        if (drag.mode === 'resize') {
+            const nextW = drag.baseW + (ev.clientX - drag.startX);
+            const nextH = drag.baseH + (ev.clientY - drag.startY);
+            selected.w = clamp(Math.round(nextW), 8, Math.max(8, canvasW - selected.x));
+            selected.h = clamp(Math.round(nextH), 8, Math.max(8, canvasH - selected.y));
+        } else {
+            selected.x = clamp(Math.round(nextX), 0, Math.max(0, canvasW - selected.w));
+            selected.y = clamp(Math.round(nextY), 0, Math.max(0, canvasH - selected.h));
+        }
 
         renderStartAttractStage();
         renderStartElementInputs();
@@ -3171,6 +3432,7 @@ function bindStartEditorInteractions() {
 
     window.addEventListener('pointerup', () => {
         START_EDITOR_STATE.drag.active = false;
+        START_EDITOR_STATE.drag.mode = 'move';
         START_EDITOR_STATE.drag.elementId = null;
     });
 }
@@ -6191,6 +6453,8 @@ function bindUI() {
     const reloadStartBtn = el('reloadStartBtn');
     const saveConfigBtn = el('saveConfigBtn');
     const saveStartBtn = el('saveStartBtn');
+    const startPreviewModal = el('startPreviewModal');
+    const closeStartPreviewBtn = el('closeStartPreviewBtn');
     const configModal = el('configModal');
     const startConfigModal = el('startConfigModal');
     const openObjectMapDialogBtn = el('openObjectMapDialogBtn');
@@ -6670,6 +6934,11 @@ function bindUI() {
         startAddTextBtn.addEventListener('click', () => addStartTextElement());
     }
 
+    const startAddPluginBtn = el('startAddPluginBtn');
+    if (startAddPluginBtn) {
+        startAddPluginBtn.addEventListener('click', () => addStartPluginElement());
+    }
+
     const startRemoveElementBtn = el('startRemoveElementBtn');
     if (startRemoveElementBtn) {
         startRemoveElementBtn.addEventListener('click', () => removeSelectedStartElement());
@@ -6692,6 +6961,32 @@ function bindUI() {
         node.addEventListener('input', () => updateSelectedStartElementFromInputs());
         node.addEventListener('change', () => updateSelectedStartElementFromInputs());
     });
+
+    const startPreviewPlayBtn = el('startPreviewPlayBtn');
+    if (startPreviewPlayBtn) {
+        startPreviewPlayBtn.addEventListener('click', () => playStartPreview());
+    }
+
+    const startPreviewStopBtn = el('startPreviewStopBtn');
+    if (startPreviewStopBtn) {
+        startPreviewStopBtn.addEventListener('click', () => stopStartPreviewPlayback());
+    }
+
+    if (closeStartPreviewBtn) {
+        closeStartPreviewBtn.addEventListener('click', () => {
+            stopStartPreviewPlayback();
+            if (startPreviewModal) startPreviewModal.classList.remove('open');
+        });
+    }
+
+    if (startPreviewModal) {
+        startPreviewModal.addEventListener('click', (ev) => {
+            if (ev.target === startPreviewModal) {
+                stopStartPreviewPlayback();
+                startPreviewModal.classList.remove('open');
+            }
+        });
+    }
 
     if (openObjectMapDialogBtn) {
         openObjectMapDialogBtn.addEventListener('click', () => {

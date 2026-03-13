@@ -227,6 +227,11 @@
             background: rgba(0, 0, 0, 0.08);
         }
 
+        .start-node.plugin {
+            background: rgba(22, 40, 72, 0.55);
+            border-style: solid;
+        }
+
         .start-node.selected {
             border-color: #ffe08f;
             box-shadow: 0 0 0 1px rgba(255, 224, 143, 0.75) inset;
@@ -247,6 +252,42 @@
             pointer-events: none;
             padding: 4px;
             line-height: 1.2;
+        }
+
+        .start-resize-handle {
+            position: absolute;
+            right: -6px;
+            bottom: -6px;
+            width: 12px;
+            height: 12px;
+            border-radius: 2px;
+            border: 1px solid #ffe08f;
+            background: #20385e;
+            cursor: nwse-resize;
+            z-index: 2;
+        }
+
+        .start-preview-stage {
+            position: relative;
+            border: 1px solid #2f5482;
+            border-radius: 6px;
+            background: radial-gradient(circle at 50% 45%, rgba(35, 63, 108, 0.62), rgba(6, 13, 28, 0.95));
+            overflow: hidden;
+            min-height: 260px;
+        }
+
+        .start-preview-node {
+            position: absolute;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+        }
+
+        .start-preview-node img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
         }
 
         .start-timeline {
@@ -1611,6 +1652,20 @@
                     </div>
                     <button id="startAddTextBtn" type="button">Aggiungi Testo</button>
 
+                    <h3 style="margin-top:10px;">Plugin UI Attract</h3>
+                    <div style="margin-bottom:8px;">
+                        <label for="startPluginSelect">Plugin</label>
+                        <select id="startPluginSelect">
+                            <option value="insertCoin">Insert Coin / Credit</option>
+                            <option value="language">Language selector</option>
+                            <option value="players">Player 1 / Player 2</option>
+                            <option value="credits">Credits label</option>
+                        </select>
+                    </div>
+                    <div class="btn-row" style="margin-bottom:8px;">
+                        <button id="startAddPluginBtn" type="button">Aggiungi Plugin</button>
+                    </div>
+
                     <div class="tiny" style="margin-top:10px;">Drag & Drop sul canvas per posizionare gli elementi. Ogni elemento ha delay/duration/effect per la timeline.</div>
                 </section>
 
@@ -1673,11 +1728,29 @@
                         <textarea id="startElementText" style="min-height:56px;"></textarea>
                     </div>
 
+                    <div class="btn-row" style="margin-top:8px;">
+                        <button id="startPreviewPlayBtn" type="button">Preview</button>
+                        <button id="startPreviewStopBtn" type="button">Stop Preview</button>
+                    </div>
+
                     <div id="startTimelineList" class="start-timeline"></div>
                 </section>
             </div>
 
             <div class="status" id="startStatusText"></div>
+        </div>
+    </div>
+
+    <div id="startPreviewModal" class="config-modal">
+        <div class="start-dialog" style="width:min(980px, 96vw);">
+            <div class="config-toolbar">
+                <h2 style="margin:0; font-size:12px; color:#d7ebff;">Preview Attract</h2>
+                <div style="display:flex; gap:6px;">
+                    <button id="closeStartPreviewBtn" type="button">Chiudi</button>
+                </div>
+            </div>
+            <div id="startPreviewStage" class="start-preview-stage"></div>
+            <div class="tiny" style="margin-top:8px;">Preview rapida della timeline e dei plugin; usa Salva per persistente su start.json.</div>
         </div>
     </div>
 
