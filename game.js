@@ -6043,645 +6043,177 @@ class GameScene extends Phaser.Scene {
 
     }
 
-    spawnMapBat(worldX, worldY) {
-        if (!this.bats) return;
+        // ── Generic flying-enemy helpers (delegate to data/library/flying_enemy plugin) ──
 
-        const bat = this.bats.create(worldX, worldY, 'bat', 0);
-        const batScaleFactor = CONFIG.objectSize / OBJECT_NATIVE_SIZE;
-        bat.setScale(batScaleFactor);
-        bat.setData('baseScale', batScaleFactor);
-        bat.setData('flutterPhase', Phaser.Math.FloatBetween(0, Math.PI * 2));
-        if (bat.body) {
-            bat.body.setSize(Math.floor(bat.displayWidth || bat.width), Math.floor(bat.displayHeight || bat.height));
-            bat.body.setCollideWorldBounds(true);
-            bat.body.setBounce(1, 1);
-        }
-        bat.setData('speed', this.getBatSpeedForLevel());
-        bat.setData('nextStealAt', 0);
-        // per-level bat rest configuration (defaults)
-        const flightsBeforeRest = Number(this.levelConfig?.batFlightsBeforeRest) || 4;
-        const restSeconds = Number(this.levelConfig?.batRestSeconds) || 2;
-        const restInterval = Number(this.levelConfig?.batRestIntervalSeconds) || 0;
-        bat.setData('flightsBeforeRest', flightsBeforeRest);
-        bat.setData('restSeconds', restSeconds);
-        if (restInterval > 0) bat.setData('restInterval', restInterval);
-
-        // Start with takeoff animation if available, then pick loop based on velocity
-        if (bat.anims && this.anims.exists('bat_fly_start')) {
-            bat.play('bat_fly_start', true);
-            const onStart = (anim) => {
-                if (!bat || !bat.active) return;
-                if (!anim || anim.key !== 'bat_fly_start') return;
-                try { bat.off('animationcomplete', onStart); } catch (e) { }
-                this.setBatRandomVelocity(bat);
-                try {
-                    const vx = bat.body && bat.body.velocity ? (bat.body.velocity.x || 0) : 0;
-                    if (vx < 0) {
-                        if (this.anims.exists('bat_fly_loop_rev')) bat.play('bat_fly_loop_rev');
-                    } else {
-                        if (this.anims.exists('bat_fly_loop')) bat.play('bat_fly_loop');
-                    }
-                } catch (e) { }
-            };
-            bat.on('animationcomplete', onStart);
-        } else {
-            this.setBatRandomVelocity(bat);
-        }
-        // play looping bat sound on spawn and attach to bat
-        try {
-            if (this.sound && this.sound.add) {
-                try {
-                    const sfx = this.sound.add('bat_sfx', { loop: true, volume: 0.7 });
-                    sfx.play();
-                    bat.setData('sfx', sfx);
-                    try { bat.on && bat.on('destroy', () => { try { sfx.stop && sfx.stop(); sfx.destroy && sfx.destroy(); } catch (e) { } }); } catch (e) { }
-                } catch (e) { }
-            }
-        } catch (e) { }
-
-        // schedule periodic rest if configured for this level
-        if (restInterval > 0) {
-            try {
-                const t = this.time.delayedCall(restInterval * 1000, () => {
-                    if (!bat || !bat.active) return;
-                    this.enterBatRest(bat);
-                });
-                bat.setData('restIntervalTimer', t);
-            } catch (e) { }
+        /** Returns the loaded flying_enemy plugin, or null if not yet available. */
+        _getFlyingEnemyPlugin() {
+            return EFFECT_LIBRARY.effects['flying_enemy'] || null;
         }
 
-        if (!this.batDirectionTimer) {
-            this.batDirectionTimer = this.time.addEvent({
-                delay: 700,
-                loop: true,
-                callback: () => {
-                    const bats = this.bats?.children?.entries || [];
-                    bats.forEach((entry) => {
-                        if (!entry || !entry.active) return;
-                        if (Math.random() < 0.45) {
-                            this.setBatRandomVelocity(entry);
-                        }
-                    });
-                }
-            });
-        }
-    }
-
-    setBatRandomVelocity(bat) {
-        if (!bat || !bat.active) return;
-        if (bat.getData('isResting')) return;
-
-        const speed = Number(bat.getData('speed')) || this.getBatSpeedForLevel();
-        const dx = Phaser.Math.FloatBetween(-1, 1);
-        const dy = Phaser.Math.FloatBetween(-1, 1);
-        const len = Math.hypot(dx, dy) || 1;
-        bat.setVelocity((dx / len) * speed, (dy / len) * speed);
-
-        // mirror depending on X velocity
-        try {
-            const vx = bat.body && bat.body.velocity ? (bat.body.velocity.x || 0) : 0;
-            const threshold = 2;
-            if (vx < -threshold) bat.setFlipX(true);
-            else if (vx > threshold) bat.setFlipX(false);
-        } catch (e) { }
-
-        // count flights and possibly enter resting sequence
-        let fc = Number(bat.getData('flightCount')) || 0;
-        fc++;
-        bat.setData('flightCount', fc);
-        const flightsBeforeRest = Number(bat.getData('flightsBeforeRest')) || 4;
-
-        // if a per-bat interval is configured, skip flight-count based rest
-        if (Number.isFinite(bat.getData('restInterval')) && bat.getData('restInterval') > 0) {
-            // ensure correct loop animation
-            try {
-                const vx = bat.body && bat.body.velocity ? (bat.body.velocity.x || 0) : 0;
-                if (vx < 0) {
-                    if (this.anims.exists('bat_fly_loop_rev')) bat.play('bat_fly_loop_rev', true);
-                } else {
-                    if (this.anims.exists('bat_fly_loop')) bat.play('bat_fly_loop', true);
-                }
-            } catch (e) { }
-        } else if (fc >= flightsBeforeRest) {
-            this.enterBatRest(bat);
-        } else {
-            try {
-                const vx = bat.body && bat.body.velocity ? (bat.body.velocity.x || 0) : 0;
-                if (vx < 0) {
-                    if (this.anims.exists('bat_fly_loop_rev')) bat.play('bat_fly_loop_rev', true);
-                } else {
-                    if (this.anims.exists('bat_fly_loop')) bat.play('bat_fly_loop', true);
-                }
-            } catch (e) { }
+        /**
+         * Builds plugin options for a flying enemy from an objects.json catalog entry.
+         * Falls back to sensible bat/ghost defaults when keys are absent.
+         *
+         * @param {object} catalogEntry   entry from objects.json (or null)
+         * @param {object} overrides      additional per-type overrides
+         */
+        _buildFlyingEnemyOpts(catalogEntry, overrides = {}) {
+            const entry = catalogEntry && typeof catalogEntry === 'object' ? catalogEntry : {};
+            const spawn = entry.spawn || {};
+            const actor = entry.actor || {};
+            const movement = entry.movement || {};
+            return Object.assign({
+                textureKey: entry.textureKey || entry.key || null,
+                defaultFrame: entry.defaultFrame || 0,
+                countFromLevelKey: spawn.countFromLevelKey || null,
+                speedFromLevelKey: Array.isArray(spawn.speedFromLevelKeys) ? spawn.speedFromLevelKeys[0] : null,
+                defaultSpeedFallback: movement.minStep != null ? movement.minStep : 80,
+                stealGems: !!actor.stealGems,
+                gemCarryFrame: OBJECT_FRAMES.gem,
+                flightsBeforeRestLevelKey: actor.flightsBeforeRestFromLevelKey || null,
+                restSecondsLevelKey: actor.restSecondsFromLevelKey || null,
+                restIntervalSecondsLevelKey: actor.restIntervalSecondsFromLevelKey || null
+            }, overrides);
         }
 
-        // Ensure bat rolling/flapping sound is playing while bat is flying
-        try {
-            if (bat.getData && !bat.getData('isResting')) {
-                let sfx = bat.getData && bat.getData('sfx');
-                if (!sfx && this.sound && this.sound.add) {
-                    try {
-                        sfx = this.sound.add('bat_sfx', { loop: true, volume: 0.7 });
-                        try { sfx.play(); } catch (e) { }
-                        try { bat.setData && bat.setData('sfx', sfx); } catch (e) { }
-                        try { bat.on && bat.on('destroy', () => { try { sfx.stop && sfx.stop(); sfx.destroy && sfx.destroy(); } catch (e) { } }); } catch (e) { }
-                    } catch (e) { }
-                }
-            }
-        } catch (e) { }
-    }
-
-    enterBatRest(bat) {
-        if (!bat || !bat.active) return;
-        if (bat.getData('isResting')) return;
-
-        try {
-            const intTimer = bat.getData('restIntervalTimer');
-            if (intTimer && intTimer.remove) intTimer.remove(false);
-            bat.setData('restIntervalTimer', null);
-        } catch (e) { }
-
-        try { if (bat.anims && bat.anims.isPlaying) bat.anims.stop(); } catch (e) { }
-        try { bat.off && bat.off('animationcomplete'); } catch (e) { }
-
-        const doRestComplete = () => {
-            if (!bat || !bat.active) return;
-            try { if (bat.anims && bat.anims.isPlaying) bat.anims.stop(); } catch (e) { }
-            try { bat.setVelocity(0, 0); } catch (e) { }
-            try { bat.setFrame(0); } catch (e) { }
-            bat.setData('isResting', true);
-
-            // stop bat sound while resting
-            try {
-                const sfx = bat.getData && bat.getData('sfx');
-                if (sfx) {
-                    try { sfx.stop && sfx.stop(); } catch (e) { }
-                    try { sfx.destroy && sfx.destroy(); } catch (e) { }
-                    bat.setData('sfx', null);
-                }
-            } catch (e) { }
-
-            const restSeconds = Number(bat.getData('restSeconds')) || 2;
-            const t = this.time.delayedCall(restSeconds * 1000, () => {
-                if (!bat || !bat.active) return;
-                bat.setData('isResting', false);
-                bat.setData('flightCount', 0);
-
-                if (this.anims.exists('bat_fly_start')) {
-                    const onStartResume = (anim2) => {
-                        if (!anim2 || anim2.key !== 'bat_fly_start') return;
-                        try { bat.off('animationcomplete', onStartResume); } catch (e) { }
-                        this.setBatRandomVelocity(bat);
-                        try {
-                            const vx2 = bat.body && bat.body.velocity ? (bat.body.velocity.x || 0) : 0;
-                            if (vx2 < 0) {
-                                if (this.anims.exists('bat_fly_loop_rev')) bat.play('bat_fly_loop_rev');
-                            } else {
-                                if (this.anims.exists('bat_fly_loop')) bat.play('bat_fly_loop');
-                            }
-                        } catch (e) { }
-                        try {
-                            const restInterval = Number(bat.getData('restInterval'));
-                            if (Number.isFinite(restInterval) && restInterval > 0) {
-                                const t2 = this.time.delayedCall(restInterval * 1000, () => {
-                                    if (!bat || !bat.active) return;
-                                    this.enterBatRest(bat);
-                                });
-                                bat.setData('restIntervalTimer', t2);
-                            }
-                        } catch (e) { }
-                        // restart bat sound if missing
-                        try {
-                            const sfx2 = bat.getData && bat.getData('sfx');
-                            if (!sfx2 && this.sound && this.sound.add) {
-                                const sfxNew = this.sound.add('bat_sfx', { loop: true, volume: 0.7 });
-                                sfxNew.play();
-                                bat.setData('sfx', sfxNew);
-                                try { bat.on && bat.on('destroy', () => { try { sfxNew.stop && sfxNew.stop(); sfxNew.destroy && sfxNew.destroy(); } catch (e) { } }); } catch (e) { }
-                            }
-                        } catch (e) { }
-                    };
-                    bat.play('bat_fly_start', true);
-                    bat.on('animationcomplete', onStartResume);
-                } else {
-                    this.setBatRandomVelocity(bat);
-                    try {
-                        const restInterval = Number(bat.getData('restInterval'));
-                        if (Number.isFinite(restInterval) && restInterval > 0) {
-                            const t2 = this.time.delayedCall(restInterval * 1000, () => {
-                                if (!bat || !bat.active) return;
-                                this.enterBatRest(bat);
-                            });
-                            bat.setData('restIntervalTimer', t2);
-                        }
-                    } catch (e) { }
-                }
-            });
-            bat.setData('restTimer', t);
-        };
-
-        if (this.anims.exists('bat_stop')) {
-            const onStop = (anim) => {
-                if (!anim || anim.key !== 'bat_stop') return;
-                try { bat.off('animationcomplete', onStop); } catch (e) { }
-                doRestComplete();
-            };
-            bat.play('bat_stop', true);
-            bat.on('animationcomplete', onStop);
-        } else {
-            try { bat.setVelocity(0, 0); } catch (e) { }
-            doRestComplete();
-        }
-    }
-
-    startBatGemCarryAndDrop(bat) {
-        if (!bat || !bat.active) {
-            this.respawnStolenGemInMap(this.player?.x, this.player?.y);
-            return;
-        }
-
-        this.releaseBatCarriedGem(bat, false);
-
-        const gemScaleFactor = (CONFIG.objectSize / OBJECT_NATIVE_SIZE) * 0.62;
-        const carriedGem = this.add.sprite(bat.x, bat.y, 'objects', OBJECT_FRAMES.gem);
-        carriedGem.setScale(gemScaleFactor);
-        carriedGem.setAlpha(0.92);
-        carriedGem.setDepth((bat.depth || 0) + 2);
-
-        bat.setData('carriedGemSprite', carriedGem);
-        bat.setData('carriedGemDropping', false);
-        bat.setData('carriedGemOffsetX', Phaser.Math.Between(-8, 8));
-        bat.setData('carriedGemOffsetY', Phaser.Math.Between(-18, -10));
-
-        const dropDelay = Phaser.Math.Between(1200, 2400);
-        const dropTimer = this.time.delayedCall(dropDelay, () => {
-            if (!bat || !bat.active) {
-                if (carriedGem && carriedGem.active) {
-                    carriedGem.destroy();
-                }
-                this.respawnStolenGemInMap(this.player?.x, this.player?.y);
+        /**
+         * Spawns all entities for a flying-enemy group using the library plugin.
+         * @param {Phaser.GameObjects.Group} group
+         * @param {Array}  spawnPositions
+         * @param {object} optsOverrides   merged into catalog-derived opts
+         */
+        _spawnFlyingEnemyGroup(group, spawnPositions, optsOverrides) {
+            const plugin = this._getFlyingEnemyPlugin();
+            if (!plugin) {
+                /* Plugin not yet loaded (library still loading) — silently skip. */
                 return;
             }
+            const opts = this._buildFlyingEnemyOpts(null, optsOverrides);
+            plugin.spawnAll(this, group, spawnPositions, this.levelData, opts);
+        }
 
-            const rawTileX = Math.floor((bat.x - this.mapOffsetX) / CONFIG.tileSize);
-            const rawTileY = Math.floor((bat.y - this.mapOffsetY) / CONFIG.tileSize);
-            const tileX = Phaser.Math.Clamp(rawTileX, 0, this.mapCols - 1);
-            const tileY = Phaser.Math.Clamp(rawTileY, 0, this.mapRows - 1);
-            const tileType = this.tiles?.[tileY]?.[tileX]?.type;
-            const canDropHere = tileType === 'floor' || tileType === 'empty';
+        // ── Bat ──────────────────────────────────────────────────────────────────
 
-            const dropPos = canDropHere
-                ? { x: bat.x, y: bat.y }
-                : null;
-
-            const fallbackTile = !dropPos ? this.getRandomWalkableTile() : null;
-            const dropX = dropPos
-                ? dropPos.x
-                : (fallbackTile
-                    ? this.mapOffsetX + fallbackTile.x * CONFIG.tileSize + CONFIG.tileSize / 2
-                    : bat.x);
-            const dropY = dropPos
-                ? dropPos.y
-                : (fallbackTile
-                    ? this.mapOffsetY + fallbackTile.y * CONFIG.tileSize + CONFIG.tileSize / 2
-                    : bat.y);
-
-            bat.setData('carriedGemDropping', true);
-            this.tweens.add({
-                targets: carriedGem,
-                x: dropX,
-                y: dropY,
-                scale: gemScaleFactor * 0.95,
-                alpha: 1,
-                duration: 260,
-                ease: 'Sine.easeInOut',
-                onComplete: () => {
-                    if (carriedGem && carriedGem.active) {
-                        carriedGem.destroy();
-                    }
-                    bat.setData('carriedGemSprite', null);
-                    bat.setData('carriedGemDropping', false);
-                    bat.setData('carriedGemDropTimer', null);
-                    this.createGemPickupAt(dropX, dropY);
-                }
+        spawnBatsFromMap() {
+            const batEntry = this.getObjectDefinitionForType && this.getObjectDefinitionForType('bat');
+            const opts = this._buildFlyingEnemyOpts(batEntry, {
+                textureKey: 'bat',
+                defaultFrame: 0,
+                sfxKey: 'bat_sfx',
+                sfxVolume: 0.7,
+                directionTimerDelayMs: 700,
+                directionChangePct: 0.45,
+                restEnabled: true,
+                flightsBeforeRest: Number(this.levelConfig?.batFlightsBeforeRest) || 4,
+                restSeconds: Number(this.levelConfig?.batRestSeconds) || 2,
+                restIntervalSeconds: Number(this.levelConfig?.batRestIntervalSeconds) || 0,
+                flightsBeforeRestLevelKey: 'batFlightsBeforeRest',
+                restSecondsLevelKey: 'batRestSeconds',
+                restIntervalSecondsLevelKey: 'batRestIntervalSeconds',
+                stealGems: true,
+                gemCarryFrame: OBJECT_FRAMES.gem,
+                defaultSpeedFallback: Number(CONFIG.batSpeed) > 0 ? Number(CONFIG.batSpeed) : 90,
+                countFromLevelKey: 'bat',
+                speedFromLevelKey: 'batSpeed',
+                animStart: 'bat_fly_start',
+                animLoop: 'bat_fly_loop',
+                animLoopRev: 'bat_fly_loop_rev',
+                animStop: 'bat_stop'
             });
-        });
-
-        bat.setData('carriedGemDropTimer', dropTimer);
-    }
-
-    releaseBatCarriedGem(bat, dropToMap = true) {
-        if (!bat) return;
-
-        const dropTimer = bat.getData('carriedGemDropTimer');
-        if (dropTimer && dropTimer.remove) {
-            dropTimer.remove(false);
+            const plugin = this._getFlyingEnemyPlugin();
+            if (plugin) plugin.spawnAll(this, this.bats, this.batSpawnPositions, this.levelData, opts);
         }
 
-        const carriedGem = bat.getData('carriedGemSprite');
-        if (carriedGem && carriedGem.active) {
-            if (dropToMap) {
-                this.createGemPickupAt(bat.x, bat.y);
-            }
-            carriedGem.destroy();
+        /** Called from hitByBat when the bat steals a gem. */
+        startBatGemCarryAndDrop(bat) {
+            const plugin = this._getFlyingEnemyPlugin();
+            if (plugin) { plugin.startGemCarry(this, bat); return; }
+            // Fallback if plugin is missing: just respawn gem
+            this.respawnStolenGemInMap(this.player?.x, this.player?.y);
         }
 
-        bat.setData('carriedGemSprite', null);
-        bat.setData('carriedGemDropping', false);
-        bat.setData('carriedGemDropTimer', null);
-    }
-
-    updateBatPerspective() {
-        const bats = this.bats?.children?.entries || [];
-        if (!bats.length) return;
-
-        const worldTop = this.mapOffsetY;
-        const worldHeight = Math.max(1, this.mapRows * CONFIG.tileSize);
-        const timeNow = this.time?.now || 0;
-
-        bats.forEach((bat) => {
-            if (!bat || !bat.active) return;
-
-            const baseScale = Number(bat.getData('baseScale')) || (CONFIG.objectSize / OBJECT_NATIVE_SIZE);
-            const phase = Number(bat.getData('flutterPhase')) || 0;
-            const yNorm = Phaser.Math.Clamp((bat.y - worldTop) / worldHeight, 0, 1);
-
-            const perspectiveScale = Phaser.Math.Linear(0.74, 1.22, yNorm);
-            const flutterMul = 1 + Math.sin((timeNow / 230) + phase) * 0.04;
-            bat.setScale(baseScale * perspectiveScale * flutterMul);
-
-            const carriedGem = bat.getData('carriedGemSprite');
-            const isDropping = !!bat.getData('carriedGemDropping');
-            if (carriedGem && carriedGem.active) {
-                if (!isDropping) {
-                    const offX = Number(bat.getData('carriedGemOffsetX')) || 0;
-                    const offY = Number(bat.getData('carriedGemOffsetY')) || -14;
-                    carriedGem.setPosition(bat.x + offX, bat.y + offY);
-                }
-                carriedGem.setDepth((bat.depth || 0) + 2);
-            }
-        });
-    }
-
-    getBatCountForLevel() {
-        const direct = Number(this.levelData?.bat);
-        if (Number.isFinite(direct) && direct > 0) {
-            return Math.floor(direct);
-        }
-        const inMap = Number(this.levelData?.map?.bat);
-        if (Number.isFinite(inMap) && inMap > 0) {
-            return Math.floor(inMap);
-        }
-        return 0;
-    }
-
-    getBatSpeedForLevel() {
-        const direct = Number(this.levelData?.batSpeed);
-        if (Number.isFinite(direct) && direct > 0) {
-            return direct;
-        }
-        const inMap = Number(this.levelData?.map?.batSpeed);
-        if (Number.isFinite(inMap) && inMap > 0) {
-            return inMap;
-        }
-        return Number(CONFIG.batSpeed) > 0 ? Number(CONFIG.batSpeed) : 90;
-    }
-
-    spawnBatsFromMap() {
-        if (!this.bats) return;
-        const requestedCount = this.getBatCountForLevel();
-        if (requestedCount <= 0) return;
-
-        const spawnPositions = Array.isArray(this.batSpawnPositions) ? this.batSpawnPositions : [];
-        if (!spawnPositions.length) return;
-
-        for (let i = 0; i < requestedCount; i++) {
-            const pos = spawnPositions[i % spawnPositions.length];
-            if (!pos) continue;
-            this.spawnMapBat(pos.x, pos.y);
-        }
-    }
-
-    getGhostCountForLevel() {
-        const direct = Number(this.levelData?.ghost);
-        if (Number.isFinite(direct) && direct > 0) {
-            return Math.floor(direct);
-        }
-        const inMap = Number(this.levelData?.map?.ghost);
-        if (Number.isFinite(inMap) && inMap > 0) {
-            return Math.floor(inMap);
-        }
-        return 0;
-    }
-
-    getGhostSpeedForLevel() {
-        const direct = Number(this.levelData?.ghostSpeed);
-        if (Number.isFinite(direct) && direct > 0) {
-            return direct;
-        }
-        const inMap = Number(this.levelData?.map?.ghostSpeed);
-        if (Number.isFinite(inMap) && inMap > 0) {
-            return inMap;
-        }
-        return Number(CONFIG.ghostSpeed) > 0 ? Number(CONFIG.ghostSpeed) : 80;
-    }
-
-    spawnGhosts() {
-        if (!this.ghosts) return;
-
-        const count = this.getGhostCountForLevel();
-        if (count <= 0) {
-            this.stopGhostSfx();
-            return;
+        updateBatPerspective() {
+            const plugin = this._getFlyingEnemyPlugin();
+            if (!plugin) return;
+            plugin.updateGroupPerspective(this, this.bats, this.time?.now || 0, {
+                perspectiveScaleMin: 0.74,
+                perspectiveScaleMax: 1.22,
+                flutterAmplitude: 0.04,
+                flutterSpeedMs: 230
+            });
         }
 
-        this.startGhostSfx(count);
+        // ── Ghost ─────────────────────────────────────────────────────────────────
 
-        const ghostSpeed = this.getGhostSpeedForLevel();
-        const spawnPositions = Array.isArray(this.ghostSpawnPositions) ? this.ghostSpawnPositions : [];
+        spawnGhosts() {
+            const ghostEntry = this.getObjectDefinitionForType && this.getObjectDefinitionForType('ghost');
+            const opts = this._buildFlyingEnemyOpts(ghostEntry, {
+                textureKey: 'ghost',
+                defaultFrame: 0,
+                sceneSfxKey: 'ghost_sfx',
+                sceneSfxVolumeBase: 0.12,
+                sceneSfxVolumePerExtra: 0.035,
+                sceneSfxVolumeMax: 0.45,
+                directionTimerDelayMs: 900,
+                directionChangePct: 0.35,
+                alphaTween: true,
+                alphaMin: 0.55,
+                hoverTween: true,
+                hoverAmplitudeTileRatio: 0.08,
+                hoverDurationMin: 420,
+                hoverDurationMax: 620,
+                hoverDelayMin: 0,
+                hoverDelayMax: 220,
+                animIdle: 'ghost_float',
+                restEnabled: false,
+                stealGems: false,
+                defaultSpeedFallback: Number(CONFIG.ghostSpeed) > 0 ? Number(CONFIG.ghostSpeed) : 80,
+                countFromLevelKey: 'ghost',
+                speedFromLevelKey: 'ghostSpeed',
+                perspectiveScaleMin: 0.82,
+                perspectiveScaleMax: 1.20,
+                flutterAmplitude: 0.06,
+                flutterSpeedMs: 167   // 1 / 0.006 ≈ 167 ms
+            });
+            const plugin = this._getFlyingEnemyPlugin();
+            if (plugin) plugin.spawnAll(this, this.ghosts, this.ghostSpawnPositions, this.levelData, opts);
+        }
 
-        for (let i = 0; i < count; i++) {
-            let worldX;
-            let worldY;
-            if (spawnPositions.length > 0) {
-                const pos = spawnPositions[i % spawnPositions.length];
-                if (!pos) continue;
-                worldX = pos.x;
-                worldY = pos.y;
+        startGhostSfx(ghostCount = 1) {
+            const plugin = this._getFlyingEnemyPlugin();
+            if (plugin) { plugin.startSceneSfx(this, ghostCount, { sceneSfxKey: 'ghost_sfx' }); return; }
+            // Fallback
+            if (!this.sound) return;
+            const vol = Phaser.Math.Clamp(0.12 + (Math.max(1, ghostCount) - 1) * 0.035, 0.12, 0.45);
+            const existing = this.sound.get('ghost_sfx');
+            if (existing) {
+                if (existing.setVolume) existing.setVolume(vol);
+                if (!existing.isPlaying) existing.play({ loop: true, volume: vol });
             } else {
-                const tile = this.getRandomWalkableTile();
-                if (!tile) continue;
-                worldX = this.mapOffsetX + tile.x * CONFIG.tileSize + CONFIG.tileSize / 2;
-                worldY = this.mapOffsetY + tile.y * CONFIG.tileSize + CONFIG.tileSize / 2;
+                try { this.sound.play('ghost_sfx', { loop: true, volume: vol }); } catch (_e) {}
             }
+        }
 
-            const ghost = this.ghosts.create(worldX, worldY, 'ghost', 0);
-            const ghostScaleFactor = CONFIG.objectSize / OBJECT_NATIVE_SIZE;
-            ghost.setScale(ghostScaleFactor);
-            ghost.setData('baseScale', ghostScaleFactor);
-            ghost.setData('flutterPhase', Phaser.Math.FloatBetween(0, Math.PI * 2));
-            ghost.setData('speed', ghostSpeed);
-            if (this.anims.exists('ghost_float')) {
-                ghost.play('ghost_float');
-            }
-            if (ghost.body) {
-                ghost.body.setSize(Math.floor(ghost.displayWidth || ghost.width), Math.floor(ghost.displayHeight || ghost.height));
-                ghost.body.setCollideWorldBounds(true);
-                ghost.body.setBounce(1, 1);
-            }
+        stopGhostSfx() {
+            const plugin = this._getFlyingEnemyPlugin();
+            if (plugin) { plugin.stopSceneSfx(this, { sceneSfxKey: 'ghost_sfx' }); return; }
+            if (!this.sound) return;
+            const sfx = this.sound.get('ghost_sfx');
+            if (sfx && sfx.isPlaying) sfx.stop();
+        }
 
-            this.setGhostRandomVelocity(ghost);
-
-            this.tweens.add({
-                targets: ghost,
-                alpha: 0.55,
-                duration: 500,
-                yoyo: true,
-                repeat: -1,
-                ease: 'Sine.easeInOut'
-            });
-
-            // Flutter effect: ghosts float up/down and slightly change size
-            const hoverAmplitude = Math.max(3, Math.round(CONFIG.tileSize * 0.08));
-            this.tweens.add({
-                targets: ghost,
-                y: ghost.y - hoverAmplitude,
-                duration: Phaser.Math.Between(420, 620),
-                yoyo: true,
-                repeat: -1,
-                ease: 'Sine.easeInOut',
-                delay: Phaser.Math.Between(0, 220)
+        updateGhostPerspective() {
+            const plugin = this._getFlyingEnemyPlugin();
+            if (!plugin) return;
+            plugin.updateGroupPerspective(this, this.ghosts, this.time?.now || 0, {
+                perspectiveScaleMin: 0.82,
+                perspectiveScaleMax: 1.20,
+                flutterAmplitude: 0.06,
+                flutterSpeedMs: 167,
+                animIdle: 'ghost_float',
+                defaultFrame: 0
             });
         }
-
-        this.ghostDirectionTimer = this.time.addEvent({
-            delay: 900,
-            loop: true,
-            callback: () => {
-                const ghosts = this.ghosts?.children?.entries || [];
-                ghosts.forEach((ghost) => {
-                    if (!ghost || !ghost.active) return;
-                    if (Math.random() < 0.35) {
-                        this.setGhostRandomVelocity(ghost);
-                    }
-                });
-            }
-        });
-    }
-
-    startGhostSfx(ghostCount = 1) {
-        if (!this.sound) return;
-        const volume = Phaser.Math.Clamp(0.12 + (Math.max(1, ghostCount) - 1) * 0.035, 0.12, 0.45);
-        const existing = this.sound.get('ghost_sfx');
-        if (existing) {
-            if (existing.setVolume) {
-                existing.setVolume(volume);
-            }
-            if (!existing.isPlaying) {
-                existing.play({ loop: true, volume });
-            }
-        } else {
-            this.sound.play('ghost_sfx', { loop: true, volume });
-        }
-    }
-
-    stopGhostSfx() {
-        if (!this.sound) return;
-        const sfx = this.sound.get('ghost_sfx');
-        if (sfx && sfx.isPlaying) {
-            sfx.stop();
-        }
-    }
-
-    setGhostRandomVelocity(ghost) {
-        if (!ghost || !ghost.active) return;
-        const speed = Number(ghost.getData('speed')) || 80;
-        const dx = Phaser.Math.FloatBetween(-1, 1);
-        const dy = Phaser.Math.FloatBetween(-1, 1);
-        const len = Math.hypot(dx, dy) || 1;
-        const vx = (dx / len) * speed;
-        const vy = (dy / len) * speed;
-        ghost.setVelocity(vx, vy);
-
-        // Mirror sprite horizontally based on horizontal velocity so animation is "a specchio"
-        try {
-            // Prefer horizontal component to decide facing; fall back to last known direction
-            if (Math.abs(vx) >= Math.abs(vy)) {
-                ghost.setFlipX(vx < 0);
-            } else {
-                const last = Number(ghost.getData('lastVx')) || 1;
-                ghost.setFlipX(last < 0);
-            }
-            ghost.setData('lastVx', vx);
-        } catch (e) { }
-
-        // Ensure float animation is playing
-        try {
-            if (this.anims.exists('ghost_float')) {
-                if (!ghost.anims || !ghost.anims.currentAnim) {
-                    ghost.play('ghost_float');
-                }
-            }
-        } catch (e) { }
-    }
-
-    updateGhostPerspective() {
-        const ghosts = this.ghosts?.children?.entries || [];
-        if (!ghosts.length) return;
-
-        const worldTop = this.mapOffsetY;
-        const worldBottom = this.mapOffsetY + this.mapRows * CONFIG.tileSize;
-        const worldHeight = Math.max(1, worldBottom - worldTop);
-
-        ghosts.forEach((ghost) => {
-            if (!ghost || !ghost.active) return;
-
-            const baseScale = Number(ghost.getData('baseScale')) || (CONFIG.objectSize / OBJECT_NATIVE_SIZE);
-            const phase = Number(ghost.getData('flutterPhase')) || 0;
-
-            // Foreground perspective: lower on screen => bigger
-            const yNorm = Phaser.Math.Clamp((ghost.y - worldTop) / worldHeight, 0, 1);
-            const perspectiveScale = 0.82 + yNorm * 0.38;
-
-            // Continuous flutter scaling
-            const flutterScale = 1 + Math.sin(this.time.now * 0.006 + phase) * 0.06;
-
-            const finalScale = baseScale * perspectiveScale * flutterScale;
-            ghost.setScale(finalScale);
-            try {
-                // Mirror the ghost sprite when moving left so animation appears mirrored
-                const vx = ghost.body && ghost.body.velocity ? (ghost.body.velocity.x || 0) : 0;
-                const vy = ghost.body && ghost.body.velocity ? (ghost.body.velocity.y || 0) : 0;
-                const threshold = 2; // small deadzone for deciding facing
-                if (vx < -threshold) {
-                    ghost.setFlipX(true);
-                } else if (vx > threshold) {
-                    ghost.setFlipX(false);
-                }
-
-                // If ghost is essentially stopped, hold frame 0 and stop animation.
-                // Otherwise ensure float animation is playing.
-                const speedNow = Math.hypot(vx, vy);
-                const stopThreshold = 6; // pixels/sec under which ghost is considered stopped
-                if (speedNow <= stopThreshold) {
-                    try {
-                        if (ghost.anims && ghost.anims.isPlaying) ghost.anims.stop();
-                        ghost.setFrame(0);
-                        ghost.setData('isStopped', true);
-                    } catch (e) { }
-                } else {
-                    try {
-                        if (ghost.getData('isStopped')) {
-                            ghost.setData('isStopped', false);
-                            if (this.anims.exists('ghost_float')) ghost.play('ghost_float');
-                        } else if (this.anims.exists('ghost_float') && !(ghost.anims && ghost.anims.isPlaying)) {
-                            ghost.play('ghost_float');
-                        }
-                    } catch (e) { }
-                }
-            } catch (e) { }
-        });
-    }
 
     setupInput() {
         this.cursors = this.input.keyboard.createCursorKeys();
@@ -10283,6 +9815,10 @@ class GameScene extends Phaser.Scene {
             this.ghostDirectionTimer.remove();
             this.ghostDirectionTimer = null;
         }
+        if (this.bats && this.bats._flyingEnemyDirTimer) {
+            this.bats._flyingEnemyDirTimer.remove();
+            this.bats._flyingEnemyDirTimer = null;
+        }
         if (this.batDirectionTimer) {
             this.batDirectionTimer.remove();
             this.batDirectionTimer = null;
@@ -10337,6 +9873,10 @@ class GameScene extends Phaser.Scene {
         if (this.ghostDirectionTimer) {
             this.ghostDirectionTimer.remove();
             this.ghostDirectionTimer = null;
+        }
+        if (this.bats && this.bats._flyingEnemyDirTimer) {
+            this.bats._flyingEnemyDirTimer.remove();
+            this.bats._flyingEnemyDirTimer = null;
         }
         if (this.batDirectionTimer) {
             this.batDirectionTimer.remove();
@@ -10404,6 +9944,10 @@ class GameScene extends Phaser.Scene {
     gameOver() {
         this.stopLevelLightEffect();
         this.stopGhostSfx();
+        if (this.bats && this.bats._flyingEnemyDirTimer) {
+            this.bats._flyingEnemyDirTimer.remove();
+            this.bats._flyingEnemyDirTimer = null;
+        }
         if (this.batDirectionTimer) {
             this.batDirectionTimer.remove();
             this.batDirectionTimer = null;

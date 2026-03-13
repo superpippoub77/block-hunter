@@ -136,10 +136,6 @@ const DEFAULT_LEVEL = {
         },
         objects: {}
     },
-    ghost: 2,
-    bat: 2,
-    ghostSpeed: 80,
-    batSpeed: 90,
     backgroundEnabled: true,
     foregroundEnabled: true
 };
@@ -2290,11 +2286,130 @@ function collectObjectMappingsFromEditor() {
     return out;
 }
 
+// Rebuilds enemy parameter inputs in #enemyParamsContainer from current object mappings.
+// Accepts optional levelData object to pre-populate values; falls back to 0.
+function rebuildEnemyParamsUI(levelData) {
+    const container = el('enemyParamsContainer');
+    if (!container) return;
+    container.innerHTML = '';
+
+    const items = Array.isArray(OBJECT_MAP_EDITOR_STATE.items) ? OBJECT_MAP_EDITOR_STATE.items : [];
+    const enemies = items.filter((m) => String(m.category ?? '').trim().toLowerCase() === 'enemy');
+
+    if (!enemies.length) {
+        const hint = document.createElement('div');
+        hint.className = 'tiny';
+        hint.textContent = 'Nessun nemico definito negli object mappings.';
+        container.appendChild(hint);
+        return;
+    }
+
+    const data = (levelData && typeof levelData === 'object') ? levelData : {};
+    const seenCountKeys = new Set();
+    const seenSpeedKeys = new Set();
+
+    const countGrid = document.createElement('div');
+    countGrid.className = 'grid2';
+    countGrid.style.marginTop = '6px';
+
+    const speedGrid = document.createElement('div');
+    speedGrid.className = 'grid2';
+    speedGrid.style.marginTop = '6px';
+
+    enemies.forEach((m) => {
+        const label = String(m.key ?? m.token ?? '').trim();
+        const spawn = (m.spawn && typeof m.spawn === 'object') ? m.spawn : {};
+
+        // Count field
+        const countKey = spawn.countFromLevelKey ? String(spawn.countFromLevelKey).trim() : null;
+        if (countKey && !seenCountKeys.has(countKey)) {
+            seenCountKeys.add(countKey);
+            const div = document.createElement('div');
+            const row = document.createElement('div');
+            row.className = 'field-row';
+            const lbl = document.createElement('label');
+            lbl.className = 'field-label';
+            lbl.setAttribute('for', `enemyParam_${countKey}`);
+            lbl.textContent = `${label || countKey} :`;
+            const valWrap = document.createElement('div');
+            valWrap.className = 'field-value';
+            const inp = document.createElement('input');
+            inp.id = `enemyParam_${countKey}`;
+            inp.type = 'number';
+            inp.min = '0';
+            inp.setAttribute('data-enemy-level-key', countKey);
+            inp.value = String(data[countKey] ?? 0);
+            inp.addEventListener('input', () => drawMiniMapPreview(getScene()));
+            valWrap.appendChild(inp);
+            row.appendChild(lbl);
+            row.appendChild(valWrap);
+            div.appendChild(row);
+            countGrid.appendChild(div);
+        }
+
+        // Speed fields
+        const speedKeys = Array.isArray(spawn.speedFromLevelKeys)
+            ? spawn.speedFromLevelKeys.map((k) => String(k).trim()).filter(Boolean)
+            : [];
+        speedKeys.forEach((speedKey) => {
+            if (seenSpeedKeys.has(speedKey)) return;
+            seenSpeedKeys.add(speedKey);
+            const div = document.createElement('div');
+            const row = document.createElement('div');
+            row.className = 'field-row';
+            const lbl = document.createElement('label');
+            lbl.className = 'field-label';
+            lbl.setAttribute('for', `enemyParam_${speedKey}`);
+            lbl.textContent = `${label || speedKey} Speed :`;
+            const valWrap = document.createElement('div');
+            valWrap.className = 'field-value';
+            const inp = document.createElement('input');
+            inp.id = `enemyParam_${speedKey}`;
+            inp.type = 'number';
+            inp.min = '0';
+            inp.setAttribute('data-enemy-level-key', speedKey);
+            inp.value = String(data[speedKey] ?? 0);
+            const range = document.createElement('input');
+            range.id = `enemyParam_${speedKey}_range`;
+            range.type = 'range';
+            range.min = '0';
+            range.max = '200';
+            range.step = '1';
+            range.value = inp.value;
+            inp.addEventListener('input', () => { range.value = inp.value; drawMiniMapPreview(getScene()); });
+            range.addEventListener('input', () => { inp.value = range.value; drawMiniMapPreview(getScene()); });
+            valWrap.appendChild(inp);
+            valWrap.appendChild(range);
+            row.appendChild(lbl);
+            row.appendChild(valWrap);
+            div.appendChild(row);
+            speedGrid.appendChild(div);
+        });
+    });
+
+    if (countGrid.children.length) container.appendChild(countGrid);
+    if (speedGrid.children.length) container.appendChild(speedGrid);
+}
+
+// Collects all dynamic enemy param values from #enemyParamsContainer as a plain object
+// e.g. { ghost: 2, ghostSpeed: 80, bat: 3, batSpeed: 90 }
+function collectEnemyParamValues() {
+    const container = el('enemyParamsContainer');
+    if (!container) return {};
+    const result = {};
+    container.querySelectorAll('input[data-enemy-level-key]').forEach((inp) => {
+        const key = inp.getAttribute('data-enemy-level-key');
+        if (key) result[key] = parseNumber(inp.value, 0);
+    });
+    return result;
+}
+
 function loadObjectMappingsToEditor(rawList) {
     const arr = Array.isArray(rawList) ? rawList : [];
     OBJECT_MAP_EDITOR_STATE.items = arr.map((it) => normalizeObjectMapping(it));
     refreshObjectMappingsAvailability();
     renderObjectMapEditor();
+    try { rebuildEnemyParamsUI(); } catch (e) {}
 }
 
 function loadObjectMappingsExample() {
@@ -4767,10 +4882,7 @@ function readLevelFromForm() {
             },
             objects: objectsEffects
         },
-        ghost: parseNumber(el('ghostCount')?.value, 0),
-        bat: parseNumber(el('batCount')?.value, 0),
-        ghostSpeed: parseNumber(el('ghostSpeed')?.value, 80),
-        batSpeed: parseNumber(el('batSpeed')?.value, 90)
+        ...collectEnemyParamValues()
     };
 
     // tokenMap (optional mapping of shorthand tokens)
@@ -4869,12 +4981,7 @@ function applyLevelToForm(levelData) {
     el('gridRows').value = mapData.rows ?? DEFAULT_LEVEL.map.rows;
     el('mapTimer').value = mapData.timer ?? DEFAULT_LEVEL.map.timer;
     el('levelSpeed').value = data.speed ?? DEFAULT_LEVEL.speed;
-    el('ghostCount').value = data.ghost ?? DEFAULT_LEVEL.ghost;
-    el('batCount').value = data.bat ?? DEFAULT_LEVEL.bat;
-    el('ghostSpeed').value = data.ghostSpeed ?? DEFAULT_LEVEL.ghostSpeed;
-    el('batSpeed').value = data.batSpeed ?? DEFAULT_LEVEL.batSpeed;
-    try { if (el('ghostSpeedRange')) el('ghostSpeedRange').value = el('ghostSpeed').value; } catch (e) {}
-    try { if (el('batSpeedRange')) el('batSpeedRange').value = el('batSpeed').value; } catch (e) {}
+    try { rebuildEnemyParamsUI(data); } catch (e) {}
     el('objectiveLabel').value = data.objectiveLabel ?? DEFAULT_LEVEL.objectiveLabel;
     el('lightMode').value = resolvedLight;
     el('escapeRoute').value = String(!!data.escapeRoute);
@@ -6628,7 +6735,7 @@ function bindUI() {
 
     const realtimeFields = [
         'playerRow', 'playerCol', 'gridCols', 'gridRows', 'mapTimer', 'revealMode',
-        'levelId', 'levelSpeed', 'ghostCount', 'batCount', 'ghostSpeed', 'batSpeed',
+        'levelId', 'levelSpeed',
         'objectiveLabel', 'lightMode', 'escapeRoute', 'srEnabled', 'srShardBurstCount',
         'srDynamicSize', 'srRotation', 'srChaotic', 'dbEnabled', 'dbSplitOnImpact',
         'dbDirections', 'dbSizes', 'dbSplitRange', 'dbMaxSplitGen', 'extraRootJson',
@@ -7050,19 +7157,7 @@ function bindUI() {
             drawMiniMapPreview(scene);
         });
     }
-    // sync range sliders with numeric inputs for speeds
-    const ghostRange = el('ghostSpeedRange');
-    const ghostNum = el('ghostSpeed');
-    if (ghostRange && ghostNum) {
-        ghostRange.addEventListener('input', () => { ghostNum.value = ghostRange.value; drawMiniMapPreview(getScene()); });
-        ghostNum.addEventListener('input', () => { ghostRange.value = ghostNum.value; drawMiniMapPreview(getScene()); });
-    }
-    const batRange = el('batSpeedRange');
-    const batNum = el('batSpeed');
-    if (batRange && batNum) {
-        batRange.addEventListener('input', () => { batNum.value = batRange.value; drawMiniMapPreview(getScene()); });
-        batNum.addEventListener('input', () => { batRange.value = batNum.value; drawMiniMapPreview(getScene()); });
-    }
+    // sync range sliders with numeric inputs for speeds — now handled dynamically by rebuildEnemyParamsUI
     const showBg = el('showBackground');
     if (showBg) {
         showBg.addEventListener('change', () => {

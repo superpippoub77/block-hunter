@@ -14,7 +14,11 @@
     },
     {
       "name": "player_bounce_orb",
-      "entry": "data/Librlibraryary/player_bounce_orb/effect.js"
+      "entry": "data/library/player_bounce_orb/effect.js"
+    },
+    {
+      "name": "flying_enemy",
+      "entry": "data/library/flying_enemy/effect.js"
     }
   ]
 }
