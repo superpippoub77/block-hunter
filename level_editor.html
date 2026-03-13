@@ -253,6 +253,139 @@
             flex-wrap: wrap;
         }
 
+        .filemgr-dialog {
+            width: min(1200px, 96vw);
+            max-height: 92vh;
+            overflow: auto;
+            border: 1px solid #40608d;
+            border-radius: 8px;
+            background: #0a1326;
+            padding: 12px;
+            box-shadow: 0 12px 36px rgba(0, 0, 0, 0.45);
+        }
+
+        .filemgr-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(260px, 1fr));
+            gap: 10px;
+            margin-top: 8px;
+        }
+
+        .filemgr-card {
+            border: 1px solid #31507b;
+            border-radius: 6px;
+            padding: 8px;
+            background: rgba(16, 29, 54, 0.66);
+            display: grid;
+            gap: 8px;
+            min-height: 420px;
+            grid-template-rows: auto auto auto 1fr auto;
+        }
+
+        .filemgr-title {
+            font-size: 10px;
+            color: #d7ebff;
+        }
+
+        .filemgr-dropzone {
+            border: 1px dashed #5b85bc;
+            border-radius: 6px;
+            background: rgba(10, 21, 41, 0.75);
+            color: #9fc7ff;
+            padding: 10px;
+            text-align: center;
+            font-size: 8px;
+            min-height: 70px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            line-height: 1.5;
+        }
+
+        .filemgr-dropzone.drag-over {
+            border-color: #9fd5ff;
+            background: rgba(24, 48, 86, 0.72);
+            color: #d8eeff;
+        }
+
+        .filemgr-list {
+            border: 1px solid #2d4c7a;
+            border-radius: 6px;
+            background: rgba(7, 15, 29, 0.8);
+            min-height: 180px;
+            max-height: 320px;
+            overflow: auto;
+            padding: 4px;
+        }
+
+        .filemgr-item {
+            width: 100%;
+            border: 1px solid #27446d;
+            background: #0a1a36;
+            color: #d7ecff;
+            text-align: left;
+            margin-bottom: 4px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .filemgr-item.is-selected {
+            border-color: #8dc2ff;
+            background: #15315f;
+        }
+
+        .filemgr-item .name {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            flex: 1;
+        }
+
+        .filemgr-item .meta {
+            font-size: 7px;
+            color: #ffd27a;
+            white-space: nowrap;
+        }
+
+        .filemgr-preview {
+            border: 1px solid #2d4c7a;
+            border-radius: 6px;
+            background: rgba(7, 15, 29, 0.8);
+            min-height: 110px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #9fb8df;
+            font-size: 8px;
+            padding: 8px;
+            text-align: center;
+        }
+
+        .filemgr-preview img {
+            max-width: 100%;
+            max-height: 180px;
+            object-fit: contain;
+            border: 1px solid #2c4f80;
+            border-radius: 4px;
+            background: #060d1b;
+        }
+
+        .filemgr-preview audio {
+            width: 100%;
+        }
+
+        .filemgr-search {
+            width: 100%;
+        }
+
+        .filemgr-row {
+            display: flex;
+            gap: 6px;
+            align-items: center;
+        }
+
         .config-toolbar {
             display: flex;
             justify-content: space-between;
@@ -589,6 +722,7 @@
             <div class="panel-header">
                 <h1>OPTIONS</h1>
                 <div style="display:flex; gap:6px;">
+                    <button id="openFileManagerBtn" class="icon-btn" type="button" title="Gestione file">FILE</button>
                     <button id="openObjectMapDialogBtn" class="icon-btn" type="button" title="Mappaggio oggetti">OBJ</button>
                     <button id="openConfigDialogBtn" class="icon-btn" type="button" title="Configura game config">&#9881;</button>
                 </div>
@@ -1225,6 +1359,63 @@
             <div class="tiny" style="margin-bottom:8px;">Per ogni elemento puoi definire token/categoria/tipo entita, texture runtime, frame, regole di contatto, movimento, spawn da chiavi livello (ghost, bat, speed), action/trigger/stati (state machine) e un blocco JSON avanzato per collision/tile/wall/actor/pickup/effects/render.</div>
             <div id="objectMapList" class="objmap-list"></div>
             <div class="status" id="objectMapStatusText"></div>
+        </div>
+    </div>
+
+    <div id="fileManagerModal" class="config-modal">
+        <div class="filemgr-dialog">
+            <div class="config-toolbar">
+                <h2 style="margin:0; font-size:12px; color:#d7ebff;">Gestione File (images/music)</h2>
+                <div style="display:flex; gap:6px;">
+                    <button id="refreshFileManagerBtn" type="button">Aggiorna</button>
+                    <button id="closeFileManagerBtn" type="button">Chiudi</button>
+                </div>
+            </div>
+            <div class="tiny" style="margin-bottom:8px;">Carica con drag and drop o selezione file. Seleziona un elemento dalla lista per eliminarlo.</div>
+            <div class="filemgr-grid">
+                <section class="filemgr-card">
+                    <h3 class="filemgr-title">Images: Background</h3>
+                    <input id="fmBgSearch" class="filemgr-search" type="text" placeholder="Cerca file...">
+                    <input id="fmBgInput" type="file" accept=".png,.jpg,.jpeg,.gif,.webp,.svg">
+                    <button id="fmBgUploadBtn" type="button">Carica selezionato</button>
+                    <div id="fmBgDropzone" class="filemgr-dropzone">Trascina qui file immagine<br>oppure usa Seleziona file</div>
+                    <div id="fmBgList" class="filemgr-list"></div>
+                    <div id="fmBgPreview" class="filemgr-preview">Nessun file selezionato</div>
+                    <div class="filemgr-row">
+                        <button id="fmBgRenameBtn" type="button">Rinomina</button>
+                        <button id="fmBgDeleteBtn" type="button">Elimina selezionato</button>
+                    </div>
+                </section>
+
+                <section class="filemgr-card">
+                    <h3 class="filemgr-title">Images: Foreground</h3>
+                    <input id="fmFgSearch" class="filemgr-search" type="text" placeholder="Cerca file...">
+                    <input id="fmFgInput" type="file" accept=".png,.jpg,.jpeg,.gif,.webp,.svg">
+                    <button id="fmFgUploadBtn" type="button">Carica selezionato</button>
+                    <div id="fmFgDropzone" class="filemgr-dropzone">Trascina qui file immagine<br>oppure usa Seleziona file</div>
+                    <div id="fmFgList" class="filemgr-list"></div>
+                    <div id="fmFgPreview" class="filemgr-preview">Nessun file selezionato</div>
+                    <div class="filemgr-row">
+                        <button id="fmFgRenameBtn" type="button">Rinomina</button>
+                        <button id="fmFgDeleteBtn" type="button">Elimina selezionato</button>
+                    </div>
+                </section>
+
+                <section class="filemgr-card">
+                    <h3 class="filemgr-title">Music</h3>
+                    <input id="fmMusicSearch" class="filemgr-search" type="text" placeholder="Cerca file...">
+                    <input id="fmMusicInput" type="file" accept=".mp3,.ogg,.wav,.m4a,.aac">
+                    <button id="fmMusicUploadBtn" type="button">Carica selezionato</button>
+                    <div id="fmMusicDropzone" class="filemgr-dropzone">Trascina qui file audio<br>oppure usa Seleziona file</div>
+                    <div id="fmMusicList" class="filemgr-list"></div>
+                    <div id="fmMusicPreview" class="filemgr-preview">Nessun file selezionato</div>
+                    <div class="filemgr-row">
+                        <button id="fmMusicRenameBtn" type="button">Rinomina</button>
+                        <button id="fmMusicDeleteBtn" type="button">Elimina selezionato</button>
+                    </div>
+                </section>
+            </div>
+            <div class="status" id="fileManagerStatusText"></div>
         </div>
     </div>
 

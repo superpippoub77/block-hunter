@@ -107,6 +107,45 @@ function handleAssetUpload(req, res, options) {
       return;
     }
 
+    if (String(payload?.action || "").toLowerCase() === "rename") {
+      const oldName = sanitizeFileName(payload?.oldName || "");
+      const newName = sanitizeFileName(payload?.newName || "");
+      if (!oldName || !newName) {
+        sendJson(res, 400, { ok: false, error: "invalid oldName/newName" });
+        return;
+      }
+
+      const oldExt = path.extname(oldName).toLowerCase();
+      const newExt = path.extname(newName).toLowerCase();
+      if (!options.allowedExt.has(oldExt) || !options.allowedExt.has(newExt)) {
+        sendJson(res, 400, { ok: false, error: "unsupported file extension" });
+        return;
+      }
+
+      try {
+        fs.mkdirSync(options.dirPath, { recursive: true });
+      } catch (_e) {}
+
+      const oldPath = path.join(options.dirPath, oldName);
+      const newPath = path.join(options.dirPath, newName);
+      fs.rename(oldPath, newPath, (renameErr) => {
+        if (renameErr) {
+          if (renameErr.code === "ENOENT") {
+            sendJson(res, 404, { ok: false, error: "file not found" });
+            return;
+          }
+          sendJson(res, 500, { ok: false, error: renameErr.message });
+          return;
+        }
+        sendJson(res, 200, {
+          ok: true,
+          oldFile: path.posix.join(options.publicPrefix, oldName),
+          file: path.posix.join(options.publicPrefix, newName),
+        });
+      });
+      return;
+    }
+
     const fileName = sanitizeFileName(payload?.fileName || "");
     if (!fileName) {
       sendJson(res, 400, { ok: false, error: "invalid fileName" });

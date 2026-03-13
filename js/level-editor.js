@@ -5556,6 +5556,10 @@ function bindUI() {
     const saveConfigBtn = el('saveConfigBtn');
     const configModal = el('configModal');
     const openObjectMapDialogBtn = el('openObjectMapDialogBtn');
+    const openFileManagerBtn = el('openFileManagerBtn');
+    const closeFileManagerBtn = el('closeFileManagerBtn');
+    const refreshFileManagerBtn = el('refreshFileManagerBtn');
+    const fileManagerModal = el('fileManagerModal');
     const closeObjectMapDialogBtn = el('closeObjectMapDialogBtn');
     const loadObjectMapFromFileBtn = el('loadObjectMapFromFileBtn');
     const loadObjectMapExampleBtn = el('loadObjectMapExampleBtn');
@@ -5566,6 +5570,317 @@ function bindUI() {
     const refreshLeftPalette = () => {
         try { buildDomPalette(); } catch (_e) { }
     };
+
+    const FILE_MANAGER_STATE = {
+        bgSelected: '',
+        fgSelected: '',
+        musicSelected: '',
+        bgSearch: '',
+        fgSearch: '',
+        musicSearch: '',
+        bgList: [],
+        fgList: [],
+        musicList: []
+    };
+
+    function setFileManagerStatus(message, isError = false) {
+        const node = el('fileManagerStatusText');
+        if (!node) return;
+        node.style.color = isError ? '#ff9fa7' : '#8ee89f';
+        node.textContent = message || '';
+    }
+
+    function getFilePathByName(items, name) {
+        const clean = String(name || '').trim();
+        if (!clean) return '';
+        const found = (Array.isArray(items) ? items : []).find((filePath) => {
+            return (String(filePath || '').split('/').pop() || '') === clean;
+        });
+        return String(found || '').trim();
+    }
+
+    function renderImagePreview(previewId, srcPath) {
+        const node = el(previewId);
+        if (!node) return;
+        node.innerHTML = '';
+        const src = String(srcPath || '').trim();
+        if (!src) {
+            node.textContent = 'Nessun file selezionato';
+            return;
+        }
+        const img = document.createElement('img');
+        img.src = `${src}${src.includes('?') ? '&' : '?'}fm=${Date.now()}`;
+        img.alt = src.split('/').pop() || 'preview';
+        node.appendChild(img);
+    }
+
+    function formatAudioDuration(seconds) {
+        const total = Number(seconds);
+        if (!Number.isFinite(total) || total < 0) return '--:--';
+        const mins = Math.floor(total / 60);
+        const secs = Math.floor(total % 60);
+        return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+    }
+
+    function renderMusicPreview(previewId, srcPath) {
+        const node = el(previewId);
+        if (!node) return;
+        node.innerHTML = '';
+        const src = String(srcPath || '').trim();
+        if (!src) {
+            node.textContent = 'Nessun file selezionato';
+            return;
+        }
+        const wrapper = document.createElement('div');
+        wrapper.style.width = '100%';
+        const audio = document.createElement('audio');
+        audio.controls = true;
+        audio.preload = 'metadata';
+        audio.src = `${src}${src.includes('?') ? '&' : '?'}fm=${Date.now()}`;
+        const meta = document.createElement('div');
+        meta.className = 'tiny';
+        meta.style.marginTop = '6px';
+        meta.style.color = '#b8d9ff';
+        meta.textContent = 'Durata: caricamento...';
+        audio.addEventListener('loadedmetadata', () => {
+            meta.textContent = `Durata: ${formatAudioDuration(audio.duration)}`;
+        });
+        audio.addEventListener('error', () => {
+            meta.textContent = 'Durata: non disponibile';
+        });
+        wrapper.appendChild(audio);
+        wrapper.appendChild(meta);
+        node.appendChild(wrapper);
+    }
+
+    function refreshManagerPreviews() {
+        const bgPath = getFilePathByName(FILE_MANAGER_STATE.bgList, FILE_MANAGER_STATE.bgSelected);
+        const fgPath = getFilePathByName(FILE_MANAGER_STATE.fgList, FILE_MANAGER_STATE.fgSelected);
+        const musicPath = getFilePathByName(FILE_MANAGER_STATE.musicList, FILE_MANAGER_STATE.musicSelected);
+        renderImagePreview('fmBgPreview', bgPath);
+        renderImagePreview('fmFgPreview', fgPath);
+        renderMusicPreview('fmMusicPreview', musicPath);
+    }
+
+    function renderFileManagerList(containerId, items, selectedName, searchText, onSelect, inUseChecker) {
+        const container = el(containerId);
+        if (!container) return;
+        container.innerHTML = '';
+        const rawItems = Array.isArray(items) ? items : [];
+        const search = String(searchText || '').trim().toLowerCase();
+        const filtered = search
+            ? rawItems.filter((filePath) => String(filePath || '').toLowerCase().includes(search))
+            : rawItems;
+
+        if (!filtered.length) {
+            const empty = document.createElement('div');
+            empty.className = 'tiny';
+            empty.textContent = search ? 'Nessun file trovato con il filtro corrente' : 'Nessun file disponibile';
+            container.appendChild(empty);
+            return;
+        }
+        filtered.forEach((filePath) => {
+            const name = String(filePath || '').split('/').pop() || '';
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'filemgr-item';
+            if (name === selectedName) btn.classList.add('is-selected');
+
+            const nameSpan = document.createElement('span');
+            nameSpan.className = 'name';
+            nameSpan.textContent = name;
+
+            const metaSpan = document.createElement('span');
+            metaSpan.className = 'meta';
+            metaSpan.textContent = inUseChecker && inUseChecker(name) ? 'In uso' : '';
+
+            btn.appendChild(nameSpan);
+            btn.appendChild(metaSpan);
+            btn.addEventListener('click', () => onSelect(name));
+            container.appendChild(btn);
+        });
+    }
+
+    function renderFileManagerLists() {
+        renderFileManagerList('fmBgList', FILE_MANAGER_STATE.bgList, FILE_MANAGER_STATE.bgSelected, FILE_MANAGER_STATE.bgSearch, (name) => {
+            FILE_MANAGER_STATE.bgSelected = name;
+            renderFileManagerLists();
+        }, isBgFileInUse);
+
+        renderFileManagerList('fmFgList', FILE_MANAGER_STATE.fgList, FILE_MANAGER_STATE.fgSelected, FILE_MANAGER_STATE.fgSearch, (name) => {
+            FILE_MANAGER_STATE.fgSelected = name;
+            renderFileManagerLists();
+        }, isFgFileInUse);
+
+        renderFileManagerList('fmMusicList', FILE_MANAGER_STATE.musicList, FILE_MANAGER_STATE.musicSelected, FILE_MANAGER_STATE.musicSearch, (name) => {
+            FILE_MANAGER_STATE.musicSelected = name;
+            renderFileManagerLists();
+        }, isMusicFileInUse);
+
+        refreshManagerPreviews();
+    }
+
+    async function uploadAssetFile(endpoint, file) {
+        if (!file) {
+            throw new Error('nessun file selezionato');
+        }
+        const base64 = await fileToBase64(file);
+        const response = await fetch(buildApiUrl(endpoint), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                fileName: file.name,
+                contentBase64: base64
+            })
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || !payload?.ok) {
+            throw new Error(payload?.error || `upload fallito (${response.status})`);
+        }
+        return payload;
+    }
+
+    async function refreshFileManagerData() {
+        const [bgList, fgList, musicList] = await Promise.all([
+            fetchJsonListWithFallback(buildApiUrl('images/background'), BG_MANIFEST_PATH),
+            fetchJsonListWithFallback(buildApiUrl('images/foreground'), FG_MANIFEST_PATH),
+            fetchJsonListWithFallback(buildApiUrl('music'), MUSIC_MANIFEST_PATH)
+        ]);
+
+        FILE_MANAGER_STATE.bgList = bgList;
+        FILE_MANAGER_STATE.fgList = fgList;
+        FILE_MANAGER_STATE.musicList = musicList;
+
+        const bgNames = new Set(bgList.map((p) => String(p).split('/').pop()));
+        const fgNames = new Set(fgList.map((p) => String(p).split('/').pop()));
+        const musicNames = new Set(musicList.map((p) => String(p).split('/').pop()));
+
+        if (!bgNames.has(FILE_MANAGER_STATE.bgSelected)) FILE_MANAGER_STATE.bgSelected = '';
+        if (!fgNames.has(FILE_MANAGER_STATE.fgSelected)) FILE_MANAGER_STATE.fgSelected = '';
+        if (!musicNames.has(FILE_MANAGER_STATE.musicSelected)) FILE_MANAGER_STATE.musicSelected = '';
+
+        renderFileManagerLists();
+    }
+
+    async function refreshAllAssetSelectorsAndManager() {
+        await Promise.all([
+            populateImageOptions(),
+            populateMusicOptions()
+        ]);
+        await refreshFileManagerData();
+        refreshAssetUsageBadges();
+    }
+
+    async function renameAsset(endpoint, oldName, newName) {
+        const response = await fetch(buildApiUrl(endpoint), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                action: 'rename',
+                oldName,
+                newName
+            })
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || !payload?.ok) {
+            throw new Error(payload?.error || `rinomina fallita (${response.status})`);
+        }
+        return payload;
+    }
+
+    async function uploadFromManagerInput(endpoint, inputId, selectedKey) {
+        const input = el(inputId);
+        const file = input?.files?.[0];
+        if (!file) {
+            setFileManagerStatus('Seleziona un file da caricare.', true);
+            return;
+        }
+        const payload = await uploadAssetFile(endpoint, file);
+        const fileName = String(payload?.file || '').split('/').pop() || file.name;
+        FILE_MANAGER_STATE[selectedKey] = fileName;
+        if (input) input.value = '';
+        await refreshAllAssetSelectorsAndManager();
+        setFileManagerStatus(`File caricato: ${fileName}`);
+    }
+
+    async function uploadFromDroppedFile(endpoint, file, selectedKey) {
+        const payload = await uploadAssetFile(endpoint, file);
+        const fileName = String(payload?.file || '').split('/').pop() || file.name;
+        FILE_MANAGER_STATE[selectedKey] = fileName;
+        await refreshAllAssetSelectorsAndManager();
+        setFileManagerStatus(`File caricato: ${fileName}`);
+    }
+
+    async function deleteFromManager(endpoint, selectedName, inUseChecker, emptyMsg) {
+        if (!selectedName) {
+            setFileManagerStatus(emptyMsg, true);
+            return;
+        }
+        if (inUseChecker(selectedName)) {
+            setFileManagerStatus('File in uso nel livello: rimuovi prima il riferimento.', true);
+            return;
+        }
+        if (!window.confirm(`Eliminare definitivamente il file "${selectedName}"?`)) {
+            return;
+        }
+        await deleteAsset(endpoint, selectedName);
+        await refreshAllAssetSelectorsAndManager();
+        setFileManagerStatus(`File eliminato: ${selectedName}`);
+    }
+
+    async function renameFromManager(endpoint, selectedKey, inUseChecker, emptyMsg) {
+        const oldName = String(FILE_MANAGER_STATE[selectedKey] || '').trim();
+        if (!oldName) {
+            setFileManagerStatus(emptyMsg, true);
+            return;
+        }
+        if (inUseChecker(oldName)) {
+            setFileManagerStatus('File in uso nel livello: rimuovi prima il riferimento.', true);
+            return;
+        }
+        const newNameRaw = window.prompt(`Nuovo nome per "${oldName}"`, oldName);
+        if (newNameRaw === null) return;
+        const newName = String(newNameRaw || '').trim();
+        if (!newName) {
+            setFileManagerStatus('Nome file non valido.', true);
+            return;
+        }
+        if (!/^[a-z0-9._-]+$/i.test(newName)) {
+            setFileManagerStatus('Nome non valido: usa solo lettere, numeri, punto, trattino e underscore.', true);
+            return;
+        }
+        await renameAsset(endpoint, oldName, newName);
+        FILE_MANAGER_STATE[selectedKey] = newName;
+        await refreshAllAssetSelectorsAndManager();
+        setFileManagerStatus(`File rinominato: ${oldName} -> ${newName}`);
+    }
+
+    function bindDropzone(dropzoneId, endpoint, selectedKey) {
+        const zone = el(dropzoneId);
+        if (!zone) return;
+
+        zone.addEventListener('dragover', (ev) => {
+            ev.preventDefault();
+            zone.classList.add('drag-over');
+        });
+        zone.addEventListener('dragleave', () => {
+            zone.classList.remove('drag-over');
+        });
+        zone.addEventListener('drop', async (ev) => {
+            ev.preventDefault();
+            zone.classList.remove('drag-over');
+            const file = ev.dataTransfer?.files?.[0];
+            if (!file) {
+                setFileManagerStatus('Nessun file rilevato nel drag and drop.', true);
+                return;
+            }
+            try {
+                await uploadFromDroppedFile(endpoint, file, selectedKey);
+            } catch (e) {
+                setFileManagerStatus(`Errore upload: ${e.message}`, true);
+            }
+        });
+    }
 
     if (openConfigDialogBtn) {
         openConfigDialogBtn.addEventListener('click', async () => {
@@ -5605,6 +5920,161 @@ function bindUI() {
             openObjectMapDialog('Editor mappaggio oggetti aperto.');
         });
     }
+
+    if (openFileManagerBtn) {
+        openFileManagerBtn.addEventListener('click', async () => {
+            if (fileManagerModal) fileManagerModal.classList.add('open');
+            setFileManagerStatus('Caricamento file...');
+            try {
+                await refreshAllAssetSelectorsAndManager();
+                setFileManagerStatus('File manager pronto.');
+            } catch (e) {
+                setFileManagerStatus(`Errore caricamento liste: ${e.message}`, true);
+            }
+        });
+    }
+    if (closeFileManagerBtn) {
+        closeFileManagerBtn.addEventListener('click', () => {
+            if (fileManagerModal) fileManagerModal.classList.remove('open');
+        });
+    }
+    if (refreshFileManagerBtn) {
+        refreshFileManagerBtn.addEventListener('click', async () => {
+            setFileManagerStatus('Aggiornamento liste...');
+            try {
+                await refreshAllAssetSelectorsAndManager();
+                setFileManagerStatus('Liste aggiornate.');
+            } catch (e) {
+                setFileManagerStatus(`Errore aggiornamento: ${e.message}`, true);
+            }
+        });
+    }
+    if (fileManagerModal) {
+        fileManagerModal.addEventListener('click', (ev) => {
+            if (ev.target === fileManagerModal) {
+                fileManagerModal.classList.remove('open');
+            }
+        });
+    }
+
+    const fmBgSearch = el('fmBgSearch');
+    if (fmBgSearch) {
+        fmBgSearch.addEventListener('input', () => {
+            FILE_MANAGER_STATE.bgSearch = String(fmBgSearch.value || '');
+            renderFileManagerLists();
+        });
+    }
+    const fmFgSearch = el('fmFgSearch');
+    if (fmFgSearch) {
+        fmFgSearch.addEventListener('input', () => {
+            FILE_MANAGER_STATE.fgSearch = String(fmFgSearch.value || '');
+            renderFileManagerLists();
+        });
+    }
+    const fmMusicSearch = el('fmMusicSearch');
+    if (fmMusicSearch) {
+        fmMusicSearch.addEventListener('input', () => {
+            FILE_MANAGER_STATE.musicSearch = String(fmMusicSearch.value || '');
+            renderFileManagerLists();
+        });
+    }
+
+    const fmBgUploadBtn = el('fmBgUploadBtn');
+    if (fmBgUploadBtn) {
+        fmBgUploadBtn.addEventListener('click', async () => {
+            try {
+                await uploadFromManagerInput('images/background', 'fmBgInput', 'bgSelected');
+            } catch (e) {
+                setFileManagerStatus(`Errore upload background: ${e.message}`, true);
+            }
+        });
+    }
+    const fmFgUploadBtn = el('fmFgUploadBtn');
+    if (fmFgUploadBtn) {
+        fmFgUploadBtn.addEventListener('click', async () => {
+            try {
+                await uploadFromManagerInput('images/foreground', 'fmFgInput', 'fgSelected');
+            } catch (e) {
+                setFileManagerStatus(`Errore upload foreground: ${e.message}`, true);
+            }
+        });
+    }
+    const fmMusicUploadBtn = el('fmMusicUploadBtn');
+    if (fmMusicUploadBtn) {
+        fmMusicUploadBtn.addEventListener('click', async () => {
+            try {
+                await uploadFromManagerInput('music', 'fmMusicInput', 'musicSelected');
+            } catch (e) {
+                setFileManagerStatus(`Errore upload musica: ${e.message}`, true);
+            }
+        });
+    }
+
+    const fmBgDeleteBtn = el('fmBgDeleteBtn');
+    if (fmBgDeleteBtn) {
+        fmBgDeleteBtn.addEventListener('click', async () => {
+            try {
+                await deleteFromManager('images/background', FILE_MANAGER_STATE.bgSelected, isBgFileInUse, 'Seleziona un background da eliminare.');
+            } catch (e) {
+                setFileManagerStatus(`Errore eliminazione background: ${e.message}`, true);
+            }
+        });
+    }
+    const fmFgDeleteBtn = el('fmFgDeleteBtn');
+    if (fmFgDeleteBtn) {
+        fmFgDeleteBtn.addEventListener('click', async () => {
+            try {
+                await deleteFromManager('images/foreground', FILE_MANAGER_STATE.fgSelected, isFgFileInUse, 'Seleziona un foreground da eliminare.');
+            } catch (e) {
+                setFileManagerStatus(`Errore eliminazione foreground: ${e.message}`, true);
+            }
+        });
+    }
+    const fmMusicDeleteBtn = el('fmMusicDeleteBtn');
+    if (fmMusicDeleteBtn) {
+        fmMusicDeleteBtn.addEventListener('click', async () => {
+            try {
+                await deleteFromManager('music', FILE_MANAGER_STATE.musicSelected, isMusicFileInUse, 'Seleziona una traccia da eliminare.');
+            } catch (e) {
+                setFileManagerStatus(`Errore eliminazione musica: ${e.message}`, true);
+            }
+        });
+    }
+
+    const fmBgRenameBtn = el('fmBgRenameBtn');
+    if (fmBgRenameBtn) {
+        fmBgRenameBtn.addEventListener('click', async () => {
+            try {
+                await renameFromManager('images/background', 'bgSelected', isBgFileInUse, 'Seleziona un background da rinominare.');
+            } catch (e) {
+                setFileManagerStatus(`Errore rinomina background: ${e.message}`, true);
+            }
+        });
+    }
+    const fmFgRenameBtn = el('fmFgRenameBtn');
+    if (fmFgRenameBtn) {
+        fmFgRenameBtn.addEventListener('click', async () => {
+            try {
+                await renameFromManager('images/foreground', 'fgSelected', isFgFileInUse, 'Seleziona un foreground da rinominare.');
+            } catch (e) {
+                setFileManagerStatus(`Errore rinomina foreground: ${e.message}`, true);
+            }
+        });
+    }
+    const fmMusicRenameBtn = el('fmMusicRenameBtn');
+    if (fmMusicRenameBtn) {
+        fmMusicRenameBtn.addEventListener('click', async () => {
+            try {
+                await renameFromManager('music', 'musicSelected', isMusicFileInUse, 'Seleziona una traccia da rinominare.');
+            } catch (e) {
+                setFileManagerStatus(`Errore rinomina musica: ${e.message}`, true);
+            }
+        });
+    }
+
+    bindDropzone('fmBgDropzone', 'images/background', 'bgSelected');
+    bindDropzone('fmFgDropzone', 'images/foreground', 'fgSelected');
+    bindDropzone('fmMusicDropzone', 'music', 'musicSelected');
     if (closeObjectMapDialogBtn) {
         closeObjectMapDialogBtn.addEventListener('click', () => {
             if (objectMapModal) objectMapModal.classList.remove('open');
@@ -6228,19 +6698,7 @@ function bindUI() {
             setStatus('Seleziona un file prima del caricamento.', true);
             return null;
         }
-        const base64 = await fileToBase64(file);
-        const response = await fetch(buildApiUrl(endpoint), {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                fileName: file.name,
-                contentBase64: base64
-            })
-        });
-        const payload = await response.json().catch(() => ({}));
-        if (!response.ok || !payload?.ok) {
-            throw new Error(payload?.error || `upload fallito (${response.status})`);
-        }
+        const payload = await uploadAssetFile(endpoint, file);
         if (input) input.value = '';
         return payload;
     }
