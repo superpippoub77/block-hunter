@@ -31,6 +31,14 @@
   "gemsOneByOneDefault": false,
   "gemsPerLevel": 10,
   "credits": 0,
+  "creditSettings": {
+    "maxPlayers": 2,
+    "requiredCreditsByPlayers": {
+      "1": 1,
+      "2": 2
+    },
+    "freeplay": true
+  },
   "language": "en",
   "difficulty": 1.0,
   "levelSpecs": {

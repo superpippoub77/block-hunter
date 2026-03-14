@@ -752,7 +752,7 @@
 			"conditions": {},
 			"payload": {
 				"scoreDelta": 5,
-				"sound": "coin_sfx",
+				"sound": "credits_manager_coin",
 				"useAction": {
 					"source": "playerAction",
 					"inputProfile": "CONFIG.controlPanel.player.action",

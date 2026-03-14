@@ -1,0 +1,18 @@
+{
+  "cacheKey": "addCreditOptions",
+  "enabled": true,
+  "text": "SpikeCode",
+  "prefix": "by ",
+  "position": {
+    "x": 792,
+    "y": 594
+  },
+  "style": {
+    "fontSize": "12px",
+    "fill": "#cfdff8",
+    "stroke": "#000000",
+    "strokeThickness": 3
+  },
+  "depth": 9999,
+  "scrollFactor": 0
+}

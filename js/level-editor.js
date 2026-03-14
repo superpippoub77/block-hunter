@@ -1964,7 +1964,7 @@ function createObjectMapCard(mapping) {
             actionFlagsWrap.querySelector('.obj-action-consume').checked = true;
             actionFlagsWrap.querySelector('.obj-action-repeatable').checked = true;
             actionConditionsInput.value = JSON.stringify({}, null, 2);
-            actionPayloadInput.value = JSON.stringify({ scoreDelta: 5, sound: 'coin_sfx' }, null, 2);
+            actionPayloadInput.value = JSON.stringify({ scoreDelta: 5, sound: 'credits_manager_coin' }, null, 2);
             statesInput.value = JSON.stringify([
                 { id: 'idle', initial: true, transitions: [{ event: 'collect', to: 'collected' }] },
                 { id: 'collected', onEnter: [{ type: 'destroySelf' }], transitions: [] }

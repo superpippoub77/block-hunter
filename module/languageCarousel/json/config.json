@@ -1,0 +1,31 @@
+{
+  "cacheKey": "languageCarouselOptions",
+  "textureKey": "flags",
+  "flagsImageSrc": "module/languageCarousel/images/flags.png",
+  "flagsFrameWidth": 64,
+  "flagsFrameHeight": 32,
+  "languages": ["it", "fr", "de", "en", "us", "ja", "es", "zh"],
+  "position": {
+    "x": 400,
+    "y": 560
+  },
+  "hudDepth": 10000,
+  "font": "\"Press Start 2P\"",
+  "arrowOffset": 80,
+  "arrowFontSize": "24px",
+  "arrowColor": "#ffffff",
+  "sounds": {
+    "select": {
+      "key": "language_carousel_select",
+      "src": "module/languageCarousel/music/language_select.mp3",
+      "volume": 0.4
+    }
+  },
+  "dictionaries": {
+    "basePath": "module/languageCarousel/dic"
+  },
+  "controlPanelCommands": {
+    "previous": ["LEFT", "ARROWLEFT"],
+    "next": ["RIGHT", "ARROWRIGHT"]
+  }
+}
