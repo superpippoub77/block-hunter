@@ -4,7 +4,7 @@ const DEFAULT_CONTROL_PANEL_COMMANDS = {
     next: ['RIGHT', 'ARROWRIGHT']
 };
 const DEFAULT_CONFIG_CACHE_KEY = 'languageCarouselOptions';
-const DEFAULT_DICTIONARY_BASE_PATH = 'module/languageCarousel/dic';
+const DEFAULT_DICTIONARY_BASE_PATH = 'data/dic';
 
 function normalizeControlToken(value) {
     return String(value || '').trim().toUpperCase();

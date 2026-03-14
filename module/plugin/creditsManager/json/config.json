@@ -18,7 +18,7 @@
   "sounds": {
     "coin": {
       "key": "credits_manager_coin",
-      "src": "module/creditsManager/music/coin.mp3",
+      "src": "module/plugin/creditsManager/music/coin.mp3",
       "volume": 0.45
     }
   },

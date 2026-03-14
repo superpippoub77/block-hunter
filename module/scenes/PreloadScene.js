@@ -229,18 +229,18 @@ export function createPreloadSceneClass(deps) {
                 .audio('rolling_sfx', 'data/music/rolling_stones.mp3')
                 .audio('gameover_sfx', 'data/music/gameover.mp3')
                 .audio('level_completed_sfx', 'data/music/level_completed.mp3')
-                .audio('credits_manager_coin', 'module/creditsManager/music/coin.mp3')
+                .audio('credits_manager_coin', 'module/plugin/creditsManager/music/coin.mp3')
                 .audio('select_sfx', 'data/music/select.mp3')
                 .audio('ghost_sfx', 'data/music/ghost.mp3')
                 .audio('bat_sfx', 'data/music/bat.mp3')
                 .audio('rain_sfx', 'data/music/rain.mp3');
     
             // Centralized language carousel options
-            this.load.json('languageCarouselOptions', 'module/languageCarousel/json/config.json');
+            this.load.json('languageCarouselOptions', 'module/plugin/languageCarousel/json/config.json');
             // Centralized credits manager options
-            this.load.json('creditsManagerOptions', 'module/creditsManager/json/config.json');
+            this.load.json('creditsManagerOptions', 'module/plugin/creditsManager/json/config.json');
             // Centralized producer signature options
-            this.load.json('addCreditOptions', 'module/addCredit/json/config.json');
+            this.load.json('addCreditOptions', 'module/plugin/addCredit/json/config.json');
     
             // Load all level JSON files (50 levels)
             // Carica solo i livelli con sottolivello 0-4 per ogni decade

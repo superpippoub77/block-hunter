@@ -3,19 +3,19 @@
 // ============================================================================
 
 import { OBJECT_FRAMES, TILE_FRAMES, WALL_TILE_COLS } from './data/module/constants.js';
-import { createLanguageCarousel, loadLanguageCarouselTranslations as loadTranslations } from './module/languageCarousel/module.js';
-import { createCreditsManager } from './module/creditsManager/module.js';
-import { createAddCredit } from './module/addCredit/module.js';
-import { createPreloadSceneClass } from './scenes/PreloadScene.js';
-import { createSharedFrontendSceneClass } from './scenes/SharedFrontendScene.js';
-import { createAttractSceneClass } from './scenes/AttractScene.js';
-import { createTopTenSceneClass } from './scenes/TopTenScene.js';
-import { createCreditsSceneClass } from './scenes/CreditsScene.js';
-import { createConfigSceneClass } from './scenes/ConfigScene.js';
-import { createLevelSelectSceneClass } from './scenes/LevelSelectScene.js';
-import { createGameSceneClass } from './scenes/GameScene.js';
-import { createBonusSceneClass } from './scenes/BonusScene.js';
-import { createGameOverSceneClass } from './scenes/GameOverScene.js';
+import { createLanguageCarousel, loadLanguageCarouselTranslations as loadTranslations } from './module/plugin/languageCarousel/module.js';
+import { createCreditsManager } from './module/plugin/creditsManager/module.js';
+import { createAddCredit } from './module/plugin/addCredit/module.js';
+import { createPreloadSceneClass } from './module/scenes/PreloadScene.js';
+import { createSharedFrontendSceneClass } from './module/scenes/SharedFrontendScene.js';
+import { createAttractSceneClass } from './module/scenes/AttractScene.js';
+import { createTopTenSceneClass } from './module/scenes/TopTenScene.js';
+import { createCreditsSceneClass } from './module/scenes/CreditsScene.js';
+import { createConfigSceneClass } from './module/scenes/ConfigScene.js';
+import { createLevelSelectSceneClass } from './module/scenes/LevelSelectScene.js';
+import { createGameSceneClass } from './module/scenes/GameScene.js';
+import { createBonusSceneClass } from './module/scenes/BonusScene.js';
+import { createGameOverSceneClass } from './module/scenes/GameOverScene.js';
 
 // Global configuration (populated from /data/config.json)
 const CONFIG = {};
@@ -793,48 +793,48 @@ function parseExitTargetLevel(rawTarget) {
 // ============================================================================
 // PRELOAD SCENE
 // ============================================================================
-// Scene moved to scenes/PreloadScene.js
+// Scene moved to module/scenes/PreloadScene.js
 
 // ============================================================================
 // ATTRACT SCENE
 // ============================================================================
-// Scene moved to scenes/SharedFrontendScene.js
+// Scene moved to module/scenes/SharedFrontendScene.js
 
-// Scene moved to scenes/AttractScene.js
+// Scene moved to module/scenes/AttractScene.js
 
 // ============================================================================
 // TOP TEN SCENE
 // ============================================================================
-// Scene moved to scenes/TopTenScene.js
+// Scene moved to module/scenes/TopTenScene.js
 
 // CREDITS SCENE
 // ---------------------------------------------------------------------------
-// Scene moved to scenes/CreditsScene.js
+// Scene moved to module/scenes/CreditsScene.js
 
 // ============================================================================
 // CONFIG SCENE
 // ============================================================================
-// Scene moved to scenes/ConfigScene.js
+// Scene moved to module/scenes/ConfigScene.js
 
 // ============================================================================
 // LEVEL SELECT SCENE
 // ============================================================================
-// Scene moved to scenes/LevelSelectScene.js
+// Scene moved to module/scenes/LevelSelectScene.js
 
 // ============================================================================
 // GAME SCENE
 // ============================================================================
-// Scene moved to scenes/GameScene.js
+// Scene moved to module/scenes/GameScene.js
 
 // ============================================================================
 // BONUS SCENE (Mine cart runner)
 // ============================================================================
-// Scene moved to scenes/BonusScene.js
+// Scene moved to module/scenes/BonusScene.js
 
 // ============================================================================
 // GAME OVER SCENE
 // ============================================================================
-// Scene moved to scenes/GameOverScene.js
+// Scene moved to module/scenes/GameOverScene.js
 
 // ============================================================================
 // GAME INITIALIZATION

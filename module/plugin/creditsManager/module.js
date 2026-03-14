@@ -11,7 +11,7 @@ const DEFAULT_CONFIG = {
 		player: { fontSize: '18px', fill: '#666666' }
 	},
 	sounds: {
-		coin: { key: 'credits_manager_coin', src: 'module/creditsManager/music/coin.mp3', volume: 0.45 }
+		coin: { key: 'credits_manager_coin', src: 'module/plugin/creditsManager/music/coin.mp3', volume: 0.45 }
 	},
 	controls: {
 		coinInsertKeys: ['5', '6'],
@@ -68,7 +68,7 @@ function normalizeControlKeyToken(raw) {
 }
 
 // Credits manager: creates credit UI and exposes insertCoin()/helpers.
-// Self-contained: reads defaults/options from module/creditsManager/json/config.json cache entry.
+// Self-contained: reads defaults/options from module/plugin/creditsManager/json/config.json cache entry.
 export function createCreditsManager(scene, opts = {}) {
 	const GAME_STATE = opts.gameState || {};
 	const hudDepth = (typeof opts.hudDepth === 'number') ? opts.hudDepth : 10000;

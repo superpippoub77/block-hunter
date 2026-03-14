@@ -1,7 +1,7 @@
 {
   "cacheKey": "languageCarouselOptions",
   "textureKey": "flags",
-  "flagsImageSrc": "module/languageCarousel/images/flags.png",
+  "flagsImageSrc": "module/plugin/languageCarousel/images/flags.png",
   "flagsFrameWidth": 64,
   "flagsFrameHeight": 32,
   "languages": ["it", "fr", "de", "en", "us", "ja", "es", "zh"],
@@ -17,12 +17,12 @@
   "sounds": {
     "select": {
       "key": "language_carousel_select",
-      "src": "module/languageCarousel/music/language_select.mp3",
+      "src": "module/plugin/languageCarousel/music/language_select.mp3",
       "volume": 0.4
     }
   },
   "dictionaries": {
-    "basePath": "module/languageCarousel/dic"
+    "basePath": "data/dic"
   },
   "controlPanelCommands": {
     "previous": ["LEFT", "ARROWLEFT"],
