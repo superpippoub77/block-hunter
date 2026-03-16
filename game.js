@@ -23,7 +23,7 @@ const CONFIG = {};
 // Game state (populated from /data/config.json)
 const GAME_STATE = {};
 
-// Runtime effect library loaded from data/Library/*
+// Runtime effect library loaded from module/effects/*
 const EFFECT_LIBRARY = {
     effects: {},
     aliases: {},
@@ -76,7 +76,7 @@ function parseEffectLibraryManifestEntries(manifest) {
                     return { path: text, nameHint: '' };
                 }
                 return {
-                    path: `data/Library/${text}/effect.js`,
+                    path: `module/effects/${text}/effect.js`,
                     nameHint: normalizeEffectKey(text)
                 };
             }
@@ -86,7 +86,7 @@ function parseEffectLibraryManifestEntries(manifest) {
             const nameHint = normalizeEffectKey(entry.name || entry.key || entry.id || '');
             let filePath = String(entry.entry || entry.file || entry.path || entry.src || entry.module || '').trim();
             if (!filePath && nameHint) {
-                filePath = `data/Library/${nameHint}/effect.js`;
+                filePath = `module/effects/${nameHint}/effect.js`;
             }
             if (!filePath) return null;
 
@@ -145,8 +145,8 @@ function loadEffectDefinitionFromScript(pathLike) {
 
 async function fetchEffectManifest() {
     const candidates = [
-        'data/Library/manifest.json',
-        'Data/Library/manifest.json'
+        'module/effects/manifest.json',
+        'Module/effects/manifest.json'
     ];
 
     for (const candidate of candidates) {
@@ -945,7 +945,7 @@ async function inizialization() {
             CONFIG.dynamiteSize = Math.max(8, Math.round((Number(CONFIG.objectSize) || OBJECT_NATIVE_SIZE) * 0.6));
         }
 
-        // Optional plugin-like effect library from data/Library/*
+        // Optional plugin-like effect library from module/effects/*
         try {
             const lib = await loadCustomEffectLibrary();
             const loadedCount = Object.keys((lib && lib.effects) || {}).length;

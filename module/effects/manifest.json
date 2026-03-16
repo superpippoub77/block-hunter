@@ -1,0 +1,24 @@
+{
+  "effects": [
+    {
+      "name": "sparkle",
+      "entry": "module/effects/sparkle/effect.js"
+    },
+    {
+      "name": "orbit_ring",
+      "entry": "module/effects/orbit_ring/effect.js"
+    },
+    {
+      "name": "player_throw_arc",
+      "entry": "module/effects/player_throw_arc/effect.js"
+    },
+    {
+      "name": "player_bounce_orb",
+      "entry": "module/effects/player_bounce_orb/effect.js"
+    },
+    {
+      "name": "flying_enemy",
+      "entry": "module/effects/flying_enemy/effect.js"
+    }
+  ]
+}

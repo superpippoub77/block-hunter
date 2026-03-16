@@ -3724,7 +3724,7 @@ function renderEffectLibraryButtons() {
 }
 
 async function loadEffectLibraryForEditor() {
-    const candidates = ['data/library/manifest.json', 'data/library/manifest.json'];
+    const candidates = ['module/effects/manifest.json'];
     for (const p of candidates) {
         try {
             const resp = await fetch(p, { cache: 'no-store' });
@@ -3749,7 +3749,7 @@ async function loadEffectLibraryForEditor() {
     EDITOR_EFFECT_LIBRARY_STATE.effects = [];
     EDITOR_EFFECT_LIBRARY_STATE.source = '';
     renderEffectLibraryButtons();
-    setEffectLibraryStatus('Manifest libreria effetti non trovato (data/library/manifest.json).', true);
+    setEffectLibraryStatus('Manifest libreria effetti non trovato (module/effects/manifest.json).', true);
     return [];
 }
 
