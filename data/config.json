@@ -1,6 +1,7 @@
 {
   "width": 800,
   "height": 600,
+  "constantsFile": "data/constants.json",
   "tileSize": 32,
   "objectSize": 64,
   "playerSize": 64,

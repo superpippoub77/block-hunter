@@ -28,9 +28,9 @@ const FG_ASSETS_DIR = 'assets/images/scenes/game/foreground';
 const OBJECTS_ASSETS_DIR = 'assets/images/objects';
 const ATTRACT_ASSETS_DIR = 'assets/images/scenes/attractmode';
 const API_BASE_PATH = 'api';
-const BG_MANIFEST_PATH = 'data/images-scenes-game-background.json';
-const FG_MANIFEST_PATH = 'data/images-scenes-game-foreground.json';
-const MUSIC_MANIFEST_PATH = 'data/music-scenes-game.json';
+const BG_MANIFEST_PATH = 'data/images/images-scenes-game-background.json';
+const FG_MANIFEST_PATH = 'data/images/images-scenes-game-foreground.json';
+const MUSIC_MANIFEST_PATH = 'data/music/music-scenes-game.json';
 const CONFIG_JSON_PATH = 'data/config.json';
 const START_JSON_PATH = 'data/start.json';
 const OBJECTS_JSON_PATH = 'data/objects.json';
@@ -3353,7 +3353,7 @@ async function loadStartEditor() {
     START_EDITOR_STATE.loadedStart = normalizeStartConfig(loaded);
 
     try {
-        const attractList = await fetchJsonListWithFallback(buildApiUrl('images/attractmode'), 'data/images-scenes-attractmode.json');
+        const attractList = await fetchJsonListWithFallback(buildApiUrl('images/attractmode'), 'data/images/images-scenes-attractmode.json');
         START_EDITOR_STATE.attractAssets = Array.isArray(attractList) ? attractList : [];
     } catch (_e) {
         START_EDITOR_STATE.attractAssets = [];

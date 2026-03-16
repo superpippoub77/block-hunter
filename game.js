@@ -2,7 +2,6 @@
 // BLOCKHUNTER - Arcade Game in Phaser 3
 // ============================================================================
 
-import { OBJECT_FRAMES, TILE_FRAMES, WALL_TILE_COLS } from './data/module/constants.js';
 import { createLanguageCarousel, loadLanguageCarouselTranslations as loadTranslations } from './module/plugin/languageCarousel/module.js';
 import { createCreditsManager } from './module/plugin/creditsManager/module.js';
 import { createAddCredit } from './module/plugin/addCredit/module.js';
@@ -18,10 +17,117 @@ import { createBonusSceneClass } from './module/scenes/BonusScene.js';
 import { createGameOverSceneClass } from './module/scenes/GameOverScene.js';
 
 // Global configuration (populated from /data/config.json)
-const CONFIG = {};
+export const CONFIG = {};
 
 // Game state (populated from /data/config.json)
-const GAME_STATE = {};
+export const GAME_STATE = {};
+
+const DEFAULT_OBJECT_FRAMES = {
+    dynamite_projectile: 0,
+    heart: 1,
+    stone: 2,
+    player: 3,
+    helmet: 3,
+    dynamite_chest: 4,
+    door: 5,
+    gem: 6,
+    cart: 7,
+    stones: 7,
+    key: 8,
+    sand_pile: 9,
+    wooden: 10,
+    pepita: 11,
+    wall: 12,
+    hole1: 13,
+    hole2: 14,
+    exit: 14,
+    explosion: 15,
+    ghost: 10
+};
+
+const DEFAULT_TILE_FRAMES = {
+    sand: 0,
+    hole: 1,
+    hole_cover: 2,
+    water: 3,
+    mud: 4,
+    back: 5,
+    sand1: 0,
+    sand2: 0,
+    sand3: 0,
+    sand4: 0,
+    sand5: 0,
+    sand6: 0,
+    sand7: 0,
+    sand8: 0,
+    sand9: 0,
+    sand10: 0,
+    floor: 0,
+    stone: 4,
+    hole2: 1,
+    sandPile: 4
+};
+
+const DEFAULT_WALL_TILE_COLS = 6;
+const OBJECT_FRAMES = { ...DEFAULT_OBJECT_FRAMES };
+const TILE_FRAMES = { ...DEFAULT_TILE_FRAMES };
+let WALL_TILE_COLS = DEFAULT_WALL_TILE_COLS;
+
+function toFrameMap(raw) {
+    const src = (raw && typeof raw === 'object' && !Array.isArray(raw)) ? raw : {};
+    const out = {};
+    Object.entries(src).forEach(([k, v]) => {
+        const key = String(k || '').trim();
+        const num = Number(v);
+        if (!key || !Number.isFinite(num)) return;
+        out[key] = Math.max(0, Math.floor(num));
+    });
+    return out;
+}
+
+function resetObjectValues(target, base, extra) {
+    Object.keys(target).forEach((k) => {
+        delete target[k];
+    });
+    Object.assign(target, base, extra || {});
+}
+
+function applyFrameConstants(raw) {
+    const root = (raw && typeof raw === 'object' && !Array.isArray(raw)) ? raw : {};
+    const objectFrames = toFrameMap(root.objectFrames);
+    const tileFrames = toFrameMap(root.tileFrames);
+    const wallColsRaw = Number(root.wallTileCols);
+
+    resetObjectValues(OBJECT_FRAMES, DEFAULT_OBJECT_FRAMES, objectFrames);
+    resetObjectValues(TILE_FRAMES, DEFAULT_TILE_FRAMES, tileFrames);
+    WALL_TILE_COLS = (Number.isFinite(wallColsRaw) && wallColsRaw > 0)
+        ? Math.floor(wallColsRaw)
+        : DEFAULT_WALL_TILE_COLS;
+}
+
+export async function loadFrameConstants(cfg) {
+    const candidates = [];
+    const configuredPath = String(cfg?.constantsFile || '').trim();
+    if (configuredPath) candidates.push(configuredPath);
+    candidates.push('data/constants.json');
+
+    const visited = new Set();
+    for (const p of candidates) {
+        if (!p || visited.has(p)) continue;
+        visited.add(p);
+        try {
+            const resp = await fetch(p, { cache: 'no-store' });
+            if (!resp.ok) continue;
+            const parsed = await resp.json();
+            applyFrameConstants(parsed);
+            return;
+        } catch (_e) {
+            // try next candidate
+        }
+    }
+
+    applyFrameConstants({});
+}
 
 // Runtime effect library loaded from module/effects/*
 const EFFECT_LIBRARY = {
@@ -163,7 +269,7 @@ async function fetchEffectManifest() {
     return { path: '', manifest: null };
 }
 
-async function loadCustomEffectLibrary() {
+export async function loadCustomEffectLibrary() {
     try {
         const payload = await fetchEffectManifest();
         const manifest = payload.manifest;
@@ -252,7 +358,7 @@ const STARTUP_DEFAULTS = {
     }
 };
 
-const STARTUP_SETTINGS = JSON.parse(JSON.stringify(STARTUP_DEFAULTS));
+export const STARTUP_SETTINGS = JSON.parse(JSON.stringify(STARTUP_DEFAULTS));
 
 function normalizeStartupElement(raw, index = 0) {
     const inObj = (raw && typeof raw === 'object' && !Array.isArray(raw)) ? raw : {};
@@ -328,7 +434,7 @@ function applyStartupSettings(raw) {
     STARTUP_SETTINGS.attractMode.plugins = normalized.attractMode.plugins.slice();
 }
 
-async function loadStartupSettings() {
+export async function loadStartupSettings() {
     try {
         const resp = await fetch('data/start.json', { cache: 'no-store' });
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
@@ -340,7 +446,7 @@ async function loadStartupSettings() {
     }
 }
 
-function isFreePlayMode() {
+export function isFreePlayMode() {
     const startupFreeplay = String(STARTUP_SETTINGS.startup?.coinMode || '').toLowerCase() === 'freeplay';
     const configFreeplay = !!CONFIG?.creditSettings?.freeplay;
     return startupFreeplay || configFreeplay;
@@ -493,7 +599,7 @@ function applyConfiguredAttractPlugins(scene) {
 // Native asset sizes (used to compute scale when adapting to CONFIG)
 const TILE_NATIVE_WIDTH = 64; // tiles spritesheet native width per tile frame
 const TILE_NATIVE_HEIGHT = 48;
-const OBJECT_NATIVE_SIZE = 64; // objects.png frames are 64x64
+export const OBJECT_NATIVE_SIZE = 64; // objects.png frames are 64x64
 
 //Default frame dimension
 const defaultFrame = { frameWidth: OBJECT_NATIVE_SIZE, frameHeight: OBJECT_NATIVE_SIZE };
@@ -840,269 +946,85 @@ function parseExitTargetLevel(rawTarget) {
 // GAME INITIALIZATION
 // Caricamento della configurazione da file JSON e avvio del gioco con Phaser
 // ============================================================================
-// Scene classes are assembled from dedicated files with shared game dependencies.
-const SCENE_FACTORY_DEPS = {
-    createAddCredit,
-    createCreditsManager,
-    createLanguageCarousel,
-    applyConfiguredAttractLayout,
-    applyConfiguredAttractPlugins,
-    applyStartupSettings,
-    Boolean,
-    clearInterval,
-    clearRuntimeMatchStorage,
-    clearTimeout,
-    CONFIG,
-    console,
-    Date,
-    defaultFrame,
-    document,
-    drawTextPanel,
-    EFFECT_LIBRARY,
-    GAME_FONT,
-    GAME_STATE,
-    getLevelFileName,
-    getLevelMasterNumber,
-    getTextureMaxNumericFrame,
-    HUD_DEPTH,
-    isFinite,
-    isFreePlayMode,
-    isFrontScenesEnabled,
-    isNaN,
-    JSON,
-    LEVEL_CONFIG,
-    loadTranslations,
-    loadEffectDefinitionFromScript,
-    Math,
-    mergeLocalConfig,
-    normalizeEffectKey,
-    normalizeStartupElement,
-    normalizeStartupSettings,
-    Number,
-    OBJECT_NATIVE_SIZE,
-    OBJECT_FRAMES,
-    parseEffectLibraryManifestEntries,
-    parseExitTargetLevel,
-    parseFloat,
-    parseInt,
-    Phaser,
-    playConfiguredAttractElementTween,
-    playLoopAudioSafely,
-    Promise,
-    registerEffectLibraryDefinition,
-    resetGameStateForNewRun,
-    resolveContactSpec,
-    setInterval,
-    setTimeout,
-    STARTUP_DEFAULTS,
-    STARTUP_SETTINGS,
-    String,
-    TILE_NATIVE_HEIGHT,
-    TILE_NATIVE_WIDTH,
-    TILE_FRAMES,
-    toEffectImportPath,
-    TRANSLATIONS,
-    WALL_TILE_COLS,
-    window,
-};
+export function buildSceneClasses() {
+    const deps = {
+        createAddCredit,
+        createCreditsManager,
+        createLanguageCarousel,
+        applyConfiguredAttractLayout,
+        applyConfiguredAttractPlugins,
+        applyStartupSettings,
+        Boolean,
+        clearInterval,
+        clearRuntimeMatchStorage,
+        clearTimeout,
+        CONFIG,
+        console,
+        Date,
+        defaultFrame,
+        document,
+        drawTextPanel,
+        EFFECT_LIBRARY,
+        GAME_FONT,
+        GAME_STATE,
+        getLevelFileName,
+        getLevelMasterNumber,
+        getTextureMaxNumericFrame,
+        HUD_DEPTH,
+        isFinite,
+        isFreePlayMode,
+        isFrontScenesEnabled,
+        isNaN,
+        JSON,
+        LEVEL_CONFIG,
+        loadTranslations,
+        loadEffectDefinitionFromScript,
+        Math,
+        mergeLocalConfig,
+        normalizeEffectKey,
+        normalizeStartupElement,
+        normalizeStartupSettings,
+        Number,
+        OBJECT_NATIVE_SIZE,
+        OBJECT_FRAMES,
+        parseEffectLibraryManifestEntries,
+        parseExitTargetLevel,
+        parseFloat,
+        parseInt,
+        Phaser,
+        playConfiguredAttractElementTween,
+        playLoopAudioSafely,
+        Promise,
+        registerEffectLibraryDefinition,
+        resetGameStateForNewRun,
+        resolveContactSpec,
+        setInterval,
+        setTimeout,
+        STARTUP_DEFAULTS,
+        STARTUP_SETTINGS,
+        String,
+        TILE_NATIVE_HEIGHT,
+        TILE_NATIVE_WIDTH,
+        TILE_FRAMES,
+        toEffectImportPath,
+        TRANSLATIONS,
+        WALL_TILE_COLS,
+        window,
+    };
 
-const PreloadScene = createPreloadSceneClass(SCENE_FACTORY_DEPS);
-const SharedFrontendScene = createSharedFrontendSceneClass(SCENE_FACTORY_DEPS);
-SCENE_FACTORY_DEPS.SharedFrontendScene = SharedFrontendScene;
-const AttractScene = createAttractSceneClass(SCENE_FACTORY_DEPS);
-const TopTenScene = createTopTenSceneClass(SCENE_FACTORY_DEPS);
-const CreditsScene = createCreditsSceneClass(SCENE_FACTORY_DEPS);
-const ConfigScene = createConfigSceneClass(SCENE_FACTORY_DEPS);
-const LevelSelectScene = createLevelSelectSceneClass(SCENE_FACTORY_DEPS);
-const GameScene = createGameSceneClass(SCENE_FACTORY_DEPS);
-const BonusScene = createBonusSceneClass(SCENE_FACTORY_DEPS);
-const GameOverScene = createGameOverSceneClass(SCENE_FACTORY_DEPS);
+    const PreloadScene = createPreloadSceneClass(deps);
+    const SharedFrontendScene = createSharedFrontendSceneClass(deps);
+    deps.SharedFrontendScene = SharedFrontendScene;
 
-async function inizialization() {
-    try {
-        const response = await fetch('data/config.json');
-        const cfg = await response.json();
-
-        // Load startup/front-end behavior from data/start.json (optional).
-        await loadStartupSettings();
-
-        // Copy all config keys to CONFIG
-        Object.assign(CONFIG, cfg);
-        // tokenMap: allow mapping single-letter tokens (eg. 'X') to full tokens (eg. 'w00')
-        // merge any tokenMap provided in config.json into CONFIG.tokenMap
-        try {
-            CONFIG.tokenMap = Object.assign({}, CONFIG.tokenMap || {}, cfg.tokenMap || {});
-        } catch (e) {
-            CONFIG.tokenMap = CONFIG.tokenMap || {};
-        }
-        if (!Number.isFinite(Number(CONFIG.playerSize)) || Number(CONFIG.playerSize) <= 0) {
-            CONFIG.playerSize = Number(CONFIG.objectSize) || OBJECT_NATIVE_SIZE;
-        }
-        if (!Number.isFinite(Number(CONFIG.ghostSpeed)) || Number(CONFIG.ghostSpeed) <= 0) {
-            CONFIG.ghostSpeed = 80;
-        }
-        if (!Number.isFinite(Number(CONFIG.dynamiteSize)) || Number(CONFIG.dynamiteSize) <= 0) {
-            CONFIG.dynamiteSize = Math.max(8, Math.round((Number(CONFIG.objectSize) || OBJECT_NATIVE_SIZE) * 0.6));
-        }
-
-        // Optional plugin-like effect library from module/effects/*
-        try {
-            const lib = await loadCustomEffectLibrary();
-            const loadedCount = Object.keys((lib && lib.effects) || {}).length;
-            if (loadedCount > 0) {
-                console.log(`[EffectLibrary] Loaded ${loadedCount} custom effects`);
-            }
-        } catch (e) {
-            console.warn('[EffectLibrary] bootstrap warning:', e);
-        }
-
-        // Resolve Phaser scale mode from config (defaults to FIT)
-        const requestedScaleMode = String(CONFIG.scaleMode || 'FIT').toUpperCase();
-        let phaserScaleMode = Phaser.Scale.FIT;
-        if (requestedScaleMode === 'ENVELOP' || requestedScaleMode === 'ENVELOPE') phaserScaleMode = Phaser.Scale.ENVELOP;
-        else if (requestedScaleMode === 'NONE') phaserScaleMode = Phaser.Scale.NONE;
-        else if (requestedScaleMode === 'RESIZE') phaserScaleMode = Phaser.Scale.RESIZE;
-
-        const config = {
-            type: Phaser.AUTO,
-            // Use Phaser Scale manager to display the original 800x600 game in the
-            // available viewport according to the requested scale mode.
-            scale: {
-                mode: phaserScaleMode,
-                autoCenter: Phaser.Scale.CENTER_BOTH,
-                parent: 'game-container',
-                width: Number(CONFIG.width) || 800,
-                height: Number(CONFIG.height) || 600
-            },
-            backgroundColor: '#000000',
-            physics: {
-                default: 'arcade',
-                arcade: {
-                    gravity: { y: 0 },
-                    debug: false
-                }
-            },
-            scene: [PreloadScene, AttractScene, TopTenScene, CreditsScene, ConfigScene, LevelSelectScene, GameScene, BonusScene, GameOverScene]
-        };
-
-        // Copy game state keys to GAME_STATE (topScores will be loaded from server if available)
-        const stateKeys = [
-            'credits', 'language', 'difficulty', 'currentLevel', 'score', 'lives', 'dynamiteCount', 'keysCount', 'woodenCount'
-        ];
-        stateKeys.forEach(k => {
-            if (cfg[k] !== undefined) GAME_STATE[k] = cfg[k];
-        });
-
-        if (isFreePlayMode()) {
-            GAME_STATE.credits = Number.MAX_SAFE_INTEGER;
-        } else {
-            GAME_STATE.credits = Math.max(0, Math.floor(Number(STARTUP_SETTINGS.startup?.initialCredits) || Number(GAME_STATE.credits) || 0));
-        }
-
-        // Try to load top scores from server API; fallback to config.json topScores if API not available
-        try {
-            let serverTopScores = null;
-            try {
-                const resp = await fetch('/api/top-scores');
-                if (resp && resp.ok) {
-                    serverTopScores = await resp.json();
-                }
-            } catch (e) { serverTopScores = null; }
-
-            if (Array.isArray(serverTopScores) && serverTopScores.length > 0) {
-                GAME_STATE.topScores = serverTopScores.slice(0, 10);
-            } else if (Array.isArray(cfg.topScores)) {
-                // allow embedding topScores directly in data/config.json
-                GAME_STATE.topScores = cfg.topScores.slice(0, 10);
-            } else {
-                // fallback: try to load a static data/topScores.json file (useful when
-                // running the game as static files without the server API)
-                try {
-                    const resp2 = await fetch('data/topScores.json');
-                    if (resp2 && resp2.ok) {
-                        const staticScores = await resp2.json();
-                        if (Array.isArray(staticScores) && staticScores.length > 0) {
-                            GAME_STATE.topScores = staticScores.slice(0, 10);
-                            console.log('Loaded top scores from static data/topScores.json');
-                        } else {
-                            GAME_STATE.topScores = [];
-                        }
-                    } else {
-                        GAME_STATE.topScores = [];
-                    }
-                } catch (e) {
-                    GAME_STATE.topScores = [];
-                }
-            }
-        } catch (e) {
-            GAME_STATE.topScores = Array.isArray(cfg.topScores) ? cfg.topScores.slice(0, 10) : [];
-        }
-
-        new Phaser.Game(config);
-
-        // If the configuration asks for a fullscreen toggle, add a small DOM button.
-        try {
-            if (CONFIG.enableFullscreen) {
-                const existing = document.getElementById('fullscreenBtn');
-                if (!existing) {
-                    const btn = document.createElement('button');
-                    btn.id = 'fullscreenBtn';
-                    btn.title = 'Toggle Fullscreen';
-                    btn.innerText = '⤢';
-                    Object.assign(btn.style, {
-                        position: 'fixed',
-                        right: '12px',
-                        top: '12px',
-                        zIndex: 9999,
-                        padding: '6px 8px',
-                        fontSize: '16px',
-                        borderRadius: '6px',
-                        border: 'none',
-                        background: 'rgba(12,18,32,0.8)',
-                        color: '#dbeeff',
-                        cursor: 'pointer',
-                        boxShadow: '0 2px 8px rgba(0,0,0,0.4)'
-                    });
-                    btn.addEventListener('click', async () => {
-                        try {
-                            const container = document.getElementById('game-container') || document.documentElement;
-                            if (document.fullscreenElement) {
-                                await document.exitFullscreen();
-                            } else if (container.requestFullscreen) {
-                                await container.requestFullscreen();
-                            } else if (container.webkitRequestFullscreen) {
-                                // Safari
-                                container.webkitRequestFullscreen();
-                            }
-                        } catch (e) {
-                            console.warn('Fullscreen toggle failed', e);
-                        }
-                    });
-                    // Keyboard shortcut: F toggles fullscreen
-                    document.addEventListener('keydown', (ev) => {
-                        if (ev && (ev.key === 'f' || ev.key === 'F')) {
-                            ev.preventDefault?.();
-                            btn.click();
-                        }
-                    });
-                    // If device is touch-capable, make the button more prominent
-                    if ('ontouchstart' in window || navigator.maxTouchPoints > 0) {
-                        btn.style.padding = '10px 12px';
-                        btn.style.fontSize = '20px';
-                    }
-                    document.body.appendChild(btn);
-                }
-            }
-        } catch (e) {
-            console.warn('Error creating fullscreen button', e);
-        }
-
-        return true;
-    } catch (err) {
-        console.error('Errore caricamento config.json:', err);
-        alert('Impossibile caricare la configurazione del gioco.');
-        return false;
-    }
+    return {
+        PreloadScene,
+        AttractScene: createAttractSceneClass(deps),
+        TopTenScene: createTopTenSceneClass(deps),
+        CreditsScene: createCreditsSceneClass(deps),
+        ConfigScene: createConfigSceneClass(deps),
+        LevelSelectScene: createLevelSelectSceneClass(deps),
+        GameScene: createGameSceneClass(deps),
+        BonusScene: createBonusSceneClass(deps),
+        GameOverScene: createGameOverSceneClass(deps)
+    };
 }
-
-window.inizialization = inizialization;

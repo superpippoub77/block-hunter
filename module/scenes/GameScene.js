@@ -1025,7 +1025,7 @@ export function createGameSceneClass(deps) {
             const offsetX = 0;
             const offsetY = 0;
     
-            // Tile frames are defined centrally in data/module/constants.js (TILE_FRAMES)
+            // Tile frames are defined centrally in data/constants.json (TILE_FRAMES)
     
             const resolveTokenMap = (val) => {
                 try {
