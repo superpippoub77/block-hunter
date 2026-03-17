@@ -1,76 +1,43 @@
+/**
+ * Crea la classe base condivisa per scene frontend (menu/UI).
+ * @param {Record<string, any>} deps Dipendenze runtime condivise.
+ * @returns {typeof Phaser.Scene} Classe scena SharedFrontend.
+ */
 export function createSharedFrontendSceneClass(deps) {
     const {
         createAddCredit,
         createCreditsManager,
         createLanguageCarousel,
-        applyConfiguredAttractLayout,
-        applyConfiguredAttractPlugins,
-        applyStartupSettings,
-        Boolean,
-        clearInterval,
-        clearRuntimeMatchStorage,
-        clearTimeout,
         CONFIG,
         console,
-        Date,
-        defaultFrame,
-        document,
         drawTextPanel,
-        EFFECT_LIBRARY,
         GAME_FONT,
         GAME_STATE,
-        getLevelFileName,
-        getLevelMasterNumber,
-        getTextureMaxNumericFrame,
         HUD_DEPTH,
-        isFinite,
         isFreePlayMode,
-        isFrontScenesEnabled,
-        isNaN,
-        JSON,
-        LEVEL_CONFIG,
-        loadTranslations,
-        loadEffectDefinitionFromScript,
-        Math,
-        mergeLocalConfig,
-        normalizeEffectKey,
-        normalizeStartupElement,
-        normalizeStartupSettings,
         Number,
-        OBJECT_NATIVE_SIZE,
-        OBJECT_FRAMES,
-        parseEffectLibraryManifestEntries,
-        parseExitTargetLevel,
-        parseFloat,
-        parseInt,
         Phaser,
-        playConfiguredAttractElementTween,
-        playLoopAudioSafely,
-        Promise,
-        registerEffectLibraryDefinition,
         resetGameStateForNewRun,
-        resolveContactSpec,
-        setInterval,
-        setTimeout,
-        STARTUP_DEFAULTS,
-        STARTUP_SETTINGS,
         String,
-        TILE_NATIVE_HEIGHT,
-        TILE_NATIVE_WIDTH,
-        TILE_FRAMES,
-        toEffectImportPath,
         TRANSLATIONS,
-        WALL_TILE_COLS,
-        window,
     } = deps;
 
     class SharedFrontendScene extends Phaser.Scene {
+        /**
+         * Costruttore base scene frontend condivise.
+         * @param {string} sceneKey Chiave della scena Phaser.
+         */
         constructor(sceneKey) {
             super(sceneKey);
             this.languages = ['it', 'fr', 'de', 'en', 'us', 'ja', 'es', 'zh'];
             this.currentLangIndex = 0;
         }
     
+        /**
+         * Inizializza stato condiviso frontend.
+         * @param {{resetLanguage?: boolean}} [param0={}] Opzioni init.
+         * @returns {void}
+         */
         initializeSharedFrontState({ resetLanguage = false } = {}) {
             const currentLanguage = String(GAME_STATE.language || '').trim().toLowerCase();
             if (resetLanguage || !this.languages.includes(currentLanguage)) {
@@ -83,6 +50,10 @@ export function createSharedFrontendSceneClass(deps) {
             GAME_STATE.language = this.languages[this.currentLangIndex];
         }
     
+        /**
+         * Crea la UI comune per scene frontend.
+         * @returns {void}
+         */
         createSharedFrontUi() {
             try {
                 this.creditManager = createCreditsManager(this, {
@@ -144,6 +115,11 @@ export function createSharedFrontendSceneClass(deps) {
             try { this.updateSharedFrontUi(); } catch (e) { }
         }
     
+        /**
+         * Associa i binding tastiera condivisi.
+         * @param {object} [options={}] Opzioni binding.
+         * @returns {void}
+         */
         bindSharedFrontKeys(options = {}) {
             const onCoinAccepted = (typeof options.onCoinAccepted === 'function')
                 ? options.onCoinAccepted
@@ -254,12 +230,21 @@ export function createSharedFrontendSceneClass(deps) {
             }
         }
     
+        /**
+         * Normalizza evento tastiera in codice standardizzato.
+         * @param {KeyboardEvent} event Evento keydown.
+         * @returns {string}
+         */
         normalizeSharedFrontKey(event) {
             const rawKey = String(event?.key || event?.code || '').trim().toUpperCase();
             if (rawKey === 'SPACEBAR') return ' ';
             return rawKey;
         }
 
+        /**
+         * Applica feedback visivo quando il credito viene accettato.
+         * @returns {void}
+         */
         pulseCreditAcceptedUi() {
             const pulseTarget = (obj, opts = {}) => {
                 if (!obj || !this.tweens) return;
@@ -311,6 +296,10 @@ export function createSharedFrontendSceneClass(deps) {
             }
         }
     
+        /**
+         * Aggiorna elementi UI condivisi frontend.
+         * @returns {void}
+         */
         updateSharedFrontUi() {
             try {
                 if (this.creditManager && typeof this.creditManager.updateTexts === 'function') {

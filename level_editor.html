@@ -872,7 +872,8 @@
                     <button id="openFileManagerBtn" class="icon-btn" type="button" title="Gestione file">FILE</button>
                     <button id="openObjectMapDialogBtn" class="icon-btn" type="button" title="Mappaggio oggetti">OBJ</button>
                     <button id="openStartDialogBtn" class="icon-btn" type="button" title="Config startup e attract">START</button>
-                    <button id="openConfigDialogBtn" class="icon-btn" type="button" title="Configura game config">&#9881;</button>
+                    <button id="openFrontScenesEditorBtn" class="icon-btn" type="button" title="Editor scene frontend">FRONT</button>
+                    <button id="openConfigDialogBtn" class="icon-btn" type="button" title="Configura game config">⚙️</button>
                 </div>
             </div>
             <div style="display:flex; gap:8px; margin-bottom:8px;">
@@ -1608,9 +1609,55 @@
                         <input id="startInitialCredits" type="number" min="0" step="1" value="0">
                     </div>
 
+                    <div class="grid2" style="margin-bottom:8px;">
+                        <div>
+                            <label for="startFrontSceneKey">Scena frontend</label>
+                            <select id="startFrontSceneKey">
+                                <option value="AttractScene">AttractScene</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label style="display:flex; align-items:center; gap:8px; margin-top:20px;">
+                                <input id="startFrontSceneEnabled" type="checkbox" style="width:auto;">
+                                Abilita scena JSON
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="grid2" style="margin-bottom:8px;">
+                        <div>
+                            <label for="startNewFrontSceneName">Nuova scena</label>
+                            <input id="startNewFrontSceneName" type="text" placeholder="Es. IntroScene">
+                        </div>
+                        <div style="display:flex; gap:8px; align-items:flex-end;">
+                            <button id="startAddFrontSceneBtn" type="button">Crea scena</button>
+                            <button id="startDeleteFrontSceneBtn" type="button">Elimina scena</button>
+                        </div>
+                    </div>
+
+                    <div class="grid2" style="margin-bottom:8px;">
+                        <div>
+                            <label for="startRenameFrontSceneName">Rinomina scena</label>
+                            <input id="startRenameFrontSceneName" type="text" placeholder="Nuovo nome scena">
+                        </div>
+                        <div style="display:flex; gap:8px; align-items:flex-end;">
+                            <button id="startRenameFrontSceneBtn" type="button">Rinomina</button>
+                        </div>
+                    </div>
+
+                    <div class="grid2" style="margin-bottom:8px;">
+                        <div>
+                            <label for="startFlowInitialScene">Scena iniziale (flow.initialScene)</label>
+                            <select id="startFlowInitialScene"></select>
+                        </div>
+                        <div style="display:flex; gap:8px; align-items:flex-end;">
+                            <button id="startSetFlowInitialSceneBtn" type="button">Imposta</button>
+                        </div>
+                    </div>
+
                     <label style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
-                        <input id="startAttractEnabled" type="checkbox" style="width:auto;">
-                        Abilita layout custom Attract
+                        <input id="startFrontSceneReplaceDefault" type="checkbox" style="width:auto;">
+                        Replace default UI (mantiene la logica scena)
                     </label>
 
                     <div class="grid2" style="margin-bottom:8px;">
@@ -1624,7 +1671,7 @@
                         </div>
                     </div>
 
-                    <h3 style="margin-top:10px;">Aggiungi elemento Attract</h3>
+                    <h3 style="margin-top:10px;">Aggiungi elemento scena</h3>
                     <div style="margin-bottom:8px;">
                         <label for="startAttractAssetSelect">Immagine (assets/images/scenes/attractmode)</label>
                         <select id="startAttractAssetSelect">
@@ -1670,7 +1717,7 @@
                 </section>
 
                 <section class="start-card">
-                    <h3>Canvas Attract + Timeline</h3>
+                    <h3>Canvas scena + Timeline</h3>
                     <div class="start-stage-wrap">
                         <div id="startAttractStage" class="start-stage"></div>
                     </div>
@@ -1703,6 +1750,7 @@
                                 <option value="slideLeft">slideLeft</option>
                                 <option value="pulse">pulse</option>
                                 <option value="blink">blink</option>
+                                <option value="zoomIn">zoomIn</option>
                             </select>
                         </div>
                         <div>
@@ -1721,7 +1769,24 @@
                             <label for="startElementDurationMs">Duration ms</label>
                             <input id="startElementDurationMs" type="number" min="0" step="10" value="1000">
                         </div>
+                        <div>
+                            <label for="startElementLifeMs">Life ms (auto hide)</label>
+                            <input id="startElementLifeMs" type="number" min="0" step="10" value="0">
+                        </div>
+                        <div>
+                            <label for="startElementShowAtMs">Show at ms</label>
+                            <input id="startElementShowAtMs" type="number" min="0" step="10" value="0">
+                        </div>
+                        <div>
+                            <label for="startElementHideAtMs">Hide at ms</label>
+                            <input id="startElementHideAtMs" type="number" min="0" step="10" value="0">
+                        </div>
                     </div>
+
+                    <label style="display:flex; align-items:center; gap:8px; margin-top:8px;">
+                        <input id="startElementHiddenInitially" type="checkbox" style="width:auto;">
+                        Hidden initially
+                    </label>
 
                     <div style="margin-top:8px;">
                         <label for="startElementText">Contenuto testo elemento selezionato</label>
@@ -1751,6 +1816,43 @@
             </div>
             <div id="startPreviewStage" class="start-preview-stage"></div>
             <div class="tiny" style="margin-top:8px;">Preview rapida della timeline e dei plugin; usa Salva per persistente su start.json.</div>
+        </div>
+    </div>
+
+    <div id="frontScenesEditorModal" class="config-modal">
+        <div class="frontscenes-dialog" style="max-width: 900px; max-height: 90vh; display: flex; flex-direction: column; border: 2px solid #4fa3ff; border-radius: 8px; background: #0a1428;">
+            <div class="config-toolbar" style="border-bottom: 1px solid #2a5a9d; flex-shrink: 0;">
+                <h2 style="margin: 0; font-size: 12px; color: #a8d8ff;">Front Scenes Editor (Attract/Credits/LevelSelect/GameOver)</h2>
+                <div style="display: flex; gap: 6px; align-items:center;">
+                    <input id="fsNewSceneName" type="text" placeholder="Nuova scena" style="max-width:180px;">
+                    <button id="fsAddSceneBtn" type="button">Crea scena</button>
+                    <button id="fsEditorLoadBtn" type="button">Carica JSON</button>
+                    <button id="fsEditorSaveBtn" type="button">Salva JSON</button>
+                    <button id="fsEditorCloseBtn" type="button">Chiudi</button>
+                </div>
+            </div>
+            <div style="flex: 1; overflow: auto; display: grid; grid-template-columns: 250px 1fr 300px; gap: 8px; padding: 8px; min-height: 0;">
+                <!-- Scene selector -->
+                <div id="fsSceneList" style="border: 1px solid #2a5a9d; border-radius: 4px; padding: 8px; background: #081530; overflow: auto;">
+                    <h3 style="font-size: 10px; color: #9fcfff; margin-bottom: 6px;">Scene</h3>
+                    <div id="fsSceneButtons" style="display: flex; flex-direction: column; gap: 4px;"></div>
+                </div>
+                
+                <!-- Canvas preview -->
+                <div id="fsCanvasPreview" style="border: 1px solid #2a5a9d; border-radius: 4px; background: #0a1631; position: relative; min-height: 400px;">
+                    <p style="font-size: 10px; color: #6b8bb5; padding: 8px; margin: 0;">Canvas Preview (drag to position)</p>
+                    <canvas id="fsPreviewCanvas" style="position: absolute; left: 0; top: 24px; width: 100%; height: calc(100% - 24px); display: block; cursor: crosshair; background: #0a1631;"></canvas>
+                </div>
+                
+                <!-- Properties panel -->
+                <div id="fsPropertiesPanel" style="border: 1px solid #2a5a9d; border-radius: 4px; padding: 8px; background: #081530; overflow: auto;">
+                    <h3 style="font-size: 10px; color: #9fcfff; margin-bottom: 8px;">Elemento</h3>
+                    <div id="fsPropertiesForm" style="display: flex; flex-direction: column; gap: 6px; font-size: 10px;">
+                        <label>Seleziona elemento nel canvas</label>
+                    </div>
+                </div>
+            </div>
+            <div class="status" id="fsStatusText" style="border-top: 1px solid #2a5a9d; padding: 6px; font-size: 10px; background: #081530; flex-shrink: 0;"></div>
         </div>
     </div>
 

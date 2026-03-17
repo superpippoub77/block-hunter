@@ -33,6 +33,7 @@ const FG_MANIFEST_PATH = 'data/images/images-scenes-game-foreground.json';
 const MUSIC_MANIFEST_PATH = 'data/music/music-scenes-game.json';
 const CONFIG_JSON_PATH = 'data/config.json';
 const START_JSON_PATH = 'data/start.json';
+const FRONT_SCENES_JSON_PATH = 'data/front-scenes.json';
 const OBJECTS_JSON_PATH = 'data/objects.json';
 const LEVELS_DIR_PATH = 'data/level';
 
@@ -421,8 +422,24 @@ const ATTRACT_PLUGIN_PRESETS = {
     players: { label: 'Player 1 / Player 2', x: 400, y: 548, w: 520, h: 28 }
 };
 
+const FRONT_SCENE_BASE_KEYS = ['AttractScene', 'CreditsScene', 'LevelSelectScene', 'GameOverScene', 'TopTenScene', 'ConfigScene'];
+const FRONT_SCENE_DEFAULT_ENTRY = {
+    enabled: false,
+    replaceDefault: false,
+    canvas: { width: 800, height: 600 },
+    elements: []
+};
+const FRONT_SCENES_EDITOR_DEFAULT = {
+    scenes: FRONT_SCENE_BASE_KEYS.reduce((acc, key) => {
+        acc[key] = deepClone(FRONT_SCENE_DEFAULT_ENTRY);
+        return acc;
+    }, {})
+};
+
 let START_EDITOR_STATE = {
     loadedStart: deepClone(START_EDITOR_DEFAULT),
+    loadedFrontScenes: deepClone(FRONT_SCENES_EDITOR_DEFAULT),
+    currentFrontSceneKey: 'AttractScene',
     selectedElementId: null,
     previewTimer: null,
     drag: {
@@ -938,6 +955,9 @@ function mergeMappingWithAdvanced(baseMapping, advancedObject) {
     const merged = deepMerge(baseMapping, advancedObject);
     if (isPlainObject(merged.advanced)) {
         delete merged.advanced;
+    }
+    if (isPlainObject(merged.collision) && String(merged.collision.contactType ?? '').trim()) {
+        delete merged.contactType;
     }
     return merged;
 }
@@ -2703,6 +2723,65 @@ function sanitizeStartCoinMode(raw) {
     return mode === 'freeplay' ? 'freeplay' : 'arcade';
 }
 
+function sanitizeFrontSceneKey(raw) {
+    const key = String(raw || '').trim();
+    if (!key) return '';
+    return key.replace(/[^a-zA-Z0-9_]/g, '');
+}
+
+function getFrontSceneKeysFromState() {
+    const scenesMap = isPlainObject(START_EDITOR_STATE.loadedFrontScenes?.scenes)
+        ? START_EDITOR_STATE.loadedFrontScenes.scenes
+        : {};
+    const dynamicKeys = Object.keys(scenesMap)
+        .map((k) => String(k || '').trim())
+        .filter(Boolean);
+
+    const all = [];
+    FRONT_SCENE_BASE_KEYS.forEach((k) => {
+        if (!all.includes(k)) all.push(k);
+    });
+    dynamicKeys.forEach((k) => {
+        if (!all.includes(k)) all.push(k);
+    });
+    return all;
+}
+
+function ensureFrontSceneExists(sceneKey) {
+    const key = sanitizeFrontSceneKey(sceneKey);
+    if (!key) return '';
+    if (!isPlainObject(START_EDITOR_STATE.loadedFrontScenes)) {
+        START_EDITOR_STATE.loadedFrontScenes = deepClone(FRONT_SCENES_EDITOR_DEFAULT);
+    }
+    if (!isPlainObject(START_EDITOR_STATE.loadedFrontScenes.scenes)) {
+        START_EDITOR_STATE.loadedFrontScenes.scenes = {};
+    }
+    if (!isPlainObject(START_EDITOR_STATE.loadedFrontScenes.scenes[key])) {
+        START_EDITOR_STATE.loadedFrontScenes.scenes[key] = deepClone(FRONT_SCENE_DEFAULT_ENTRY);
+    }
+    return key;
+}
+
+function refreshStartFrontSceneSelectOptions() {
+    const selectNode = el('startFrontSceneKey');
+    if (!selectNode) return;
+
+    const previous = String(START_EDITOR_STATE.currentFrontSceneKey || '').trim();
+    const keys = getFrontSceneKeysFromState();
+    selectNode.innerHTML = '';
+
+    keys.forEach((sceneKey) => {
+        const op = document.createElement('option');
+        op.value = sceneKey;
+        op.textContent = sceneKey;
+        selectNode.appendChild(op);
+    });
+
+    const resolved = keys.includes(previous) ? previous : (keys[0] || 'AttractScene');
+    START_EDITOR_STATE.currentFrontSceneKey = resolved;
+    if (resolved) selectNode.value = resolved;
+}
+
 function normalizeStartElement(raw, index = 0) {
     const inObj = isPlainObject(raw) ? raw : {};
     const typeRaw = String(inObj.type || 'image').trim().toLowerCase();
@@ -2718,13 +2797,17 @@ function normalizeStartElement(raw, index = 0) {
         text: String(inObj.text || pluginPreset?.label || '').trim(),
         color: String(inObj.color || '#ffffff').trim() || '#ffffff',
         fontSize: Math.max(8, parseNumber(inObj.fontSize, 24)),
-        x: Math.max(0, parseNumber(inObj.x, pluginPreset?.x ?? 80)),
-        y: Math.max(0, parseNumber(inObj.y, pluginPreset?.y ?? 80)),
+        x: parseNumber(inObj.x, pluginPreset?.x ?? 80),
+        y: parseNumber(inObj.y, pluginPreset?.y ?? 80),
         w: Math.max(8, parseNumber(inObj.w, pluginPreset?.w ?? (type === 'text' ? 220 : 180))),
         h: Math.max(8, parseNumber(inObj.h, pluginPreset?.h ?? (type === 'text' ? 48 : 120))),
         effect: String(inObj.effect || 'none').trim() || 'none',
         delayMs: Math.max(0, parseNumber(inObj.delayMs, 0)),
         durationMs: Math.max(0, parseNumber(inObj.durationMs, 1000)),
+        lifeMs: Math.max(0, parseNumber(inObj.lifeMs, 0)),
+        showAtMs: Math.max(0, parseNumber(inObj.showAtMs, 0)),
+        hideAtMs: Math.max(0, parseNumber(inObj.hideAtMs, 0)),
+        hiddenInitially: !!inObj.hiddenInitially,
         order: Math.max(0, Math.floor(parseNumber(inObj.order, index)))
     };
 }
@@ -2797,6 +2880,64 @@ function normalizeStartConfig(raw) {
     };
 }
 
+function normalizeFrontSceneEntry(raw) {
+    const inObj = isPlainObject(raw) ? raw : {};
+    const canvas = isPlainObject(inObj.canvas) ? inObj.canvas : {};
+    const elements = (Array.isArray(inObj.elements) ? inObj.elements : []).map((it, idx) => normalizeStartElement(it, idx));
+    return {
+        enabled: !!inObj.enabled,
+        replaceDefault: !!inObj.replaceDefault,
+        canvas: {
+            width: Math.max(320, Math.floor(parseNumber(canvas.width, 800))),
+            height: Math.max(200, Math.floor(parseNumber(canvas.height, 600)))
+        },
+        elements: elements.sort((a, b) => a.order - b.order)
+    };
+}
+
+function normalizeFrontScenesConfig(raw) {
+    const root = isPlainObject(raw) ? raw : {};
+    const scenesRaw = isPlainObject(root.scenes) ? root.scenes : {};
+    const scenes = {};
+    const keys = Array.from(new Set([...FRONT_SCENE_BASE_KEYS, ...Object.keys(scenesRaw)]));
+    keys.forEach((key) => {
+        scenes[key] = normalizeFrontSceneEntry(scenesRaw[key]);
+    });
+    return { scenes };
+}
+
+function getCurrentFrontSceneConfig() {
+    const cfg = isPlainObject(START_EDITOR_STATE.loadedFrontScenes) ? START_EDITOR_STATE.loadedFrontScenes : deepClone(FRONT_SCENES_EDITOR_DEFAULT);
+    const keys = getFrontSceneKeysFromState();
+    const key = keys.includes(START_EDITOR_STATE.currentFrontSceneKey)
+        ? START_EDITOR_STATE.currentFrontSceneKey
+        : (keys[0] || 'AttractScene');
+    START_EDITOR_STATE.currentFrontSceneKey = key;
+    if (!isPlainObject(cfg.scenes)) cfg.scenes = {};
+    if (!isPlainObject(cfg.scenes[key])) cfg.scenes[key] = deepClone(FRONT_SCENE_DEFAULT_ENTRY);
+    return cfg.scenes[key];
+}
+
+function syncStartAttractModeFromCurrentFrontScene() {
+    const current = getCurrentFrontSceneConfig();
+    const normalized = normalizeFrontSceneEntry(current);
+    START_EDITOR_STATE.loadedStart = normalizeStartConfig(START_EDITOR_STATE.loadedStart);
+    START_EDITOR_STATE.loadedStart.attractMode.enabled = normalized.enabled;
+    START_EDITOR_STATE.loadedStart.attractMode.canvas = deepClone(normalized.canvas);
+    START_EDITOR_STATE.loadedStart.attractMode.elements = deepClone(normalized.elements);
+    syncStartPluginsFromElements();
+}
+
+function syncCurrentFrontSceneFromStartAttractMode() {
+    START_EDITOR_STATE.loadedStart = normalizeStartConfig(START_EDITOR_STATE.loadedStart);
+    START_EDITOR_STATE.loadedFrontScenes = normalizeFrontScenesConfig(START_EDITOR_STATE.loadedFrontScenes);
+    const current = getCurrentFrontSceneConfig();
+    current.enabled = !!START_EDITOR_STATE.loadedStart.attractMode.enabled;
+    current.canvas = deepClone(START_EDITOR_STATE.loadedStart.attractMode.canvas || { width: 800, height: 600 });
+    current.elements = deepClone(Array.isArray(START_EDITOR_STATE.loadedStart.attractMode.elements) ? START_EDITOR_STATE.loadedStart.attractMode.elements : []);
+    current.replaceDefault = !!current.replaceDefault;
+}
+
 function getSelectedStartElement() {
     const list = START_EDITOR_STATE.loadedStart?.attractMode?.elements;
     if (!Array.isArray(list)) return null;
@@ -2838,10 +2979,14 @@ function renderStartElementInputs() {
     const fontNode = el('startElementFontSize');
     const delayNode = el('startElementDelayMs');
     const durationNode = el('startElementDurationMs');
+    const lifeNode = el('startElementLifeMs');
+    const showAtNode = el('startElementShowAtMs');
+    const hideAtNode = el('startElementHideAtMs');
+    const hiddenNode = el('startElementHiddenInitially');
     const textNode = el('startElementText');
 
     const disabled = !selected;
-    [xNode, yNode, wNode, hNode, effectNode, colorNode, fontNode, delayNode, durationNode, textNode]
+    [xNode, yNode, wNode, hNode, effectNode, colorNode, fontNode, delayNode, durationNode, lifeNode, showAtNode, hideAtNode, hiddenNode, textNode]
         .forEach((node) => {
             if (!node) return;
             node.disabled = disabled;
@@ -2861,20 +3006,33 @@ function renderStartElementInputs() {
     if (fontNode) fontNode.value = String(Math.round(selected.fontSize || 24));
     if (delayNode) delayNode.value = String(Math.round(selected.delayMs || 0));
     if (durationNode) durationNode.value = String(Math.round(selected.durationMs || 1000));
+    if (lifeNode) lifeNode.value = String(Math.round(selected.lifeMs || 0));
+    if (showAtNode) showAtNode.value = String(Math.round(selected.showAtMs || 0));
+    if (hideAtNode) hideAtNode.value = String(Math.round(selected.hideAtMs || 0));
+    if (hiddenNode) hiddenNode.checked = !!selected.hiddenInitially;
     if (textNode) textNode.value = selected.text || '';
 }
 
 function applyStartFormFromState() {
     const cfg = normalizeStartConfig(START_EDITOR_STATE.loadedStart);
     START_EDITOR_STATE.loadedStart = cfg;
+    START_EDITOR_STATE.loadedFrontScenes = normalizeFrontScenesConfig(START_EDITOR_STATE.loadedFrontScenes);
+    syncStartAttractModeFromCurrentFrontScene();
 
-    const startup = cfg.startup;
-    const attract = cfg.attractMode;
+    const startup = START_EDITOR_STATE.loadedStart.startup;
+    const attract = START_EDITOR_STATE.loadedStart.attractMode;
+    const currentScene = getCurrentFrontSceneConfig();
+
+    refreshStartFrontSceneSelectOptions();
+    refreshFlowInitialSceneSelect();
+
 
     const enableFront = el('startEnableFrontScenes');
     const coinMode = el('startCoinMode');
     const initialCredits = el('startInitialCredits');
-    const attractEnabled = el('startAttractEnabled');
+    const sceneKeyNode = el('startFrontSceneKey');
+    const sceneEnabledNode = el('startFrontSceneEnabled');
+    const replaceDefaultNode = el('startFrontSceneReplaceDefault');
     const canvasW = el('startCanvasWidth');
     const canvasH = el('startCanvasHeight');
 
@@ -2884,7 +3042,9 @@ function applyStartFormFromState() {
         initialCredits.value = String(Math.max(0, startup.initialCredits || 0));
         initialCredits.disabled = sanitizeStartCoinMode(startup.coinMode) === 'freeplay';
     }
-    if (attractEnabled) attractEnabled.checked = !!attract.enabled;
+    if (sceneKeyNode) sceneKeyNode.value = START_EDITOR_STATE.currentFrontSceneKey;
+    if (sceneEnabledNode) sceneEnabledNode.checked = !!currentScene.enabled;
+    if (replaceDefaultNode) replaceDefaultNode.checked = !!currentScene.replaceDefault;
     if (canvasW) canvasW.value = String(attract.canvas.width);
     if (canvasH) canvasH.value = String(attract.canvas.height);
 
@@ -3170,6 +3330,162 @@ function addStartPluginElement() {
     setStartStatus(`Plugin aggiunto: ${preset.label}.`);
 }
 
+function addStartFrontScene() {
+    const inputNode = el('startNewFrontSceneName');
+    const raw = String(inputNode?.value || '').trim();
+    const sceneKey = sanitizeFrontSceneKey(raw);
+    if (!sceneKey) {
+        setStartStatus('Nome scena non valido. Usa lettere, numeri o underscore.', true);
+        return;
+    }
+    if (!/Scene$/i.test(sceneKey)) {
+        setStartStatus('Il nome scena deve terminare con "Scene" (es. IntroScene).', true);
+        return;
+    }
+
+    const existingKeys = getFrontSceneKeysFromState();
+    if (existingKeys.includes(sceneKey)) {
+        START_EDITOR_STATE.currentFrontSceneKey = sceneKey;
+        applyStartFormFromState();
+        setStartStatus(`La scena ${sceneKey} esiste gia: selezionata.`);
+        return;
+    }
+
+    ensureFrontSceneExists(sceneKey);
+    START_EDITOR_STATE.currentFrontSceneKey = sceneKey;
+    START_EDITOR_STATE.selectedElementId = null;
+    if (inputNode) inputNode.value = '';
+    applyStartFormFromState();
+    setStartStatus(`Scena creata: ${sceneKey}`);
+}
+
+function deleteCurrentFrontScene() {
+    const key = String(START_EDITOR_STATE.currentFrontSceneKey || '').trim();
+    if (!key) {
+        setStartStatus('Nessuna scena selezionata.', true);
+        return;
+    }
+    if (FRONT_SCENE_BASE_KEYS.includes(key)) {
+        setStartStatus('Non puoi eliminare una scena base.', true);
+        return;
+    }
+    if (!isPlainObject(START_EDITOR_STATE.loadedFrontScenes?.scenes)) {
+        setStartStatus('Stato scene non valido.', true);
+        return;
+    }
+
+    delete START_EDITOR_STATE.loadedFrontScenes.scenes[key];
+    START_EDITOR_STATE.selectedElementId = null;
+    const keys = getFrontSceneKeysFromState();
+    START_EDITOR_STATE.currentFrontSceneKey = keys[0] || 'AttractScene';
+    applyStartFormFromState();
+    setStartStatus(`Scena eliminata: ${key}`);
+}
+
+function renameFrontScene(oldKey, newKey) {
+    const old = String(oldKey || '').trim();
+    const newKeySanitized = sanitizeFrontSceneKey(newKey);
+    
+    if (!old || !newKeySanitized) return false;
+    
+    if (FRONT_SCENE_BASE_KEYS.includes(old)) {
+        setStartStatus('Non puoi rinominare una scena base.', true);
+        return false;
+    }
+    
+    if (!/Scene$/i.test(newKeySanitized)) {
+        setStartStatus('Il nome scena deve terminare con "Scene".', true);
+        return false;
+    }
+    
+    const keys = getFrontSceneKeysFromState();
+    if (keys.includes(newKeySanitized) && newKeySanitized !== old) {
+        setStartStatus(`La scena ${newKeySanitized} esiste gia.`, true);
+        return false;
+    }
+    
+    if (!isPlainObject(START_EDITOR_STATE.loadedFrontScenes?.scenes)) {
+        setStartStatus('Stato scene non valido.', true);
+        return false;
+    }
+    
+    if (!START_EDITOR_STATE.loadedFrontScenes.scenes[old]) {
+        setStartStatus(`La scena ${old} non esiste.`, true);
+        return false;
+    }
+    
+    START_EDITOR_STATE.loadedFrontScenes.scenes[newKeySanitized] = START_EDITOR_STATE.loadedFrontScenes.scenes[old];
+    delete START_EDITOR_STATE.loadedFrontScenes.scenes[old];
+    
+    if (START_EDITOR_STATE.currentFrontSceneKey === old) {
+        START_EDITOR_STATE.currentFrontSceneKey = newKeySanitized;
+    }
+    
+    applyStartFormFromState();
+    setStartStatus(`Scena rinominata: ${old} → ${newKeySanitized}`);
+    return true;
+}
+
+function renameCurrentFrontScene() {
+    const inputNode = el('startRenameFrontSceneName');
+    const newKey = String(inputNode?.value || '').trim();
+    const oldKey = String(START_EDITOR_STATE.currentFrontSceneKey || '').trim();
+    
+    if (!oldKey) {
+        setStartStatus('Nessuna scena selezionata per rinominare.', true);
+        return;
+    }
+    
+    if (!newKey) {
+        setStartStatus('Inserisci il nuovo nome della scena.', true);
+        return;
+    }
+    
+    if (renameFrontScene(oldKey, newKey)) {
+        if (inputNode) inputNode.value = '';
+    }
+}
+
+function getFlowInitialScene() {
+    return String(START_EDITOR_STATE.loadedFrontScenes?.flow?.initialScene || '').trim() || 'AttractScene';
+}
+
+function setFlowInitialScene(sceneKey) {
+    const key = String(sceneKey || '').trim();
+    if (!key) return false;
+    
+    if (!isPlainObject(START_EDITOR_STATE.loadedFrontScenes)) {
+        START_EDITOR_STATE.loadedFrontScenes = deepClone(FRONT_SCENES_EDITOR_DEFAULT);
+    }
+    
+    if (!isPlainObject(START_EDITOR_STATE.loadedFrontScenes.flow)) {
+        START_EDITOR_STATE.loadedFrontScenes.flow = {};
+    }
+    
+    START_EDITOR_STATE.loadedFrontScenes.flow.initialScene = key;
+    setStartStatus(`Scena iniziale impostata: ${key}`);
+    return true;
+}
+
+function refreshFlowInitialSceneSelect() {
+    const selectNode = el('startFlowInitialScene');
+    if (!selectNode) return;
+    
+    const current = getFlowInitialScene();
+    const keys = getFrontSceneKeysFromState();
+    selectNode.innerHTML = '';
+    
+    keys.forEach((sceneKey) => {
+        const op = document.createElement('option');
+        op.value = sceneKey;
+        op.textContent = sceneKey;
+        selectNode.appendChild(op);
+    });
+    
+    if (current && keys.includes(current)) selectNode.value = current;
+    else if (keys.length) selectNode.value = keys[0];
+}
+
 function stopStartPreviewPlayback() {
     if (START_EDITOR_STATE.previewTimer) {
         clearTimeout(START_EDITOR_STATE.previewTimer);
@@ -3293,8 +3609,8 @@ function updateSelectedStartElementFromInputs() {
     const selected = getSelectedStartElement();
     if (!selected) return;
 
-    selected.x = Math.max(0, parseNumber(el('startElementX')?.value, selected.x));
-    selected.y = Math.max(0, parseNumber(el('startElementY')?.value, selected.y));
+    selected.x = parseNumber(el('startElementX')?.value, selected.x);
+    selected.y = parseNumber(el('startElementY')?.value, selected.y);
     selected.w = Math.max(8, parseNumber(el('startElementW')?.value, selected.w));
     selected.h = Math.max(8, parseNumber(el('startElementH')?.value, selected.h));
     selected.effect = String(el('startElementEffect')?.value || selected.effect || 'none').trim() || 'none';
@@ -3302,6 +3618,10 @@ function updateSelectedStartElementFromInputs() {
     selected.fontSize = Math.max(8, parseNumber(el('startElementFontSize')?.value, selected.fontSize || 24));
     selected.delayMs = Math.max(0, parseNumber(el('startElementDelayMs')?.value, selected.delayMs || 0));
     selected.durationMs = Math.max(0, parseNumber(el('startElementDurationMs')?.value, selected.durationMs || 1000));
+    selected.lifeMs = Math.max(0, parseNumber(el('startElementLifeMs')?.value, selected.lifeMs || 0));
+    selected.showAtMs = Math.max(0, parseNumber(el('startElementShowAtMs')?.value, selected.showAtMs || 0));
+    selected.hideAtMs = Math.max(0, parseNumber(el('startElementHideAtMs')?.value, selected.hideAtMs || 0));
+    selected.hiddenInitially = !!el('startElementHiddenInitially')?.checked;
     selected.text = String(el('startElementText')?.value || selected.text || '').trim();
 
     renderStartAttractStage();
@@ -3313,44 +3633,71 @@ function collectStartConfigFromForm() {
     cfg.startup.enableFrontScenes = !!el('startEnableFrontScenes')?.checked;
     cfg.startup.coinMode = sanitizeStartCoinMode(el('startCoinMode')?.value);
     cfg.startup.initialCredits = Math.max(0, Math.floor(parseNumber(el('startInitialCredits')?.value, 0)));
-    cfg.attractMode.enabled = !!el('startAttractEnabled')?.checked;
+
+    const sceneEnabledNode = el('startFrontSceneEnabled');
+    const replaceDefaultNode = el('startFrontSceneReplaceDefault');
+    cfg.attractMode.enabled = !!sceneEnabledNode?.checked;
     cfg.attractMode.canvas.width = Math.max(320, Math.floor(parseNumber(el('startCanvasWidth')?.value, 800)));
     cfg.attractMode.canvas.height = Math.max(200, Math.floor(parseNumber(el('startCanvasHeight')?.value, 600)));
     cfg.attractMode.elements = (Array.isArray(cfg.attractMode.elements) ? cfg.attractMode.elements : [])
         .map((it, idx) => normalizeStartElement(it, idx))
         .sort((a, b) => a.order - b.order);
     syncStartPluginsFromElements();
-    START_EDITOR_STATE.loadedStart = cfg;
-    return normalizeStartConfig(cfg);
+    START_EDITOR_STATE.loadedStart = normalizeStartConfig(cfg);
+
+    START_EDITOR_STATE.loadedFrontScenes = normalizeFrontScenesConfig(START_EDITOR_STATE.loadedFrontScenes);
+    const currentFront = getCurrentFrontSceneConfig();
+    currentFront.enabled = !!sceneEnabledNode?.checked;
+    currentFront.replaceDefault = !!replaceDefaultNode?.checked;
+    currentFront.canvas = deepClone(cfg.attractMode.canvas);
+    currentFront.elements = deepClone(cfg.attractMode.elements);
+
+    return normalizeStartConfig(START_EDITOR_STATE.loadedStart);
 }
 
 async function loadStartEditor() {
-    const candidates = buildStaticPathCandidates(START_JSON_PATH);
-    let loaded = null;
-    let source = '';
-    let lastError = null;
+    const startCandidates = buildStaticPathCandidates(START_JSON_PATH);
+    let loadedStart = null;
+    let startSource = '';
+    let startErr = null;
 
-    for (const candidate of candidates) {
+    for (const candidate of startCandidates) {
         try {
             const resp = await fetch(candidate, { cache: 'no-store' });
             if (!resp.ok) {
-                lastError = new Error(`HTTP ${resp.status} su ${candidate}`);
+                startErr = new Error(`HTTP ${resp.status} su ${candidate}`);
                 continue;
             }
-            loaded = await resp.json();
-            source = candidate;
+            loadedStart = await resp.json();
+            startSource = candidate;
             break;
         } catch (err) {
-            lastError = err;
+            startErr = err;
         }
     }
 
-    if (!loaded) {
-        loaded = deepClone(START_EDITOR_DEFAULT);
-        source = 'default';
+    if (!loadedStart) {
+        loadedStart = deepClone(START_EDITOR_DEFAULT);
+        startSource = 'default';
     }
 
-    START_EDITOR_STATE.loadedStart = normalizeStartConfig(loaded);
+    const frontCandidates = buildStaticPathCandidates(FRONT_SCENES_JSON_PATH);
+    let loadedFront = null;
+    let frontSource = '';
+    for (const candidate of frontCandidates) {
+        try {
+            const resp = await fetch(candidate, { cache: 'no-store' });
+            if (!resp.ok) continue;
+            loadedFront = await resp.json();
+            frontSource = candidate;
+            break;
+        } catch (_e) {
+            // continue
+        }
+    }
+
+    START_EDITOR_STATE.loadedStart = normalizeStartConfig(loadedStart);
+    START_EDITOR_STATE.loadedFrontScenes = normalizeFrontScenesConfig(loadedFront || FRONT_SCENES_EDITOR_DEFAULT);
 
     try {
         const attractList = await fetchJsonListWithFallback(buildApiUrl('images/attractmode'), 'data/images/images-scenes-attractmode.json');
@@ -3373,29 +3720,51 @@ async function loadStartEditor() {
     }
 
     applyStartFormFromState();
-    if (source === 'default' && lastError) {
-        setStartStatus(`start.json non trovato: uso default (${lastError.message}).`, true);
-    } else {
-        setStartStatus(`Configurazione start caricata da ${source}.`);
+
+    if (startSource === 'default' && startErr) {
+        setStartStatus(`start.json non trovato: uso default (${startErr.message}).`, true);
+        return;
     }
+
+    if (!frontSource) {
+        setStartStatus(`Configurazione caricata da ${startSource}. front-scenes.json non trovato: uso default scene.`);
+        return;
+    }
+
+    setStartStatus(`Configurazione caricata: start=${startSource}, front-scenes=${frontSource}.`);
 }
 
 async function saveStartEditor() {
     try {
-        const payload = collectStartConfigFromForm();
-        const resp = await fetch(buildApiUrl('start'), {
+        const startPayload = collectStartConfigFromForm();
+        syncCurrentFrontSceneFromStartAttractMode();
+        const frontPayload = normalizeFrontScenesConfig(START_EDITOR_STATE.loadedFrontScenes);
+
+        const startResp = await fetch(buildApiUrl('start'), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
+            body: JSON.stringify(startPayload)
         });
-        const body = await resp.json().catch(() => ({}));
-        if (!resp.ok || body.ok === false) {
-            throw new Error(body.error || `HTTP ${resp.status}`);
+        const startBody = await startResp.json().catch(() => ({}));
+        if (!startResp.ok || startBody.ok === false) {
+            throw new Error(startBody.error || `HTTP ${startResp.status}`);
         }
-        const backupFile = body.backupFile ? ` Backup: ${body.backupFile}` : '';
-        setStartStatus(`start.json salvato.${backupFile}`);
+
+        const frontResp = await fetch(buildApiUrl('front-scenes'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(frontPayload)
+        });
+        const frontBody = await frontResp.json().catch(() => ({}));
+        if (!frontResp.ok || frontBody.ok === false) {
+            throw new Error(frontBody.error || `HTTP ${frontResp.status}`);
+        }
+
+        const startBackup = startBody.backupFile ? ` startBackup=${startBody.backupFile}` : '';
+        const frontBackup = frontBody.backupFile ? ` frontBackup=${frontBody.backupFile}` : '';
+        setStartStatus(`start.json + front-scenes.json salvati.${startBackup}${frontBackup}`);
     } catch (e) {
-        setStartStatus(`Errore salvataggio start.json: ${e.message}`, true);
+        setStartStatus(`Errore salvataggio scene frontend: ${e.message}`, true);
     }
 }
 
@@ -3416,14 +3785,18 @@ function bindStartEditorInteractions() {
 
         const nextX = drag.baseX + (ev.clientX - drag.startX);
         const nextY = drag.baseY + (ev.clientY - drag.startY);
+        const minX = -canvasW;
+        const minY = -canvasH;
+        const maxX = canvasW * 2;
+        const maxY = canvasH * 2;
         if (drag.mode === 'resize') {
             const nextW = drag.baseW + (ev.clientX - drag.startX);
             const nextH = drag.baseH + (ev.clientY - drag.startY);
             selected.w = clamp(Math.round(nextW), 8, Math.max(8, canvasW - selected.x));
             selected.h = clamp(Math.round(nextH), 8, Math.max(8, canvasH - selected.y));
         } else {
-            selected.x = clamp(Math.round(nextX), 0, Math.max(0, canvasW - selected.w));
-            selected.y = clamp(Math.round(nextY), 0, Math.max(0, canvasH - selected.h));
+            selected.x = clamp(Math.round(nextX), minX, maxX);
+            selected.y = clamp(Math.round(nextY), minY, maxY);
         }
 
         renderStartAttractStage();
@@ -6901,10 +7274,50 @@ function bindUI() {
         });
     }
 
-    const startAttractEnabled = el('startAttractEnabled');
-    if (startAttractEnabled) {
-        startAttractEnabled.addEventListener('change', () => {
+    const startFrontSceneEnabled = el('startFrontSceneEnabled');
+    if (startFrontSceneEnabled) {
+        startFrontSceneEnabled.addEventListener('change', () => {
             collectStartConfigFromForm();
+        });
+    }
+
+    const startFrontSceneReplaceDefault = el('startFrontSceneReplaceDefault');
+    if (startFrontSceneReplaceDefault) {
+        startFrontSceneReplaceDefault.addEventListener('change', () => {
+            collectStartConfigFromForm();
+        });
+    }
+
+    const startFrontSceneKey = el('startFrontSceneKey');
+    if (startFrontSceneKey) {
+        startFrontSceneKey.addEventListener('change', () => {
+            START_EDITOR_STATE.currentFrontSceneKey = String(startFrontSceneKey.value || '').trim() || 'AttractScene';
+            START_EDITOR_STATE.selectedElementId = null;
+            applyStartFormFromState();
+        });
+    }
+
+    const startAddFrontSceneBtn = el('startAddFrontSceneBtn');
+    if (startAddFrontSceneBtn) {
+        startAddFrontSceneBtn.addEventListener('click', () => addStartFrontScene());
+    }
+
+    const startDeleteFrontSceneBtn = el('startDeleteFrontSceneBtn');
+    if (startDeleteFrontSceneBtn) {
+        startDeleteFrontSceneBtn.addEventListener('click', () => deleteCurrentFrontScene());
+    }
+
+    const startRenameFrontSceneBtn = el('startRenameFrontSceneBtn');
+    if (startRenameFrontSceneBtn) {
+        startRenameFrontSceneBtn.addEventListener('click', () => renameCurrentFrontScene());
+    }
+
+    const startSetFlowInitialSceneBtn = el('startSetFlowInitialSceneBtn');
+    if (startSetFlowInitialSceneBtn) {
+        startSetFlowInitialSceneBtn.addEventListener('click', () => {
+            const selectNode = el('startFlowInitialScene');
+            const sceneKey = String(selectNode?.value || '').trim();
+            if (sceneKey) setFlowInitialScene(sceneKey);
         });
     }
 
@@ -6954,6 +7367,10 @@ function bindUI() {
         'startElementFontSize',
         'startElementDelayMs',
         'startElementDurationMs',
+        'startElementLifeMs',
+        'startElementShowAtMs',
+        'startElementHideAtMs',
+        'startElementHiddenInitially',
         'startElementText'
     ].forEach((id) => {
         const node = el(id);
@@ -8873,3 +9290,211 @@ LevelEditorScene.prototype.updateSelectedCellInfo = function updateSelectedCellI
     _originalUpdateSelectedCellInfo.call(this);
     fillSelectedTokenEditor(this);
 };
+
+/**
+ * Front Scenes Editor System
+ * Permette di editare il layout delle scene frontend (Attract, Credits, LevelSelect, GameOver)
+ * via drag&drop nel canvas e salvataggio su front-scenes.json
+ */
+
+let frontScenesData = null;
+let frontScenesCurrentScene = 'AttractScene';
+let frontScenesSelectedElement = null;
+
+async function loadFrontScenesData() {
+    try {
+        const resp = await fetch(FRONT_SCENES_JSON_PATH, { cache: 'no-store' });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        frontScenesData = await resp.json();
+        updateFrontScenesUI();
+        updateFrontScenesStatus('Front-scenes caricato ✓');
+    } catch (err) {
+        updateFrontScenesStatus(`Errore caricamento: ${err.message}`);
+        frontScenesData = { scenes: {} };
+    }
+}
+
+async function saveFrontScenesData() {
+    if (!frontScenesData) {
+        updateFrontScenesStatus('Nessun dato da salvare');
+        return;
+    }
+    try {
+        const resp = await fetch('api/save-file', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ file: FRONT_SCENES_JSON_PATH, data: frontScenesData })
+        });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        updateFrontScenesStatus('Front-scenes salvato ✓');
+    } catch (err) {
+        updateFrontScenesStatus(`Errore salvataggio: ${err.message}`);
+    }
+}
+
+function updateFrontScenesUI() {
+    const sceneList = el('fsSceneButtons');
+    if (!sceneList || !frontScenesData) return;
+    sceneList.innerHTML = '';
+
+    if (!isPlainObject(frontScenesData.scenes)) {
+        frontScenesData.scenes = {};
+    }
+    const sceneNames = Object.keys(frontScenesData.scenes)
+        .map((k) => String(k || '').trim())
+        .filter(Boolean)
+        .sort((a, b) => a.localeCompare(b, 'it'));
+
+    if (!sceneNames.length) {
+        const empty = document.createElement('div');
+        empty.style.fontSize = '10px';
+        empty.style.color = '#88aacc';
+        empty.textContent = 'Nessuna scena: creane una nuova.';
+        sceneList.appendChild(empty);
+        return;
+    }
+
+    if (!sceneNames.includes(frontScenesCurrentScene)) {
+        frontScenesCurrentScene = sceneNames[0];
+    }
+
+    sceneNames.forEach((sceneName) => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.textContent = sceneName.replace('Scene', '');
+        btn.style.padding = '8px';
+        btn.style.marginBottom = '4px';
+        btn.style.background = frontScenesCurrentScene === sceneName ? '#2f5a9d' : '#1a3555';
+        btn.style.border = '1px solid #4fa3ff';
+        btn.style.color = '#a8d8ff';
+        btn.style.cursor = 'pointer';
+        btn.addEventListener('click', () => {
+            frontScenesCurrentScene = sceneName;
+            updateFrontScenesUI();
+            renderFrontSceneCanvas();
+        });
+        sceneList.appendChild(btn);
+    });
+}
+
+function addFrontSceneFromModal() {
+    if (!frontScenesData || !isPlainObject(frontScenesData)) frontScenesData = { scenes: {} };
+    if (!isPlainObject(frontScenesData.scenes)) frontScenesData.scenes = {};
+
+    const inputNode = el('fsNewSceneName');
+    const raw = String(inputNode?.value || '').trim();
+    const key = sanitizeFrontSceneKey(raw);
+    if (!key) {
+        updateFrontScenesStatus('Nome scena non valido.');
+        return;
+    }
+    if (!/Scene$/i.test(key)) {
+        updateFrontScenesStatus('Il nome scena deve finire con "Scene".');
+        return;
+    }
+
+    if (!isPlainObject(frontScenesData.scenes[key])) {
+        frontScenesData.scenes[key] = deepClone(FRONT_SCENE_DEFAULT_ENTRY);
+    }
+    frontScenesCurrentScene = key;
+    if (inputNode) inputNode.value = '';
+    updateFrontScenesUI();
+    renderFrontSceneCanvas();
+    updateFrontScenesStatus(`Scena creata: ${key}`);
+}
+
+function renderFrontSceneCanvas() {
+    const canvas = el('fsPreviewCanvas');
+    if (!canvas || !frontScenesData) return;
+    
+    const sceneConfig = frontScenesData.scenes?.[frontScenesCurrentScene];
+    if (!sceneConfig) return;
+    
+    const w = Number(sceneConfig.canvas?.width) || 800;
+    const h = Number(sceneConfig.canvas?.height) || 600;
+    canvas.width = canvas.offsetWidth || w;
+    canvas.height = canvas.offsetHeight || h;
+    
+    const ctx = canvas.getContext('2d');
+    const scaleX = canvas.width / w;
+    const scaleY = canvas.height / h;
+    
+    ctx.fillStyle = '#0a1631';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.strokeStyle = '#2a5a9d';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(0, 0, canvas.width, canvas.height);
+    
+    // Renderizza elementi
+    if (Array.isArray(sceneConfig.elements)) {
+        sceneConfig.elements.forEach((elem, idx) => {
+            const x = Number(elem.x || 0) * scaleX;
+            const y = Number(elem.y || 0) * scaleY;
+            const w = Math.max(4, Number(elem.w || 50) * scaleX);
+            const h = Math.max(4, Number(elem.h || 50) * scaleY);
+            
+            ctx.fillStyle = frontScenesSelectedElement === idx ? '#4fa3ff' : '#234268';
+            ctx.fillRect(x, y, w, h);
+            ctx.strokeStyle = frontScenesSelectedElement === idx ? '#a8d8ff' : '#6493c0';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(x, y, w, h);
+            
+            ctx.fillStyle = '#a8d8ff';
+            ctx.font = '10px Arial';
+            ctx.fillText(elem.type || 'element', x + 4, y + 14);
+        });
+    }
+}
+
+function updateFrontScenesStatus(msg) {
+    const status = el('fsStatusText');
+    if (status) status.textContent = msg;
+}
+
+const openFrontScenesEditorBtn = el('openFrontScenesEditorBtn');
+const frontScenesEditorModal = el('frontScenesEditorModal');
+const fsEditorLoadBtn = el('fsEditorLoadBtn');
+const fsEditorSaveBtn = el('fsEditorSaveBtn');
+const fsEditorCloseBtn = el('fsEditorCloseBtn');
+const fsAddSceneBtn = el('fsAddSceneBtn');
+
+if (openFrontScenesEditorBtn) {
+    openFrontScenesEditorBtn.addEventListener('click', async () => {
+        if (frontScenesEditorModal) {
+            frontScenesEditorModal.classList.add('open');
+            await loadFrontScenesData();
+        }
+    });
+}
+
+if (fsEditorCloseBtn) {
+    fsEditorCloseBtn.addEventListener('click', () => {
+        if (frontScenesEditorModal) frontScenesEditorModal.classList.remove('open');
+    });
+}
+
+if (fsEditorLoadBtn) {
+    fsEditorLoadBtn.addEventListener('click', async () => {
+        await loadFrontScenesData();
+    });
+}
+
+if (fsEditorSaveBtn) {
+    fsEditorSaveBtn.addEventListener('click', async () => {
+        await saveFrontScenesData();
+    });
+}
+
+if (fsAddSceneBtn) {
+    fsAddSceneBtn.addEventListener('click', () => {
+        addFrontSceneFromModal();
+    });
+}
+
+if (frontScenesEditorModal) {
+    frontScenesEditorModal.addEventListener('click', (ev) => {
+        if (ev.target === frontScenesEditorModal) {
+            frontScenesEditorModal.classList.remove('open');
+        }
+    });
+}

@@ -1,74 +1,34 @@
+/**
+ * Crea la classe scena LevelSelect per la selezione livelli.
+ * @param {Record<string, any>} deps Dipendenze runtime condivise.
+ * @returns {typeof Phaser.Scene} Classe scena LevelSelect.
+ */
 export function createLevelSelectSceneClass(deps) {
     const {
         createAddCredit,
-        createCreditsManager,
-        createLanguageCarousel,
-        applyConfiguredAttractLayout,
-        applyConfiguredAttractPlugins,
-        applyStartupSettings,
-        Boolean,
-        clearInterval,
-        clearRuntimeMatchStorage,
-        clearTimeout,
-        CONFIG,
-        console,
-        Date,
-        defaultFrame,
-        document,
-        drawTextPanel,
-        EFFECT_LIBRARY,
         GAME_FONT,
         GAME_STATE,
-        getLevelFileName,
-        getLevelMasterNumber,
-        getTextureMaxNumericFrame,
-        HUD_DEPTH,
-        isFinite,
-        isFreePlayMode,
-        isFrontScenesEnabled,
-        isNaN,
-        JSON,
-        LEVEL_CONFIG,
-        loadTranslations,
-        loadEffectDefinitionFromScript,
-        Math,
-        mergeLocalConfig,
-        normalizeEffectKey,
-        normalizeStartupElement,
-        normalizeStartupSettings,
-        Number,
-        OBJECT_NATIVE_SIZE,
-        OBJECT_FRAMES,
-        parseEffectLibraryManifestEntries,
-        parseExitTargetLevel,
-        parseFloat,
-        parseInt,
         Phaser,
-        playConfiguredAttractElementTween,
-        playLoopAudioSafely,
-        Promise,
-        registerEffectLibraryDefinition,
-        resetGameStateForNewRun,
-        resolveContactSpec,
-        setInterval,
-        setTimeout,
-        STARTUP_DEFAULTS,
-        STARTUP_SETTINGS,
-        String,
-        TILE_NATIVE_HEIGHT,
-        TILE_NATIVE_WIDTH,
-        TILE_FRAMES,
-        toEffectImportPath,
+        CONFIG,
+        applyConfiguredFrontSceneLayout,
+        playConfiguredFrontSceneTimeline,
+        resolveConfiguredFrontSceneTarget,
+        resolveFrontSceneConfig,
         TRANSLATIONS,
-        WALL_TILE_COLS,
-        window,
     } = deps;
 
     class LevelSelectScene extends Phaser.Scene {
+        /**
+         * Inizializza la scena selezione livelli.
+         */
         constructor() {
             super('LevelSelectScene');
         }
     
+        /**
+         * Crea pulsanti e logica selezione livello.
+         * @returns {void}
+         */
         create() {
             const t = TRANSLATIONS[GAME_STATE.language];
     
@@ -102,6 +62,12 @@ export function createLevelSelectSceneClass(deps) {
                 if (this.sound) {
                     this.sound.play('select_sfx', { volume: 0.4 });
                 }
+            };
+            this.startConfiguredGameScene = () => {
+                const next = (typeof resolveConfiguredFrontSceneTarget === 'function')
+                    ? resolveConfiguredFrontSceneTarget('LevelSelectScene', 'onStart', 'GameScene')
+                    : 'GameScene';
+                this.scene.start(next || 'GameScene');
             };
     
             // Helper to change selection (wrap-around)
@@ -157,7 +123,7 @@ export function createLevelSelectSceneClass(deps) {
                 text.on('pointerdown', () => {
                     this.playSelectSfx();
                     GAME_STATE.difficulty = diff.mult;
-                    this.scene.start('GameScene');
+                    this.startConfiguredGameScene();
                 });
     
                 this.diffTexts.push(text);
@@ -176,13 +142,13 @@ export function createLevelSelectSceneClass(deps) {
                 this.playSelectSfx();
                 const diff = this.difficulties[this.selectedIndex];
                 GAME_STATE.difficulty = diff.mult;
-                this.scene.start('GameScene');
+                this.startConfiguredGameScene();
             });
             this.input.keyboard.on('keydown-SPACE', () => {
                 this.playSelectSfx();
                 const diff = this.difficulties[this.selectedIndex];
                 GAME_STATE.difficulty = diff.mult;
-                this.scene.start('GameScene');
+                this.startConfiguredGameScene();
             });
     
             // Keep numeric shortcuts (also update selection visuals before starting)
@@ -191,22 +157,30 @@ export function createLevelSelectSceneClass(deps) {
                 this.selectedIndex = 0;
                 this.updateSelection();
                 GAME_STATE.difficulty = this.difficulties[0].mult;
-                this.scene.start('GameScene');
+                this.startConfiguredGameScene();
             });
             this.input.keyboard.on('keydown-TWO', () => {
                 this.playSelectSfx();
                 this.selectedIndex = 1;
                 this.updateSelection();
                 GAME_STATE.difficulty = this.difficulties[1].mult;
-                this.scene.start('GameScene');
+                this.startConfiguredGameScene();
             });
             this.input.keyboard.on('keydown-THREE', () => {
                 this.playSelectSfx();
                 this.selectedIndex = 2;
                 this.updateSelection();
                 GAME_STATE.difficulty = this.difficulties[2].mult;
-                this.scene.start('GameScene');
+                this.startConfiguredGameScene();
             });
+
+            try {
+                applyConfiguredFrontSceneLayout(this, 'LevelSelectScene', { t, state: GAME_STATE, config: CONFIG, runtime: { selectedDifficultyIndex: this.selectedIndex } });
+                const frontCfg = resolveFrontSceneConfig('LevelSelectScene');
+                if (frontCfg.enabled) {
+                    playConfiguredFrontSceneTimeline(this, 'LevelSelectScene');
+                }
+            } catch (e) { }
         }
     }
 

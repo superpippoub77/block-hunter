@@ -1,0 +1,18 @@
+{
+  "logicModule": "module/logic/block-hunter.logic.js",
+  "paths": {
+    "config": "data/config.json",
+    "startup": "data/start.json",
+    "frontScenes": "data/front-scenes.json",
+    "constants": "data/constants.json",
+    "topScoresApi": "/api/top-scores",
+    "topScores": "data/topScores.json",
+    "manifests": {
+      "imagesGameBackground": "data/images/images-scenes-game-background.json",
+      "imagesGameForeground": "data/images/images-scenes-game-foreground.json",
+      "imagesAttractMode": "data/images/images-scenes-attractmode.json",
+      "musicGame": "data/music/music-scenes-game.json",
+      "musicAttractMode": "data/music/music-scenes-attractmode.json"
+    }
+  }
+}

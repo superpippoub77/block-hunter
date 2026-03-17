@@ -1,75 +1,36 @@
+/**
+ * Crea la classe scena TopTen per la classifica punteggi.
+ * @param {Record<string, any>} deps Dipendenze runtime condivise.
+ * @returns {typeof Phaser.Scene} Classe scena TopTen.
+ */
 export function createTopTenSceneClass(deps) {
     const {
-        createAddCredit,
-        createCreditsManager,
-        createLanguageCarousel,
-        applyConfiguredAttractLayout,
-        applyConfiguredAttractPlugins,
-        applyStartupSettings,
-        Boolean,
-        clearInterval,
-        clearRuntimeMatchStorage,
-        clearTimeout,
         CONFIG,
-        console,
-        Date,
-        defaultFrame,
-        document,
         drawTextPanel,
-        EFFECT_LIBRARY,
         GAME_FONT,
         GAME_STATE,
-        getLevelFileName,
-        getLevelMasterNumber,
-        getTextureMaxNumericFrame,
-        HUD_DEPTH,
-        isFinite,
-        isFreePlayMode,
-        isFrontScenesEnabled,
-        isNaN,
-        JSON,
-        LEVEL_CONFIG,
         loadTranslations,
-        loadEffectDefinitionFromScript,
-        Math,
-        mergeLocalConfig,
-        normalizeEffectKey,
-        normalizeStartupElement,
-        normalizeStartupSettings,
         Number,
-        OBJECT_NATIVE_SIZE,
-        OBJECT_FRAMES,
-        parseEffectLibraryManifestEntries,
-        parseExitTargetLevel,
-        parseFloat,
-        parseInt,
         Phaser,
+        resolveConfiguredFrontSceneTarget,
         SharedFrontendScene,
-        playConfiguredAttractElementTween,
-        playLoopAudioSafely,
-        Promise,
-        registerEffectLibraryDefinition,
         resetGameStateForNewRun,
-        resolveContactSpec,
-        setInterval,
-        setTimeout,
-        STARTUP_DEFAULTS,
-        STARTUP_SETTINGS,
         String,
-        TILE_NATIVE_HEIGHT,
-        TILE_NATIVE_WIDTH,
-        TILE_FRAMES,
-        toEffectImportPath,
         TRANSLATIONS,
-        WALL_TILE_COLS,
-        window,
     } = deps;
 
     class TopTenScene extends SharedFrontendScene {
+        /**
+         * Inizializza la scena classifica top ten.
+         */
         constructor() {
             super('TopTenScene');
         }
     
+        /**
+         * Crea tabella punteggi e componenti UI.
+         * @returns {void}
+         */
         create() {
             const t = TRANSLATIONS[GAME_STATE.language] || {};
     
@@ -187,7 +148,10 @@ export function createTopTenSceneClass(deps) {
             });
     
             this.time.delayedCall(CONFIG.topTenTimeout, () => {
-                this.scene.start('CreditsScene');
+                const next = (typeof resolveConfiguredFrontSceneTarget === 'function')
+                    ? resolveConfiguredFrontSceneTarget('TopTenScene', 'onTimeout', 'CreditsScene')
+                    : 'CreditsScene';
+                this.scene.start(next || 'CreditsScene');
             });
     
             this.initializeSharedFrontState();
@@ -217,6 +181,10 @@ export function createTopTenSceneClass(deps) {
             }
         }
     
+        /**
+         * Registra input utente nella scena classifica.
+         * @returns {void}
+         */
         setupInput() {
             this.bindSharedFrontKeys({
                 onCoinAccepted: () => {
@@ -225,13 +193,25 @@ export function createTopTenSceneClass(deps) {
                 onPlayerStart: (players) => {
                     const requestedPlayers = Number(players) === 2 ? 2 : 1;
                     resetGameStateForNewRun(requestedPlayers);
-                    this.scene.start('LevelSelectScene');
+                    const next = (typeof resolveConfiguredFrontSceneTarget === 'function')
+                        ? resolveConfiguredFrontSceneTarget('TopTenScene', 'onStart', 'LevelSelectScene')
+                        : 'LevelSelectScene';
+                    this.scene.start(next || 'LevelSelectScene');
                 },
                 onLanguageChanged: () => this.updateUI(),
-                onUnhandledKey: () => this.scene.start('AttractScene')
+                onUnhandledKey: () => {
+                    const next = (typeof resolveConfiguredFrontSceneTarget === 'function')
+                        ? resolveConfiguredFrontSceneTarget('TopTenScene', 'onUnhandledKey', 'AttractScene')
+                        : 'AttractScene';
+                    this.scene.start(next || 'AttractScene');
+                }
             });
         }
     
+        /**
+         * Aggiorna UI classifica (punteggi/lingua/testi).
+         * @returns {void}
+         */
         updateUI() {
             const t = TRANSLATIONS[GAME_STATE.language] || {};
             if (this.topTitleText) this.topTitleText.setText(t.topTen || 'CLASSIFICA');

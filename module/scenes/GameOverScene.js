@@ -1,74 +1,38 @@
+/**
+ * Crea la classe scena GameOver gestendo fine partita e restart flow.
+ * @param {Record<string, any>} deps Dipendenze runtime condivise.
+ * @returns {typeof Phaser.Scene} Classe scena GameOver.
+ */
 export function createGameOverSceneClass(deps) {
     const {
-        createAddCredit,
-        createCreditsManager,
-        createLanguageCarousel,
-        applyConfiguredAttractLayout,
-        applyConfiguredAttractPlugins,
-        applyStartupSettings,
         Boolean,
-        clearInterval,
-        clearRuntimeMatchStorage,
-        clearTimeout,
         CONFIG,
-        console,
-        Date,
-        defaultFrame,
-        document,
-        drawTextPanel,
-        EFFECT_LIBRARY,
         GAME_FONT,
         GAME_STATE,
-        getLevelFileName,
-        getLevelMasterNumber,
-        getTextureMaxNumericFrame,
-        HUD_DEPTH,
-        isFinite,
-        isFreePlayMode,
-        isFrontScenesEnabled,
-        isNaN,
         JSON,
-        LEVEL_CONFIG,
-        loadTranslations,
-        loadEffectDefinitionFromScript,
         Math,
-        mergeLocalConfig,
-        normalizeEffectKey,
-        normalizeStartupElement,
-        normalizeStartupSettings,
         Number,
-        OBJECT_NATIVE_SIZE,
-        OBJECT_FRAMES,
-        parseEffectLibraryManifestEntries,
-        parseExitTargetLevel,
-        parseFloat,
-        parseInt,
         Phaser,
-        playConfiguredAttractElementTween,
-        playLoopAudioSafely,
-        Promise,
-        registerEffectLibraryDefinition,
-        resetGameStateForNewRun,
-        resolveContactSpec,
-        setInterval,
-        setTimeout,
-        STARTUP_DEFAULTS,
-        STARTUP_SETTINGS,
         String,
-        TILE_NATIVE_HEIGHT,
-        TILE_NATIVE_WIDTH,
-        TILE_FRAMES,
-        toEffectImportPath,
+        applyConfiguredFrontSceneLayout,
+        playConfiguredFrontSceneTimeline,
+        resolveConfiguredFrontSceneTarget,
+        resolveFrontSceneConfig,
         TRANSLATIONS,
-        WALL_TILE_COLS,
-        window,
     } = deps;
 
     class GameOverScene extends Phaser.Scene {
+        /**
+         * Inizializza la scena game over.
+         */
         constructor() {
             super('GameOverScene');
         }
     
+        /**
+         * Crea UI game over e flusso salvataggio punteggio.
+         * @returns {void}
+         */
         create() {
             const t = TRANSLATIONS[GAME_STATE.language] || {};
     
@@ -140,15 +104,34 @@ export function createGameOverSceneClass(deps) {
                 });
             } else {
                 this.time.delayedCall(3000, () => {
-                    this.scene.start('AttractScene');
+                    const next = (typeof resolveConfiguredFrontSceneTarget === 'function')
+                        ? resolveConfiguredFrontSceneTarget('GameOverScene', 'onTimeout', 'AttractScene')
+                        : 'AttractScene';
+                    this.scene.start(next || 'AttractScene');
                 });
             }
+
+            try {
+                applyConfiguredFrontSceneLayout(this, 'GameOverScene', { t, state: GAME_STATE, config: CONFIG });
+                const frontCfg = resolveFrontSceneConfig('GameOverScene');
+                if (frontCfg.enabled) {
+                    playConfiguredFrontSceneTimeline(this, 'GameOverScene');
+                }
+            } catch (e) { }
         }
     
+        /**
+         * Aggiorna il rendering del nome inserito.
+         * @returns {void}
+         */
         updateNameDisplay() {
             if (this.nameText) this.nameText.setText(this._formatNameDisplay());
         }
     
+        /**
+         * Salva il punteggio attuale nella classifica.
+         * @returns {void}
+         */
         saveScore() {
             // build final name from nameChars, pad with 'A' if needed
             const name = (this.nameChars || ['A','A','A']).slice(0,3).map((c) => (typeof c === 'string' && c.length ? c[0] : 'A')).join('').toUpperCase();
@@ -183,9 +166,16 @@ export function createGameOverSceneClass(deps) {
             } catch (e) { /* ignore */ }
             try { if (this._nameTimeout) this._nameTimeout.remove(false); } catch (e) { }
     
-            this.scene.start('TopTenScene');
+            const next = (typeof resolveConfiguredFrontSceneTarget === 'function')
+                ? resolveConfiguredFrontSceneTarget('GameOverScene', 'onComplete', 'TopTenScene')
+                : 'TopTenScene';
+            this.scene.start(next || 'TopTenScene');
         }
     
+        /**
+         * Format helper per visualizzare il nome con cursore.
+         * @returns {string}
+         */
         _formatNameDisplay() {
             const chars = (this.nameChars || ['A','A','A']).slice(0, 3).map((c) => (typeof c === 'string' && c.length ? c[0] : 'A').toUpperCase());
             return chars.map((ch, i) => {
@@ -195,6 +185,11 @@ export function createGameOverSceneClass(deps) {
             }).join(' ');
         }
     
+        /**
+         * Scorre lettera corrente avanti/indietro.
+         * @param {number} delta Variazione indice lettera.
+         * @returns {void}
+         */
         _cycleLetter(delta) {
             try {
                 if (!this.nameChars) this.nameChars = ['A', 'A', 'A'];
@@ -208,6 +203,10 @@ export function createGameOverSceneClass(deps) {
             } catch (e) { /* ignore */ }
         }
     
+        /**
+         * Conferma lettera corrente del nome.
+         * @returns {void}
+         */
         _confirmLetter() {
             try {
                 if (!this.confirmed) this.confirmed = [false, false, false];
@@ -230,6 +229,10 @@ export function createGameOverSceneClass(deps) {
             } catch (e) { /* ignore */ }
         }
     
+        /**
+         * Torna alla lettera precedente del nome.
+         * @returns {void}
+         */
         _goBackLetter() {
             try {
                 if (!this.confirmed) this.confirmed = [false, false, false];

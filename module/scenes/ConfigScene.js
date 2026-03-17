@@ -1,74 +1,33 @@
+/**
+ * Crea la classe scena Config per opzioni di gioco e setup runtime.
+ * @param {Record<string, any>} deps Dipendenze runtime condivise.
+ * @returns {typeof Phaser.Scene} Classe scena Config.
+ */
 export function createConfigSceneClass(deps) {
     const {
-        createAddCredit,
-        createCreditsManager,
-        createLanguageCarousel,
-        applyConfiguredAttractLayout,
-        applyConfiguredAttractPlugins,
-        applyStartupSettings,
-        Boolean,
-        clearInterval,
-        clearRuntimeMatchStorage,
-        clearTimeout,
         CONFIG,
-        console,
-        Date,
-        defaultFrame,
-        document,
-        drawTextPanel,
-        EFFECT_LIBRARY,
         GAME_FONT,
-        GAME_STATE,
-        getLevelFileName,
-        getLevelMasterNumber,
-        getTextureMaxNumericFrame,
-        HUD_DEPTH,
-        isFinite,
-        isFreePlayMode,
-        isFrontScenesEnabled,
-        isNaN,
         JSON,
-        LEVEL_CONFIG,
-        loadTranslations,
-        loadEffectDefinitionFromScript,
         Math,
-        mergeLocalConfig,
-        normalizeEffectKey,
-        normalizeStartupElement,
-        normalizeStartupSettings,
-        Number,
         OBJECT_NATIVE_SIZE,
-        OBJECT_FRAMES,
-        parseEffectLibraryManifestEntries,
-        parseExitTargetLevel,
-        parseFloat,
-        parseInt,
         Phaser,
-        playConfiguredAttractElementTween,
-        playLoopAudioSafely,
-        Promise,
-        registerEffectLibraryDefinition,
-        resetGameStateForNewRun,
-        resolveContactSpec,
-        setInterval,
-        setTimeout,
-        STARTUP_DEFAULTS,
-        STARTUP_SETTINGS,
+        resolveConfiguredFrontSceneTarget,
         String,
-        TILE_NATIVE_HEIGHT,
         TILE_NATIVE_WIDTH,
-        TILE_FRAMES,
-        toEffectImportPath,
-        TRANSLATIONS,
-        WALL_TILE_COLS,
-        window,
     } = deps;
 
     class ConfigScene extends Phaser.Scene {
+        /**
+         * Inizializza la scena configurazione.
+         */
         constructor() {
             super('ConfigScene');
         }
     
+        /**
+         * Crea interfaccia e controlli della schermata config.
+         * @returns {void}
+         */
         create() {
             // Background
             this.add.rectangle(400, 300, 800, 600, 0x001100);
@@ -299,7 +258,10 @@ export function createConfigSceneClass(deps) {
     
             // Setup input
             this.input.keyboard.on('keydown-ESC', () => {
-                this.scene.start('AttractScene');
+                const next = (typeof resolveConfiguredFrontSceneTarget === 'function')
+                    ? resolveConfiguredFrontSceneTarget('ConfigScene', 'onEsc', 'AttractScene')
+                    : 'AttractScene';
+                this.scene.start(next || 'AttractScene');
             });
     
             // Helper to update preview sprites scaling when CONFIG changes

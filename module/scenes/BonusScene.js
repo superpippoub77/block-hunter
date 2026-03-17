@@ -1,74 +1,39 @@
+/**
+ * Crea la classe scena Bonus con logica minigioco dedicata.
+ * @param {Record<string, any>} deps Dipendenze runtime condivise.
+ * @returns {typeof Phaser.Scene} Classe scena Bonus.
+ */
 export function createBonusSceneClass(deps) {
     const {
-        createAddCredit,
-        createCreditsManager,
-        createLanguageCarousel,
-        applyConfiguredAttractLayout,
-        applyConfiguredAttractPlugins,
-        applyStartupSettings,
-        Boolean,
-        clearInterval,
-        clearRuntimeMatchStorage,
-        clearTimeout,
         CONFIG,
-        console,
-        Date,
-        defaultFrame,
-        document,
-        drawTextPanel,
-        EFFECT_LIBRARY,
         GAME_FONT,
         GAME_STATE,
-        getLevelFileName,
         getLevelMasterNumber,
         getTextureMaxNumericFrame,
-        HUD_DEPTH,
         isFinite,
-        isFreePlayMode,
-        isFrontScenesEnabled,
-        isNaN,
-        JSON,
-        LEVEL_CONFIG,
-        loadTranslations,
-        loadEffectDefinitionFromScript,
         Math,
-        mergeLocalConfig,
-        normalizeEffectKey,
-        normalizeStartupElement,
-        normalizeStartupSettings,
         Number,
         OBJECT_NATIVE_SIZE,
         OBJECT_FRAMES,
-        parseEffectLibraryManifestEntries,
-        parseExitTargetLevel,
-        parseFloat,
-        parseInt,
         Phaser,
-        playConfiguredAttractElementTween,
-        playLoopAudioSafely,
-        Promise,
-        registerEffectLibraryDefinition,
-        resetGameStateForNewRun,
-        resolveContactSpec,
-        setInterval,
-        setTimeout,
-        STARTUP_DEFAULTS,
-        STARTUP_SETTINGS,
         String,
-        TILE_NATIVE_HEIGHT,
-        TILE_NATIVE_WIDTH,
-        TILE_FRAMES,
-        toEffectImportPath,
         TRANSLATIONS,
         WALL_TILE_COLS,
-        window,
     } = deps;
 
     class BonusScene extends Phaser.Scene {
+        /**
+         * Inizializza la scena bonus.
+         */
         constructor() {
             super('BonusScene');
         }
     
+        /**
+         * Riceve i dati di ingresso scena bonus.
+         * @param {object} [data={}] Payload transizione scena.
+         * @returns {void}
+         */
         init(data = {}) {
             this.bonusConfig = data.bonusConfig || {};
             this.bonusLevelName = data.bonusLevelName || this.bonusConfig.name || this.bonusConfig.level || this.bonusConfig.file || this.bonusConfig.nome;
@@ -79,12 +44,20 @@ export function createBonusSceneClass(deps) {
             this.bonusStartScore = Number(GAME_STATE.score) || 0;
         }
     
+        /**
+         * Precarica eventuali asset specifici della scena bonus.
+         * @returns {void}
+         */
         preload() {
             if (this.bonusCacheKey && this.bonusLevelName) {
                 this.load.json(this.bonusCacheKey, `data/level/${this.bonusLevelName}.json`);
             }
         }
     
+        /**
+         * Crea mondo, UI e regole del minigioco bonus.
+         * @returns {void}
+         */
         create() {
             const t = TRANSLATIONS[GAME_STATE.language] || {};
             const bonusData = this.bonusCacheKey ? this.cache.json.get(this.bonusCacheKey) : null;
@@ -439,6 +412,10 @@ export function createBonusSceneClass(deps) {
             this.updateBonusHud();
         }
     
+        /**
+         * Spawna un masso in caduta nel livello bonus.
+         * @returns {void}
+         */
         spawnBonusFallingRock() {
             if (!this.bonusFallingRocks || !this.cart) return;
     
@@ -468,6 +445,11 @@ export function createBonusSceneClass(deps) {
             this.spawnBonusRockTrail(rock);
         }
     
+        /**
+         * Genera scia/particelle del masso bonus in movimento.
+         * @param {any} rock Entita masso.
+         * @returns {void}
+         */
         spawnBonusRockTrail(rock) {
             if (!rock || !rock.active) return;
             const trailEvent = this.time.addEvent({
@@ -506,6 +488,13 @@ export function createBonusSceneClass(deps) {
             }
         }
     
+        /**
+         * Crea un puff visivo in posizione specifica.
+         * @param {number} x Coordinata X.
+         * @param {number} y Coordinata Y.
+         * @param {number} [scale=1] Scala effetto.
+         * @returns {void}
+         */
         createBonusPuff(x, y, scale = 1) {
             for (let i = 0; i < 10; i++) {
                 const puff = this.add.circle(
@@ -529,6 +518,12 @@ export function createBonusSceneClass(deps) {
             }
         }
     
+        /**
+         * Applica un effetto wobble alla traccia bonus vicino a una posizione.
+         * @param {number} x Coordinata X centro effetto.
+         * @param {number} y Coordinata Y centro effetto.
+         * @returns {void}
+         */
         wobbleBonusTrackAt(x, y) {
             const nearbyRails = (this.bonusRailVisuals || []).filter((rail) => {
                 if (!rail || !rail.active) return false;
@@ -550,6 +545,11 @@ export function createBonusSceneClass(deps) {
             }
         }
     
+        /**
+         * Gestisce l'atterraggio di un masso bonus.
+         * @param {any} rock Entita masso.
+         * @returns {void}
+         */
         onBonusRockLanded(rock) {
             if (!rock || !rock.active) return;
             if (rock.getData('landed')) return;
@@ -569,6 +569,11 @@ export function createBonusSceneClass(deps) {
             });
         }
     
+        /**
+         * Distrugge in sicurezza un masso bonus.
+         * @param {any} rock Entita da distruggere.
+         * @returns {void}
+         */
         destroyBonusRock(rock) {
             if (!rock || !rock.active) return;
             this.createBonusPuff(rock.x, rock.y, 1);
@@ -576,6 +581,10 @@ export function createBonusSceneClass(deps) {
             rock.destroy();
         }
     
+        /**
+         * Spara dinamite nel minigioco bonus.
+         * @returns {void}
+         */
         shootBonusDynamite() {
             if (!this.cart || !this.cart.active || this.isBonusTransitioning) return;
             const now = this.time?.now || 0;
@@ -601,6 +610,10 @@ export function createBonusSceneClass(deps) {
             });
         }
     
+        /**
+         * Aggiorna HUD della scena bonus.
+         * @returns {void}
+         */
         updateBonusHud() {
             if (!this.bonusHud || !this.bonusHud.active) return;
             const scoreDelta = (Number(GAME_STATE.score) || 0) - (Number(this.bonusStartScore) || 0);
@@ -608,6 +621,11 @@ export function createBonusSceneClass(deps) {
             this.bonusHud.setText(`BONUS +${scoreDelta}  PEPITE:${this.bonusPepitasCollected}  SPEED:${speedNow}`);
         }
     
+        /**
+         * Mostra messaggio finale bonus e rientra alla scena principale.
+         * @param {string} message Messaggio da mostrare.
+         * @returns {void}
+         */
         showBonusMessageAndReturn(message) {
             this.add.text(CONFIG.width / 2, CONFIG.height / 2, message, {
                 fontSize: '18px',
@@ -624,6 +642,10 @@ export function createBonusSceneClass(deps) {
             });
         }
     
+        /**
+         * Conclude il bonus con esito positivo.
+         * @returns {void}
+         */
         completeBonus() {
             if (this.isBonusTransitioning) return;
             this.isBonusTransitioning = true;
@@ -645,6 +667,10 @@ export function createBonusSceneClass(deps) {
             });
         }
     
+        /**
+         * Conclude il bonus con fallimento.
+         * @returns {void}
+         */
         failBonus() {
             if (this.isBonusTransitioning) return;
             this.isBonusTransitioning = true;
@@ -669,6 +695,12 @@ export function createBonusSceneClass(deps) {
             });
         }
     
+        /**
+         * Loop update della scena bonus.
+         * @param {number} time Timestamp corrente.
+         * @param {number} delta Delta ms frame.
+         * @returns {void}
+         */
         update(time, delta) {
             if (!this.cart || !this.cart.active || this.isBonusTransitioning) return;
     

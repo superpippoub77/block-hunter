@@ -7,7 +7,6 @@
 		"imageSrc": "assets/images/objects/ghost.png",
 		"textureKey": "ghost",
 		"defaultFrame": 0,
-		"contactType": "edge",
 		"dynamic": true,
 		"frameCount": 10,
 		"useOppositeSide": true,
@@ -65,7 +64,6 @@
 		"imageSrc": "assets/images/objects/bat.png",
 		"textureKey": "bat",
 		"defaultFrame": 0,
-		"contactType": "edge",
 		"dynamic": true,
 		"frameCount": 10,
 		"useOppositeSide": true,
@@ -123,7 +121,6 @@
 		"imageSrc": "assets/images/scenes/game/foreground/wall_completed.png",
 		"textureKey": "wall_tiles",
 		"defaultFrame": 1,
-		"contactType": "edge",
 		"dynamic": false,
 		"frameCount": 1,
 		"useOppositeSide": false,
@@ -180,7 +177,6 @@
 		"imageSrc": "assets/images/objects/tiles.png",
 		"textureKey": "tiles",
 		"defaultFrame": 4,
-		"contactType": "edge",
 		"dynamic": false,
 		"frameCount": 1,
 		"useOppositeSide": false,
@@ -215,6 +211,9 @@
 			"fromMapToken": true,
 			"countFromLevelKey": null,
 			"speedFromLevelKeys": []
+		},
+		"collision": {
+			"contactType": "edge"
 		},
 		"action": {
 			"trigger": "enterTile",
@@ -287,7 +286,6 @@
 		"imageSrc": "assets/images/objects/tiles.png",
 		"textureKey": "tiles",
 		"defaultFrame": 3,
-		"contactType": "edge",
 		"dynamic": false,
 		"frameCount": 1,
 		"useOppositeSide": false,
@@ -322,6 +320,9 @@
 			"fromMapToken": true,
 			"countFromLevelKey": null,
 			"speedFromLevelKeys": []
+		},
+		"collision": {
+			"contactType": "edge"
 		},
 		"action": {
 			"trigger": "enterTile",
@@ -380,7 +381,6 @@
 		"imageSrc": "assets/images/objects/tiles.png",
 		"textureKey": "tiles",
 		"defaultFrame": 2,
-		"contactType": "edge",
 		"dynamic": false,
 		"frameCount": 1,
 		"useOppositeSide": false,
@@ -415,6 +415,9 @@
 			"fromMapToken": true,
 			"countFromLevelKey": null,
 			"speedFromLevelKeys": []
+		},
+		"collision": {
+			"contactType": "edge"
 		},
 		"action": {
 			"trigger": "enterTile",
@@ -471,7 +474,6 @@
 		"imageSrc": "assets/images/objects/tiles.png",
 		"textureKey": "tiles",
 		"defaultFrame": 3,
-		"contactType": "edge",
 		"dynamic": false,
 		"frameCount": 1,
 		"useOppositeSide": false,
@@ -507,6 +509,9 @@
 			"countFromLevelKey": null,
 			"speedFromLevelKeys": []
 		},
+		"collision": {
+			"contactType": "edge"
+		},
 		"action": {
 			"trigger": "enterTile",
 			"type": "goToPreviousLevel",
@@ -541,7 +546,6 @@
 		"imageSrc": "assets/images/objects/obj_game.png",
 		"textureKey": "objects",
 		"defaultFrame": 14,
-		"contactType": "center-front",
 		"dynamic": false,
 		"frameCount": 1,
 		"useOppositeSide": false,
@@ -594,7 +598,6 @@
 		"imageSrc": "assets/images/objects/obj_game.png",
 		"textureKey": "objects",
 		"defaultFrame": 5,
-		"contactType": "edge",
 		"dynamic": false,
 		"frameCount": 1,
 		"useOppositeSide": false,
@@ -704,7 +707,6 @@
 		"imageSrc": "assets/images/objects/obj_game.png",
 		"textureKey": "objects",
 		"defaultFrame": 8,
-		"contactType": "edge",
 		"dynamic": false,
 		"frameCount": 1,
 		"useOppositeSide": false,
@@ -739,6 +741,9 @@
 			"fromMapToken": true,
 			"countFromLevelKey": null,
 			"speedFromLevelKeys": []
+		},
+		"collision": {
+			"contactType": "edge"
 		},
 		"action": {
 			"trigger": "collect",
@@ -812,7 +817,6 @@
 		"imageSrc": "assets/images/objects/obj_game.png",
 		"textureKey": "objects",
 		"defaultFrame": 10,
-		"contactType": "edge",
 		"dynamic": false,
 		"frameCount": 1,
 		"useOppositeSide": false,
@@ -847,6 +851,9 @@
 			"fromMapToken": true,
 			"countFromLevelKey": null,
 			"speedFromLevelKeys": []
+		},
+		"collision": {
+			"contactType": "edge"
 		},
 		"action": {
 			"trigger": "collect",
@@ -921,7 +928,6 @@
 		"imageSrc": "assets/images/objects/obj_game.png",
 		"textureKey": "objects",
 		"defaultFrame": 4,
-		"contactType": "edge",
 		"dynamic": false,
 		"frameCount": 1,
 		"useOppositeSide": false,
@@ -956,6 +962,9 @@
 			"fromMapToken": true,
 			"countFromLevelKey": null,
 			"speedFromLevelKeys": []
+		},
+		"collision": {
+			"contactType": "edge"
 		},
 		"pickup": {
 			"dynamiteDelta": 50,

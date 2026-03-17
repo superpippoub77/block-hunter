@@ -1,75 +1,35 @@
+/**
+ * Crea la classe scena Credits con dependency injection dal core.
+ * @param {Record<string, any>} deps Dipendenze runtime condivise.
+ * @returns {typeof Phaser.Scene} Classe scena Credits.
+ */
 export function createCreditsSceneClass(deps) {
     const {
-        createAddCredit,
-        createCreditsManager,
-        createLanguageCarousel,
-        applyConfiguredAttractLayout,
-        applyConfiguredAttractPlugins,
-        applyStartupSettings,
-        Boolean,
-        clearInterval,
-        clearRuntimeMatchStorage,
-        clearTimeout,
         CONFIG,
-        console,
-        Date,
-        defaultFrame,
-        document,
         drawTextPanel,
-        EFFECT_LIBRARY,
         GAME_FONT,
         GAME_STATE,
-        getLevelFileName,
-        getLevelMasterNumber,
-        getTextureMaxNumericFrame,
-        HUD_DEPTH,
-        isFinite,
-        isFreePlayMode,
-        isFrontScenesEnabled,
-        isNaN,
-        JSON,
-        LEVEL_CONFIG,
-        loadTranslations,
-        loadEffectDefinitionFromScript,
-        Math,
-        mergeLocalConfig,
-        normalizeEffectKey,
-        normalizeStartupElement,
-        normalizeStartupSettings,
-        Number,
-        OBJECT_NATIVE_SIZE,
-        OBJECT_FRAMES,
-        parseEffectLibraryManifestEntries,
-        parseExitTargetLevel,
-        parseFloat,
-        parseInt,
-        Phaser,
         SharedFrontendScene,
-        playConfiguredAttractElementTween,
-        playLoopAudioSafely,
-        Promise,
-        registerEffectLibraryDefinition,
+        applyConfiguredFrontSceneLayout,
+        playConfiguredFrontSceneTimeline,
+        resolveConfiguredFrontSceneTarget,
+        resolveFrontSceneConfig,
         resetGameStateForNewRun,
-        resolveContactSpec,
-        setInterval,
-        setTimeout,
-        STARTUP_DEFAULTS,
-        STARTUP_SETTINGS,
-        String,
-        TILE_NATIVE_HEIGHT,
-        TILE_NATIVE_WIDTH,
-        TILE_FRAMES,
-        toEffectImportPath,
         TRANSLATIONS,
-        WALL_TILE_COLS,
-        window,
     } = deps;
 
     class CreditsScene extends SharedFrontendScene {
+        /**
+         * Inizializza la scena credits.
+         */
         constructor() {
             super('CreditsScene');
         }
     
+        /**
+         * Crea UI credits e attiva i timer di ritorno.
+         * @returns {void}
+         */
         create() {
             const t = TRANSLATIONS[GAME_STATE.language] || {};
             this.initializeSharedFrontState();
@@ -109,7 +69,10 @@ export function createCreditsSceneClass(deps) {
             // Duration then return to attract (we keep a timer so it can be reset on coin)
             this.creditsTimeoutSecs = Number(CONFIG.creditsTimeout) || 6000;
             this.creditsTimer = this.time.delayedCall(this.creditsTimeoutSecs, () => {
-                this.scene.start('AttractScene');
+                const next = (typeof resolveConfiguredFrontSceneTarget === 'function')
+                    ? resolveConfiguredFrontSceneTarget('CreditsScene', 'onTimeout', 'AttractScene')
+                    : 'AttractScene';
+                this.scene.start(next || 'AttractScene');
             });
     
             this.createSharedFrontUi();
@@ -126,17 +89,36 @@ export function createCreditsSceneClass(deps) {
             const loadLanguage = (typeof this.carousel?.loadTranslations === 'function')
                 ? this.carousel.loadTranslations.bind(this.carousel)
                 : null;
+            this._frontSceneTimelineStarted = false;
             if (loadLanguage) {
                 loadLanguage(languageCode, (payload) => {
                     const normalized = (payload && typeof payload === 'object' && !Array.isArray(payload)) ? payload : {};
                     if (languageCode) TRANSLATIONS[languageCode] = normalized;
                     this.updateUI();
+                    try {
+                        const frontCfg = resolveFrontSceneConfig('CreditsScene');
+                        if (frontCfg.enabled && !this._frontSceneTimelineStarted) {
+                            playConfiguredFrontSceneTimeline(this, 'CreditsScene');
+                            this._frontSceneTimelineStarted = true;
+                        }
+                    } catch (e) { }
                 });
             } else {
                 this.updateUI();
+                try {
+                    const frontCfg = resolveFrontSceneConfig('CreditsScene');
+                    if (frontCfg.enabled && !this._frontSceneTimelineStarted) {
+                        playConfiguredFrontSceneTimeline(this, 'CreditsScene');
+                        this._frontSceneTimelineStarted = true;
+                    }
+                } catch (e) { }
             }
         }
     
+        /**
+         * Registra input della scena credits.
+         * @returns {void}
+         */
         setupInput() {
             this.bindSharedFrontKeys({
                 onCoinAccepted: () => {
@@ -150,19 +132,41 @@ export function createCreditsSceneClass(deps) {
                         if (intro && intro.isPlaying) intro.stop();
                     } catch (e) { }
                     resetGameStateForNewRun(requestedPlayers);
-                    this.scene.start('LevelSelectScene');
+                    const next = (typeof resolveConfiguredFrontSceneTarget === 'function')
+                        ? resolveConfiguredFrontSceneTarget('CreditsScene', 'onStart', 'LevelSelectScene')
+                        : 'LevelSelectScene';
+                    this.scene.start(next || 'LevelSelectScene');
                 },
-                onInsufficientCredits: () => this.scene.start('AttractScene'),
+                onInsufficientCredits: () => {
+                    const next = (typeof resolveConfiguredFrontSceneTarget === 'function')
+                        ? resolveConfiguredFrontSceneTarget('CreditsScene', 'onInsufficientCredits', 'AttractScene')
+                        : 'AttractScene';
+                    this.scene.start(next || 'AttractScene');
+                },
                 onLanguageChanged: () => {
                     this.updateUI();
                     this.resetCreditsTimer();
                 },
-                onSpace: () => this.scene.start('AttractScene'),
-                onEsc: () => this.scene.start('AttractScene'),
+                onSpace: () => {
+                    const next = (typeof resolveConfiguredFrontSceneTarget === 'function')
+                        ? resolveConfiguredFrontSceneTarget('CreditsScene', 'onSpace', 'AttractScene')
+                        : 'AttractScene';
+                    this.scene.start(next || 'AttractScene');
+                },
+                onEsc: () => {
+                    const next = (typeof resolveConfiguredFrontSceneTarget === 'function')
+                        ? resolveConfiguredFrontSceneTarget('CreditsScene', 'onEsc', 'AttractScene')
+                        : 'AttractScene';
+                    this.scene.start(next || 'AttractScene');
+                },
                 onInteraction: () => this.resetCreditsTimer()
             });
         }
     
+        /**
+         * Aggiorna testi e stato UI credits.
+         * @returns {void}
+         */
         updateUI() {
             const t = TRANSLATIONS[GAME_STATE.language] || {};
             if (this.creditsTitleText) {
@@ -171,12 +175,24 @@ export function createCreditsSceneClass(deps) {
             if (this.titlePanel && this.creditsTitleText) {
                 drawTextPanel(this.titlePanel, this.creditsTitleText, { paddingX: 18, paddingY: 10, radius: 8 });
             }
+            try {
+                applyConfiguredFrontSceneLayout(this, 'CreditsScene', { t, state: GAME_STATE, config: CONFIG });
+            } catch (e) { }
             this.updateSharedFrontUi();
         }
     
+        /**
+         * Resetta timeout di inattivita nella scena credits.
+         * @returns {void}
+         */
         resetCreditsTimer() {
             try { if (this.creditsTimer) this.creditsTimer.remove(); } catch (e) { }
-            this.creditsTimer = this.time.delayedCall(this.creditsTimeoutSecs, () => { this.scene.start('AttractScene'); });
+            this.creditsTimer = this.time.delayedCall(this.creditsTimeoutSecs, () => {
+                const next = (typeof resolveConfiguredFrontSceneTarget === 'function')
+                    ? resolveConfiguredFrontSceneTarget('CreditsScene', 'onTimeout', 'AttractScene')
+                    : 'AttractScene';
+                this.scene.start(next || 'AttractScene');
+            });
         }
     }
 

@@ -74,6 +74,130 @@ Struttura del progetto (principali file)
 - `images/sprite.png` – sprite-sheet 4×4 (opzionale, migliora la resa visiva).
 - `js/game-config.js`, `js/game-state.js` – (se presenti) configurazione separata e stato runtime.
 
+## Come viene creata la AttractScene
+
+La schermata iniziale non e piu costruita con elementi hardcoded sparsi nella scena: oggi nasce da un flusso preciso che parte dal bootstrap del gioco, passa per la musica, e arriva agli elementi visivi dichiarati in JSON.
+
+### 1. Bootstrap dei path e caricamento configurazioni
+
+All'avvio, il bootstrap definisce i path principali del gioco, compreso il file dedicato alle front scene:
+
+- `data/front-scenes.json` per il layout delle scene frontend
+- `data/start.json` per impostazioni startup/plugin
+- i manifest audio/immagini per attract mode e game mode
+
+Durante l'inizializzazione viene chiamato il loader delle front scene, che legge `data/front-scenes.json` e lo rende disponibile al runtime.
+
+### 2. Avvio della AttractScene
+
+Quando il gioco entra in AttractScene, la scena esegue questi passaggi in ordine:
+
+1. ferma eventuale musica di gioco gia in esecuzione
+2. inizializza lo stato condiviso della UI frontend
+3. avvia la musica di intro con `intro_bgm`
+4. disegna background e overlay base
+5. carica le traduzioni della lingua corrente
+6. applica il layout dichiarato in `data/front-scenes.json`
+7. avvia eventuale timeline/tween configurata per gli elementi
+
+In pratica: la scena orchestra il flusso, ma i contenuti visuali arrivano dal JSON.
+
+### 3. Musica della schermata attract
+
+La musica della schermata iniziale viene fatta partire direttamente dalla scena con la chiave audio `intro_bgm`.
+
+Flusso sintetico:
+
+- AttractScene entra in `create()`
+- chiama il player audio sicuro
+- il loop di intro parte con volume ridotto
+- quando il giocatore avvia la partita, `intro_bgm` viene fermata prima del passaggio alla scena successiva
+
+Questo permette di tenere separati:
+
+- il controllo del ciclo audio dentro la scena
+- i contenuti visuali dentro `front-scenes.json`
+
+### 4. Elementi visivi dichiarati in JSON
+
+Gli elementi della AttractScene sono definiti nel blocco `scenes.AttractScene.elements` di `data/front-scenes.json`.
+
+Ogni elemento puo descrivere:
+
+- `type`: tipo di nodo, per esempio `image` o `text`
+- `id`: identificatore runtime del nodo
+- `src`: texture/key Phaser da usare per le immagini
+- `x`, `y`: posizione nel canvas virtuale
+- `w`, `h`: area di riferimento
+- `scale`, `alpha`, `depth`, `origin`, `rotation`, `visible`: proprieta iniziali
+- `text`: testo per i nodi testuali, anche con placeholder dinamici
+- `tweens`: sequenza di animazioni da applicare
+
+Per la AttractScene attuale gli elementi principali sono:
+
+- `title`
+- `explorer`
+- `explosion_title`
+- `instructions`
+
+### 5. Tween e sequenza degli elementi
+
+Ogni elemento puo avere un array `tweens` con una sequenza dichiarativa. Ogni tween puo definire, tra gli altri:
+
+- `property`: proprieta da animare, per esempio `x`, `y`, `alpha`, `angle`
+- `targetValue`: valore finale
+- `durationMs`: durata
+- `startMs`: istante di avvio relativo
+- `ease`: easing Phaser
+- `yoyo` e `repeat`
+- `onComplete`: azione finale, per esempio distruzione del nodo
+
+Con questo schema la AttractScene riproduce una sequenza del tipo:
+
+1. il titolo entra dall'alto
+2. il titolo vibra/ruota/lampeggia
+3. l'explorer attraversa la scena
+4. compare l'esplosione del titolo
+5. il testo istruzioni entra e continua a oscillare
+
+### 6. Testi dinamici e traduzioni
+
+Gli elementi testuali possono usare placeholder come `{{t.instructions}}`.
+
+Questo significa che:
+
+- la scena carica prima le traduzioni della lingua corrente
+- poi passa il contesto runtime al renderer frontend
+- il testo finale viene risolto con i valori reali della lingua attiva
+
+La AttractScene continua anche ad aggiornare runtime il testo delle istruzioni/storia alternata senza ricreare da zero il layout.
+
+### 7. Cosa modificare se vuoi cambiare la AttractScene
+
+Se vuoi cambiare la schermata attract, in generale intervieni qui:
+
+- `data/front-scenes.json`: posizione, testi, immagini, animazioni degli elementi
+- `module/scenes/AttractScene.js`: flusso scena, input, cambio scena, musica, story toggle
+- `data/dic/*.json`: testi tradotti usati nei placeholder
+- manifest immagini/audio: se aggiungi nuove risorse da caricare
+
+Regola pratica:
+
+- modifica il JSON se devi cambiare il layout o le animazioni
+- modifica la scena JS se devi cambiare il comportamento runtime
+
+### 8. Esempio mentale del flusso completo
+
+Puoi leggere la costruzione della AttractScene cosi:
+
+1. il bootstrap carica `front-scenes.json`
+2. AttractScene parte e avvia `intro_bgm`
+3. la scena prepara background, overlay e UI condivisa
+4. le traduzioni vengono caricate
+5. il renderer frontend crea gli elementi dal JSON
+6. i tween dichiarati nel JSON animano title, explorer, explosion e instructions
+7. l'input utente puo inserire crediti, cambiare lingua o avviare la partita
+
 ## Formato completo di `level<nm>.json`
 
 I livelli sono in `data/level/level10.json`, `level11.json`, ecc.

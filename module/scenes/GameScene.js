@@ -1,74 +1,49 @@
+/**
+ * Crea la classe scena principale di gioco con tutta la logica runtime.
+ * @param {Record<string, any>} deps Dipendenze runtime condivise.
+ * @returns {typeof Phaser.Scene} Classe scena Game.
+ */
 export function createGameSceneClass(deps) {
     const {
-        createAddCredit,
-        createCreditsManager,
-        createLanguageCarousel,
-        applyConfiguredAttractLayout,
-        applyConfiguredAttractPlugins,
-        applyStartupSettings,
         Boolean,
-        clearInterval,
-        clearRuntimeMatchStorage,
-        clearTimeout,
         CONFIG,
         console,
-        Date,
         defaultFrame,
-        document,
-        drawTextPanel,
-        EFFECT_LIBRARY,
-        GAME_FONT,
         GAME_STATE,
         getLevelFileName,
         getLevelMasterNumber,
         getTextureMaxNumericFrame,
         HUD_DEPTH,
         isFinite,
-        isFreePlayMode,
-        isFrontScenesEnabled,
-        isNaN,
         JSON,
-        LEVEL_CONFIG,
         loadTranslations,
-        loadEffectDefinitionFromScript,
         Math,
-        mergeLocalConfig,
-        normalizeEffectKey,
-        normalizeStartupElement,
-        normalizeStartupSettings,
         Number,
         OBJECT_NATIVE_SIZE,
         OBJECT_FRAMES,
-        parseEffectLibraryManifestEntries,
         parseExitTargetLevel,
-        parseFloat,
-        parseInt,
         Phaser,
-        playConfiguredAttractElementTween,
         playLoopAudioSafely,
-        Promise,
-        registerEffectLibraryDefinition,
-        resetGameStateForNewRun,
         resolveContactSpec,
-        setInterval,
-        setTimeout,
-        STARTUP_DEFAULTS,
-        STARTUP_SETTINGS,
         String,
-        TILE_NATIVE_HEIGHT,
-        TILE_NATIVE_WIDTH,
         TILE_FRAMES,
-        toEffectImportPath,
         TRANSLATIONS,
         WALL_TILE_COLS,
         window,
     } = deps;
 
     class GameScene extends Phaser.Scene {
+        /**
+         * Inizializza la scena principale di gioco.
+         */
         constructor() {
             super('GameScene');
         }
     
+        /**
+         * Entry-point scena: prepara traduzioni e avvia il setup partita.
+         * @returns {void}
+         */
         create() {
             // Carica le traduzioni prima di inizializzare la scena
             loadTranslations(GAME_STATE.language, (data) => {
@@ -85,6 +60,10 @@ export function createGameSceneClass(deps) {
             playLoopAudioSafely(this, 'game_bgm', 0.28);
         }
     
+        /**
+         * Inizializza gameplay completo (mappa, attori, UI, input, timer).
+         * @returns {void}
+         */
         initializeGame() {
             this.isLevelTransitioning = false;
             this.levelStartScore = Number(GAME_STATE.score) || 0;
@@ -264,31 +243,19 @@ export function createGameSceneClass(deps) {
             const levelFileName = getLevelFileName(GAME_STATE.currentLevel);
             this.levelData = this.cache.json.get(levelFileName);
             this.initializeObjectCatalog();
-    
-            // Get level config (rules for boulders, etc.)
-            this.levelConfig = LEVEL_CONFIG.levels[GAME_STATE.currentLevel];
-    
-            // Merge JSON data into levelConfig
-            if (this.levelData) {
-                const baseDynamicBoulders = this.levelConfig?.dynamicBoulders;
-                const levelDynamicBoulders = this.levelData?.dynamicBoulders;
-                let mergedDynamicBoulders = baseDynamicBoulders;
-    
-                if (levelDynamicBoulders === false) {
-                    mergedDynamicBoulders = false;
-                } else if (levelDynamicBoulders && typeof levelDynamicBoulders === 'object') {
-                    mergedDynamicBoulders = {
-                        ...(baseDynamicBoulders && typeof baseDynamicBoulders === 'object' ? baseDynamicBoulders : {}),
-                        ...levelDynamicBoulders
-                    };
+            try {
+                const objectsCatalog = this.cache && this.cache.json ? this.cache.json.get('objectsCatalog') : null;
+                if (Array.isArray(objectsCatalog) && typeof window !== 'undefined') {
+                    window.__BLOCKHUNTER_OBJECTS_CATALOG__ = objectsCatalog;
+                    // Reset derived map so runtime recomputes it from latest catalog.
+                    window.__BLOCKHUNTER_OBJECT_CONTACT_PROFILES__ = null;
                 }
+            } catch (e) { }
     
-                this.levelConfig = {
-                    ...this.levelConfig,
-                    ...this.levelData,
-                    dynamicBoulders: mergedDynamicBoulders
-                };
-            }
+            // Level config is fully data-driven from JSON (no hardcoded fallback table).
+            this.levelConfig = (this.levelData && typeof this.levelData === 'object')
+                ? { ...this.levelData }
+                : {};
     
             // Per-level music: if the level JSON provides a `music` field, stop
             // the default BGM and load/play the specified track (searching under
@@ -993,6 +960,10 @@ export function createGameSceneClass(deps) {
             }
         }
     
+        /**
+         * Costruisce tilemap grafica/logica dal JSON livello corrente.
+         * @returns {void}
+         */
         createTilemap() {
             this.tiles = [];
     

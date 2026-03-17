@@ -1,75 +1,41 @@
+/**
+ * Crea la classe scena di preload con dependency injection dal core game.
+ * @param {Record<string, any>} deps Dipendenze runtime condivise.
+ * @returns {typeof Phaser.Scene} Classe scena Preload.
+ */
 export function createPreloadSceneClass(deps) {
     const {
-        createAddCredit,
-        createCreditsManager,
-        createLanguageCarousel,
-        applyConfiguredAttractLayout,
-        applyConfiguredAttractPlugins,
-        applyStartupSettings,
-        Boolean,
-        clearInterval,
-        clearRuntimeMatchStorage,
-        clearTimeout,
         CONFIG,
         console,
-        Date,
         defaultFrame,
-        document,
-        drawTextPanel,
-        EFFECT_LIBRARY,
         GAME_FONT,
         GAME_STATE,
-        getLevelFileName,
-        getLevelMasterNumber,
-        getTextureMaxNumericFrame,
-        HUD_DEPTH,
         isFinite,
-        isFreePlayMode,
         isFrontScenesEnabled,
-        isNaN,
         JSON,
-        LEVEL_CONFIG,
         loadTranslations,
-        loadEffectDefinitionFromScript,
         Math,
-        mergeLocalConfig,
-        normalizeEffectKey,
-        normalizeStartupElement,
-        normalizeStartupSettings,
         Number,
         OBJECT_NATIVE_SIZE,
-        OBJECT_FRAMES,
-        parseEffectLibraryManifestEntries,
-        parseExitTargetLevel,
-        parseFloat,
-        parseInt,
         Phaser,
-        playConfiguredAttractElementTween,
-        playLoopAudioSafely,
-        Promise,
-        registerEffectLibraryDefinition,
-        resetGameStateForNewRun,
-        resolveContactSpec,
-        setInterval,
-        setTimeout,
-        STARTUP_DEFAULTS,
-        STARTUP_SETTINGS,
-        String,
-        TILE_NATIVE_HEIGHT,
-        TILE_NATIVE_WIDTH,
-        TILE_FRAMES,
-        toEffectImportPath,
+        resolveInitialFrontSceneKey,
         TRANSLATIONS,
-        WALL_TILE_COLS,
         window,
     } = deps;
 
     class PreloadScene extends Phaser.Scene {
+        /**
+         * Inizializza la scena preload.
+         */
         constructor() {
             super('PreloadScene');
         }
     
         // Load title, background, tiles, objects, and all level JSON files
+        /**
+         * Carica asset del gioco (sprite, audio, json).
+         * @returns {void}
+         */
         preload() {
             // Clear any stored state at game start to ensure a clean session
             try {
@@ -290,6 +256,10 @@ export function createPreloadSceneClass(deps) {
             console.log("Assets loaded and created.");
         }
     
+        /**
+         * Crea asset runtime aggiuntivi al termine del preload.
+         * @returns {void}
+         */
         createAssets() {
             // Usa il frame "stone" (frameIndex = 2) della spritesheet "objects" per i boulder
             const stoneFrameIndex = 2;
@@ -357,6 +327,10 @@ export function createPreloadSceneClass(deps) {
             graphics.destroy();
         }
     
+        /**
+         * Completa preload e passa alla scena successiva.
+         * @returns {void}
+         */
         create() {
             // Carica le traduzioni prima di avviare la scena iniziale
             const lang = CONFIG.language || 'it';
@@ -382,7 +356,10 @@ export function createPreloadSceneClass(deps) {
                 }
     
                 if (isFrontScenesEnabled()) {
-                    this.scene.start('AttractScene');
+                    const initialFrontScene = (typeof resolveInitialFrontSceneKey === 'function')
+                        ? resolveInitialFrontSceneKey()
+                        : 'AttractScene';
+                    this.scene.start(initialFrontScene);
                 } else {
                     this.scene.start('LevelSelectScene');
                 }
