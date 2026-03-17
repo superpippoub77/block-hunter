@@ -482,63 +482,63 @@ class PreloadScene extends Phaser.Scene {
     // title not shown during preload
 
         this.load
-            .image('title', 'images/title.png')
-            .image('explorer', 'images/explorer.png')
-            .image('title_explosion', 'images/title_explosion.png')
-            .image('bg', 'images/attract_bg.png')
+            .image('title', 'assets/images/objects/title.png')
+            .image('explorer', 'assets/images/objects/explorer.png')
+            .image('title_explosion', 'assets/images/objects/title_explosion.png')
+            .image('bg', 'assets/images/objects/attract_bg.png')
             // 'game_bg.png' may be missing in some distributions; use level1.png as a fallback background
             .image('game_bg', 'images/level1.png')
             // Load flags sprite (8 flags: it, fr, de, en, us, ja, es, zh - 64x64 each)
-            .spritesheet('flags', 'images/flags.png', { frameWidth: 64, frameHeight: 32 })
+            .spritesheet('flags', 'assets/images/objects/flags.png', { frameWidth: 64, frameHeight: 32 })
             // Load tiles sprite (6 tiles: wall, hole, sand, floor, stone, hole2 - 64x48 each)
-            .spritesheet('tiles', 'images/tiles.png', defaultFrame)
+            .spritesheet('tiles', 'assets/images/objects/tiles.png', defaultFrame)
             // Load wall sprite sheet (1 row x 7 columns, 64x64 each frame)
-            .spritesheet('wall_tiles', 'images/wall_completed.png', defaultFrame)
+            .spritesheet('wall_tiles', 'assets/images/objects/wall_completed.png', defaultFrame)
             // Load objects sprite (4x4 matrix = 16 objects)
             // Row 1: dynamite, heart, stone, player
             // Row 2: dynamite_chest, door, gem, stones
             // Row 3: key, sand_pile, ghost, pepita
             // Row 4: skull...wall, hole1, hole2, explosion
-            .spritesheet('objects', 'images/obj_game.png', defaultFrame)
+            .spritesheet('objects', 'assets/images/objects/obj_game.png', defaultFrame)
             // Front walking animation spritesheet (1 row, 7 frames, 172x135 each)
             // Bat flying animation spritesheet (1 row, 6 frames)
-            .spritesheet('bat', 'images/bat.png', defaultFrame)
+            .spritesheet('bat', 'assets/images/objects/bat.png', defaultFrame)
             // Ghost animation spritesheet (1 row, 10 frames)
-            .spritesheet('ghost', 'images/ghost.png', defaultFrame)
-            .spritesheet('player_front', 'images/player_front.png', {
+            .spritesheet('ghost', 'assets/images/objects/ghost.png', defaultFrame)
+            .spritesheet('player_front', 'assets/images/objects/player_front.png', {
                 frameWidth: 139,
                 frameHeight: 135
             })
             // Back walking animation spritesheet (same layout as player_front)
-            .spritesheet('player_back', 'images/player_back.png', {
+            .spritesheet('player_back', 'assets/images/objects/player_back.png', {
                 frameWidth: 139,
                 frameHeight: 135
             })
             // Right walking animation spritesheet (same layout as player_front)
-            .spritesheet('player_right', 'images/player_right.png', {
+            .spritesheet('player_right', 'assets/images/objects/player_right.png', {
                 frameWidth: 139,
                 frameHeight: 135
             })
             // Back-right walking animation spritesheet (same layout as player_front)
-            .spritesheet('player_back_right', 'images/player_back_rigth.png', {
+            .spritesheet('player_back_right', 'assets/images/objects/player_back_rigth.png', {
                 frameWidth: 139,
                 frameHeight: 135
             })
             
-            .audio('intro_bgm', 'data/music/intro.mp3')
-            .audio('game_bgm', 'data/music/game.mp3')
-            .audio('step_sfx', 'data/music/step.mp3')
-            .audio('stone_sfx', 'data/music/stone.mp3')
-            .audio('explosion_sfx', 'data/music/explosion.mp3')
-            .audio('gem_sfx', 'data/music/gem.mp3')
-            .audio('rolling_sfx', 'data/music/rolling_stones.mp3')
-            .audio('gameover_sfx', 'data/music/gameover.mp3')
-            .audio('level_completed_sfx', 'data/music/level_completed.mp3')
-            .audio('coin_sfx', 'data/music/coin.mp3')
-            .audio('select_sfx', 'data/music/select.mp3')
-            .audio('ghost_sfx', 'data/music/ghost.mp3')
-            .audio('bat_sfx', 'data/music/bat.mp3')
-            .audio('rain_sfx', 'data/music/rain.mp3');
+            .audio('intro_bgm', 'assets/music/intro.mp3')
+            .audio('game_bgm', 'assets/music/game.mp3')
+            .audio('step_sfx', 'assets/music/step.mp3')
+            .audio('stone_sfx', 'assets/music/stone.mp3')
+            .audio('explosion_sfx', 'assets/music/explosion.mp3')
+            .audio('gem_sfx', 'assets/music/gem.mp3')
+            .audio('rolling_sfx', 'assets/music/rolling_stones.mp3')
+            .audio('gameover_sfx', 'assets/music/gameover.mp3')
+            .audio('level_completed_sfx', 'assets/music/level_completed.mp3')
+            .audio('coin_sfx', 'assets/music/coin.mp3')
+            .audio('select_sfx', 'assets/music/select.mp3')
+            .audio('ghost_sfx', 'assets/music/ghost.mp3')
+            .audio('bat_sfx', 'assets/music/bat.mp3')
+            .audio('rain_sfx', 'assets/music/rain.mp3');
 
         // Load all level JSON files (50 levels)
         // Carica solo i livelli con sottolivello 0-4 per ogni decade
