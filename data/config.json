@@ -27,6 +27,20 @@
   "parallaxBgAlpha": 1.0,
   "parallaxFgAlpha": 0.8,
   "topTenTimeout": 10000,
+  "creditsScene": {
+    "lines": [
+      "Project: Block Hunter",
+      "Version: 1.0.0",
+      "",
+      "Lead developer: Filippo Morano",
+      "Gameplay & Tools: Filippo Morano",
+      "Graphics: Filippo Morano",
+      "Music & SFX: Studio Sound",
+      "",
+      "Website: https://filippomorano.com",
+      "Contact: devs@filippomorano.com"
+    ]
+  },
   "gemSpawnDelay": 1000,
   "gemsOneByOneDefault": false,
   "gemsPerLevel": 10,

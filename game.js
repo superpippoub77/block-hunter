@@ -1550,67 +1550,37 @@ class TopTenScene extends Phaser.Scene {
         this.currentLangIndex = Math.max(0, this.languages.indexOf(GAME_STATE.language));
         if (!GAME_STATE.language) GAME_STATE.language = this.languages[this.currentLangIndex];
 
-        // Coin/credits (HUD placed on top)
-        this.coinText = this.add.text(400, 520, '', {
-            fontSize: '24px',
-            fill: '#ffee00ff',
-            fontFamily: GAME_FONT
-        }).setOrigin(0.5).setDepth(HUD_DEPTH).setScrollFactor(0);
-        // remove decorative panel under coin text
-        this.coinPanel = null;
-
-        // Player labels (no decorative panels)
-        this.player1Text = this.add.text(150, 550, '', {
-            fontSize: '18px',
-            fill: '#666666',
-            fontFamily: GAME_FONT
-        }).setOrigin(0.5).setDepth(HUD_DEPTH).setScrollFactor(0);
-        this.player1Panel = null;
-        this.player2Text = this.add.text(650, 550, '', {
-            fontSize: '18px',
-            fill: '#666666',
-            fontFamily: GAME_FONT
-        }).setOrigin(0.5).setDepth(HUD_DEPTH).setScrollFactor(0);
-        this.player2Panel = null;
-
-        // Flags (language selector display)
-        this.flagSprite = this.add.sprite(400, 560, 'flags', this.currentLangIndex).setOrigin(0.5).setDepth(HUD_DEPTH).setScrollFactor(0);
-        this.tweens.add({
-            targets: this.flagSprite,
-            scaleX: 1.05,
-            scaleY: 0.98,
-            angle: -2,
-            duration: 400,
-            yoyo: true,
-            repeat: -1,
-            ease: 'Sine.easeInOut'
-        });
-
-        // Left/Right arrows for language selection (keep visible during Top Ten)
         try {
-            this.topLeftArrow = this.add.text(320, 560, '◄', {
-                fontSize: '24px',
-                fill: '#ffffff',
-                fontFamily: GAME_FONT
-            }).setOrigin(0.5).setInteractive().setDepth(HUD_DEPTH).setScrollFactor(0).on('pointerdown', () => this.changeLanguage(-1));
-            this.topRightArrow = this.add.text(480, 560, '►', {
-                fontSize: '24px',
-                fill: '#ffffff',
-                fontFamily: GAME_FONT
-            }).setOrigin(0.5).setInteractive().setDepth(HUD_DEPTH).setScrollFactor(0).on('pointerdown', () => this.changeLanguage(1));
+            this.creditManager = createCreditsManager(this, {
+                gameState: GAME_STATE,
+                config: CONFIG,
+                hudDepth: HUD_DEPTH,
+                font: GAME_FONT,
+                x: 400
+            });
+        } catch (e) {
+            this.creditManager = null;
+        }
 
-            // helper for TopTen pulse feedback
-            this.pulseTopArrow = (arrow) => {
-                if (!arrow) return;
-                try {
-                    const orig = (arrow.style && arrow.style.fill) || '#ffffff';
-                    arrow.setStyle && arrow.setStyle({ fill: '#ffff00' });
-                    this.tweens.add({ targets: arrow, scaleX: 1.6, scaleY: 1.6, duration: 120, yoyo: true, ease: 'Sine.easeOut', onComplete: () => {
-                        try { arrow.setStyle && arrow.setStyle({ fill: orig }); } catch (e) { }
-                    }});
-                } catch (e) { }
-            };
-        } catch (e) { /* ignore if font not ready */ }
+        try {
+            this.carousel = createLanguageCarousel(this, {
+                languages: this.languages,
+                index: this.currentLangIndex,
+                x: 400,
+                y: 560,
+                hudDepth: HUD_DEPTH,
+                font: GAME_FONT,
+                onRequestChange: (dir) => this.changeLanguage(dir)
+            });
+            this.topLeftArrow = this.carousel?.leftArrow || this.leftArrow || null;
+            this.topRightArrow = this.carousel?.rightArrow || this.rightArrow || null;
+            this.pulseTopArrow = this.carousel?.pulseArrow || this.pulseArrow || null;
+        } catch (e) {
+            this.carousel = null;
+            this.topLeftArrow = null;
+            this.topRightArrow = null;
+            this.pulseTopArrow = null;
+        }
 
         // Input handlers for coin insert / language change
         this.setupInput();
@@ -1687,6 +1657,12 @@ class TopTenScene extends Phaser.Scene {
     }
 
     insertCoin() {
+        try {
+            if (this.creditManager && typeof this.creditManager.insertCoin === 'function') {
+                this.creditManager.insertCoin({ volume: 0.45 });
+                return;
+            }
+        } catch (e) { }
         if (this.sound) this.sound.play('coin_sfx', { volume: 0.45 });
         GAME_STATE.credits++;
         this.updateUI();
@@ -1751,19 +1727,21 @@ class CreditsScene extends Phaser.Scene {
         this.titlePanel = this.add.graphics();
         drawTextPanel(this.titlePanel, title, { paddingX: 18, paddingY: 10, radius: 8 });
 
-        // Developer entries (customize as needed)
-        const lines = [
-            'Project: Block Hunter',
-            'Version: 1.0.0',
-            '',
-            'Lead developer: Filippo Morano',
-            'Gameplay & Tools: Filippo Morano',
-            'Graphics: Filippo Morano',
-            'Music & SFX: Studio Sound',
-            '',
-            'Website: https://filippomorano.com',
-            'Contact: devs@filippomorano.com'
-        ];
+        // Developer entries loaded from config.json (with fallback defaults)
+        const lines = Array.isArray(CONFIG?.creditsScene?.lines) && CONFIG.creditsScene.lines.length > 0
+            ? CONFIG.creditsScene.lines
+            : [
+                'Project: Block Hunter',
+                'Version: 1.0.0',
+                '',
+                'Lead developer: Filippo Morano',
+                'Gameplay & Tools: Filippo Morano',
+                'Graphics: Filippo Morano',
+                'Music & SFX: Studio Sound',
+                '',
+                'Website: https://filippomorano.com',
+                'Contact: devs@filippomorano.com'
+            ];
 
         let y = 150;
         lines.forEach((ln) => {
@@ -1782,37 +1760,37 @@ class CreditsScene extends Phaser.Scene {
         this.currentLangIndex = Math.max(0, this.languages.indexOf(GAME_STATE.language));
         if (!GAME_STATE.language) GAME_STATE.language = this.languages[this.currentLangIndex];
 
-        // Coin/credits HUD
         try {
-            this.coinText = this.add.text(400, 520, '', { fontSize: '24px', fill: '#ffee00ff', fontFamily: GAME_FONT }).setOrigin(0.5).setDepth(HUD_DEPTH).setScrollFactor(0);
-        } catch (e) { this.coinText = null; }
-        this.coinPanel = null;
+            this.creditManager = createCreditsManager(this, {
+                gameState: GAME_STATE,
+                config: CONFIG,
+                hudDepth: HUD_DEPTH,
+                font: GAME_FONT,
+                x: 400
+            });
+        } catch (e) {
+            this.creditManager = null;
+        }
 
-        try { this.player1Text = this.add.text(150, 550, '', { fontSize: '18px', fill: '#666666', fontFamily: GAME_FONT }).setOrigin(0.5).setDepth(HUD_DEPTH).setScrollFactor(0); } catch (e) { this.player1Text = null; }
-        this.player1Panel = null;
-        try { this.player2Text = this.add.text(650, 550, '', { fontSize: '18px', fill: '#666666', fontFamily: GAME_FONT }).setOrigin(0.5).setDepth(HUD_DEPTH).setScrollFactor(0); } catch (e) { this.player2Text = null; }
-        this.player2Panel = null;
-
-        // Flag sprite and arrows
         try {
-            this.flagSprite = this.add.sprite(400, 560, 'flags', this.currentLangIndex).setOrigin(0.5).setDepth(HUD_DEPTH).setScrollFactor(0);
-            this.tweens.add({ targets: this.flagSprite, scaleX: 1.05, scaleY: 0.98, angle: -2, duration: 400, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
-
-            this.leftArrow = this.add.text(320, 560, '◄', { fontSize: '24px', fill: '#ffffff', fontFamily: GAME_FONT }).setOrigin(0.5).setInteractive().setDepth(HUD_DEPTH).setScrollFactor(0).on('pointerdown', () => this.changeLangCredits(-1));
-            this.rightArrow = this.add.text(480, 560, '►', { fontSize: '24px', fill: '#ffffff', fontFamily: GAME_FONT }).setOrigin(0.5).setInteractive().setDepth(HUD_DEPTH).setScrollFactor(0).on('pointerdown', () => this.changeLangCredits(1));
-        } catch (e) { }
-
-        // Helper pulse for arrow feedback
-        this.pulseCreditsArrow = (arrow) => {
-            if (!arrow) return;
-            try {
-                const orig = (arrow.style && arrow.style.fill) || '#ffffff';
-                arrow.setStyle && arrow.setStyle({ fill: '#ffff00' });
-                this.tweens.add({ targets: arrow, scaleX: 1.6, scaleY: 1.6, duration: 120, yoyo: true, ease: 'Sine.easeOut', onComplete: () => {
-                    try { arrow.setStyle && arrow.setStyle({ fill: orig }); } catch (e) { }
-                }});
-            } catch (e) { }
-        };
+            this.carousel = createLanguageCarousel(this, {
+                languages: this.languages,
+                index: this.currentLangIndex,
+                x: 400,
+                y: 560,
+                hudDepth: HUD_DEPTH,
+                font: GAME_FONT,
+                onRequestChange: (dir) => this.changeLangCredits(dir)
+            });
+            this.leftArrow = this.carousel?.leftArrow || this.leftArrow || null;
+            this.rightArrow = this.carousel?.rightArrow || this.rightArrow || null;
+            this.pulseCreditsArrow = this.carousel?.pulseArrow || this.pulseArrow || null;
+        } catch (e) {
+            this.carousel = null;
+            this.leftArrow = null;
+            this.rightArrow = null;
+            this.pulseCreditsArrow = null;
+        }
 
         // Input handlers for coin insert / language change in Credits
         this.input.keyboard.on('keydown-FIVE', () => this.insertCoinCredits());
@@ -1855,6 +1833,13 @@ class CreditsScene extends Phaser.Scene {
 
         // Insert coin for Credits scene
         this.insertCoinCredits = () => {
+            try {
+                if (this.creditManager && typeof this.creditManager.insertCoin === 'function') {
+                    this.creditManager.insertCoin({ volume: 0.45 });
+                    this.resetCreditsTimer();
+                    return;
+                }
+            } catch (e) { }
             try { if (this.sound) this.sound.play('coin_sfx', { volume: 0.45 }); } catch (e) {}
             GAME_STATE.credits = (Number(GAME_STATE.credits) || 0) + 1;
             this.updateCreditsUI();
