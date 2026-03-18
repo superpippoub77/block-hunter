@@ -1433,16 +1433,29 @@
             "parallaxBgAlpha": 1.0
         },
         {
-            "src": "assets/images/background/bg_10.png",
-            "parallaxBgFactor": 0.9,
+            "src": "assets/images/background/bg_sky.png",
+            "parallaxBgFactor": 0.2,
             "parallaxBgAlpha": 1.0
         }
     ],
     "foreground": [
         {
-            "src": "assets/images/background/fg_stones_arg.png",
-            "parallaxFgFactor": 1,
-            "parallaxFgAlpha": 1
+            "src": "assets/images/foreground/fg_forest.png",
+            "parallaxFgFactor": 0.8,
+            "parallaxFgAlpha": 0.9
+        },
+        {
+            "src": "assets/images/foreground/_staccionata.png",
+            "parallaxFgFactor": 0.6,
+            "parallaxFgAlpha": 0.9,
+            
+			"left": 0,
+			"top": 0,
+
+			"repeatX": "*",
+			"repeatY": 5,
+			"repeatStepX": 800,
+			"repeatStepY": 600
         }
     ],
     "requiredGems": 2
