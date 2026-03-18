@@ -1421,6 +1421,7 @@
     "ghost": 0,
     "bat": 0,
     "spider": 0,
+    "jumpEnabled": true,
     "ghostSpeed": 0,
     "batSpeed": 0,
     "spiderSpeed": 0,

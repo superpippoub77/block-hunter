@@ -3078,6 +3078,14 @@ class GameScene extends Phaser.Scene {
                 : (typeof CONFIG.gemsOneByOneDefault !== 'undefined' ? CONFIG.gemsOneByOneDefault : false)
             );
         } catch (e) { this.gemsOneByOne = false; }
+        // Determine whether jump is enabled for this level.
+        try {
+            this.jumpEnabled = Boolean(
+                (this.levelData && this.levelData.map && typeof this.levelData.map.jumpEnabled !== 'undefined') ? this.levelData.map.jumpEnabled
+                : (this.levelData && typeof this.levelData.jumpEnabled !== 'undefined') ? this.levelData.jumpEnabled
+                : true
+            );
+        } catch (e) { this.jumpEnabled = true; }
         // Number of gems required to unlock the exit for this level.
         // Priority: levelData.requiredGems || levelData.gemsRequired || levelData.map.requiredGems -> fallback CONFIG.gemsPerLevel
         this.requiredGems = Number(this.levelData?.requiredGems ?? this.levelData?.gemsRequired ?? this.levelData?.map?.requiredGems ?? CONFIG.gemsPerLevel) || Number(CONFIG.gemsPerLevel);
@@ -6153,6 +6161,7 @@ class GameScene extends Phaser.Scene {
         const p2cfg = panel.player2 || {};
         const p2move = p2cfg.move || { left: 'A', right: 'D', up: 'W', down: 'S' };
         const p2shoot = Array.isArray(p2cfg.shoot) ? p2cfg.shoot : (p2cfg.shoot ? p2cfg.shoot : ['M','N']);
+        const p2jump = Array.isArray(p2cfg.jump) ? p2cfg.jump : (p2cfg.jump ? p2cfg.jump : ['H']);
         this.p2Keys = this.input.keyboard.addKeys({
             w: Phaser.Input.Keyboard.KeyCodes[p2move.up] || Phaser.Input.Keyboard.KeyCodes.W,
             a: Phaser.Input.Keyboard.KeyCodes[p2move.left] || Phaser.Input.Keyboard.KeyCodes.A,
@@ -6167,10 +6176,12 @@ class GameScene extends Phaser.Scene {
         const p1cfg = panel.player1 || {};
         const p1shoot = Array.isArray(p1cfg.shoot) ? p1cfg.shoot : (p1cfg.shoot ? p1cfg.shoot : ['X','SPACE']);
         const p1action = Array.isArray(p1cfg.action) ? p1cfg.action : (p1cfg.action ? p1cfg.action : ['Z']);
+        const p1jump = Array.isArray(p1cfg.jump) ? p1cfg.jump : (p1cfg.jump ? p1cfg.jump : ['C']);
         this.keys = this.input.keyboard.addKeys({
             space: Phaser.Input.Keyboard.KeyCodes[p1shoot.includes('SPACE') ? 'SPACE' : 'SPACE'] || Phaser.Input.Keyboard.KeyCodes.SPACE,
             x: Phaser.Input.Keyboard.KeyCodes[p1shoot[0]] || Phaser.Input.Keyboard.KeyCodes.X,
             z: Phaser.Input.Keyboard.KeyCodes[p1action[0]] || Phaser.Input.Keyboard.KeyCodes.Z,
+            c: Phaser.Input.Keyboard.KeyCodes[p1jump[0]] || Phaser.Input.Keyboard.KeyCodes.C,
             f: Phaser.Input.Keyboard.KeyCodes.F
         });
 
@@ -6200,6 +6211,22 @@ class GameScene extends Phaser.Scene {
                 return this.input.keyboard.addKey(kc);
             });
         } catch (e) { this.p2ActionKeys = []; }
+
+        try {
+            const p1JumpNames = Array.isArray(p1jump) ? p1jump : [p1jump];
+            this.p1JumpKeys = p1JumpNames.map((nm) => {
+                const kc = toKeyCode(nm) || Phaser.Input.Keyboard.KeyCodes.C;
+                return this.input.keyboard.addKey(kc);
+            });
+        } catch (e) { this.p1JumpKeys = []; }
+
+        try {
+            const p2JumpNames = Array.isArray(p2jump) ? p2jump : [p2jump];
+            this.p2JumpKeys = p2JumpNames.map((nm) => {
+                const kc = toKeyCode(nm) || Phaser.Input.Keyboard.KeyCodes.H;
+                return this.input.keyboard.addKey(kc);
+            });
+        } catch (e) { this.p2JumpKeys = []; }
 
         this.lastDynamiteTime = 0;
         this.lastStepSoundTime = 0;
@@ -7102,9 +7129,21 @@ class GameScene extends Phaser.Scene {
             speed *= 2;
         }
 
+        try {
+            const p1JumpPressed = Array.isArray(this.p1JumpKeys) && this.p1JumpKeys.some(k => Phaser.Input.Keyboard.JustDown(k));
+            if (p1JumpPressed) this.attemptJumpFor(this.player, { inputX: velocityX, inputY: velocityY });
+        } catch (e) { }
+        try {
+            const p2JumpPressed = Array.isArray(this.p2JumpKeys) && this.p2JumpKeys.some(k => Phaser.Input.Keyboard.JustDown(k));
+            if (p2JumpPressed) this.attemptJumpFor(this.player2, { inputX: p2VelocityX, inputY: p2VelocityY });
+        } catch (e) { }
+
+        const p1Jumping = this.isJumpingPlayer(this.player);
+        const p2Jumping = this.isJumpingPlayer(this.player2);
+
         // Check tile under player and trigger tile-specific effects (sand, water, mud, back)
         const tile = this.getTileAt(this.player.x, this.player.y);
-        if (tile && tile.type) {
+        if (!p1Jumping && tile && tile.type) {
             // Sand slow
             if (tile.type === 'sand') {
             try {
@@ -7339,25 +7378,27 @@ class GameScene extends Phaser.Scene {
 
         // Apply velocities, with sliding when rain is active
         try {
-            const desiredVX = velocityX * speed;
-            const desiredVY = velocityY * speed;
-            if (this.rainActive && this.currentRain) {
-                const intensity = Number(this.currentRain.intensity) || 1;
-                let traction = 0.35 / intensity; // higher intensity -> lower traction
-                traction = Phaser.Math.Clamp(traction, 0.03, 1);
-                const curVX = (this.player.body && this.player.body.velocity) ? this.player.body.velocity.x : 0;
-                const curVY = (this.player.body && this.player.body.velocity) ? this.player.body.velocity.y : 0;
-                const newVX = Phaser.Math.Linear(curVX, desiredVX, traction);
-                const newVY = Phaser.Math.Linear(curVY, desiredVY, traction);
-                this.player.setVelocity(newVX, newVY);
-            } else {
-                this.player.setVelocity(desiredVX, desiredVY);
+            if (!p1Jumping) {
+                const desiredVX = velocityX * speed;
+                const desiredVY = velocityY * speed;
+                if (this.rainActive && this.currentRain) {
+                    const intensity = Number(this.currentRain.intensity) || 1;
+                    let traction = 0.35 / intensity; // higher intensity -> lower traction
+                    traction = Phaser.Math.Clamp(traction, 0.03, 1);
+                    const curVX = (this.player.body && this.player.body.velocity) ? this.player.body.velocity.x : 0;
+                    const curVY = (this.player.body && this.player.body.velocity) ? this.player.body.velocity.y : 0;
+                    const newVX = Phaser.Math.Linear(curVX, desiredVX, traction);
+                    const newVY = Phaser.Math.Linear(curVY, desiredVY, traction);
+                    this.player.setVelocity(newVX, newVY);
+                } else {
+                    this.player.setVelocity(desiredVX, desiredVY);
+                }
             }
-        } catch (e) { try { this.player.setVelocity(velocityX * speed, velocityY * speed); } catch (e2) { } }
+        } catch (e) { try { if (!p1Jumping) this.player.setVelocity(velocityX * speed, velocityY * speed); } catch (e2) { } }
 
         // apply velocity for player2 if present (same sliding effect)
         try {
-            if (this.player2 && this.player2.active) {
+            if (this.player2 && this.player2.active && !p2Jumping) {
                 const desired2X = p2VelocityX * speed;
                 const desired2Y = p2VelocityY * speed;
                 if (this.rainActive && this.currentRain) {
@@ -7581,7 +7622,7 @@ class GameScene extends Phaser.Scene {
             const touchAction = !!(touch && touch.action);
             const p1ShootKeyA = this.keys && this.keys.x;
             const p1ShootKeyB = this.keys && this.keys.space;
-            if ((p1ShootKeyA && Phaser.Input.Keyboard.JustDown(p1ShootKeyA)) || (p1ShootKeyB && Phaser.Input.Keyboard.JustDown(p1ShootKeyB)) || (touchAction && !this._lastTouchAction)) {
+            if (!p1Jumping && ((p1ShootKeyA && Phaser.Input.Keyboard.JustDown(p1ShootKeyA)) || (p1ShootKeyB && Phaser.Input.Keyboard.JustDown(p1ShootKeyB)) || (touchAction && !this._lastTouchAction))) {
                 this.shootDynamite();
             }
             // remember last touch action state for edge detection
@@ -7589,7 +7630,7 @@ class GameScene extends Phaser.Scene {
         } catch (e) {
             // If anything goes wrong reading touch input, fall back to keyboard only
             try {
-                if ((this.keys && this.keys.x && Phaser.Input.Keyboard.JustDown(this.keys.x)) || (this.keys && this.keys.space && Phaser.Input.Keyboard.JustDown(this.keys.space))) {
+                if (!p1Jumping && ((this.keys && this.keys.x && Phaser.Input.Keyboard.JustDown(this.keys.x)) || (this.keys && this.keys.space && Phaser.Input.Keyboard.JustDown(this.keys.space)))) {
                     this.shootDynamite();
                 }
             } catch (e2) { /* ignore */ }
@@ -7605,7 +7646,7 @@ class GameScene extends Phaser.Scene {
         // Action keys: try placing plank first, otherwise open nearby door when action pressed
         try {
             const p1ActionPressed = Array.isArray(this.p1ActionKeys) && this.p1ActionKeys.some(k => Phaser.Input.Keyboard.JustDown(k));
-            if (p1ActionPressed) {
+            if (p1ActionPressed && !p1Jumping) {
                 const used = this.placePlankFor(this.player);
                 if (!used) {
                     const doors = this.doors?.children?.entries || [];
@@ -7622,7 +7663,7 @@ class GameScene extends Phaser.Scene {
         } catch (e) { }
         try {
             const p2ActionPressed = Array.isArray(this.p2ActionKeys) && this.p2ActionKeys.some(k => Phaser.Input.Keyboard.JustDown(k));
-            if (p2ActionPressed) {
+            if (p2ActionPressed && !p2Jumping) {
                 const used2 = this.placePlankFor(this.player2);
                 if (!used2) {
                     const doors = this.doors?.children?.entries || [];
@@ -7638,12 +7679,12 @@ class GameScene extends Phaser.Scene {
             }
         } catch (e) { }
         // Check if on hole
-        if (tile && tile.type === 'hole') {
+        if (!p1Jumping && tile && tile.type === 'hole') {
             this.hitHole();
         }
 
         // Check if on back tile: return to previous level
-        if (tile && tile.type === 'back') {
+        if (!p1Jumping && tile && tile.type === 'back') {
             const forcedBackLevel = Number.isFinite(Number(tile.backTargetLevelIndex)) ? Number(tile.backTargetLevelIndex) : null;
             this.goToPreviousLevel(forcedBackLevel);
         }
@@ -7779,6 +7820,128 @@ class GameScene extends Phaser.Scene {
                 }
             }
         } catch (e) { /* ignore proximity errors */ }
+    }
+
+    isJumpingPlayer(player) {
+        try {
+            return !!(player && player.getData && player.getData('isJumping'));
+        } catch (e) {
+            return false;
+        }
+    }
+
+    getJumpDirectionFor(player, inputX = 0, inputY = 0) {
+        const ix = Number(inputX) || 0;
+        const iy = Number(inputY) || 0;
+        if (Math.abs(ix) > 0 || Math.abs(iy) > 0) {
+            if (Math.abs(ix) >= Math.abs(iy)) return { x: Math.sign(ix), y: 0 };
+            return { x: 0, y: Math.sign(iy) };
+        }
+
+        const isPlayer2 = player === this.player2;
+        const lastMoveDir = isPlayer2 ? this.lastMoveDirP2 : this.lastMoveDir;
+        if (lastMoveDir && (Math.abs(Number(lastMoveDir.x) || 0) > 0 || Math.abs(Number(lastMoveDir.y) || 0) > 0)) {
+            if (Math.abs(Number(lastMoveDir.x) || 0) >= Math.abs(Number(lastMoveDir.y) || 0)) {
+                return { x: Math.sign(Number(lastMoveDir.x) || 0), y: 0 };
+            }
+            return { x: 0, y: Math.sign(Number(lastMoveDir.y) || 0) };
+        }
+
+        const facing = isPlayer2 ? (this.player2Facing || 'front') : (this.playerFacing || 'front');
+        if (facing === 'left' || facing === 'back_left') return { x: -1, y: 0 };
+        if (facing === 'right' || facing === 'back_right') return { x: 1, y: 0 };
+        if (facing === 'back') return { x: 0, y: -1 };
+        return { x: 0, y: 1 };
+    }
+
+    isJumpBlockedTile(tile) {
+        if (!tile) return true;
+        const type = String(tile.type || '').toLowerCase();
+        return type === 'wall' || type === 'door';
+    }
+
+    hasBlockingJumpOccupantAt(gridX, gridY) {
+        const hasOccupantInGroup = (group) => {
+            const entries = group?.children?.entries || [];
+            return entries.some((entry) => {
+                if (!entry || !entry.active) return false;
+                const objGridX = Math.floor(((entry.x || 0) - (this.mapOffsetX || 0)) / CONFIG.tileSize);
+                const objGridY = Math.floor(((entry.y || 0) - (this.mapOffsetY || 0)) / CONFIG.tileSize);
+                return objGridX === gridX && objGridY === gridY;
+            });
+        };
+
+        return hasOccupantInGroup(this.rocks) || hasOccupantInGroup(this.boulders);
+    }
+
+    attemptJumpFor(player, options = {}) {
+        try {
+            if (this.jumpEnabled === false) return false;
+            if (!player || !player.active || !player.body) return false;
+            if (this.isJumpingPlayer(player)) return false;
+            if (player.body.enable === false) return false;
+
+            const now = Number(this.time?.now) || 0;
+            const nextJumpAt = Number(player.getData && player.getData('nextJumpAt')) || 0;
+            if (now < nextJumpAt) return false;
+
+            const direction = this.getJumpDirectionFor(player, options.inputX, options.inputY);
+            if (!direction || (!direction.x && !direction.y)) return false;
+
+            const startGridX = Math.floor((player.x - (this.mapOffsetX || 0)) / CONFIG.tileSize);
+            const startGridY = Math.floor((player.y - (this.mapOffsetY || 0)) / CONFIG.tileSize);
+            const jumpDistanceTiles = Math.max(2, Number(CONFIG.jumpDistanceTiles) || 2);
+            const midGridX = startGridX + direction.x;
+            const midGridY = startGridY + direction.y;
+            const landGridX = startGridX + direction.x * jumpDistanceTiles;
+            const landGridY = startGridY + direction.y * jumpDistanceTiles;
+
+            const midTile = this.tiles?.[midGridY]?.[midGridX] || null;
+            const landingTile = this.tiles?.[landGridY]?.[landGridX] || null;
+            if (this.isJumpBlockedTile(midTile) || this.isJumpBlockedTile(landingTile)) return false;
+            if (this.hasBlockingJumpOccupantAt(landGridX, landGridY)) return false;
+
+            const landX = this.mapOffsetX + landGridX * CONFIG.tileSize + CONFIG.tileSize / 2;
+            const landY = this.mapOffsetY + landGridY * CONFIG.tileSize + CONFIG.tileSize / 2;
+            const jumpDuration = Math.max(120, Number(CONFIG.jumpDuration) || 220);
+            const jumpCooldown = Math.max(jumpDuration, Number(CONFIG.jumpCooldown) || 450);
+            const baseScaleX = Number(player.scaleX) || 1;
+            const baseScaleY = Number(player.scaleY) || 1;
+
+            try { player.body.setVelocity(0, 0); } catch (e) { }
+            try { player.body.setEnable(false); } catch (e) { }
+            try { player.setData('isJumping', true); } catch (e) { }
+            try { player.setData('nextJumpAt', now + jumpCooldown); } catch (e) { }
+            try { if (player.anims && player.anims.isPlaying) player.anims.stop(); } catch (e) { }
+
+            this.tweens.add({
+                targets: player,
+                x: landX,
+                y: landY,
+                duration: jumpDuration,
+                ease: 'Quad.easeOut',
+                onComplete: () => {
+                    try { player.setPosition(landX, landY); } catch (e) { }
+                    try { player.setScale(baseScaleX, baseScaleY); } catch (e) { }
+                    try { player.setData('isJumping', false); } catch (e) { }
+                    try { player.body.setEnable(true); } catch (e) { }
+                    try { if (this.createDustPuff) this.createDustPuff(landX, landY, 0.75); } catch (e) { }
+                }
+            });
+
+            this.tweens.add({
+                targets: player,
+                scaleX: baseScaleX * 1.12,
+                scaleY: baseScaleY * 1.12,
+                duration: Math.floor(jumpDuration / 2),
+                yoyo: true,
+                ease: 'Sine.easeOut'
+            });
+
+            return true;
+        } catch (e) {
+            return false;
+        }
     }
 
     onPlayerDoorCollide(player, door) {
