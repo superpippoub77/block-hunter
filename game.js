@@ -7518,7 +7518,7 @@ class GameScene extends Phaser.Scene {
                 }
             } else {
                 nextFacing = velocityY < 0 ? 'back' : 'front';
-                    return; // Early return for wall reveal
+                this.playerVerticalFacing = nextFacing;
             }
             this.playerFacing = nextFacing;
 
@@ -7546,7 +7546,7 @@ class GameScene extends Phaser.Scene {
                 this.player.setFlipX(false);
             } else if (facing === 'back_left') {
                 this.player.setTexture('player_back_right', 0);
-                        return; // Early return after spawning miner
+                this.player.setFlipX(true);
             } else if (facing === 'right') {
                 this.player.setTexture('player_right', 0);
                 this.player.setFlipX(false);
@@ -7890,7 +7890,8 @@ class GameScene extends Phaser.Scene {
 
             const startGridX = Math.floor((player.x - (this.mapOffsetX || 0)) / CONFIG.tileSize);
             const startGridY = Math.floor((player.y - (this.mapOffsetY || 0)) / CONFIG.tileSize);
-            const jumpDistanceTiles = Math.max(2, Number(CONFIG.jumpDistanceTiles) || 2);
+            const jumpCfg = CONFIG.jump || {};
+            const jumpDistanceTiles = Math.max(2, Number(jumpCfg.distanceTiles ?? CONFIG.jumpDistanceTiles) || 2);
             const midGridX = startGridX + direction.x;
             const midGridY = startGridY + direction.y;
             const landGridX = startGridX + direction.x * jumpDistanceTiles;
@@ -7903,8 +7904,11 @@ class GameScene extends Phaser.Scene {
 
             const landX = this.mapOffsetX + landGridX * CONFIG.tileSize + CONFIG.tileSize / 2;
             const landY = this.mapOffsetY + landGridY * CONFIG.tileSize + CONFIG.tileSize / 2;
-            const jumpDuration = Math.max(120, Number(CONFIG.jumpDuration) || 220);
-            const jumpCooldown = Math.max(jumpDuration, Number(CONFIG.jumpCooldown) || 450);
+            const startX = Number(player.x) || landX;
+            const startY = Number(player.y) || landY;
+            const jumpDuration = Math.max(120, Number(jumpCfg.duration ?? CONFIG.jumpDuration) || 220);
+            const jumpCooldown = Math.max(jumpDuration, Number(jumpCfg.cooldown ?? CONFIG.jumpCooldown) || 450);
+            const jumpArcHeight = Math.max(10, Number(jumpCfg.arcHeight ?? CONFIG.jumpArcHeight) || Math.floor(CONFIG.tileSize * 0.85));
             const baseScaleX = Number(player.scaleX) || 1;
             const baseScaleY = Number(player.scaleY) || 1;
 
@@ -7914,12 +7918,19 @@ class GameScene extends Phaser.Scene {
             try { player.setData('nextJumpAt', now + jumpCooldown); } catch (e) { }
             try { if (player.anims && player.anims.isPlaying) player.anims.stop(); } catch (e) { }
 
+            const jumpProgress = { t: 0 };
             this.tweens.add({
-                targets: player,
-                x: landX,
-                y: landY,
+                targets: jumpProgress,
+                t: 1,
                 duration: jumpDuration,
-                ease: 'Quad.easeOut',
+                ease: 'Sine.easeInOut',
+                onUpdate: () => {
+                    const t = Phaser.Math.Clamp(Number(jumpProgress.t) || 0, 0, 1);
+                    const travelX = Phaser.Math.Linear(startX, landX, t);
+                    const travelY = Phaser.Math.Linear(startY, landY, t);
+                    const hopOffset = jumpArcHeight * 4 * t * (1 - t);
+                    try { player.setPosition(travelX, travelY - hopOffset); } catch (e) { }
+                },
                 onComplete: () => {
                     try { player.setPosition(landX, landY); } catch (e) { }
                     try { player.setScale(baseScaleX, baseScaleY); } catch (e) { }

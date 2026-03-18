@@ -1420,7 +1420,7 @@
     },
     "ghost": 0,
     "bat": 0,
-    "spider": 0,
+    "spider": 2,
     "jumpEnabled": true,
     "ghostSpeed": 0,
     "batSpeed": 0,
