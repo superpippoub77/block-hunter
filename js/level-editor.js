@@ -4353,3 +4353,58 @@ LevelEditorScene.prototype.updateSelectedCellInfo = function updateSelectedCellI
     _originalUpdateSelectedCellInfo.call(this);
     fillSelectedTokenEditor(this);
 };
+
+// ===== Responsive Design: Mobile Panel Toggle =====
+function initResponsiveDesign() {
+    const leftPanel = document.querySelector('.left-panel');
+    const rightPanel = document.querySelector('.panel');
+    const panelOverlay = document.getElementById('panelOverlay');
+    const toggleLeftBtn = document.getElementById('toggleLeftPanel');
+    const toggleRightBtn = document.getElementById('toggleRightPanel');
+    
+    if (!leftPanel || !rightPanel || !toggleLeftBtn || !toggleRightBtn) return;
+
+    // Close panels when overlay is clicked
+    if (panelOverlay) {
+        panelOverlay.addEventListener('click', () => {
+            leftPanel.classList.remove('open');
+            rightPanel.classList.remove('open');
+            panelOverlay.classList.remove('active');
+        });
+    }
+
+    // Toggle left panel
+    toggleLeftBtn.addEventListener('click', () => {
+        const isOpen = leftPanel.classList.toggle('open');
+        panelOverlay?.classList.toggle('active', isOpen);
+    });
+
+    // Toggle right panel
+    toggleRightBtn.addEventListener('click', () => {
+        const isOpen = rightPanel.classList.toggle('open');
+        panelOverlay?.classList.toggle('active', isOpen);
+    });
+
+    // Close panels when clicking outside on different size changes
+    function handleResize() {
+        const isMobile = window.innerWidth <= 768;
+        if (!isMobile) {
+            leftPanel.classList.remove('open');
+            rightPanel.classList.remove('open');
+            panelOverlay?.classList.remove('active');
+        }
+    }
+
+    window.addEventListener('resize', handleResize);
+    handleResize(); // Initial check
+}
+
+// Initialize responsive design on page load
+document.addEventListener('DOMContentLoaded', () => {
+    setTimeout(initResponsiveDesign, 100);
+});
+
+// Also initialize if the script loads after DOM is ready
+if (document.readyState === 'interactive' || document.readyState === 'complete') {
+    setTimeout(initResponsiveDesign, 100);
+}

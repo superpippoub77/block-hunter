@@ -41,6 +41,111 @@
             height: 100vh;
         }
 
+        /* Responsive design */
+        @media (max-width: 1400px) {
+            .app {
+                grid-template-columns: 280px 1fr 380px;
+            }
+        }
+
+        @media (max-width: 1024px) {
+            .app {
+                grid-template-columns: 240px 1fr 300px;
+            }
+
+            .left-panel {
+                padding: 10px;
+            }
+
+            .panel {
+                padding: 10px;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .app {
+                display: grid;
+                grid-template-columns: 1fr;
+                grid-template-rows: auto 1fr auto;
+                height: 100vh;
+            }
+
+            .left-panel,
+            .panel {
+                position: fixed;
+                top: 0;
+                z-index: 5000;
+                width: 100%;
+                height: 100vh;
+                transform: translateX(-200%);
+                transition: transform 0.3s ease;
+                overflow-y: auto;
+                overflow-x: hidden;
+            }
+
+            .left-panel {
+                left: 0;
+            }
+
+            .left-panel.open {
+                transform: translateX(0);
+            }
+
+            .panel {
+                right: 0;
+            }
+
+            .panel.open {
+                transform: translateX(0);
+            }
+
+            #editor-game {
+                grid-column: 1;
+                grid-row: 2;
+                border-right: none;
+            }
+
+            .mobile-toolbar {
+                display: flex;
+                gap: 8px;
+                padding: 8px;
+                background: #0a1326;
+                border-bottom: 1px solid #1f2a44;
+                z-index: 4000;
+                grid-column: 1;
+                grid-row: 1;
+            }
+
+            .mobile-toolbar button {
+                flex: 1;
+                padding: 8px 4px;
+                font-size: 8px;
+            }
+
+            .panel-overlay {
+                display: none;
+                position: fixed;
+                inset: 0;
+                background: rgba(0, 0, 0, 0.7);
+                z-index: 4500;
+            }
+
+            .panel-overlay.active {
+                display: block;
+            }
+        }
+
+        @media (max-width: 480px) {
+            :root {
+                font-size: 12px;
+            }
+
+            .left-panel,
+            .panel {
+                padding: 8px;
+            }
+        }
+
         #editor-game {
             border-right: 2px solid #1f2a44;
             box-shadow: inset 0 0 50px rgba(65, 105, 225, 0.15);
@@ -458,6 +563,37 @@
             transform: none;
         }
 
+        @media (max-width: 1024px) {
+            #hScroll {
+                right: 380px;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .editor-scrollbar {
+                display: none;
+            }
+
+            #hScroll,
+            #vScroll {
+                display: none;
+            }
+
+            .mobile-toolbar {
+                display: flex;
+            }
+        }
+
+        @media (min-width: 769px) {
+            .mobile-toolbar {
+                display: none;
+            }
+
+            #panelOverlay {
+                display: none !important;
+            }
+        }
+
         /* small credit shown on non-game scenes */
         .spike-credit {
             position: fixed;
@@ -475,6 +611,15 @@
 
 <body>
     <div class="app">
+        <!-- Mobile toolbar -->
+        <div class="mobile-toolbar">
+            <button id="toggleLeftPanel" type="button" title="Mostra Palette">◀ PALETTE</button>
+            <button id="toggleRightPanel" type="button" title="Mostra Opzioni">OPZIONI ▶</button>
+        </div>
+
+        <!-- Overlay per chiudere i pannelli su mobile -->
+        <div id="panelOverlay" class="panel-overlay"></div>
+
         <aside class="left-panel">
             <h1>PALETTE</h1>
             <div class="accordion">
