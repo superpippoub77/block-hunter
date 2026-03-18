@@ -28,6 +28,91 @@ const OBJECT_NATIVE_SIZE = 64; // objects.png frames are 64x64
 
 //Default frame dimension
 const defaultFrame = { frameWidth: OBJECT_NATIVE_SIZE, frameHeight: OBJECT_NATIVE_SIZE };
+const PRELOAD_ASSET_MANIFEST_KEY = 'preload_asset_manifest';
+const PRELOAD_ASSET_MANIFEST_PATH = 'data/data.json';
+
+const PRELOAD_SPRITESHEET_CONFIGS = {
+    flags: { frameWidth: 64, frameHeight: 32 },
+    tiles: defaultFrame,
+    wall_tiles: defaultFrame,
+    objects: defaultFrame,
+    bat: defaultFrame,
+    ghost: defaultFrame,
+    player_front: { frameWidth: 139, frameHeight: 135 },
+    player_back: { frameWidth: 139, frameHeight: 135 },
+    player_right: { frameWidth: 139, frameHeight: 135 },
+    player_back_right: { frameWidth: 139, frameHeight: 135 }
+};
+
+function queueLegacyPreloadAssets(scene) {
+    scene.load
+        .image('title', 'assets/images/objects/title.png')
+        .image('explorer', 'assets/images/objects/explorer.png')
+        .image('title_explosion', 'assets/images/objects/title_explosion.png')
+        .image('bg', 'assets/images/objects/attract_bg.png')
+        .image('game_bg', 'assets/images/objects/level1.png')
+        .spritesheet('flags', 'assets/images/objects/flags.png', PRELOAD_SPRITESHEET_CONFIGS.flags)
+        .spritesheet('tiles', 'assets/images/objects/tiles.png', PRELOAD_SPRITESHEET_CONFIGS.tiles)
+        .spritesheet('wall_tiles', 'assets/images/objects/wall_completed.png', PRELOAD_SPRITESHEET_CONFIGS.wall_tiles)
+        .spritesheet('objects', 'assets/images/objects/obj_game.png', PRELOAD_SPRITESHEET_CONFIGS.objects)
+        .spritesheet('bat', 'assets/images/objects/bat.png', PRELOAD_SPRITESHEET_CONFIGS.bat)
+        .spritesheet('ghost', 'assets/images/objects/ghost.png', PRELOAD_SPRITESHEET_CONFIGS.ghost)
+        .spritesheet('player_front', 'assets/images/objects/player_front.png', PRELOAD_SPRITESHEET_CONFIGS.player_front)
+        .spritesheet('player_back', 'assets/images/objects/player_back.png', PRELOAD_SPRITESHEET_CONFIGS.player_back)
+        .spritesheet('player_right', 'assets/images/objects/player_right.png', PRELOAD_SPRITESHEET_CONFIGS.player_right)
+        .spritesheet('player_back_right', 'assets/images/objects/player_back_rigth.png', PRELOAD_SPRITESHEET_CONFIGS.player_back_right)
+        .audio('intro_bgm', 'assets/music/intro.mp3')
+        .audio('game_bgm', 'assets/music/game.mp3')
+        .audio('step_sfx', 'assets/music/step.mp3')
+        .audio('stone_sfx', 'assets/music/stone.mp3')
+        .audio('explosion_sfx', 'assets/music/explosion.mp3')
+        .audio('gem_sfx', 'assets/music/gem.mp3')
+        .audio('rolling_sfx', 'assets/music/rolling_stones.mp3')
+        .audio('gameover_sfx', 'assets/music/gameover.mp3')
+        .audio('level_completed_sfx', 'assets/music/level_completed.mp3')
+        .audio('coin_sfx', 'assets/music/coin.mp3')
+        .audio('select_sfx', 'assets/music/select.mp3')
+        .audio('ghost_sfx', 'assets/music/ghost.mp3')
+        .audio('bat_sfx', 'assets/music/bat.mp3')
+        .audio('rain_sfx', 'assets/music/rain.mp3')
+        .image('game_bg_1', 'assets/images/objects/level1.png')
+        .image('game_bg_2', 'assets/images/objects/level2.png')
+        .image('game_bg_3', 'assets/images/objects/level3.png')
+        .image('game_bg_4', 'assets/images/objects/level4.png')
+        .image('game_bg_5', 'assets/images/objects/level5.png')
+        .image('game_fg', 'assets/images/objects/foreground.png');
+}
+
+function queueAssetsFromManifest(scene, manifest) {
+    if (!manifest || typeof manifest !== 'object') return 0;
+
+    let queued = 0;
+    const buckets = ['music', 'objects', 'backgrounds', 'foregrounds'];
+
+    buckets.forEach((bucket) => {
+        const entries = manifest[bucket];
+        if (!Array.isArray(entries)) return;
+
+        entries.forEach((entry) => {
+            if (!entry || entry.inPreload !== true || entry.exists === false || !entry.key || !entry.path) {
+                return;
+            }
+
+            const spriteConfig = PRELOAD_SPRITESHEET_CONFIGS[entry.key];
+            if (bucket === 'music') {
+                scene.load.audio(entry.key, entry.path);
+            } else if (spriteConfig) {
+                scene.load.spritesheet(entry.key, entry.path, spriteConfig);
+            } else {
+                scene.load.image(entry.key, entry.path);
+            }
+
+            queued += 1;
+        });
+    });
+
+    return queued;
+}
 
 // Load persistent config if present (optional: can be merged after loadConfig)
 function mergeLocalConfig() {
@@ -371,6 +456,20 @@ class PreloadScene extends Phaser.Scene {
 
     // Load title, background, tiles, objects, and all level JSON files
     preload() {
+        let preloadAssetsQueued = false;
+        const queueConfiguredAssets = () => {
+            if (preloadAssetsQueued) return;
+
+            const manifest = this.cache.json.get(PRELOAD_ASSET_MANIFEST_KEY);
+            const queuedFromManifest = queueAssetsFromManifest(this, manifest);
+
+            if (queuedFromManifest === 0) {
+                queueLegacyPreloadAssets(this);
+            }
+
+            preloadAssetsQueued = true;
+        };
+
         // Clear any stored state at game start to ensure a clean session
         try {
             if (window && window.sessionStorage) sessionStorage.clear();
@@ -481,64 +580,13 @@ class PreloadScene extends Phaser.Scene {
 
     // title not shown during preload
 
-        this.load
-            .image('title', 'assets/images/objects/title.png')
-            .image('explorer', 'assets/images/objects/explorer.png')
-            .image('title_explosion', 'assets/images/objects/title_explosion.png')
-            .image('bg', 'assets/images/objects/attract_bg.png')
-            // 'game_bg.png' may be missing in some distributions; use level1.png as a fallback background
-            .image('game_bg', 'images/level1.png')
-            // Load flags sprite (8 flags: it, fr, de, en, us, ja, es, zh - 64x64 each)
-            .spritesheet('flags', 'assets/images/objects/flags.png', { frameWidth: 64, frameHeight: 32 })
-            // Load tiles sprite (6 tiles: wall, hole, sand, floor, stone, hole2 - 64x48 each)
-            .spritesheet('tiles', 'assets/images/objects/tiles.png', defaultFrame)
-            // Load wall sprite sheet (1 row x 7 columns, 64x64 each frame)
-            .spritesheet('wall_tiles', 'assets/images/objects/wall_completed.png', defaultFrame)
-            // Load objects sprite (4x4 matrix = 16 objects)
-            // Row 1: dynamite, heart, stone, player
-            // Row 2: dynamite_chest, door, gem, stones
-            // Row 3: key, sand_pile, ghost, pepita
-            // Row 4: skull...wall, hole1, hole2, explosion
-            .spritesheet('objects', 'assets/images/objects/obj_game.png', defaultFrame)
-            // Front walking animation spritesheet (1 row, 7 frames, 172x135 each)
-            // Bat flying animation spritesheet (1 row, 6 frames)
-            .spritesheet('bat', 'assets/images/objects/bat.png', defaultFrame)
-            // Ghost animation spritesheet (1 row, 10 frames)
-            .spritesheet('ghost', 'assets/images/objects/ghost.png', defaultFrame)
-            .spritesheet('player_front', 'assets/images/objects/player_front.png', {
-                frameWidth: 139,
-                frameHeight: 135
-            })
-            // Back walking animation spritesheet (same layout as player_front)
-            .spritesheet('player_back', 'assets/images/objects/player_back.png', {
-                frameWidth: 139,
-                frameHeight: 135
-            })
-            // Right walking animation spritesheet (same layout as player_front)
-            .spritesheet('player_right', 'assets/images/objects/player_right.png', {
-                frameWidth: 139,
-                frameHeight: 135
-            })
-            // Back-right walking animation spritesheet (same layout as player_front)
-            .spritesheet('player_back_right', 'assets/images/objects/player_back_rigth.png', {
-                frameWidth: 139,
-                frameHeight: 135
-            })
-            
-            .audio('intro_bgm', 'assets/music/intro.mp3')
-            .audio('game_bgm', 'assets/music/game.mp3')
-            .audio('step_sfx', 'assets/music/step.mp3')
-            .audio('stone_sfx', 'assets/music/stone.mp3')
-            .audio('explosion_sfx', 'assets/music/explosion.mp3')
-            .audio('gem_sfx', 'assets/music/gem.mp3')
-            .audio('rolling_sfx', 'assets/music/rolling_stones.mp3')
-            .audio('gameover_sfx', 'assets/music/gameover.mp3')
-            .audio('level_completed_sfx', 'assets/music/level_completed.mp3')
-            .audio('coin_sfx', 'assets/music/coin.mp3')
-            .audio('select_sfx', 'assets/music/select.mp3')
-            .audio('ghost_sfx', 'assets/music/ghost.mp3')
-            .audio('bat_sfx', 'assets/music/bat.mp3')
-            .audio('rain_sfx', 'assets/music/rain.mp3');
+        this.load.once(`filecomplete-json-${PRELOAD_ASSET_MANIFEST_KEY}`, queueConfiguredAssets);
+        this.load.on('loaderror', (fileObj) => {
+            if (fileObj && fileObj.key === PRELOAD_ASSET_MANIFEST_KEY) {
+                queueConfiguredAssets();
+            }
+        });
+        this.load.json(PRELOAD_ASSET_MANIFEST_KEY, PRELOAD_ASSET_MANIFEST_PATH);
 
         // Load all level JSON files (50 levels)
         // Carica solo i livelli con sottolivello 0-4 per ogni decade
@@ -548,15 +596,6 @@ class PreloadScene extends Phaser.Scene {
                 this.load.json(`level${num}`, `data/level/level${num}.json`);
             }
         }
-
-        // Load background images for each master level (level1.png, level2.png, ...)
-        for (let master = 1; master <= 5; master++) {
-            this.load.image(`game_bg_${master}`, `images/level${master}.png`);
-        }
-
-        // Load optional foreground image (parallax overlay)
-        // Place a file named 'foreground.png' in the images/ folder to use it.
-        this.load.image('game_fg', 'images/foreground.png');
 
         // Create graphics for remaining assets
         this.createAssets();

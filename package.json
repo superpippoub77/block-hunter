@@ -5,6 +5,7 @@
   "scripts": {
   "start": "npx serve -p 8000",
   "start:api": "node server.js",
+    "generate:data-json": "node tools/generate-data-json.js",
     "generate:asset-manifests": "node tools/generate-asset-manifests.js",
     "cap:init": "npx cap init block-hunter com.example.blockhunter --web-dir=www",
     "cap:add:android": "npx cap add android",
