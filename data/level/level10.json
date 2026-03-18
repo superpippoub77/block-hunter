@@ -1393,7 +1393,7 @@
         "general": {
             "light": "piena",
             "fog": {
-                "enabled": false,
+                "enabled": true,
                 "alpha": 0.15,
                 "layers": 10,
                 "speed": "fast",
@@ -1402,7 +1402,7 @@
             "rain": {
                 "enabled": true,
                 "intensity": 2.2,
-                "frequency": 220,
+                "frequency": 20,
                 "wind": 200,
                 "direction": "random",
                 "interval": 20,
@@ -1440,22 +1440,29 @@
     ],
     "foreground": [
         {
-            "src": "assets/images/foreground/fg_forest.png",
+            "src": "assets/images/foreground/_uccelli.png",
             "parallaxFgFactor": 0.8,
+            "parallaxFgAlpha": 0.9,
+            "width": 232,
+            "height": 202,
+            "left": 200,
+            "top": 10
+        },
+        {
+            "src": "assets/images/foreground/fg_forest.png",
+            "parallaxFgFactor": 0.5,
             "parallaxFgAlpha": 0.9
         },
         {
             "src": "assets/images/foreground/_staccionata.png",
-            "parallaxFgFactor": 0.6,
+            "parallaxFgFactor": 0.4,
             "parallaxFgAlpha": 0.9,
-            
-			"left": 0,
-			"top": 0,
-
-			"repeatX": "*",
-			"repeatY": 5,
-			"repeatStepX": 800,
-			"repeatStepY": 600
+            "left": 0,
+            "top": 0,
+            "repeatX": "*",
+            "repeatY": 5,
+            "repeatStepX": 800,
+            "repeatStepY": 600
         }
     ],
     "requiredGems": 2

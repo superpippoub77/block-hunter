@@ -2797,6 +2797,7 @@ class GameScene extends Phaser.Scene {
         // Resize and position background(s) to cover the world, then let them scroll.
         // Support level-specific multi-layer backgrounds: each layer can define:
         // - src
+        // - explicit size (width/height, or w/h) to avoid fullscreen stretch
         // - parallax factor/alpha
         // - pixel offset (offsetX/left, offsetY/top)
         // - replicas on X/Y (repeatX/repeatY or replicaX/replicaY), including '*' for extended repeat
@@ -2821,6 +2822,20 @@ class GameScene extends Phaser.Scene {
             const n = Number(value);
             if (!Number.isFinite(n)) return 1;
             return Math.max(1, Math.floor(n));
+        };
+
+        const resolveLayerSize = (entry, defaultW, defaultH) => {
+            const e = (entry && typeof entry === 'object') ? entry : {};
+            const rawW = Number(e.width ?? e.w ?? e.displayWidth ?? e.layerWidth);
+            const rawH = Number(e.height ?? e.h ?? e.displayHeight ?? e.layerHeight);
+            const hasW = Number.isFinite(rawW) && rawW > 0;
+            const hasH = Number.isFinite(rawH) && rawH > 0;
+
+            return {
+                layerW: hasW ? rawW : defaultW,
+                layerH: hasH ? rawH : defaultH,
+                fixedSize: hasW || hasH
+            };
         };
 
         const resolveLayerPlacement = (entry, layerW, layerH, viewportW, viewportH) => {
@@ -2871,7 +2886,7 @@ class GameScene extends Phaser.Scene {
             };
         };
 
-        const placeLayerImage = (img, baseX, baseY, layerW, layerH, placement, ix, iy) => {
+        const placeLayerImage = (img, baseX, baseY, layerW, layerH, placement, ix, iy, fixedSize = false) => {
             const x = baseX + placement.offsetX + placement.stepX * ix;
             const y = baseY + placement.offsetY + placement.stepY * iy;
             try { img.setOrigin(0, 0); } catch (e) { }
@@ -2887,13 +2902,15 @@ class GameScene extends Phaser.Scene {
                 stepX: placement.stepX,
                 stepY: placement.stepY,
                 ix,
-                iy
+                iy,
+                fixedSize
             };
         };
 
         const applyLayerResize = (img, w, h) => {
             if (!img || !img.__bhLayerMeta) return;
             const m = img.__bhLayerMeta;
+            if (m.fixedSize) return;
             const x = m.baseX + m.offsetX + m.stepX * m.ix;
             const y = m.baseY + m.offsetY + m.stepY * m.iy;
             try { img.setOrigin(0, 0); } catch (e) { }
@@ -2930,14 +2947,15 @@ class GameScene extends Phaser.Scene {
                     ? Number(entry.parallaxBgAlpha)
                     : (typeof CONFIG.parallaxBgAlpha === 'number' ? Number(CONFIG.parallaxBgAlpha) : 1);
 
-                const placement = resolveLayerPlacement(entry, bgWidth, bgHeight, CONFIG.width, CONFIG.height);
+                const layerSize = resolveLayerSize(entry, bgWidth, bgHeight);
+                const placement = resolveLayerPlacement(entry, layerSize.layerW, layerSize.layerH, CONFIG.width, CONFIG.height);
 
                 const createBgImage = (textureKey) => {
                     try {
                         for (let iy = 0; iy < placement.countY; iy++) {
                             for (let ix = 0; ix < placement.countX; ix++) {
                                 const img = this.add.image(worldX, worldY, textureKey);
-                                placeLayerImage(img, worldX, worldY, bgWidth, bgHeight, placement, ix, iy);
+                                placeLayerImage(img, worldX, worldY, layerSize.layerW, layerSize.layerH, placement, ix, iy, layerSize.fixedSize);
                                 try { img.setDepth(-1000 - idx); } catch (e) { }
                                 try { img.setScrollFactor(parallaxFactor); } catch (e) { }
                                 try { img.setAlpha(Phaser.Math.Clamp(alphaVal, 0, 1)); } catch (e) { }
@@ -2995,7 +3013,8 @@ class GameScene extends Phaser.Scene {
             const createForegroundWithKey = (fgKey, entry, idx) => {
                 try {
                     if (!this.textures.exists(fgKey)) return;
-                    const placement = resolveLayerPlacement(entry, fgWidth, fgHeight, CONFIG.width, CONFIG.height);
+                    const layerSize = resolveLayerSize(entry, fgWidth, fgHeight);
+                    const placement = resolveLayerPlacement(entry, layerSize.layerW, layerSize.layerH, CONFIG.width, CONFIG.height);
 
                     const fgAlpha = (entry && typeof entry === 'object' && typeof entry.parallaxFgAlpha === 'number')
                         ? Number(entry.parallaxFgAlpha)
@@ -3008,7 +3027,7 @@ class GameScene extends Phaser.Scene {
                     for (let iy = 0; iy < placement.countY; iy++) {
                         for (let ix = 0; ix < placement.countX; ix++) {
                             const img = this.add.image(worldX, worldY, fgKey);
-                            placeLayerImage(img, worldX, worldY, fgWidth, fgHeight, placement, ix, iy);
+                            placeLayerImage(img, worldX, worldY, layerSize.layerW, layerSize.layerH, placement, ix, iy, layerSize.fixedSize);
                             try { img.setDepth(3000 + idx); } catch (e) { }
                             try { img.setAlpha(Phaser.Math.Clamp(fgAlpha, 0, 1)); } catch (e) { }
                             img.setScrollFactor(parallaxFactor);
