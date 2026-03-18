@@ -17,6 +17,7 @@ export const OBJECT_FRAMES = {
     stones: 7,
     key: 8,
     sand_pile: 9,
+    spider: 10,
     pepita: 11,
     wall: 12,
     wooden: 10,

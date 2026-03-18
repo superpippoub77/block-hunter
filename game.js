@@ -2745,6 +2745,7 @@ class GameScene extends Phaser.Scene {
         this.boulders = this.physics.add.group();
         this.ghosts = this.physics.add.group();
         this.bats = this.physics.add.group();
+        this.spiders = this.physics.add.group();
         this.gems = this.physics.add.group();
         this.items = this.physics.add.group();
         this.dynamites = this.physics.add.group();
@@ -2760,6 +2761,8 @@ class GameScene extends Phaser.Scene {
         this.mapGemIndex = 0;
         this.keySpawnPositions = [];
         this.ghostSpawnPositions = [];
+        this.batSpawnPositions = [];
+        this.spiderSpawnPositions = [];
         this.hole2ExitPositions = [];
         this.hole2ExitsActive = false;
         this.lastKeyPos = null;
@@ -2770,7 +2773,6 @@ class GameScene extends Phaser.Scene {
         this.playerGemStock = 0;
         this.batDirectionTimer = null;
         this.dynamicBouldersRuntimeDisabled = false;
-        this.batSpawnPositions = [];
         this.effectFollowers = [];
         this.spawnedFallingStoneCount = 0;
         this.stoneShardBurstsRemaining = 0;
@@ -3112,6 +3114,7 @@ class GameScene extends Phaser.Scene {
         // Spawn ghosts (count from level JSON, e.g. "ghost": 3)
         this.spawnGhosts();
         this.spawnBatsFromMap();
+        this.spawnSpidersFromMap();
 
         // Spawn gems according to mode: one-by-one (spawn first only) or all-at-once
         if ((Number(this.gemsRemaining) || 0) > 0) {
@@ -3691,7 +3694,7 @@ class GameScene extends Phaser.Scene {
                     || type === 'wooden')
                     ? 'empty'
                     : type;
-                const normalizedTileType = (tileType === 'bat' || tileType === 'ghost') ? 'floor' : tileType;
+                const normalizedTileType = (tileType === 'bat' || tileType === 'ghost' || tileType === 'spider') ? 'floor' : tileType;
                 let tileSprite = null;
                 let coverSprite = null;
 
@@ -3948,6 +3951,18 @@ class GameScene extends Phaser.Scene {
                         x: offsetX + x * CONFIG.tileSize + CONFIG.tileSize / 2,
                         y: offsetY + y * CONFIG.tileSize + CONFIG.tileSize / 2,
                         effects: cellEffects
+                    });
+                }
+
+                if (!tileNoTile && type === 'spider') {
+                    if (!this.spiderSpawnPositions) {
+                        this.spiderSpawnPositions = [];
+                    }
+                    this.spiderSpawnPositions.push({
+                        x: offsetX + x * CONFIG.tileSize + CONFIG.tileSize / 2,
+                        y: offsetY + y * CONFIG.tileSize + CONFIG.tileSize / 2,
+                        gridX: x,
+                        gridY: y
                     });
                 }
 
@@ -5421,6 +5436,7 @@ class GameScene extends Phaser.Scene {
         this.physics.add.overlap(this.player, this.gems, this.collectGem, null, this);
         this.physics.add.overlap(this.player, this.items, this.collectItem, null, this);
         this.physics.add.overlap(this.player, this.bats, this.hitByBat, null, this);
+        this.physics.add.overlap(this.player, this.spiders, this.hitBySpider, null, this);
         const playerRockCollider = this.physics.add.collider(this.player, this.rocks, this.hitByRock, null, this);
         if (playerRockCollider) {
             this.playerCollisionRefs.push(playerRockCollider);
@@ -5448,6 +5464,7 @@ class GameScene extends Phaser.Scene {
                 this.physics.add.overlap(this.player2, this.gems, this.collectGem, null, this);
                 this.physics.add.overlap(this.player2, this.items, this.collectItem, null, this);
                 this.physics.add.overlap(this.player2, this.bats, this.hitByBat, null, this);
+                this.physics.add.overlap(this.player2, this.spiders, this.hitBySpider, null, this);
                 const p2RockCollider = this.physics.add.collider(this.player2, this.rocks, this.hitByRock, null, this);
                 if (p2RockCollider) this.playerCollisionRefs.push(p2RockCollider);
                 this.physics.add.overlap(this.player2, this.boulders, this.hitByBoulder, null, this);
@@ -5469,6 +5486,7 @@ class GameScene extends Phaser.Scene {
         this.physics.add.collider(this.dynamites, this.rocks, this.dynamiteHitRock, null, this);
         this.physics.add.overlap(this.dynamites, this.boulders, this.dynamiteHitBoulder, null, this);
         this.physics.add.overlap(this.dynamites, this.bats, this.dynamiteHitBat, null, this);
+        this.physics.add.overlap(this.dynamites, this.spiders, this.dynamiteHitSpider, null, this);
         this.physics.add.overlap(this.dynamites, this.shards, this.dynamiteHitShard, null, this);
         if (this.walls) {
             this.physics.add.collider(this.dynamites, this.walls, (dynamite) => {
@@ -7649,6 +7667,8 @@ class GameScene extends Phaser.Scene {
         this.checkDoorProximity();
         // Check proximity to holes for placing planks (show action hint if player has planks)
         this.checkHoleProximity();
+        // Check if any boulders are falling into holes
+        this.checkBouldersInHoles();
 
         // Update headlamp cone to follow player/camera direction
         if (this.isRoomDark && this.headlampEnabled) {
@@ -7658,6 +7678,7 @@ class GameScene extends Phaser.Scene {
         // Ghost visual perspective update (foreground ghosts look bigger)
         this.updateGhostPerspective();
         this.updateBatPerspective();
+        this.updateSpiders();
 
         // Dynamic boulders roll and slow down over time
         if (!this.dynamicBouldersRuntimeDisabled) {
@@ -7788,6 +7809,76 @@ class GameScene extends Phaser.Scene {
             return this.tiles[gridY][gridX];
         }
         return null;
+    }
+
+    checkBouldersInHoles() {
+        // Check each active boulder to see if it's over a hole
+        if (!this.boulders) return;
+        const boulders = this.boulders.children?.entries || [];
+        boulders.forEach((boulder) => {
+            if (!boulder || !boulder.active) return;
+            // Prevent re-checking if already falling into hole
+            if (boulder.getData && boulder.getData('fallingIntoHole')) return;
+            
+            const tile = this.getTileAt(boulder.x, boulder.y);
+            if (tile && tile.type === 'hole') {
+                this.boulderIntoHole(boulder);
+            }
+        });
+    }
+
+    boulderIntoHole(boulder) {
+        // Boulder falls into hole with shrinking animation
+        if (!boulder || !boulder.active) return;
+        
+        try {
+            if (boulder.setData) boulder.setData('fallingIntoHole', true);
+            
+            // Stop boulder movement
+            try { if (boulder.body) { boulder.body.setVelocity(0, 0); boulder.body.angularVelocity = 0; } } catch (e) { }
+            
+            // Get boulder grid position for center calculation
+            const gridX = Math.floor((boulder.x - (this.mapOffsetX || 0)) / CONFIG.tileSize);
+            const gridY = Math.floor((boulder.y - (this.mapOffsetY || 0)) / CONFIG.tileSize);
+            const centerX = this.mapOffsetX + gridX * CONFIG.tileSize + CONFIG.tileSize / 2;
+            const centerY = this.mapOffsetY + gridY * CONFIG.tileSize + CONFIG.tileSize / 2;
+            
+            // Get boulder's current scale
+            const currentScale = boulder.scale || 1;
+            
+            // Sinking tween: move to center, shrink and fade (same as player)
+            this.tweens.add({
+                targets: boulder,
+                x: centerX,
+                y: centerY + (CONFIG.tileSize * 0.18),
+                scale: Math.max(0.05, currentScale * 0.35),
+                alpha: 0,
+                angle: 14,
+                duration: 520,
+                ease: 'Cubic.easeIn',
+                onComplete: () => {
+                    try {
+                        // Create a small dust puff at the hole center
+                        try {
+                            if (this.createDustPuff) this.createDustPuff(centerX, centerY, 0.9);
+                        } catch (e) { }
+                        
+                        // Play fall sfx if available
+                        try {
+                            if (this.sound) {
+                                if (this.sound.get('fall_sfx')) this.sound.play('fall_sfx');
+                                else if (this.sound.get('explosion_sfx')) this.sound.play('explosion_sfx', { volume: 0.35 });
+                            }
+                        } catch (e) { }
+                        
+                        // Hide and remove the boulder
+                        boulder.setVisible(false);
+                        boulder.setActive(false);
+                        boulder.destroy();
+                    } catch (e) { }
+                }
+            });
+        } catch (e) { }
     }
 
     revealHiddenMapObjects(centerX, centerY, radius) {
@@ -10002,6 +10093,216 @@ class GameScene extends Phaser.Scene {
                 obj.x += offset;
             }
         });
+    }
+
+    getSpiderCountForLevel() {
+        const direct = Number(this.levelData?.spider);
+        if (Number.isFinite(direct) && direct > 0) {
+            return Math.floor(direct);
+        }
+        const inMap = Number(this.levelData?.map?.spider);
+        if (Number.isFinite(inMap) && inMap > 0) {
+            return Math.floor(inMap);
+        }
+        return 0;
+    }
+
+    getSpiderSpeedForLevel() {
+        const direct = Number(this.levelData?.spiderSpeed);
+        if (Number.isFinite(direct) && direct > 0) {
+            return direct;
+        }
+        const inMap = Number(this.levelData?.map?.spiderSpeed);
+        if (Number.isFinite(inMap) && inMap > 0) {
+            return inMap;
+        }
+        return Number(CONFIG.spiderSpeed) > 0 ? Number(CONFIG.spiderSpeed) : 100;
+    }
+
+    spawnSpidersFromMap() {
+        if (!this.spiders) return;
+        const requestedCount = this.getSpiderCountForLevel();
+        if (requestedCount <= 0) return;
+
+        const spawnPositions = Array.isArray(this.spiderSpawnPositions) ? this.spiderSpawnPositions : [];
+        if (!spawnPositions.length) return;
+
+        for (let i = 0; i < requestedCount; i++) {
+            const pos = spawnPositions[i % spawnPositions.length];
+            if (!pos) continue;
+            this.spawnMapSpider(pos.x, pos.y);
+        }
+    }
+
+    spawnMapSpider(worldX, worldY) {
+        if (!this.spiders) return;
+
+        const spider = this.spiders.create(worldX, worldY, 'objects', OBJECT_FRAMES.spider || 0);
+        const spiderScaleFactor = CONFIG.objectSize / OBJECT_NATIVE_SIZE;
+        spider.setScale(spiderScaleFactor);
+        spider.setData('baseScale', spiderScaleFactor);
+
+        if (spider.body) {
+            spider.body.setSize(Math.floor(spider.displayWidth || spider.width), Math.floor(spider.displayHeight || spider.height));
+            spider.body.setCollideWorldBounds(true);
+            spider.body.setBounce(0.3, 0.3);
+        }
+
+        spider.setData('speed', this.getSpiderSpeedForLevel());
+        spider.setData('lastBitAt', 0);
+        spider.setData('gridX', Math.floor((spider.x - (this.mapOffsetX || 0)) / CONFIG.tileSize));
+        spider.setData('gridY', Math.floor((spider.y - (this.mapOffsetY || 0)) / CONFIG.tileSize));
+
+        // Velocità iniziale casuale verso il player
+        if (this.player) {
+            const dx = this.player.x - spider.x;
+            const dy = this.player.y - spider.y;
+            const len = Math.sqrt(dx * dx + dy * dy);
+            if (len > 0) {
+                const speed = this.getSpiderSpeedForLevel();
+                spider.setVelocity((dx / len) * speed * 0.6, (dy / len) * speed * 0.6);
+            }
+        }
+    }
+
+    updateSpiders() {
+        if (!this.spiders) return;
+        const spiders = this.spiders.children?.entries || [];
+
+        spiders.forEach((spider) => {
+            if (!spider || !spider.active) return;
+
+            const speed = Number(spider.getData('speed')) || this.getSpiderSpeedForLevel();
+            const now = this.time.now;
+            const lastBitAt = Number(spider.getData('lastBitAt')) || 0;
+
+            // Aggiorna la posizione del ragno sulla griglia
+            const gridX = Math.floor((spider.x - (this.mapOffsetX || 0)) / CONFIG.tileSize);
+            const gridY = Math.floor((spider.y - (this.mapOffsetY || 0)) / CONFIG.tileSize);
+            spider.setData('gridX', gridX);
+            spider.setData('gridY', gridY);
+
+            // Verifica il tile dove si trova il ragno
+            const tile = this.getTileAt(spider.x, spider.y);
+            
+            // Se il ragno è su un buco, acqua, sabbia o parete, cambia direzione
+            if (tile && (tile.type === 'hole' || tile.type === 'hole2' || tile.type === 'water' || tile.type === 'sand' || tile.type === 'wall')) {
+                // Cambia direzione casuale
+                const angle = Phaser.Math.FloatBetween(0, Math.PI * 2);
+                spider.setVelocity(Math.cos(angle) * speed * 0.5, Math.sin(angle) * speed * 0.5);
+                spider.setData('changeDirectionCooldown', now + 1000);
+                return;
+            }
+
+            // Se c'è un cooldown di cambio direzione, non fare niente
+            const changeDirectionCooldown = Number(spider.getData('changeDirectionCooldown')) || 0;
+            if (now < changeDirectionCooldown) return;
+
+            // Movimento ricercativo verso il player
+            if (this.player && this.player.active) {
+                const playerDist = Phaser.Math.Distance.Between(spider.x, spider.y, this.player.x, this.player.y);
+                
+                // Se il ragno è abbastanza vicino, cerca il player facendo pathfinding nei 4 tile adiacenti
+                if (playerDist < CONFIG.tileSize * 8) {
+                    // Prova a muoverti verso il player controllando i tile adiacenti
+                    const currentVx = spider.body?.velocity?.x || 0;
+                    const currentVy = spider.body?.velocity?.y || 0;
+
+                    const dx = this.player.x - spider.x;
+                    const dy = this.player.y - spider.y;
+                    const len = Math.sqrt(dx * dx + dy * dy);
+
+                    if (len > 0) {
+                        // Direzione verso il player
+                        const newVx = (dx / len);
+                        const newVy = (dy / len);
+
+                        // Verifica il tile di destinazione
+                        const nextX = spider.x + newVx * CONFIG.tileSize;
+                        const nextY = spider.y + newVy * CONFIG.tileSize;
+                        const nextTile = this.getTileAt(nextX, nextY);
+
+                        // Se il tile di destinazione è valido, muoviti verso il player
+                        if (!nextTile || (nextTile.type !== 'hole' && nextTile.type !== 'hole2' && nextTile.type !== 'water' && nextTile.type !== 'sand' && nextTile.type !== 'wall')) {
+                            spider.setVelocity(newVx * speed, newVy * speed);
+                            return;
+                        }
+
+                        // Se il percorso diretto è bloccato, prova i tile adiacenti
+                        const candidates = [];
+                        const directions = [
+                            { x: newVx, y:newVy, priority: len },  // preferisci direzione verso player
+                            { x: newVy, y: -newVx, priority: len * 0.8 },  // perpendiculare
+                            { x: -newVy, y: newVx, priority: len * 0.8 }   // perpendiculare opposto
+                        ];
+
+                        directions.forEach(dir => {
+                            const testX = spider.x + dir.x * CONFIG.tileSize;
+                            const testY = spider.y + dir.y * CONFIG.tileSize;
+                            const testTile = this.getTileAt(testX, testY);
+                            if (!testTile || (testTile.type !== 'hole' && testTile.type !== 'hole2' && testTile.type !== 'water' && testTile.type !== 'sand' && testTile.type !== 'wall')) {
+                                candidates.push({ vx: dir.x, vy: dir.y, priority: dir.priority });
+                            }
+                        });
+
+                        if (candidates.length > 0) {
+                            // Scegli il candidato con priorità più alta
+                            const best = candidates.reduce((a, b) => a.priority > b.priority ? a : b);
+                            spider.setVelocity(best.vx * speed, best.vy * speed);
+                            return;
+                        }
+                    }
+                } else {
+                    // Se il ragno è lontano dal player, muoviti casualmente ma evita ostacoli
+                    const directions = [
+                        { x: 1, y: 0 },
+                        { x: -1, y: 0 },
+                        { x: 0, y: 1 },
+                        { x: 0, y: -1 }
+                    ];
+
+                    const validDirections = directions.filter(dir => {
+                        const testX = spider.x + dir.x * CONFIG.tileSize;
+                        const testY = spider.y + dir.y * CONFIG.tileSize;
+                        const testTile = this.getTileAt(testX, testY);
+                        return !testTile || (testTile.type !== 'hole' && testTile.type !== 'hole2' && testTile.type !== 'water' && testTile.type !== 'sand' && testTile.type !== 'wall');
+                    });
+
+                    if (validDirections.length > 0) {
+                        const dir = Phaser.Utils.Array.GetRandom(validDirections);
+                        spider.setVelocity(dir.x * speed * 0.7, dir.y * speed * 0.7);
+                    } else {
+                        // Se completamente circondato, muoviti in una direzione casuale
+                        const angle = Phaser.Math.FloatBetween(0, Math.PI * 2);
+                        spider.setVelocity(Math.cos(angle) * speed * 0.3, Math.sin(angle) * speed * 0.3);
+                    }
+                }
+            }
+        });
+    }
+
+    hitBySpider(player, spider) {
+        if (!spider || !spider.active) return;
+        if (this.cartPowerActive) return;
+
+        const now = this.time.now;
+        const lastBitAt = Number(spider.getData('lastBitAt')) || 0;
+        if (now < lastBitAt + 1000) return;  // Cooldown di 1 secondo tra i morsi
+        spider.setData('lastBitAt', now);
+
+        // Non rubare gem, solo danno
+        this.createBloodSplatter(player?.x, player?.y, 1.9);
+        this.showScorePopup(-20, player?.x, player?.y);
+        this.addScore(-20, player?.x, player?.y);
+
+        this.loseLife({ player });
+    }
+
+    dynamiteHitSpider(dynamite, spider) {
+        if (!spider || !spider.active) return;
+        this.addScore(20, spider.x, spider.y);
+        spider.destroy();
+        this.explodeDynamite(dynamite);
     }
 }
 
