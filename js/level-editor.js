@@ -4399,12 +4399,54 @@ function initResponsiveDesign() {
     handleResize(); // Initial check
 }
 
+function initEditorLoadingOverlay() {
+    if (window.__levelEditorLoadingInit) return;
+    window.__levelEditorLoadingInit = true;
+
+    const overlay = document.getElementById('editorLoading');
+    const loadingText = document.getElementById('editorLoadingText');
+    if (!overlay) return;
+
+    let isDone = false;
+
+    const setText = (value) => {
+        if (loadingText) loadingText.textContent = value;
+    };
+
+    const hide = () => {
+        if (isDone) return;
+        isDone = true;
+        overlay.classList.add('hidden');
+        overlay.setAttribute('aria-busy', 'false');
+        setTimeout(() => {
+            if (overlay && overlay.parentNode) overlay.parentNode.removeChild(overlay);
+        }, 260);
+    };
+
+    setText('Preparazione interfaccia...');
+
+    window.addEventListener('level-editor-ready', () => {
+        setText('Quasi pronto...');
+        hide();
+    }, { once: true });
+
+    // Fallback: non bloccare mai l'interfaccia se l'evento non arriva.
+    setTimeout(() => {
+        if (!isDone) {
+            setText('Apertura editor...');
+            hide();
+        }
+    }, 8000);
+}
+
 // Initialize responsive design on page load
 document.addEventListener('DOMContentLoaded', () => {
+    initEditorLoadingOverlay();
     setTimeout(initResponsiveDesign, 100);
 });
 
 // Also initialize if the script loads after DOM is ready
 if (document.readyState === 'interactive' || document.readyState === 'complete') {
+    initEditorLoadingOverlay();
     setTimeout(initResponsiveDesign, 100);
 }

@@ -44,23 +44,273 @@ const PRELOAD_SPRITESHEET_CONFIGS = {
     player_back_right: { frameWidth: 139, frameHeight: 135 }
 };
 
+// ============================================================================
+// LOGGING & FUNCTION DOCUMENTATION
+// TRACE/DEBUG/INFO are filtered by active level.
+// WARNING/ERROR are always printed.
+// ============================================================================
+const LOG_LEVELS = Object.freeze({
+    TRACE: 10,
+    DEBUG: 20,
+    INFO: 30,
+    WARN: 40,
+    ERROR: 50
+});
+
+const LOG_LEVEL_NAMES = Object.freeze({
+    10: 'TRACE',
+    20: 'DEBUG',
+    30: 'INFO',
+    40: 'WARN',
+    50: 'ERROR'
+});
+
+function normalizeLogLevel(rawLevel) {
+    const upper = String(rawLevel || '').trim().toUpperCase();
+    if (LOG_LEVELS[upper]) return LOG_LEVELS[upper];
+    const numeric = Number(rawLevel);
+    if (Number.isFinite(numeric) && LOG_LEVEL_NAMES[numeric]) return numeric;
+    return LOG_LEVELS.INFO;
+}
+
+function readInitialLogLevel() {
+    try {
+        const qs = new URLSearchParams(window.location.search || '');
+        const fromQuery = qs.get('logLevel');
+        if (fromQuery) return normalizeLogLevel(fromQuery);
+    } catch (e) { /* ignore */ }
+
+    try {
+        const fromStorage = localStorage.getItem('blockHunterLogLevel');
+        if (fromStorage) return normalizeLogLevel(fromStorage);
+    } catch (e) { /* ignore */ }
+
+    return LOG_LEVELS.INFO;
+}
+
+const LOGGER = (() => {
+    let activeLevel = readInitialLogLevel();
+
+    const alwaysVisible = new Set([LOG_LEVELS.WARN, LOG_LEVELS.ERROR]);
+
+    const canLog = (level) => alwaysVisible.has(level) || level >= activeLevel;
+
+    const summarizeArg = (arg) => {
+        if (arg == null) return arg;
+        if (typeof arg === 'string') return arg.length > 120 ? `${arg.slice(0, 117)}...` : arg;
+        if (typeof arg === 'number' || typeof arg === 'boolean') return arg;
+        if (Array.isArray(arg)) return `[array:${arg.length}]`;
+        if (arg && typeof arg === 'object') {
+            const ctor = arg.constructor && arg.constructor.name ? arg.constructor.name : 'Object';
+            return `[${ctor}]`;
+        }
+        return typeof arg;
+    };
+
+    const write = (level, scope, message, ...meta) => {
+        if (!canLog(level)) return;
+
+        const levelName = LOG_LEVEL_NAMES[level] || 'INFO';
+        const prefix = `[${levelName}][${scope}] ${message}`;
+        const reducedMeta = (meta || []).map(summarizeArg);
+
+        if (level === LOG_LEVELS.ERROR) {
+            console.error(prefix, ...reducedMeta);
+            return;
+        }
+        if (level === LOG_LEVELS.WARN) {
+            console.warn(prefix, ...reducedMeta);
+            return;
+        }
+        console.log(prefix, ...reducedMeta);
+    };
+
+    return {
+        getLevel() {
+            return LOG_LEVEL_NAMES[activeLevel] || 'INFO';
+        },
+        setLevel(nextLevel) {
+            activeLevel = normalizeLogLevel(nextLevel);
+            try { localStorage.setItem('blockHunterLogLevel', LOG_LEVEL_NAMES[activeLevel]); } catch (e) { /* ignore */ }
+            write(LOG_LEVELS.INFO, 'LOGGER', `Log level impostato a ${LOG_LEVEL_NAMES[activeLevel]}`);
+        },
+        trace(scope, message, ...meta) {
+            write(LOG_LEVELS.TRACE, scope, message, ...meta);
+        },
+        debug(scope, message, ...meta) {
+            write(LOG_LEVELS.DEBUG, scope, message, ...meta);
+        },
+        info(scope, message, ...meta) {
+            write(LOG_LEVELS.INFO, scope, message, ...meta);
+        },
+        warn(scope, message, ...meta) {
+            write(LOG_LEVELS.WARN, scope, message, ...meta);
+        },
+        error(scope, message, ...meta) {
+            write(LOG_LEVELS.ERROR, scope, message, ...meta);
+        }
+    };
+})();
+
+function inferPurposeFromName(name) {
+    const n = String(name || '').toLowerCase();
+    if (n.startsWith('load') || n.startsWith('queue') || n.startsWith('preload')) return 'Carica o prepara risorse.';
+    if (n.startsWith('create') || n.startsWith('build') || n.startsWith('spawn')) return 'Crea elementi di scena o stato runtime.';
+    if (n.startsWith('update') || n.startsWith('render') || n.startsWith('draw')) return 'Aggiorna stato o rendering durante il frame.';
+    if (n.startsWith('handle') || n.startsWith('on') || n.startsWith('input')) return 'Gestisce eventi o input utente.';
+    if (n.startsWith('reset') || n.startsWith('clear')) return 'Resetta dati runtime o stato di gioco.';
+    if (n.startsWith('save')) return 'Salva dati persistenti o progressi.';
+    if (n.startsWith('parse') || n.startsWith('resolve') || n.startsWith('get')) return 'Legge/trasforma dati e restituisce un valore.';
+    if (n.startsWith('is') || n.startsWith('has') || n.startsWith('can') || n.startsWith('should')) return 'Esegue un controllo logico.';
+    return 'Metodo di supporto del flusso di gioco.';
+}
+
+function getFunctionParamNames(fn) {
+    try {
+        const src = String(fn || '');
+        const regularMatch = src.match(/^[\s\w]*\(([^)]*)\)/);
+        const arrowMatch = src.match(/^\s*([^=()]+?)\s*=>/);
+        const raw = regularMatch ? regularMatch[1] : (arrowMatch ? arrowMatch[1] : '');
+        if (!raw) return [];
+        return raw
+            .split(',')
+            .map((p) => p.trim())
+            .filter(Boolean)
+            .map((p) => p.replace(/=.*$/g, '').replace(/^\.\.\./, '').trim())
+            .filter(Boolean);
+    } catch (e) {
+        return [];
+    }
+}
+
+function inferOutputFromName(name, fn) {
+    const n = String(name || '').toLowerCase();
+    const isAsync = fn && fn.constructor && fn.constructor.name === 'AsyncFunction';
+    if (isAsync) return 'Promise<misto>';
+    if (n.startsWith('is') || n.startsWith('has') || n.startsWith('can') || n.startsWith('should')) return 'boolean';
+    if (n.startsWith('get') || n.startsWith('parse') || n.startsWith('resolve') || n.startsWith('format')) return 'misto';
+    return 'void/misto';
+}
+
+function toDocEntry(owner, methodName, fn, purposeOverride) {
+    const params = getFunctionParamNames(fn).map((p) => ({ name: p, type: 'misto', description: `Parametro ${p}` }));
+    return {
+        owner,
+        name: methodName,
+        purpose: purposeOverride || inferPurposeFromName(methodName),
+        input: params,
+        output: inferOutputFromName(methodName, fn)
+    };
+}
+
+function buildTopLevelFunctionDocs() {
+    return [
+        toDocEntry('global', 'queueLegacyPreloadAssets', queueLegacyPreloadAssets, 'Carica il pacchetto asset base usato dal preload legacy.'),
+        toDocEntry('global', 'queueAssetsFromManifest', queueAssetsFromManifest, 'Carica asset dal manifest data/data.json e restituisce il conteggio enqueue.'),
+        toDocEntry('global', 'mergeLocalConfig', mergeLocalConfig, 'Applica override della configurazione salvata in locale.'),
+        toDocEntry('global', 'loadTranslations', loadTranslations, 'Carica il dizionario lingua e invoca callback con i dati.'),
+        toDocEntry('global', 'clearRuntimeMatchStorage', clearRuntimeMatchStorage, 'Pulisce storage runtime/sessione per evitare leak tra partite.'),
+        toDocEntry('global', 'resetGameStateForNewRun', resetGameStateForNewRun, 'Reinizializza lo stato partita per 1P/2P.'),
+        toDocEntry('global', 'drawTextPanel', drawTextPanel, 'Disegna pannello grafico dietro un testo HUD.'),
+        toDocEntry('global', 'getTextureMaxNumericFrame', getTextureMaxNumericFrame, 'Trova il frame numerico massimo disponibile in una texture.'),
+        toDocEntry('global', 'playLoopAudioSafely', playLoopAudioSafely, 'Avvia audio loop in sicurezza evitando eccezioni hard.'),
+        toDocEntry('global', 'resolveContactSpec', resolveContactSpec, 'Normalizza la spec di contatto da tipo stringa a oggetto.'),
+        toDocEntry('global', 'getLevelFileName', getLevelFileName, 'Calcola il nome file JSON del livello richiesto.'),
+        toDocEntry('global', 'getLevelMasterNumber', getLevelMasterNumber, 'Converte indice livello in numero master da usare nei percorsi.'),
+        toDocEntry('global', 'parseExitTargetLevel', parseExitTargetLevel, 'Interpreta target livello dall\'uscita.'),
+        toDocEntry('global', 'addSpikeCredit', addSpikeCredit, 'Aggiunge firma/credit in overlay di scena.'),
+        toDocEntry('global', 'inizialization', inizialization, 'Bootstrap del gioco: carica config, top score e avvia Phaser.')
+    ];
+}
+
+function buildSceneMethodsDocs(sceneClasses) {
+    const docs = [];
+    (sceneClasses || []).forEach((SceneClass) => {
+        if (!SceneClass || !SceneClass.prototype) return;
+        const owner = SceneClass.name || 'UnknownScene';
+        const methods = Object.getOwnPropertyNames(SceneClass.prototype)
+            .filter((name) => name !== 'constructor')
+            .filter((name) => typeof SceneClass.prototype[name] === 'function')
+            .sort((a, b) => a.localeCompare(b));
+
+        methods.forEach((name) => {
+            docs.push(toDocEntry(owner, name, SceneClass.prototype[name]));
+        });
+    });
+    return docs;
+}
+
+function chooseTraceLevel(methodName) {
+    const n = String(methodName || '').toLowerCase();
+    if (n === 'preload' || n === 'create' || n === 'update' || n === 'save' || n.startsWith('start')) return 'info';
+    if (n.startsWith('set') || n.startsWith('load') || n.startsWith('reset') || n.startsWith('handle')) return 'debug';
+    return 'trace';
+}
+
+function instrumentSceneMethods(sceneClasses) {
+    (sceneClasses || []).forEach((SceneClass) => {
+        if (!SceneClass || !SceneClass.prototype) return;
+
+        const methodNames = Object.getOwnPropertyNames(SceneClass.prototype)
+            .filter((name) => name !== 'constructor')
+            .filter((name) => typeof SceneClass.prototype[name] === 'function');
+
+        methodNames.forEach((methodName) => {
+            const original = SceneClass.prototype[methodName];
+            if (!original || original.__bhTraced === true) return;
+
+            const level = chooseTraceLevel(methodName);
+            const scope = `${SceneClass.name}.${methodName}`;
+
+            const wrapped = function tracedSceneMethod(...args) {
+                try {
+                    LOGGER[level](scope, 'ENTER', `args=${args.length}`);
+                    const result = original.apply(this, args);
+
+                    if (result && typeof result.then === 'function') {
+                        return result
+                            .then((value) => {
+                                LOGGER.trace(scope, 'EXIT async');
+                                return value;
+                            })
+                            .catch((err) => {
+                                LOGGER.error(scope, 'ERROR async', err);
+                                throw err;
+                            });
+                    }
+
+                    LOGGER.trace(scope, 'EXIT');
+                    return result;
+                } catch (err) {
+                    LOGGER.error(scope, 'ERROR sync', err);
+                    throw err;
+                }
+            };
+
+            wrapped.__bhTraced = true;
+            SceneClass.prototype[methodName] = wrapped;
+        });
+    });
+}
+
 function queueLegacyPreloadAssets(scene) {
+    LOGGER.debug('queueLegacyPreloadAssets', 'Caricamento preload legacy');
     scene.load
-        .image('title', 'assets/images/objects/title.png')
-        .image('explorer', 'assets/images/objects/explorer.png')
-        .image('title_explosion', 'assets/images/objects/title_explosion.png')
-        .image('bg', 'assets/images/objects/attract_bg.png')
-        .image('game_bg', 'assets/images/objects/level1.png')
-        .spritesheet('flags', 'assets/images/objects/flags.png', PRELOAD_SPRITESHEET_CONFIGS.flags)
-        .spritesheet('tiles', 'assets/images/objects/tiles.png', PRELOAD_SPRITESHEET_CONFIGS.tiles)
-        .spritesheet('wall_tiles', 'assets/images/objects/wall_completed.png', PRELOAD_SPRITESHEET_CONFIGS.wall_tiles)
-        .spritesheet('objects', 'assets/images/objects/obj_game.png', PRELOAD_SPRITESHEET_CONFIGS.objects)
-        .spritesheet('bat', 'assets/images/objects/bat.png', PRELOAD_SPRITESHEET_CONFIGS.bat)
-        .spritesheet('ghost', 'assets/images/objects/ghost.png', PRELOAD_SPRITESHEET_CONFIGS.ghost)
-        .spritesheet('player_front', 'assets/images/objects/player_front.png', PRELOAD_SPRITESHEET_CONFIGS.player_front)
-        .spritesheet('player_back', 'assets/images/objects/player_back.png', PRELOAD_SPRITESHEET_CONFIGS.player_back)
-        .spritesheet('player_right', 'assets/images/objects/player_right.png', PRELOAD_SPRITESHEET_CONFIGS.player_right)
-        .spritesheet('player_back_right', 'assets/images/objects/player_back_rigth.png', PRELOAD_SPRITESHEET_CONFIGS.player_back_right)
+        .image('title', 'assets/images/common/title.png')
+        .image('explorer', 'assets/images/common/explorer.png')
+        .image('title_explosion', 'assets/images/common/title_explosion.png')
+        .image('bg', 'assets/images/common/attract_bg.png')
+        .image('game_bg', 'assets/images/common/level1.png')
+        .spritesheet('flags', 'assets/images/common/flags.png', PRELOAD_SPRITESHEET_CONFIGS.flags)
+        .spritesheet('tiles', 'assets/images/common/tiles.png', PRELOAD_SPRITESHEET_CONFIGS.tiles)
+        .spritesheet('wall_tiles', 'assets/images/common/wall_completed.png', PRELOAD_SPRITESHEET_CONFIGS.wall_tiles)
+        .spritesheet('objects', 'assets/images/common/obj_game.png', PRELOAD_SPRITESHEET_CONFIGS.objects)
+        .spritesheet('bat', 'assets/images/common/bat.png', PRELOAD_SPRITESHEET_CONFIGS.bat)
+        .spritesheet('ghost', 'assets/images/common/ghost.png', PRELOAD_SPRITESHEET_CONFIGS.ghost)
+        .spritesheet('player_front', 'assets/images/common/player_front.png', PRELOAD_SPRITESHEET_CONFIGS.player_front)
+        .spritesheet('player_back', 'assets/images/common/player_back.png', PRELOAD_SPRITESHEET_CONFIGS.player_back)
+        .spritesheet('player_right', 'assets/images/common/player_right.png', PRELOAD_SPRITESHEET_CONFIGS.player_right)
+        .spritesheet('player_back_right', 'assets/images/common/player_back_rigth.png', PRELOAD_SPRITESHEET_CONFIGS.player_back_right)
         .audio('intro_bgm', 'assets/music/intro.mp3')
         .audio('game_bgm', 'assets/music/game.mp3')
         .audio('step_sfx', 'assets/music/step.mp3')
@@ -75,15 +325,16 @@ function queueLegacyPreloadAssets(scene) {
         .audio('ghost_sfx', 'assets/music/ghost.mp3')
         .audio('bat_sfx', 'assets/music/bat.mp3')
         .audio('rain_sfx', 'assets/music/rain.mp3')
-        .image('game_bg_1', 'assets/images/objects/level1.png')
-        .image('game_bg_2', 'assets/images/objects/level2.png')
-        .image('game_bg_3', 'assets/images/objects/level3.png')
-        .image('game_bg_4', 'assets/images/objects/level4.png')
-        .image('game_bg_5', 'assets/images/objects/level5.png')
-        .image('game_fg', 'assets/images/objects/foreground.png');
+        .image('game_bg_1', 'assets/images/common/level1.png')
+        .image('game_bg_2', 'assets/images/common/level2.png')
+        .image('game_bg_3', 'assets/images/common/level3.png')
+        .image('game_bg_4', 'assets/images/common/level4.png')
+        .image('game_bg_5', 'assets/images/common/level5.png')
+        .image('game_fg', 'assets/images/common/foreground.png');
 }
 
 function queueAssetsFromManifest(scene, manifest) {
+    LOGGER.debug('queueAssetsFromManifest', 'Inizio enqueue da manifest');
     if (!manifest || typeof manifest !== 'object') return 0;
 
     let queued = 0;
@@ -111,11 +362,13 @@ function queueAssetsFromManifest(scene, manifest) {
         });
     });
 
+    LOGGER.info('queueAssetsFromManifest', 'Enqueue completato', `queued=${queued}`);
     return queued;
 }
 
 // Load persistent config if present (optional: can be merged after loadConfig)
 function mergeLocalConfig() {
+    LOGGER.trace('mergeLocalConfig', 'Tentativo merge config locale');
     try {
         const saved = localStorage.getItem('blockHunterConfig');
         if (saved) {
@@ -128,25 +381,30 @@ function mergeLocalConfig() {
             else if (parsed.objectScale) CONFIG.objectSize = Math.round(parsed.objectScale * OBJECT_NATIVE_SIZE);
         }
     } catch (e) {
+        LOGGER.warn('mergeLocalConfig', 'Errore accesso localStorage, merge saltato', e);
         // ignore localStorage errors
     }
 }
 
 
 function loadTranslations(lang, callback) {
+    LOGGER.info('loadTranslations', 'Caricamento traduzioni', `lang=${lang}`);
     fetch(`data/dic/${lang}.json`)
         .then(res => res.json())
         .then(data => {
             TRANSLATIONS[lang] = data;
+            LOGGER.debug('loadTranslations', 'Traduzioni caricate', `lang=${lang}`);
             if (typeof callback === 'function') callback(data);
         })
         .catch(() => {
             TRANSLATIONS[lang] = {};
+            LOGGER.warn('loadTranslations', 'Fallback traduzioni vuote', `lang=${lang}`);
             if (typeof callback === 'function') callback({});
         });
 }
 
 function clearRuntimeMatchStorage() {
+    LOGGER.trace('clearRuntimeMatchStorage', 'Pulizia storage runtime/sessione');
     try {
         if (window && window.localStorage) {
             // Runtime-only persistence for the current run
@@ -163,6 +421,7 @@ function clearRuntimeMatchStorage() {
 }
 
 function resetGameStateForNewRun(players = 1) {
+    LOGGER.info('resetGameStateForNewRun', 'Reset stato partita', `players=${players}`);
     const p = Number(players) === 2 ? 2 : 1;
 
     GAME_STATE.players = p;
@@ -196,6 +455,7 @@ function resetGameStateForNewRun(players = 1) {
 
 // Utility: draw a rounded panel (semi-transparent fill + black border) around a text object
 function drawTextPanel(graphics, textObj, opts = {}) {
+    LOGGER.trace('drawTextPanel', 'Disegno pannello testo');
     const paddingX = opts.paddingX || 12;
     const paddingY = opts.paddingY || 6;
     const radius = opts.radius || 6;
@@ -233,6 +493,7 @@ function drawTextPanel(graphics, textObj, opts = {}) {
 }
 
 function getTextureMaxNumericFrame(scene, textureKey, fallback = 0) {
+    LOGGER.trace('getTextureMaxNumericFrame', 'Risoluzione frame massimo', `textureKey=${textureKey}`);
     try {
         const texture = scene?.textures?.get(textureKey);
         if (!texture) return fallback;
@@ -258,6 +519,7 @@ function getTextureMaxNumericFrame(scene, textureKey, fallback = 0) {
 }
 
 function playLoopAudioSafely(scene, key, volume = 0.3) {
+    LOGGER.debug('playLoopAudioSafely', 'Avvio audio loop', `key=${key}`);
     const sound = scene?.sound;
     if (!sound) return;
 
@@ -297,6 +559,7 @@ function playLoopAudioSafely(scene, key, volume = 0.3) {
 
 // Resolve contact type mapping from CONFIG for reuse across scenes
 function resolveContactSpec(typename) {
+    LOGGER.trace('resolveContactSpec', 'Risoluzione contact spec', `typename=${typename}`);
     try {
         const map = (CONFIG && CONFIG.objectContactByType) ? CONFIG.objectContactByType : {};
         const rawDef = (map && map.default) ? map.default : {};
@@ -377,16 +640,19 @@ const LEVEL_CONFIG = {
 // Helper function to get level file number from level index
 // Level index 0-4 -> level10-14, 5-9 -> level20-24, etc.
 function getLevelFileName(levelIndex) {
+    LOGGER.trace('getLevelFileName', 'Calcolo file livello', `levelIndex=${levelIndex}`);
     const majorLevel = Math.floor(levelIndex / 5) + 1;
     const minorLevel = levelIndex % 5;
     return `level${majorLevel}${minorLevel}`;
 }
 
 function getLevelMasterNumber(levelIndex) {
+    LOGGER.trace('getLevelMasterNumber', 'Calcolo master level', `levelIndex=${levelIndex}`);
     return Math.floor(levelIndex / 5) + 1;
 }
 
 function parseExitTargetLevel(rawTarget) {
+    LOGGER.trace('parseExitTargetLevel', 'Parsing target livello uscita', `rawTarget=${rawTarget}`);
     const text = String(rawTarget ?? '').trim();
     if (!text) return null;
 
@@ -422,6 +688,7 @@ function parseExitTargetLevel(rawTarget) {
 // Small helper to add an unobtrusive 'by SpikeCode' credit to a scene.
 // Call from scenes where the credit should appear (not the main GameScene).
 function addSpikeCredit(scene, opts = {}) {
+    LOGGER.trace('addSpikeCredit', 'Aggiunta credit overlay');
     try {
         if (!scene || !scene.add) return null;
         const w = Number(CONFIG.width) || 800;
@@ -10605,10 +10872,40 @@ class GameOverScene extends Phaser.Scene {
 // GAME INITIALIZATION
 // Caricamento della configurazione da file JSON e avvio del gioco con Phaser
 // ============================================================================
+const BLOCKHUNTER_SCENE_CLASSES = [
+    PreloadScene,
+    AttractScene,
+    TopTenScene,
+    CreditsScene,
+    ConfigScene,
+    LevelSelectScene,
+    GameScene,
+    BonusScene,
+    GameOverScene
+];
+
+const FUNCTION_DOCS = Object.freeze({
+    generatedAt: new Date().toISOString(),
+    logLevels: Object.keys(LOG_LEVELS),
+    topLevel: buildTopLevelFunctionDocs(),
+    methods: buildSceneMethodsDocs(BLOCKHUNTER_SCENE_CLASSES)
+});
+
+try {
+    window.BH_LOG = LOGGER;
+    window.BLOCKHUNTER_FUNCTION_DOCS = FUNCTION_DOCS;
+    window.getBlockHunterFunctionDocs = () => FUNCTION_DOCS;
+    LOGGER.info('BOOT', 'Documentazione funzioni pronta. Usa window.getBlockHunterFunctionDocs() in console.');
+} catch (e) { /* ignore */ }
+
 async function inizialization() {
     try {
+        instrumentSceneMethods(BLOCKHUNTER_SCENE_CLASSES);
+        LOGGER.info('BOOT', 'Tracing scene methods attivato.', `level=${LOGGER.getLevel()}`);
+
         const response = await fetch('data/config.json');
         const cfg = await response.json();
+        LOGGER.debug('BOOT', 'Config caricata da data/config.json');
         // Copy all config keys to CONFIG
         Object.assign(CONFIG, cfg);
         // tokenMap: allow mapping single-letter tokens (eg. 'X') to full tokens (eg. 'w00')
@@ -10705,6 +11002,7 @@ async function inizialization() {
         }
 
         new Phaser.Game(config);
+        LOGGER.info('BOOT', 'Istanza Phaser.Game creata con successo.');
 
         // If the configuration asks for a fullscreen toggle, add a small DOM button.
         try {
@@ -10765,6 +11063,7 @@ async function inizialization() {
 
         return true;
     } catch (err) {
+        LOGGER.error('BOOT', 'Errore durante inizializzazione gioco', err);
         console.error('Errore caricamento config.json:', err);
         alert('Impossibile caricare la configurazione del gioco.');
         return false;

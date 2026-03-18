@@ -102,229 +102,229 @@
   "objects": [
     {
       "key": "title",
-      "path": "assets/images/objects/title.png",
+      "path": "assets/images/common/title.png",
       "inPreload": true,
       "exists": true
     },
     {
       "key": "explorer",
-      "path": "assets/images/objects/explorer.png",
+      "path": "assets/images/common/explorer.png",
       "inPreload": true,
       "exists": true
     },
     {
       "key": "title_explosion",
-      "path": "assets/images/objects/title_explosion.png",
+      "path": "assets/images/common/title_explosion.png",
       "inPreload": true,
       "exists": true
     },
     {
       "key": "flags",
-      "path": "assets/images/objects/flags.png",
+      "path": "assets/images/common/flags.png",
       "inPreload": true,
       "exists": true
     },
     {
       "key": "tiles",
-      "path": "assets/images/objects/tiles.png",
+      "path": "assets/images/common/tiles.png",
       "inPreload": true,
       "exists": true
     },
     {
       "key": "wall_tiles",
-      "path": "assets/images/objects/wall_completed.png",
+      "path": "assets/images/common/wall_completed.png",
       "inPreload": true,
       "exists": true
     },
     {
       "key": "objects",
-      "path": "assets/images/objects/obj_game.png",
+      "path": "assets/images/common/obj_game.png",
       "inPreload": true,
       "exists": true
     },
     {
       "key": "bat",
-      "path": "assets/images/objects/bat.png",
+      "path": "assets/images/common/bat.png",
       "inPreload": true,
       "exists": true
     },
     {
       "key": "ghost",
-      "path": "assets/images/objects/ghost.png",
+      "path": "assets/images/common/ghost.png",
       "inPreload": true,
       "exists": true
     },
     {
       "key": "player_front",
-      "path": "assets/images/objects/player_front.png",
+      "path": "assets/images/common/player_front.png",
       "inPreload": true,
       "exists": true
     },
     {
       "key": "player_back",
-      "path": "assets/images/objects/player_back.png",
+      "path": "assets/images/common/player_back.png",
       "inPreload": true,
       "exists": true
     },
     {
       "key": "player_right",
-      "path": "assets/images/objects/player_right.png",
+      "path": "assets/images/common/player_right.png",
       "inPreload": true,
       "exists": true
     },
     {
       "key": "player_back_right",
-      "path": "assets/images/objects/player_back_rigth.png",
+      "path": "assets/images/common/player_back_rigth.png",
       "inPreload": true,
       "exists": true
     },
     {
       "key": "_old",
-      "path": "assets/images/objects/_old.png",
+      "path": "assets/images/common/_old.png",
       "inPreload": false,
       "exists": true
     },
     {
       "key": "attract_bg",
-      "path": "assets/images/objects/attract_bg.png",
+      "path": "assets/images/common/attract_bg.png",
       "inPreload": false,
       "exists": true
     },
     {
       "key": "batpng",
-      "path": "assets/images/objects/batpng.png",
+      "path": "assets/images/common/batpng.png",
       "inPreload": false,
       "exists": true
     },
     {
       "key": "foreground",
-      "path": "assets/images/objects/foreground.png",
+      "path": "assets/images/common/foreground.png",
       "inPreload": false,
       "exists": true
     },
     {
       "key": "foreground1",
-      "path": "assets/images/objects/foreground1.png",
+      "path": "assets/images/common/foreground1.png",
       "inPreload": false,
       "exists": true
     },
     {
       "key": "foreground2",
-      "path": "assets/images/objects/foreground2.png",
+      "path": "assets/images/common/foreground2.png",
       "inPreload": false,
       "exists": true
     },
     {
       "key": "level1",
-      "path": "assets/images/objects/level1.png",
+      "path": "assets/images/common/level1.png",
       "inPreload": false,
       "exists": true
     },
     {
       "key": "level2",
-      "path": "assets/images/objects/level2.png",
+      "path": "assets/images/common/level2.png",
       "inPreload": false,
       "exists": true
     },
     {
       "key": "level3",
-      "path": "assets/images/objects/level3.png",
+      "path": "assets/images/common/level3.png",
       "inPreload": false,
       "exists": true
     },
     {
       "key": "level4",
-      "path": "assets/images/objects/level4.png",
+      "path": "assets/images/common/level4.png",
       "inPreload": false,
       "exists": true
     },
     {
       "key": "level5",
-      "path": "assets/images/objects/level5.png",
+      "path": "assets/images/common/level5.png",
       "inPreload": false,
       "exists": true
     },
     {
       "key": "level6",
-      "path": "assets/images/objects/level6.png",
+      "path": "assets/images/common/level6.png",
       "inPreload": false,
       "exists": true
     },
     {
       "key": "obj",
-      "path": "assets/images/objects/obj.png",
+      "path": "assets/images/common/obj.png",
       "inPreload": false,
       "exists": true
     },
     {
       "key": "old_miner",
-      "path": "assets/images/objects/old_miner.png",
+      "path": "assets/images/common/old_miner.png",
       "inPreload": false,
       "exists": true
     },
     {
       "key": "player_back copy",
-      "path": "assets/images/objects/player_back copy.png",
+      "path": "assets/images/common/player_back copy.png",
       "inPreload": false,
       "exists": true
     },
     {
       "key": "player_back_rigth copy",
-      "path": "assets/images/objects/player_back_rigth copy.png",
+      "path": "assets/images/common/player_back_rigth copy.png",
       "inPreload": false,
       "exists": true
     },
     {
       "key": "player_front copy",
-      "path": "assets/images/objects/player_front copy.png",
+      "path": "assets/images/common/player_front copy.png",
       "inPreload": false,
       "exists": true
     },
     {
       "key": "player_right copy",
-      "path": "assets/images/objects/player_right copy.png",
+      "path": "assets/images/common/player_right copy.png",
       "inPreload": false,
       "exists": true
     },
     {
       "key": "player",
-      "path": "assets/images/objects/player.png",
+      "path": "assets/images/common/player.png",
       "inPreload": false,
       "exists": true
     },
     {
       "key": "single_tile64x64",
-      "path": "assets/images/objects/single_tile64x64.png",
+      "path": "assets/images/common/single_tile64x64.png",
       "inPreload": false,
       "exists": true
     },
     {
       "key": "sprite_old",
-      "path": "assets/images/objects/sprite_old.png",
+      "path": "assets/images/common/sprite_old.png",
       "inPreload": false,
       "exists": true
     },
     {
       "key": "subtitle",
-      "path": "assets/images/objects/subtitle.png",
+      "path": "assets/images/common/subtitle.png",
       "inPreload": false,
       "exists": true
     },
     {
       "key": "tile",
-      "path": "assets/images/objects/tile.png",
+      "path": "assets/images/common/tile.png",
       "inPreload": false,
       "exists": true
     },
     {
       "key": "wall",
-      "path": "assets/images/objects/wall.png",
+      "path": "assets/images/common/wall.png",
       "inPreload": false,
       "exists": true
     },
     {
       "key": "wall2",
-      "path": "assets/images/objects/wall2.png",
+      "path": "assets/images/common/wall2.png",
       "inPreload": false,
       "exists": true
     }
@@ -332,79 +332,79 @@
   "backgrounds": [
     {
       "key": "bg",
-      "path": "assets/images/objects/attract_bg.png",
+      "path": "assets/images/common/attract_bg.png",
       "inPreload": true,
       "exists": true
     },
     {
       "key": "game_bg",
-      "path": "assets/images/objects/level1.png",
+      "path": "assets/images/common/level1.png",
       "inPreload": true,
       "exists": true
     },
     {
       "key": "game_bg_1",
-      "path": "assets/images/objects/level1.png",
+      "path": "assets/images/common/level1.png",
       "inPreload": true,
       "exists": true
     },
     {
       "key": "game_bg_2",
-      "path": "assets/images/objects/level2.png",
+      "path": "assets/images/common/level2.png",
       "inPreload": true,
       "exists": true
     },
     {
       "key": "game_bg_3",
-      "path": "assets/images/objects/level3.png",
+      "path": "assets/images/common/level3.png",
       "inPreload": true,
       "exists": true
     },
     {
       "key": "game_bg_4",
-      "path": "assets/images/objects/level4.png",
+      "path": "assets/images/common/level4.png",
       "inPreload": true,
       "exists": true
     },
     {
       "key": "game_bg_5",
-      "path": "assets/images/objects/level5.png",
+      "path": "assets/images/common/level5.png",
       "inPreload": true,
       "exists": true
     },
     {
       "key": "level1",
-      "path": "assets/images/objects/level1.png",
+      "path": "assets/images/common/level1.png",
       "inPreload": false,
       "exists": true
     },
     {
       "key": "level2",
-      "path": "assets/images/objects/level2.png",
+      "path": "assets/images/common/level2.png",
       "inPreload": false,
       "exists": true
     },
     {
       "key": "level3",
-      "path": "assets/images/objects/level3.png",
+      "path": "assets/images/common/level3.png",
       "inPreload": false,
       "exists": true
     },
     {
       "key": "level4",
-      "path": "assets/images/objects/level4.png",
+      "path": "assets/images/common/level4.png",
       "inPreload": false,
       "exists": true
     },
     {
       "key": "level5",
-      "path": "assets/images/objects/level5.png",
+      "path": "assets/images/common/level5.png",
       "inPreload": false,
       "exists": true
     },
     {
       "key": "level6",
-      "path": "assets/images/objects/level6.png",
+      "path": "assets/images/common/level6.png",
       "inPreload": false,
       "exists": true
     },
@@ -481,6 +481,36 @@
       "exists": true
     },
     {
+      "key": "bg_43",
+      "path": "assets/images/background/bg_43.png",
+      "inPreload": false,
+      "exists": true
+    },
+    {
+      "key": "bg_44",
+      "path": "assets/images/background/bg_44.png",
+      "inPreload": false,
+      "exists": true
+    },
+    {
+      "key": "bg_45",
+      "path": "assets/images/background/bg_45.png",
+      "inPreload": false,
+      "exists": true
+    },
+    {
+      "key": "bg_51",
+      "path": "assets/images/background/bg_51.png",
+      "inPreload": false,
+      "exists": true
+    },
+    {
+      "key": "bg_52",
+      "path": "assets/images/background/bg_52.png",
+      "inPreload": false,
+      "exists": true
+    },
+    {
       "key": "bg_internal_miner",
       "path": "assets/images/background/bg_internal_miner.png",
       "inPreload": false,
@@ -538,25 +568,25 @@
   "foregrounds": [
     {
       "key": "game_fg",
-      "path": "assets/images/objects/foreground.png",
+      "path": "assets/images/common/foreground.png",
       "inPreload": true,
       "exists": true
     },
     {
       "key": "foreground",
-      "path": "assets/images/objects/foreground.png",
+      "path": "assets/images/common/foreground.png",
       "inPreload": false,
       "exists": true
     },
     {
       "key": "foreground1",
-      "path": "assets/images/objects/foreground1.png",
+      "path": "assets/images/common/foreground1.png",
       "inPreload": false,
       "exists": true
     },
     {
       "key": "foreground2",
-      "path": "assets/images/objects/foreground2.png",
+      "path": "assets/images/common/foreground2.png",
       "inPreload": false,
       "exists": true
     },
