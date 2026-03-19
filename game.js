@@ -3,6 +3,62 @@
 // ============================================================================
 
 import { OBJECT_FRAMES, TILE_FRAMES, WALL_TILE_COLS } from './data/module/constants.js';
+
+async function fetchJsonOptional(path) {
+    try {
+        const response = await fetch(path, { cache: 'no-store' });
+        if (!response.ok) return null;
+        return await response.json();
+    } catch (_e) {
+        return null;
+    }
+}
+
+function applyMappingFrameOverrides(mappings) {
+    const entities = mappings?.entities?.entities;
+    const tiles = mappings?.tiles?.tiles;
+
+    if (entities && typeof entities === 'object') {
+        Object.entries(entities).forEach(([key, value]) => {
+            const sprite = value?.sprite;
+            if (!sprite || sprite.texture !== 'objects') return;
+            if (typeof sprite.frame === 'number') {
+                OBJECT_FRAMES[key] = sprite.frame;
+            }
+        });
+    }
+
+    if (tiles && typeof tiles === 'object') {
+        Object.entries(tiles).forEach(([key, value]) => {
+            const sprite = value?.sprite;
+            if (!sprite || sprite.texture !== 'tiles') return;
+            if (typeof sprite.frame === 'number') {
+                TILE_FRAMES[key] = sprite.frame;
+            }
+        });
+    }
+}
+
+async function loadGameplayMappings() {
+    const [entitiesMapping, effectsMapping, tilesMapping] = await Promise.all([
+        fetchJsonOptional('data/game-entities-mapping.json'),
+        fetchJsonOptional('data/game-effects-mapping.json'),
+        fetchJsonOptional('data/game-tiles-mapping.json')
+    ]);
+
+    const mappings = {
+        entities: entitiesMapping || {},
+        effects: effectsMapping || {},
+        tiles: tilesMapping || {}
+    };
+
+    try {
+        window.GAME_MAPPINGS = mappings;
+    } catch (_e) { /* ignore */ }
+
+    applyMappingFrameOverrides(mappings);
+    return mappings;
+}
 import { createLanguageCarousel } from './module/languageCarousel.js';
 import { createCreditsManager } from './module/creditsManager.js';
 
@@ -11652,6 +11708,9 @@ async function inizialization() {
     try {
         instrumentSceneMethods(BLOCKHUNTER_SCENE_CLASSES);
         LOGGER.info('BOOT', 'Tracing scene methods attivato.', `level=${LOGGER.getLevel()}`);
+
+        const mappings = await loadGameplayMappings();
+        LOGGER.debug('BOOT', 'Mapping gameplay caricati', `entities=${Object.keys(mappings.entities?.entities || {}).length}, tiles=${Object.keys(mappings.tiles?.tiles || {}).length}, effects=${Object.keys(mappings.effects?.effectProfiles || {}).length}`);
 
         const response = await fetch('data/config.json');
         const cfg = await response.json();

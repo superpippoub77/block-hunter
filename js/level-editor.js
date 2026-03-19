@@ -34,6 +34,7 @@ const MUSIC_MANIFEST_PATH = 'data/music-files.json';
 const CONFIG_JSON_PATH = 'data/config.json';
 const ASSETS_API_PATH = 'assets';
 const DICTIONARIES_API_PATH = 'dictionaries';
+const MAPPINGS_API_PATH = 'mappings';
 
 // Available numeric level backgrounds discovered from images/level<N>.png
 const AVAILABLE_BG_LEVELS = [1,2,3,4,5,6];
@@ -277,6 +278,16 @@ function setPathValue(target, pathParts, value) {
 
 let CONFIG_EDITOR_STATE = {
     loadedConfig: null
+};
+
+let MAPPINGS_EDITOR_STATE = {
+    currentType: 'entities',
+    loadedDocuments: {
+        entities: null,
+        tiles: null,
+        effects: null
+    },
+    currentItemKey: ''
 };
 
 function setConfigStatus(message, isError = false) {
@@ -3319,6 +3330,465 @@ function setDictionaryStatus(message, isError = false) {
     target.textContent = message;
 }
 
+function setMappingsStatus(message, isError = false) {
+    const target = el('mappingsStatusText');
+    if (!target) return;
+    target.style.color = isError ? '#ff8f9a' : '#8ee89f';
+    target.textContent = message;
+}
+
+function getDefaultMappingDocument(type) {
+    if (type === 'effects') {
+        return {
+            meta: {
+                name: 'Block Hunter Effects Mapping',
+                version: '1.0.0'
+            },
+            effectProfiles: {}
+        };
+    }
+    if (type === 'tiles') {
+        return {
+            meta: {
+                name: 'Block Hunter Tiles Mapping',
+                version: '1.0.0'
+            },
+            tileSets: {},
+            tiles: {}
+        };
+    }
+    return {
+        meta: {
+            name: 'Block Hunter Entity Mapping',
+            version: '1.0.0'
+        },
+        includes: {
+            effects: 'data/game-effects-mapping.json',
+            tiles: 'data/game-tiles-mapping.json'
+        },
+        entities: {}
+    };
+}
+
+function getMappingItemRootKey(type) {
+    if (type === 'effects') return 'effectProfiles';
+    if (type === 'tiles') return 'tiles';
+    return 'entities';
+}
+
+function getMappingCollection(type) {
+    const doc = MAPPINGS_EDITOR_STATE.loadedDocuments[type];
+    const rootKey = getMappingItemRootKey(type);
+    if (!doc || !isPlainObject(doc[rootKey])) return {};
+    return doc[rootKey];
+}
+
+function buildDefaultMappingItem(type, name) {
+    if (type === 'effects') {
+        return {
+            description: `Nuovo profilo effetto ${name}`
+        };
+    }
+
+    return {
+        category: type === 'tiles' ? 'tile' : 'entity',
+        tokens: [name],
+        scoring: {},
+        effects: {},
+        audio: {},
+        sprite: {
+            animated: false,
+            texture: type === 'tiles' ? 'tiles' : 'objects',
+            frame: 0,
+            animations: {
+                idle: [],
+                move: []
+            }
+        }
+    };
+}
+
+async function fetchMappingDocument(type) {
+    const resp = await fetch(`${buildApiUrl(MAPPINGS_API_PATH)}?type=${encodeURIComponent(type)}`, { cache: 'no-store' });
+    const payload = await resp.json().catch(() => ({}));
+    if (!resp.ok || payload.ok === false) {
+        throw new Error(payload.error || `HTTP ${resp.status}`);
+    }
+    return payload;
+}
+
+async function saveMappingDocument(type, data) {
+    const resp = await fetch(`${buildApiUrl(MAPPINGS_API_PATH)}?type=${encodeURIComponent(type)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ data })
+    });
+    const payload = await resp.json().catch(() => ({}));
+    if (!resp.ok || payload.ok === false) {
+        throw new Error(payload.error || `HTTP ${resp.status}`);
+    }
+    return payload;
+}
+
+function createTextureFrameCanvas(textureKey, frameIndex, size = 96, drawOptions = {}) {
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return canvas;
+
+    const scene = getScene();
+    if (!scene) return canvas;
+
+    const ok = drawMiniMapFrame(scene, ctx, textureKey, frameIndex, 0, 0, size, drawOptions);
+    if (!ok) {
+        ctx.fillStyle = '#11203c';
+        ctx.fillRect(0, 0, size, size);
+        ctx.strokeStyle = '#395a88';
+        ctx.strokeRect(1, 1, size - 2, size - 2);
+        ctx.fillStyle = '#90b7ec';
+        ctx.font = '10px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText('n/a', size / 2, size / 2 + 4);
+    }
+    return canvas;
+}
+
+function summarizeMappingItem(type, item) {
+    if (!item || typeof item !== 'object') return 'record vuoto';
+    if (type === 'effects') return String(item.description || 'profilo effetto');
+    const tokenCount = Array.isArray(item.tokens) ? item.tokens.length : 0;
+    const texture = item?.sprite?.texture || 'no-texture';
+    const frame = item?.sprite?.frame ?? 'n/a';
+    return `${item.category || 'n/a'} | token=${tokenCount} | ${texture}:${frame}`;
+}
+
+function refreshMappingItemList(preferredKey = '') {
+    const type = MAPPINGS_EDITOR_STATE.currentType;
+    const listEl = el('mappingItemList');
+    const metaEl = el('mappingMetaInfo');
+    if (!listEl || !metaEl) return;
+
+    const doc = MAPPINGS_EDITOR_STATE.loadedDocuments[type] || getDefaultMappingDocument(type);
+    const rootKey = getMappingItemRootKey(type);
+    const collection = getMappingCollection(type);
+    const keys = Object.keys(collection).sort((a, b) => a.localeCompare(b));
+    listEl.innerHTML = '';
+
+    metaEl.textContent = `Tipo: ${type} | root: ${rootKey} | elementi: ${keys.length}`;
+
+    if (!keys.length) {
+        const empty = document.createElement('div');
+        empty.className = 'tiny';
+        empty.style.color = '#9fc5f3';
+        empty.textContent = 'Nessun record presente. Usa Aggiungi per crearne uno.';
+        listEl.appendChild(empty);
+        MAPPINGS_EDITOR_STATE.currentItemKey = '';
+        const editor = el('mappingItemEditor');
+        if (editor) editor.value = '{}';
+        renderMappingPreview(null);
+        return;
+    }
+
+    const targetKey = preferredKey && collection[preferredKey] ? preferredKey : (collection[MAPPINGS_EDITOR_STATE.currentItemKey] ? MAPPINGS_EDITOR_STATE.currentItemKey : keys[0]);
+    MAPPINGS_EDITOR_STATE.currentItemKey = targetKey;
+
+    keys.forEach((key) => {
+        const row = document.createElement('button');
+        row.type = 'button';
+        row.className = `mapping-item-row${key === targetKey ? ' active' : ''}`;
+        row.dataset.mappingKey = key;
+
+        const title = document.createElement('div');
+        title.className = 'mapping-item-name';
+        title.textContent = key;
+
+        const meta = document.createElement('div');
+        meta.className = 'mapping-item-meta';
+        meta.textContent = summarizeMappingItem(type, collection[key]);
+
+        row.appendChild(title);
+        row.appendChild(meta);
+        row.addEventListener('click', () => selectMappingItem(key));
+        listEl.appendChild(row);
+    });
+
+    selectMappingItem(targetKey);
+}
+
+function collectScenarioEntries(item) {
+    if (!item || typeof item !== 'object') return [];
+    const scenarios = [];
+    const scoring = isPlainObject(item.scoring) ? item.scoring : {};
+    const effects = isPlainObject(item.effects) ? item.effects : {};
+    const audio = isPlainObject(item.audio) ? item.audio : {};
+    const events = new Set([...Object.keys(scoring), ...Object.keys(effects), ...Object.keys(audio)]);
+
+    events.forEach((eventName) => {
+        scenarios.push({
+            title: eventName,
+            body: [
+                `score: ${JSON.stringify(scoring[eventName] ?? null)}`,
+                `effects: ${JSON.stringify(effects[eventName] ?? [])}`,
+                `audio: ${JSON.stringify(audio[eventName] ?? [])}`
+            ].join(' | ')
+        });
+    });
+
+    if (!scenarios.length && item.description) {
+        scenarios.push({
+            title: 'Descrizione',
+            body: String(item.description)
+        });
+    }
+
+    return scenarios;
+}
+
+function normalizeAnimationFrames(frames) {
+    if (!Array.isArray(frames)) return [];
+    return frames
+        .map((entry) => {
+            if (typeof entry === 'number') return { frame: entry };
+            if (isPlainObject(entry) && typeof entry.frame === 'number') return { frame: entry.frame };
+            return null;
+        })
+        .filter(Boolean);
+}
+
+function renderAnimationGroups(item) {
+    const host = el('mappingAnimationGroups');
+    if (!host) return;
+    host.innerHTML = '';
+
+    if (!item || typeof item !== 'object') {
+        host.textContent = 'Nessun record selezionato.';
+        return;
+    }
+
+    const sprite = item.sprite || {};
+    const animations = isPlainObject(sprite.animations) ? sprite.animations : {};
+    const texture = sprite.texture;
+    const entries = Object.entries(animations);
+
+    if (!texture || !entries.length) {
+        const empty = document.createElement('div');
+        empty.className = 'tiny';
+        empty.textContent = 'Nessuna sequenza animata definita.';
+        host.appendChild(empty);
+        return;
+    }
+
+    entries.forEach(([name, rawFrames]) => {
+        const frames = normalizeAnimationFrames(rawFrames);
+        const group = document.createElement('div');
+        const title = document.createElement('div');
+        title.className = 'mapping-scenario-title';
+        title.textContent = `${name} (${frames.length} frame)`;
+        group.appendChild(title);
+
+        const strip = document.createElement('div');
+        strip.className = 'mapping-animation-strip';
+
+        if (!frames.length) {
+            const empty = document.createElement('div');
+            empty.className = 'tiny';
+            empty.textContent = 'Sequenza vuota';
+            strip.appendChild(empty);
+        } else {
+            frames.forEach((entry, index) => {
+                const frameBox = document.createElement('div');
+                frameBox.className = 'mapping-animation-frame';
+                frameBox.appendChild(createTextureFrameCanvas(texture, entry.frame, 54));
+                const label = document.createElement('div');
+                label.className = 'mapping-animation-label';
+                label.textContent = `#${index} -> ${entry.frame}`;
+                frameBox.appendChild(label);
+                strip.appendChild(frameBox);
+            });
+        }
+
+        group.appendChild(strip);
+        host.appendChild(group);
+    });
+}
+
+function renderMappingPreview(item) {
+    const stage = el('mappingPreviewStage');
+    const meta = el('mappingPreviewMeta');
+    const scenarios = el('mappingScenarioList');
+    if (!stage || !meta || !scenarios) return;
+
+    stage.innerHTML = '';
+    meta.innerHTML = '';
+    scenarios.innerHTML = '';
+
+    if (!item || typeof item !== 'object') {
+        meta.textContent = 'Nessun record selezionato.';
+        renderAnimationGroups(null);
+        return;
+    }
+
+    const type = MAPPINGS_EDITOR_STATE.currentType;
+    const sprite = item.sprite || {};
+    const texture = sprite.texture;
+    const frame = sprite.frame;
+
+    if (texture && typeof frame === 'number') {
+        stage.appendChild(createTextureFrameCanvas(texture, frame, 144, {
+            flipX: !!sprite.flipX,
+            flipY: !!sprite.flipY,
+            rotation: Number(sprite.rotation || 0) * (Math.PI / 180)
+        }));
+    } else {
+        const empty = document.createElement('div');
+        empty.className = 'tiny';
+        empty.style.color = '#9fc5f3';
+        empty.textContent = type === 'effects' ? 'Gli effect profile non hanno sprite diretto.' : 'Record senza texture/frame numerico previewabile.';
+        stage.appendChild(empty);
+    }
+
+    [
+        `Categoria: ${item.category || (type === 'effects' ? 'effectProfile' : 'n/a')}`,
+        `Token: ${JSON.stringify(item.tokens || [])}`,
+        `Texture: ${texture || 'n/a'}`,
+        `Frame usato: ${frame ?? 'n/a'}`,
+        `Animato: ${sprite.animated === true ? 'si' : 'no'}`
+    ].forEach((text) => {
+        const row = document.createElement('div');
+        row.textContent = text;
+        meta.appendChild(row);
+    });
+
+    const scenarioEntries = collectScenarioEntries(item);
+    if (!scenarioEntries.length) {
+        const empty = document.createElement('div');
+        empty.className = 'tiny';
+        empty.textContent = 'Nessuna situazione configurata.';
+        scenarios.appendChild(empty);
+    } else {
+        scenarioEntries.forEach((entry) => {
+            const box = document.createElement('div');
+            box.className = 'mapping-scenario-item';
+            const title = document.createElement('div');
+            title.className = 'mapping-scenario-title';
+            title.textContent = entry.title;
+            const body = document.createElement('div');
+            body.className = 'mapping-scenario-body';
+            body.textContent = entry.body;
+            box.appendChild(title);
+            box.appendChild(body);
+            scenarios.appendChild(box);
+        });
+    }
+
+    renderAnimationGroups(item);
+}
+
+function previewMappingEditorValue() {
+    const raw = String(el('mappingItemEditor')?.value || '').trim();
+    if (!raw) {
+        renderMappingPreview(null);
+        return;
+    }
+    try {
+        const parsed = JSON.parse(raw);
+        renderMappingPreview(parsed);
+        setMappingsStatus('Preview aggiornata dal record JSON.');
+    } catch (e) {
+        setMappingsStatus(`JSON record non valido: ${e.message}`, true);
+    }
+}
+
+function selectMappingItem(key) {
+    const type = MAPPINGS_EDITOR_STATE.currentType;
+    const collection = getMappingCollection(type);
+    const item = collection[key];
+    MAPPINGS_EDITOR_STATE.currentItemKey = key;
+    document.querySelectorAll('.mapping-item-row').forEach((node) => {
+        node.classList.toggle('active', String(node.dataset.mappingKey || '') === key);
+    });
+    const editor = el('mappingItemEditor');
+    if (editor) editor.value = JSON.stringify(item || {}, null, 2);
+    renderMappingPreview(item || null);
+}
+
+async function loadMappingsEditor(preferredType = null) {
+    const type = preferredType || String(el('mappingTypeSelect')?.value || MAPPINGS_EDITOR_STATE.currentType || 'entities');
+    MAPPINGS_EDITOR_STATE.currentType = type;
+    try {
+        const payload = await fetchMappingDocument(type);
+        MAPPINGS_EDITOR_STATE.loadedDocuments[type] = payload.data || getDefaultMappingDocument(type);
+        refreshMappingItemList();
+        setMappingsStatus(`Mapping ${type} caricato.`);
+    } catch (e) {
+        MAPPINGS_EDITOR_STATE.loadedDocuments[type] = getDefaultMappingDocument(type);
+        refreshMappingItemList();
+        setMappingsStatus(`Errore caricamento mapping ${type}: ${e.message}`, true);
+    }
+}
+
+function applyCurrentMappingRecord() {
+    const type = MAPPINGS_EDITOR_STATE.currentType;
+    const key = String(MAPPINGS_EDITOR_STATE.currentItemKey || '').trim();
+    const raw = String(el('mappingItemEditor')?.value || '').trim();
+    if (!key) {
+        setMappingsStatus('Seleziona o crea un record.', true);
+        return false;
+    }
+    try {
+        const parsed = raw ? JSON.parse(raw) : {};
+        const doc = MAPPINGS_EDITOR_STATE.loadedDocuments[type] || getDefaultMappingDocument(type);
+        const rootKey = getMappingItemRootKey(type);
+        if (!isPlainObject(doc[rootKey])) doc[rootKey] = {};
+        doc[rootKey][key] = parsed;
+        MAPPINGS_EDITOR_STATE.loadedDocuments[type] = doc;
+        refreshMappingItemList(key);
+        renderMappingPreview(parsed);
+        setMappingsStatus(`Record applicato: ${key}`);
+        return true;
+    } catch (e) {
+        setMappingsStatus(`Errore parsing record: ${e.message}`, true);
+        return false;
+    }
+}
+
+function addMappingItem() {
+    const type = MAPPINGS_EDITOR_STATE.currentType;
+    const input = el('newMappingItemName');
+    const name = String(input?.value || '').trim();
+    if (!name) {
+        setMappingsStatus('Inserisci il nome del nuovo record.', true);
+        return;
+    }
+    const doc = MAPPINGS_EDITOR_STATE.loadedDocuments[type] || getDefaultMappingDocument(type);
+    const rootKey = getMappingItemRootKey(type);
+    if (!isPlainObject(doc[rootKey])) doc[rootKey] = {};
+    if (doc[rootKey][name]) {
+        setMappingsStatus(`Il record ${name} esiste gia.`, true);
+        return;
+    }
+    doc[rootKey][name] = buildDefaultMappingItem(type, name);
+    MAPPINGS_EDITOR_STATE.loadedDocuments[type] = doc;
+    MAPPINGS_EDITOR_STATE.currentItemKey = name;
+    if (input) input.value = '';
+    refreshMappingItemList(name);
+    setMappingsStatus(`Creato record: ${name}`);
+}
+
+async function persistCurrentMappingDocument() {
+    if (!applyCurrentMappingRecord()) return;
+    const type = MAPPINGS_EDITOR_STATE.currentType;
+    const doc = MAPPINGS_EDITOR_STATE.loadedDocuments[type] || getDefaultMappingDocument(type);
+    try {
+        const payload = await saveMappingDocument(type, doc);
+        const backup = payload.backupFile ? ` Backup: ${payload.backupFile}` : '';
+        setMappingsStatus(`File ${type} salvato.${backup}`);
+    } catch (e) {
+        setMappingsStatus(`Errore salvataggio mapping ${type}: ${e.message}`, true);
+    }
+}
+
 async function refreshMusicSelectOptions() {
     const list = await fetchJsonListWithFallback(buildApiUrl('music'), MUSIC_MANIFEST_PATH);
     const sel = el('levelMusic');
@@ -3575,12 +4045,20 @@ function bindUI() {
     const assetTypeSelect = el('assetTypeSelect');
     const assetsModal = el('assetsModal');
     const openDictionaryDialogBtn = el('openDictionaryDialogBtn');
+    const openMappingsDialogBtn = el('openMappingsDialogBtn');
     const closeDictionaryDialogBtn = el('closeDictionaryDialogBtn');
     const refreshDictionaryBtn = el('refreshDictionaryBtn');
     const createDictionaryBtn = el('createDictionaryBtn');
     const saveDictionaryBtn = el('saveDictionaryBtn');
     const dictionarySelect = el('dictionarySelect');
     const dictionaryModal = el('dictionaryModal');
+    const closeMappingsDialogBtn = el('closeMappingsDialogBtn');
+    const reloadMappingsBtn = el('reloadMappingsBtn');
+    const saveMappingsFileBtn = el('saveMappingsFileBtn');
+    const addMappingItemBtn = el('addMappingItemBtn');
+    const saveMappingItemBtn = el('saveMappingItemBtn');
+    const mappingTypeSelect = el('mappingTypeSelect');
+    const mappingsModal = el('mappingsModal');
     const closeConfigDialogBtn = el('closeConfigDialogBtn');
     const reloadConfigBtn = el('reloadConfigBtn');
     const saveConfigBtn = el('saveConfigBtn');
@@ -3663,6 +4141,60 @@ function bindUI() {
                 dictionaryModal.classList.remove('open');
             }
         });
+    }
+
+    if (openMappingsDialogBtn) {
+        openMappingsDialogBtn.addEventListener('click', async () => {
+            if (mappingsModal) mappingsModal.classList.add('open');
+            await loadMappingsEditor(String(mappingTypeSelect?.value || 'entities'));
+        });
+    }
+
+    if (closeMappingsDialogBtn) {
+        closeMappingsDialogBtn.addEventListener('click', () => {
+            if (mappingsModal) mappingsModal.classList.remove('open');
+        });
+    }
+
+    if (mappingsModal) {
+        mappingsModal.addEventListener('click', (ev) => {
+            if (ev.target === mappingsModal) {
+                mappingsModal.classList.remove('open');
+            }
+        });
+    }
+
+    if (mappingTypeSelect) {
+        mappingTypeSelect.addEventListener('change', async () => {
+            await loadMappingsEditor(String(mappingTypeSelect.value || 'entities'));
+        });
+    }
+
+    if (reloadMappingsBtn) {
+        reloadMappingsBtn.addEventListener('click', async () => {
+            await loadMappingsEditor();
+        });
+    }
+
+    if (saveMappingsFileBtn) {
+        saveMappingsFileBtn.addEventListener('click', async () => {
+            await persistCurrentMappingDocument();
+        });
+    }
+
+    if (addMappingItemBtn) {
+        addMappingItemBtn.addEventListener('click', addMappingItem);
+    }
+
+    if (saveMappingItemBtn) {
+        saveMappingItemBtn.addEventListener('click', () => {
+            applyCurrentMappingRecord();
+        });
+    }
+
+    const mappingItemEditor = el('mappingItemEditor');
+    if (mappingItemEditor) {
+        mappingItemEditor.addEventListener('input', previewMappingEditorValue);
     }
 
     if (refreshDictionaryBtn) {

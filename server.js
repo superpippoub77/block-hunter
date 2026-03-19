@@ -387,6 +387,114 @@ function handleDictionariesApi(req, res, urlObj) {
   sendJson(res, 405, { ok: false, error: "method not allowed" });
 }
 
+function getMappingConfigForType(type) {
+  const key = String(type || "").trim().toLowerCase();
+  if (key === "entities") {
+    return {
+      file: path.join(ROOT_DIR, "data", "game-entities-mapping.json"),
+      itemRootKey: "entities"
+    };
+  }
+  if (key === "effects") {
+    return {
+      file: path.join(ROOT_DIR, "data", "game-effects-mapping.json"),
+      itemRootKey: "effectProfiles"
+    };
+  }
+  if (key === "tiles") {
+    return {
+      file: path.join(ROOT_DIR, "data", "game-tiles-mapping.json"),
+      itemRootKey: "tiles"
+    };
+  }
+  return null;
+}
+
+function createBackupPath(prefix) {
+  const backupDir = path.join(ROOT_DIR, "bck");
+  try { fs.mkdirSync(backupDir, { recursive: true }); } catch (_) {}
+  const now = new Date();
+  const pad = (n) => String(n).padStart(2, "0");
+  const stamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+  const backupFileName = `${prefix}-${stamp}.json`;
+  return {
+    backupDir,
+    backupFileName,
+    backupFilePath: path.join(backupDir, backupFileName)
+  };
+}
+
+function handleMappingsApi(req, res, urlObj) {
+  const type = String(urlObj.searchParams.get("type") || "").trim().toLowerCase();
+  const cfg = getMappingConfigForType(type);
+  if (!cfg) {
+    sendJson(res, 400, { ok: false, error: "invalid mapping type" });
+    return;
+  }
+
+  if (req.method === "GET") {
+    fs.readFile(cfg.file, "utf8", (err, content) => {
+      if (err) {
+        sendJson(res, 500, { ok: false, error: err.message });
+        return;
+      }
+      try {
+        const parsed = JSON.parse(content || "{}");
+        sendJson(res, 200, {
+          ok: true,
+          type,
+          file: path.relative(ROOT_DIR, cfg.file).replace(/\\/g, "/"),
+          itemRootKey: cfg.itemRootKey,
+          data: parsed
+        });
+      } catch (_e) {
+        sendJson(res, 500, { ok: false, error: "invalid mapping json" });
+      }
+    });
+    return;
+  }
+
+  if (req.method === "POST") {
+    parseJsonBody(req, (err, body) => {
+      if (err) {
+        sendJson(res, 400, { ok: false, error: "invalid json" });
+        return;
+      }
+
+      const data = body.data;
+      if (!data || typeof data !== "object" || Array.isArray(data)) {
+        sendJson(res, 400, { ok: false, error: "mapping data must be an object" });
+        return;
+      }
+
+      const backup = createBackupPath(`mapping-${type}`);
+      fs.readFile(cfg.file, "utf8", (_readErr, currentData) => {
+        const currentText = currentData || "{}";
+        fs.writeFile(backup.backupFilePath, currentText, "utf8", (backupErr) => {
+          if (backupErr) {
+            sendJson(res, 500, { ok: false, error: backupErr.message });
+            return;
+          }
+
+          fs.writeFile(cfg.file, `${JSON.stringify(data, null, 2)}\n`, "utf8", (writeErr) => {
+            if (writeErr) {
+              sendJson(res, 500, { ok: false, error: writeErr.message });
+              return;
+            }
+            sendJson(res, 200, {
+              ok: true,
+              backupFile: path.posix.join("bck", backup.backupFileName)
+            });
+          });
+        });
+      });
+    });
+    return;
+  }
+
+  sendJson(res, 405, { ok: false, error: "method not allowed" });
+}
+
 const server = http.createServer((req, res) => {
   const urlObj = new URL(req.url || "/", `http://${req.headers.host || "localhost"}`);
 
@@ -402,6 +510,11 @@ const server = http.createServer((req, res) => {
 
   if (urlObj.pathname === "/api/dictionaries") {
     handleDictionariesApi(req, res, urlObj);
+    return;
+  }
+
+  if (urlObj.pathname === "/api/mappings") {
+    handleMappingsApi(req, res, urlObj);
     return;
   }
 
