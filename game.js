@@ -11411,6 +11411,30 @@ async function inizialization() {
         else if (requestedScaleMode === 'NONE') phaserScaleMode = Phaser.Scale.NONE;
         else if (requestedScaleMode === 'RESIZE') phaserScaleMode = Phaser.Scale.RESIZE;
 
+        // Determine game dimensions based on responsiveMode flag
+        let gameWidth = Number(CONFIG.width) || 800;
+        let gameHeight = Number(CONFIG.height) || 600;
+        
+        if (CONFIG.responsiveMode) {
+            // Responsive mode: adapt to window size while maintaining aspect ratio
+            const arcadeAspectRatio = gameWidth / gameHeight;
+            const windowWidth = window.innerWidth;
+            const windowHeight = window.innerHeight;
+            const windowAspectRatio = windowWidth / windowHeight;
+            
+            if (windowAspectRatio > arcadeAspectRatio) {
+                // Window is wider than arcade aspect ratio, fit to height
+                gameHeight = windowHeight;
+                gameWidth = Math.round(gameHeight * arcadeAspectRatio);
+            } else {
+                // Window is narrower, fit to width
+                gameWidth = windowWidth;
+                gameHeight = Math.round(gameWidth / arcadeAspectRatio);
+            }
+            
+            LOGGER.info('BOOT', 'Responsive mode enabled', `dimensions=${gameWidth}x${gameHeight} (window=${windowWidth}x${windowHeight})`);
+        }
+
         const config = {
             type: Phaser.AUTO,
             // Use Phaser Scale manager to display the original 800x600 game in the
@@ -11419,8 +11443,8 @@ async function inizialization() {
                 mode: phaserScaleMode,
                 autoCenter: Phaser.Scale.CENTER_BOTH,
                 parent: 'game-container',
-                width: Number(CONFIG.width) || 800,
-                height: Number(CONFIG.height) || 600
+                width: gameWidth,
+                height: gameHeight
             },
             backgroundColor: '#000000',
             physics: {
@@ -11482,6 +11506,35 @@ async function inizialization() {
 
         new Phaser.Game(config);
         LOGGER.info('BOOT', 'Istanza Phaser.Game creata con successo.');
+
+        // Handle window resize for responsive mode
+        if (CONFIG.responsiveMode) {
+            window.addEventListener('resize', () => {
+                const arcadeAspectRatio = 800 / 600; // Original arcade aspect ratio
+                const windowWidth = window.innerWidth;
+                const windowHeight = window.innerHeight;
+                const windowAspectRatio = windowWidth / windowHeight;
+                
+                let newWidth = 800;
+                let newHeight = 600;
+                
+                if (windowAspectRatio > arcadeAspectRatio) {
+                    newHeight = windowHeight;
+                    newWidth = Math.round(newHeight * arcadeAspectRatio);
+                } else {
+                    newWidth = windowWidth;
+                    newHeight = Math.round(newWidth / arcadeAspectRatio);
+                }
+                
+                const game = Phaser.Games.instance || config;
+                if (game && game.canvas) {
+                    game.canvas.style.width = newWidth + 'px';
+                    game.canvas.style.height = newHeight + 'px';
+                }
+                
+                LOGGER.debug('BOOT', 'Window resize handled', `new dimensions=${newWidth}x${newHeight}`);
+            });
+        }
 
         // If the configuration asks for a fullscreen toggle, add a small DOM button.
         try {

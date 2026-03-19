@@ -107,6 +107,7 @@
   },
   "scaleMode": "FIT",
   "enableFullscreen": true,
+  "responsiveMode": false,
   "crt": {
     "enabled": true,
     "scanlineAlpha": 0.12,
