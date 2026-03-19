@@ -2731,6 +2731,7 @@ class GameScene extends Phaser.Scene {
         this.ghosts = this.physics.add.group();
         this.bats = this.physics.add.group();
         this.spiders = this.physics.add.group();
+        this.snakes = this.physics.add.group();
         this.gems = this.physics.add.group();
         this.items = this.physics.add.group();
         this.dynamites = this.physics.add.group();
@@ -2748,6 +2749,7 @@ class GameScene extends Phaser.Scene {
         this.ghostSpawnPositions = [];
         this.batSpawnPositions = [];
         this.spiderSpawnPositions = [];
+        this.snakeSpawnPositions = [];
         this.hole2ExitPositions = [];
         this.hole2ExitsActive = false;
         this.lastKeyPos = null;
@@ -3127,6 +3129,7 @@ class GameScene extends Phaser.Scene {
         this.spawnGhosts();
         this.spawnBatsFromMap();
         this.spawnSpidersFromMap();
+        this.spawnSnakesFromMap();
 
         // Spawn gems according to mode: one-by-one (spawn first only) or all-at-once
         if ((Number(this.gemsRemaining) || 0) > 0) {
@@ -3583,6 +3586,7 @@ class GameScene extends Phaser.Scene {
                     case 'p': return { type: 'pepita', wallFrame: 0, wallRotation: 0, noTile: noTileFlag };
                     case 'b': return { type: 'dynamite', wallFrame: 0, wallRotation: 0, noTile: noTileFlag };
                     case 'c': return { type: 'cart', wallFrame: 0, wallRotation: 0, noTile: noTileFlag };
+                    case 'n': return { type: 'snake', wallFrame: 0, wallRotation: 0, noTile: noTileFlag };
                     default: return { type: value, wallFrame: 0, wallRotation: 0, noTile: noTileFlag };
                 }
             }
@@ -3706,7 +3710,7 @@ class GameScene extends Phaser.Scene {
                     || type === 'wooden')
                     ? 'empty'
                     : type;
-                const normalizedTileType = (tileType === 'bat' || tileType === 'ghost' || tileType === 'spider') ? 'floor' : tileType;
+                const normalizedTileType = (tileType === 'bat' || tileType === 'ghost' || tileType === 'spider' || tileType === 'snake') ? 'floor' : tileType;
                 let tileSprite = null;
                 let coverSprite = null;
 
@@ -3971,6 +3975,18 @@ class GameScene extends Phaser.Scene {
                         this.spiderSpawnPositions = [];
                     }
                     this.spiderSpawnPositions.push({
+                        x: offsetX + x * CONFIG.tileSize + CONFIG.tileSize / 2,
+                        y: offsetY + y * CONFIG.tileSize + CONFIG.tileSize / 2,
+                        gridX: x,
+                        gridY: y
+                    });
+                }
+
+                if (!tileNoTile && type === 'snake') {
+                    if (!this.snakeSpawnPositions) {
+                        this.snakeSpawnPositions = [];
+                    }
+                    this.snakeSpawnPositions.push({
                         x: offsetX + x * CONFIG.tileSize + CONFIG.tileSize / 2,
                         y: offsetY + y * CONFIG.tileSize + CONFIG.tileSize / 2,
                         gridX: x,
@@ -4393,7 +4409,7 @@ class GameScene extends Phaser.Scene {
         // Groups to include in Y-based layering
         const groups = [
             this.walls, this.doors, this.items, this.gems, this.rocks,
-            this.boulders, this.ghosts, this.bats, this.dynamites, this.shards,
+            this.boulders, this.ghosts, this.bats, this.spiders, this.snakes, this.dynamites, this.shards,
             this.hole2Exits, this.planks
         ];
 
@@ -5449,6 +5465,7 @@ class GameScene extends Phaser.Scene {
         this.physics.add.overlap(this.player, this.items, this.collectItem, null, this);
         this.physics.add.overlap(this.player, this.bats, this.hitByBat, null, this);
         this.physics.add.overlap(this.player, this.spiders, this.hitBySpider, null, this);
+        this.physics.add.overlap(this.player, this.snakes, this.hitBySnake, null, this);
         const playerRockCollider = this.physics.add.collider(this.player, this.rocks, this.hitByRock, null, this);
         if (playerRockCollider) {
             this.playerCollisionRefs.push(playerRockCollider);
@@ -5477,6 +5494,7 @@ class GameScene extends Phaser.Scene {
                 this.physics.add.overlap(this.player2, this.items, this.collectItem, null, this);
                 this.physics.add.overlap(this.player2, this.bats, this.hitByBat, null, this);
                 this.physics.add.overlap(this.player2, this.spiders, this.hitBySpider, null, this);
+                this.physics.add.overlap(this.player2, this.snakes, this.hitBySnake, null, this);
                 const p2RockCollider = this.physics.add.collider(this.player2, this.rocks, this.hitByRock, null, this);
                 if (p2RockCollider) this.playerCollisionRefs.push(p2RockCollider);
                 this.physics.add.overlap(this.player2, this.boulders, this.hitByBoulder, null, this);
@@ -5499,6 +5517,7 @@ class GameScene extends Phaser.Scene {
         this.physics.add.overlap(this.dynamites, this.boulders, this.dynamiteHitBoulder, null, this);
         this.physics.add.overlap(this.dynamites, this.bats, this.dynamiteHitBat, null, this);
         this.physics.add.overlap(this.dynamites, this.spiders, this.dynamiteHitSpider, null, this);
+        this.physics.add.overlap(this.dynamites, this.snakes, this.dynamiteHitSnake, null, this);
         this.physics.add.overlap(this.dynamites, this.shards, this.dynamiteHitShard, null, this);
         if (this.walls) {
             this.physics.add.collider(this.dynamites, this.walls, (dynamite) => {
@@ -5523,6 +5542,17 @@ class GameScene extends Phaser.Scene {
         if (this.doors) {
             this.physics.add.collider(this.boulders, this.doors, (boulder, door) => {
                 this.trySplitRollingBoulder(boulder, door);
+            });
+        }
+
+        if (this.walls) {
+            this.physics.add.collider(this.snakes, this.walls, (snake) => {
+                this.setSnakeRandomVelocity(snake);
+            });
+        }
+        if (this.doors) {
+            this.physics.add.collider(this.snakes, this.doors, (snake) => {
+                this.setSnakeRandomVelocity(snake);
             });
         }
         this.physics.add.collider(this.boulders, this.boulders, (boulderA, boulderB) => {
@@ -7724,6 +7754,7 @@ class GameScene extends Phaser.Scene {
         this.updateGhostPerspective();
         this.updateBatPerspective();
         this.updateSpiders();
+        this.updateSnakes();
 
         // Dynamic boulders roll and slow down over time
         if (!this.dynamicBouldersRuntimeDisabled) {
@@ -9578,6 +9609,90 @@ class GameScene extends Phaser.Scene {
         }
     }
 
+    getWorldStartLevelIndex(levelIndex = null) {
+        const totalLevels = (LEVEL_CONFIG && Array.isArray(LEVEL_CONFIG.levels)) ? LEVEL_CONFIG.levels.length : 1;
+        const current = Number.isFinite(Number(levelIndex)) ? Number(levelIndex) : (Number(GAME_STATE.currentLevel) || 0);
+        const start = Math.floor(current / 5) * 5;
+        if (start < 0) return 0;
+        if (start >= totalLevels) return Math.max(0, totalLevels - 1);
+        return start;
+    }
+
+    returnToWorldStartLevel(reasonLabel = 'SNAKE BITE') {
+        if (this.isLevelTransitioning) return;
+        this.isLevelTransitioning = true;
+
+        try {
+            this.stopLevelLightEffect && this.stopLevelLightEffect();
+            this.stopGhostSfx && this.stopGhostSfx();
+        } catch (e) { }
+        if (this.boulderTimer) {
+            this.boulderTimer.remove();
+            this.boulderTimer = null;
+        }
+        if (this.rockSpawnTimer) {
+            this.rockSpawnTimer.remove();
+            this.rockSpawnTimer = null;
+        }
+        if (this.levelTimerEvent) {
+            this.levelTimerEvent.remove();
+            this.levelTimerEvent = null;
+        }
+        if (this.ghostDirectionTimer) {
+            this.ghostDirectionTimer.remove();
+            this.ghostDirectionTimer = null;
+        }
+        if (this.batDirectionTimer) {
+            this.batDirectionTimer.remove();
+            this.batDirectionTimer = null;
+        }
+
+        const targetLevel = this.getWorldStartLevelIndex();
+        GAME_STATE.currentLevel = targetLevel;
+
+        try {
+            const cam = this.cameras?.main;
+            const cx = cam ? cam.width / 2 : (CONFIG.width / 2);
+            const cy = cam ? cam.height / 2 : (CONFIG.height / 2);
+
+            const overlay = this.add.rectangle(cx, cy, cam ? cam.width : CONFIG.width, cam ? cam.height : CONFIG.height, 0x000000, 1)
+                .setScrollFactor(0)
+                .setDepth(4100);
+
+            const label = this.add.text(cx, cy, reasonLabel, {
+                fontSize: '28px',
+                fill: '#ffcc66',
+                fontFamily: GAME_FONT,
+                stroke: '#000000',
+                strokeThickness: 5,
+                align: 'center'
+            }).setOrigin(0.5).setDepth(4101).setScrollFactor(0);
+
+            this.tweens.add({
+                targets: label,
+                alpha: { from: 1, to: 0 },
+                scale: { from: 0.95, to: 1.05 },
+                duration: 480,
+                yoyo: true,
+                repeat: 0,
+                ease: 'Sine.easeInOut',
+                onComplete: () => {
+                    try {
+                        if (label && label.destroy) label.destroy();
+                        if (overlay && overlay.destroy) overlay.destroy();
+                    } catch (e) { }
+                    try {
+                        this.scene.restart();
+                    } catch (e) {
+                        try { window.location.reload(); } catch (err) { }
+                    }
+                }
+            });
+        } catch (e) {
+            try { this.scene.restart(); } catch (err) { try { window.location.reload(); } catch (e2) { } }
+        }
+    }
+
     gameOver() {
         this.stopLevelLightEffect();
         this.stopGhostSfx();
@@ -10480,6 +10595,162 @@ class GameScene extends Phaser.Scene {
         if (!spider || !spider.active) return;
         this.addScore(20, spider.x, spider.y);
         spider.destroy();
+        this.explodeDynamite(dynamite);
+    }
+
+    getSnakeCountForLevel() {
+        const direct = Number(this.levelData?.snake);
+        if (Number.isFinite(direct) && direct > 0) {
+            return Math.floor(direct);
+        }
+        const inMap = Number(this.levelData?.map?.snake);
+        if (Number.isFinite(inMap) && inMap > 0) {
+            return Math.floor(inMap);
+        }
+        return 0;
+    }
+
+    getSnakeSpeedForLevel() {
+        const direct = Number(this.levelData?.snakeSpeed);
+        if (Number.isFinite(direct) && direct > 0) {
+            return direct;
+        }
+        const inMap = Number(this.levelData?.map?.snakeSpeed);
+        if (Number.isFinite(inMap) && inMap > 0) {
+            return inMap;
+        }
+        return Number(CONFIG.snakeSpeed) > 0 ? Number(CONFIG.snakeSpeed) : 95;
+    }
+
+    spawnSnakesFromMap() {
+        if (!this.snakes) return;
+        const requestedCount = this.getSnakeCountForLevel();
+        if (requestedCount <= 0) return;
+
+        const spawnPositions = Array.isArray(this.snakeSpawnPositions) ? this.snakeSpawnPositions : [];
+        if (!spawnPositions.length) return;
+
+        for (let i = 0; i < requestedCount; i++) {
+            const pos = spawnPositions[i % spawnPositions.length];
+            if (!pos) continue;
+            this.spawnMapSnake(pos.x, pos.y);
+        }
+    }
+
+    spawnMapSnake(worldX, worldY) {
+        if (!this.snakes) return;
+        const snake = this.snakes.create(worldX, worldY, 'objects', OBJECT_FRAMES.snake || OBJECT_FRAMES.spider || 0);
+        const snakeScaleFactor = CONFIG.objectSize / OBJECT_NATIVE_SIZE;
+        snake.setScale(snakeScaleFactor);
+        snake.setData('baseScale', snakeScaleFactor);
+        snake.setData('speed', this.getSnakeSpeedForLevel());
+        snake.setData('lastBiteAt', 0);
+        snake.setData('nextDirectionChangeAt', 0);
+
+        if (snake.body) {
+            snake.body.setSize(Math.floor(snake.displayWidth || snake.width), Math.floor(snake.displayHeight || snake.height));
+            snake.body.setCollideWorldBounds(true);
+            snake.body.setBounce(0.05, 0.05);
+        }
+
+        this.setSnakeRandomVelocity(snake, true);
+    }
+
+    isSnakeBlockedTile(tile) {
+        if (!tile) return false;
+        const t = String(tile.type || '').toLowerCase();
+        return t === 'wall' || t === 'door';
+    }
+
+    setSnakeRandomVelocity(snake, force = false) {
+        if (!snake || !snake.active) return;
+        const now = this.time?.now || 0;
+        const nextChange = Number(snake.getData('nextDirectionChangeAt')) || 0;
+        if (!force && now < nextChange) return;
+
+        const speed = Number(snake.getData('speed')) || this.getSnakeSpeedForLevel();
+        const dirs = [
+            { x: 1, y: 0 },
+            { x: -1, y: 0 },
+            { x: 0, y: 1 },
+            { x: 0, y: -1 }
+        ];
+
+        const valid = dirs.filter((dir) => {
+            const testX = snake.x + dir.x * CONFIG.tileSize;
+            const testY = snake.y + dir.y * CONFIG.tileSize;
+            const testTile = this.getTileAt(testX, testY);
+            return !this.isSnakeBlockedTile(testTile);
+        });
+
+        const picked = valid.length ? Phaser.Utils.Array.GetRandom(valid) : Phaser.Utils.Array.GetRandom(dirs);
+        const mult = 0.68;
+        snake.setVelocity(picked.x * speed * mult, picked.y * speed * mult);
+        snake.setData('nextDirectionChangeAt', now + Phaser.Math.Between(450, 1200));
+
+        if (picked.x < 0) snake.setFlipX(true);
+        else if (picked.x > 0) snake.setFlipX(false);
+    }
+
+    updateSnakes() {
+        if (!this.snakes) return;
+        const snakes = this.snakes.children?.entries || [];
+        if (!snakes.length) return;
+
+        snakes.forEach((snake) => {
+            if (!snake || !snake.active) return;
+
+            const tile = this.getTileAt(snake.x, snake.y);
+            if (this.isSnakeBlockedTile(tile)) {
+                this.setSnakeRandomVelocity(snake, true);
+                return;
+            }
+
+            if ((snake.body?.blocked?.left || snake.body?.blocked?.right || snake.body?.blocked?.up || snake.body?.blocked?.down)) {
+                this.setSnakeRandomVelocity(snake, true);
+                return;
+            }
+
+            if (Math.random() < 0.015) {
+                this.setSnakeRandomVelocity(snake, true);
+                return;
+            }
+
+            this.setSnakeRandomVelocity(snake, false);
+        });
+    }
+
+    hitBySnake(player, snake) {
+        if (!snake || !snake.active) return;
+        if (this.cartPowerActive) return;
+
+        const now = this.time.now;
+        const lastBiteAt = Number(snake.getData('lastBiteAt')) || 0;
+        if (now < lastBiteAt + 1000) return;
+        snake.setData('lastBiteAt', now);
+
+        this.createBloodSplatter(player?.x, player?.y, 2.0);
+        this.loseLife({ player });
+
+        if (GAME_STATE.isGameOver) return;
+        this.returnToWorldStartLevel('SNAKE BITE');
+    }
+
+    dynamiteHitSnake(dynamite, snake) {
+        if (!snake || !snake.active) return;
+        this.addScore(20, snake.x, snake.y);
+
+        const fallbackSpawn = this.getRandomWalkableTile();
+        const fallbackX = fallbackSpawn ? (this.mapOffsetX + fallbackSpawn.x * CONFIG.tileSize + CONFIG.tileSize / 2) : snake.x;
+        const fallbackY = fallbackSpawn ? (this.mapOffsetY + fallbackSpawn.y * CONFIG.tileSize + CONFIG.tileSize / 2) : snake.y;
+        snake.destroy();
+
+        this.time.delayedCall(200, () => {
+            if (this.scene?.isActive?.('GameScene')) {
+                this.spawnMapSnake(fallbackX, fallbackY);
+            }
+        });
+
         this.explodeDynamite(dynamite);
     }
 }

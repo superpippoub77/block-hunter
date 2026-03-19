@@ -11,6 +11,7 @@ const OBJECT_FRAMES = {
     sand_pile: 9,
     ghost: 10,
     spider: 10,
+    snake: 10,
     wooden: 10, // wooden plank alias (reuses frame 10)
     pepita: 11,
     wall: 12,
@@ -65,7 +66,8 @@ const BASE_PALETTE_ITEMS = [
     { token: 'stones', label: 'stones (stones)' },
     { token: 'ghost', label: 'ghost spawn' },
     { token: 'bat', label: 'bat spawn' },
-    { token: 'spider', label: 'spider spawn' }
+    { token: 'spider', label: 'spider spawn' },
+    { token: 'snake', label: 'snake spawn' }
 ];
 
 // Palette shows all 24 wall variants (4 rows x 6 cols); rotation/mirroring applied after placement
@@ -139,9 +141,11 @@ const DEFAULT_LEVEL = {
     ghost: 2,
     bat: 2,
     spider: 0,
+    snake: 0,
     ghostSpeed: 80,
     batSpeed: 90,
     spiderSpeed: 100,
+    snakeSpeed: 95,
     batFlightsBeforeRest: 4,
     batRestSeconds: 2,
     batRestIntervalSeconds: 0,
@@ -476,6 +480,7 @@ function tokenToMiniMapColor(token) {
     if (normalized === 'ghost') return '#64e1d8';
     if (normalized === 'bat') return '#7a58d1';
     if (normalized === 'spider') return '#d17f57';
+    if (normalized === 'snake') return '#7bc96f';
     if (WALL_TOKEN_REGEX.test(normalized)) return '#4b5f80';
     return '#526f9f';
 }
@@ -1813,6 +1818,7 @@ class LevelEditorScene extends Phaser.Scene {
             case 'ghost': return { kind: 'ghost' };
             case 'bat': return { kind: 'bat' };
             case 'spider': return { kind: 'obj', frame: OBJECT_FRAMES.spider };
+            case 'snake': return { kind: 'obj', frame: OBJECT_FRAMES.snake };
             default: return { kind: 'text', text: normalized };
         }
     }
@@ -2184,6 +2190,8 @@ function drawMiniMapToken(scene, ctx, token, x, y, size, opts = {}) {
             return drawMiniMapFrame(scene, ctx, 'bat_anim', 0, x, y, size, { alpha: opts.alpha });
         case 'spider':
             return drawMiniMapFrame(scene, ctx, 'objects', OBJECT_FRAMES.spider, x, y, size, { alpha: opts.alpha });
+        case 'snake':
+            return drawMiniMapFrame(scene, ctx, 'objects', OBJECT_FRAMES.snake, x, y, size, { alpha: opts.alpha });
         default:
             return false;
     }
@@ -2523,9 +2531,11 @@ function readLevelFromForm() {
         ghost: parseNumber(el('ghostCount')?.value, 0),
         bat: parseNumber(el('batCount')?.value, 0),
         spider: parseNumber(el('spiderCount')?.value, 0),
+        snake: parseNumber(el('snakeCount')?.value, 0),
         ghostSpeed: parseNumber(el('ghostSpeed')?.value, 80),
         batSpeed: parseNumber(el('batSpeed')?.value, 90),
         spiderSpeed: parseNumber(el('spiderSpeed')?.value, 100),
+        snakeSpeed: parseNumber(el('snakeSpeed')?.value, 95),
         batFlightsBeforeRest: parseNumber(el('batFlightsBeforeRest')?.value, 4),
         batRestSeconds: parseNumber(el('batRestSeconds')?.value, 2),
         batRestIntervalSeconds: parseNumber(el('batRestIntervalSeconds')?.value, 0)
@@ -2623,15 +2633,18 @@ function applyLevelToForm(levelData) {
     el('ghostCount').value = data.ghost ?? DEFAULT_LEVEL.ghost;
     el('batCount').value = data.bat ?? DEFAULT_LEVEL.bat;
     el('spiderCount').value = data.spider ?? DEFAULT_LEVEL.spider;
+    el('snakeCount').value = data.snake ?? DEFAULT_LEVEL.snake;
     el('ghostSpeed').value = data.ghostSpeed ?? DEFAULT_LEVEL.ghostSpeed;
     el('batSpeed').value = data.batSpeed ?? DEFAULT_LEVEL.batSpeed;
     el('spiderSpeed').value = data.spiderSpeed ?? DEFAULT_LEVEL.spiderSpeed;
+    el('snakeSpeed').value = data.snakeSpeed ?? DEFAULT_LEVEL.snakeSpeed;
     el('batFlightsBeforeRest').value = data.batFlightsBeforeRest ?? DEFAULT_LEVEL.batFlightsBeforeRest;
     el('batRestSeconds').value = data.batRestSeconds ?? DEFAULT_LEVEL.batRestSeconds;
     el('batRestIntervalSeconds').value = data.batRestIntervalSeconds ?? DEFAULT_LEVEL.batRestIntervalSeconds;
     try { if (el('ghostSpeedRange')) el('ghostSpeedRange').value = el('ghostSpeed').value; } catch (e) {}
     try { if (el('batSpeedRange')) el('batSpeedRange').value = el('batSpeed').value; } catch (e) {}
     try { if (el('spiderSpeedRange')) el('spiderSpeedRange').value = el('spiderSpeed').value; } catch (e) {}
+    try { if (el('snakeSpeedRange')) el('snakeSpeedRange').value = el('snakeSpeed').value; } catch (e) {}
     el('objectiveLabel').value = data.objectiveLabel ?? DEFAULT_LEVEL.objectiveLabel;
     el('lightMode').value = resolvedLight;
     el('escapeRoute').value = String(!!data.escapeRoute);
@@ -2717,7 +2730,7 @@ function applyLevelToForm(levelData) {
         'id', 'map', 'playerStart', 'staticRocks', 'dynamicBoulders', 'speed', 'escapeRoute',
         'objectiveLabel', 'enemies', 'collectibles', 'traps', 'spawnPoints', 'timeLimit',
         'scoreRules', 'light', 'effects', 'ghost', 'bat', 'ghostSpeed', 'batSpeed',
-        'spider', 'spiderSpeed', 'batFlightsBeforeRest', 'batRestSeconds', 'batRestIntervalSeconds',
+        'spider', 'spiderSpeed', 'snake', 'snakeSpeed', 'batFlightsBeforeRest', 'batRestSeconds', 'batRestIntervalSeconds',
         'background', 'foreground', 'backgroundEnabled', 'foregroundEnabled', 'rain', 'fog', 'music',
         'gemsOneByOne', 'requiredGems', 'gemsRequired', 'playerStart2', 'timer'
     ]);
@@ -3832,7 +3845,7 @@ function bindUI() {
 
     const realtimeFields = [
         'playerRow', 'playerCol', 'gridCols', 'gridRows', 'mapTimer', 'revealMode',
-        'levelId', 'levelSpeed', 'ghostCount', 'batCount', 'spiderCount', 'ghostSpeed', 'batSpeed', 'spiderSpeed',
+        'levelId', 'levelSpeed', 'ghostCount', 'batCount', 'spiderCount', 'snakeCount', 'ghostSpeed', 'batSpeed', 'spiderSpeed', 'snakeSpeed',
         'batFlightsBeforeRest', 'batRestSeconds', 'batRestIntervalSeconds',
         'objectiveLabel', 'lightMode', 'escapeRoute', 'srEnabled', 'srShardBurstCount',
         'srDynamicSize', 'srRotation', 'srChaotic', 'dbEnabled', 'dbSplitOnImpact',
@@ -4015,6 +4028,12 @@ function bindUI() {
     if (spiderRange && spiderNum) {
         spiderRange.addEventListener('input', () => { spiderNum.value = spiderRange.value; drawMiniMapPreview(getScene()); });
         spiderNum.addEventListener('input', () => { spiderRange.value = spiderNum.value; drawMiniMapPreview(getScene()); });
+    }
+    const snakeRange = el('snakeSpeedRange');
+    const snakeNum = el('snakeSpeed');
+    if (snakeRange && snakeNum) {
+        snakeRange.addEventListener('input', () => { snakeNum.value = snakeRange.value; drawMiniMapPreview(getScene()); });
+        snakeNum.addEventListener('input', () => { snakeRange.value = snakeNum.value; drawMiniMapPreview(getScene()); });
     }
     const showBg = el('showBackground');
     if (showBg) {
