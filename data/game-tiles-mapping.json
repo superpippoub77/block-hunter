@@ -1,0 +1,205 @@
+{
+  "meta": {
+    "name": "Block Hunter Tiles Mapping",
+    "version": "1.0.0",
+    "generatedAt": "2026-03-19",
+    "source": [
+      "game.js",
+      "data/module/constants.js"
+    ]
+  },
+  "tileSets": {
+    "tiles": {
+      "texture": "tiles",
+      "animated": false,
+      "frames": {
+        "sand": 0,
+        "floor": 0,
+        "hole": 1,
+        "hole_cover": 2,
+        "water": 3,
+        "mud": 4,
+        "back": 5
+      }
+    },
+    "wall_tiles": {
+      "texture": "wall_tiles",
+      "animated": false,
+      "grid": {
+        "rows": 4,
+        "cols": 6,
+        "rotationCodes": [0, 1, 2, 3],
+        "flipCodes": ["0", "h", "v"]
+      },
+      "framePolicy": "dynamic_from_token"
+    }
+  },
+  "tiles": {
+    "exit_hole2": {
+      "category": "interactive",
+      "tokens": ["exit", "hole2"],
+      "scoring": { "onInteract": 50 },
+      "effects": { "onInteract": ["level_complete"] },
+      "audio": { "onInteract": ["level_completed_sfx"] },
+      "sprite": {
+        "animated": false,
+        "texture": "objects",
+        "frame": 14,
+        "animations": { "idle": [], "move": [] }
+      }
+    },
+    "back_tile": {
+      "category": "interactive",
+      "tokens": ["back", "bck"],
+      "scoring": { "onInteract": 0 },
+      "effects": { "onInteract": ["go_previous_level"] },
+      "audio": { "onInteract": [] },
+      "sprite": {
+        "animated": false,
+        "texture": "tiles",
+        "frame": 5,
+        "animations": { "idle": [], "move": [] }
+      }
+    },
+    "hole": {
+      "category": "tile_hazard",
+      "tokens": ["hole", "h", "."],
+      "scoring": { "onTouchPlayer": 0 },
+      "effects": { "onTouchPlayer": ["lose_life"] },
+      "audio": { "onTouchPlayer": ["fall_sfx"] },
+      "sprite": {
+        "animated": false,
+        "texture": "tiles",
+        "frame": 1,
+        "animations": { "idle": [], "move": [] }
+      }
+    },
+    "invisible_hole": {
+      "category": "tile_hazard_hidden",
+      "tokens": ["."],
+      "scoring": { "onTouchPlayer": 0 },
+      "effects": { "onTouchPlayer": ["lose_life"] },
+      "audio": { "onTouchPlayer": ["fall_sfx"] },
+      "sprite": {
+        "animated": false,
+        "texture": "tiles",
+        "frame": 1,
+        "visible": false,
+        "animations": { "idle": [], "move": [] }
+      }
+    },
+    "wall": {
+      "category": "tile_block",
+      "tokens": ["wall", "wxxxx"],
+      "variants": {
+        "tokenFormat": "wRCRF",
+        "description": "R=row, C=col, R=rotazione 0..3, F=flip 0|h|v",
+        "legacyFormats": ["wRCR", "wFR", "w"],
+        "framesPerRow": 6,
+        "rows": 4,
+        "cols": 6
+      },
+      "scoring": { "onInteract": 0 },
+      "effects": { "onInteract": ["block_movement"] },
+      "audio": { "onInteract": [] },
+      "sprite": {
+        "animated": false,
+        "texture": "wall_tiles",
+        "frame": "dynamic",
+        "animations": { "idle": [], "move": [] }
+      }
+    },
+    "invisible_wall": {
+      "category": "tile_block_hidden",
+      "tokens": ["#", "wall."],
+      "scoring": { "onInteract": 0 },
+      "effects": { "onInteract": ["block_movement"] },
+      "audio": { "onInteract": [] },
+      "sprite": {
+        "animated": false,
+        "texture": "wall_tiles",
+        "frame": "dynamic_or_hidden",
+        "visible": false,
+        "animations": { "idle": [], "move": [] }
+      }
+    },
+    "sand": {
+      "category": "tile",
+      "tokens": ["sand", "s"],
+      "scoring": { "onInteract": 0 },
+      "effects": { "onInteract": ["none"] },
+      "audio": { "onMove": ["step_sfx"] },
+      "sprite": {
+        "animated": false,
+        "texture": "tiles",
+        "frame": 0,
+        "animations": { "idle": [], "move": [] }
+      }
+    },
+    "hole_cover": {
+      "category": "tile_cover",
+      "tokens": ["hole_cover", "hc"],
+      "scoring": { "onInteract": 0 },
+      "effects": { "onInteract": ["none"] },
+      "audio": { "onMove": ["step_sfx"] },
+      "sprite": {
+        "animated": false,
+        "texture": "tiles",
+        "frame": 2,
+        "animations": { "idle": [], "move": [] }
+      }
+    },
+    "floor": {
+      "category": "tile",
+      "tokens": ["floor", "-"],
+      "scoring": { "onInteract": 0 },
+      "effects": { "onInteract": ["none"] },
+      "audio": { "onMove": ["step_sfx"] },
+      "sprite": {
+        "animated": false,
+        "texture": "tiles",
+        "frame": 0,
+        "animations": { "idle": [], "move": [] }
+      }
+    },
+    "empty": {
+      "category": "tile_empty",
+      "tokens": ["empty", "-"],
+      "scoring": { "onInteract": 0 },
+      "effects": { "onInteract": ["none"] },
+      "audio": { "onMove": [] },
+      "sprite": {
+        "animated": false,
+        "texture": null,
+        "frame": null,
+        "animations": { "idle": [], "move": [] }
+      }
+    },
+    "water": {
+      "category": "tile",
+      "tokens": ["water", "w"],
+      "scoring": { "onInteract": 0 },
+      "effects": { "onInteract": ["none"] },
+      "audio": { "onMove": [] },
+      "sprite": {
+        "animated": false,
+        "texture": "tiles",
+        "frame": 3,
+        "animations": { "idle": [], "move": [] }
+      }
+    },
+    "mud": {
+      "category": "tile",
+      "tokens": ["mud", "f"],
+      "scoring": { "onInteract": 0 },
+      "effects": { "onInteract": ["none"] },
+      "audio": { "onMove": ["step_sfx"] },
+      "sprite": {
+        "animated": false,
+        "texture": "tiles",
+        "frame": 4,
+        "animations": { "idle": [], "move": [] }
+      }
+    }
+  }
+}
