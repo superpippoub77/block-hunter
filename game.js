@@ -3883,7 +3883,7 @@ class GameScene extends Phaser.Scene {
                 }
 
                 if (!tileNoTile && (type === 'key' || type === 'pepita' || type === 'heart' || type === 'dynamite' || type === 'skeleton' || type === 'cart' || type === 'helmet' || type === 'wooden') && this.items) {
-                    let frame = OBJECT_FRAMES.wall;
+                    let frame = OBJECT_FRAMES.skeleton;
                     if (type === 'key') frame = OBJECT_FRAMES.key;
                     else if (type === 'pepita') frame = OBJECT_FRAMES.pepita;
                     else if (type === 'heart') frame = OBJECT_FRAMES.heart;
@@ -6346,7 +6346,7 @@ class GameScene extends Phaser.Scene {
                 (this.player?.x || 0) + CONFIG.tileSize * 0.8,
                 this.player?.y || 0,
                 'objects',
-                OBJECT_FRAMES.wall
+                OBJECT_FRAMES.skeleton
             );
             this.companionSprite.setScale(scaleFactor);
             this.companionSprite.setAlpha(0.95);
@@ -8204,7 +8204,7 @@ class GameScene extends Phaser.Scene {
                     ? OBJECT_FRAMES.pepita
                     : (itemType === 'dynamite'
                         ? OBJECT_FRAMES.dynamite_chest
-                        : (itemType === 'cart' ? OBJECT_FRAMES.cart : (itemType === 'helmet' ? OBJECT_FRAMES.helmet : OBJECT_FRAMES.wall))));
+                        : (itemType === 'cart' ? OBJECT_FRAMES.cart : (itemType === 'helmet' ? OBJECT_FRAMES.helmet : OBJECT_FRAMES.skeleton))));
             const itemSprite = this.items.create(worldX, worldY, 'objects', frame);
             const objectScaleFactor = CONFIG.objectSize / OBJECT_NATIVE_SIZE;
             itemSprite.setScale(objectScaleFactor);
@@ -8416,7 +8416,7 @@ class GameScene extends Phaser.Scene {
     }
 
     explodeDynamite(dynamite) {
-        if (!dynamite || !dynamite.active) return;
+                OBJECT_FRAMES.skeleton
 
         const smokeTrailEvent = dynamite.getData('smokeTrailEvent');
         if (smokeTrailEvent && smokeTrailEvent.remove) {
@@ -11079,7 +11079,7 @@ class BonusScene extends Phaser.Scene {
         this.bonusSpawnY = startY;
 
         // Rider (miner) visible on top of the cart
-        this.cartRider = this.add.sprite(this.cart.x, this.cart.y - this.cart.displayHeight * 0.55, 'objects', OBJECT_FRAMES.wall);
+        this.cartRider = this.add.sprite(this.cart.x, this.cart.y - this.cart.displayHeight * 0.55, 'objects', OBJECT_FRAMES.skeleton);
         const riderScale = Math.max(0.34, (Number(CONFIG.playerSize) || Number(CONFIG.objectSize) || OBJECT_NATIVE_SIZE) / 220);
         this.riderBaseScale = riderScale;
         this.cartRider.setScale(riderScale);
@@ -11456,7 +11456,7 @@ class BonusScene extends Phaser.Scene {
             // No miner animations: keep the cart rider as the static `objects` sprite
             try {
                 if (this.cartRider.anims && this.cartRider.anims.isPlaying) this.cartRider.anims.stop();
-                this.cartRider.setFrame(OBJECT_FRAMES.wall);
+                this.cartRider.setFrame(OBJECT_FRAMES.skeleton);
             } catch (e) { }
         }
 

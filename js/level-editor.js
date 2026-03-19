@@ -25,6 +25,7 @@ const OBJECT_FRAMES = {
 
 const STORAGE_KEY = 'blockHunterLevelEditorState';
 const WALL_TOKEN_REGEX = /^w(\d)(\d)(\d)([hv0])$/i;
+const COMMON_ASSETS_DIR = 'assets/images/common';
 const BG_ASSETS_DIR = 'assets/images/background';
 const FG_ASSETS_DIR = 'assets/images/foreground';
 const API_BASE_PATH = 'api';
@@ -36,7 +37,7 @@ const ASSETS_API_PATH = 'assets';
 const DICTIONARIES_API_PATH = 'dictionaries';
 const MAPPINGS_API_PATH = 'mappings';
 
-// Available numeric level backgrounds discovered from images/level<N>.png
+// Available numeric level backgrounds discovered from assets/images/common/level<N>.png
 const AVAILABLE_BG_LEVELS = [1,2,3,4,5,6];
 
 const BASE_PALETTE_ITEMS = [
@@ -63,7 +64,7 @@ const BASE_PALETTE_ITEMS = [
     { token: 'helmet', label: 'helmet' },
     { token: 'b', label: 'dynamite chest (b)' },
     { token: 'c', label: 'cart / stones (c)' },
-    { token: 'm', label: 'skeleton / wall (m)' },
+    { token: 'm', label: 'skeleton (m)' },
     { token: 'stones', label: 'stones (stones)' },
     { token: 'ghost', label: 'ghost spawn' },
     { token: 'bat', label: 'bat spawn' },
@@ -868,19 +869,19 @@ class LevelEditorScene extends Phaser.Scene {
 
     preload() {
         this.load
-            .spritesheet('tiles', 'images/tiles.png', { frameWidth: 64, frameHeight: 64 })
-            .spritesheet('wall_tiles', 'images/wall_completed.png', { frameWidth: 64, frameHeight: 64 })
-            .spritesheet('objects', 'images/obj_game.png', { frameWidth: 64, frameHeight: 64 })
-            .spritesheet('ghost_anim', 'images/ghost.png', { frameWidth: 64, frameHeight: 64 })
-            .spritesheet('bat_anim', 'images/batpng.png', { frameWidth: 64, frameHeight: 64 });
+            .spritesheet('tiles', `${COMMON_ASSETS_DIR}/tiles.png`, { frameWidth: 64, frameHeight: 64 })
+            .spritesheet('wall_tiles', `${COMMON_ASSETS_DIR}/wall_completed.png`, { frameWidth: 64, frameHeight: 64 })
+            .spritesheet('objects', `${COMMON_ASSETS_DIR}/obj_game.png`, { frameWidth: 64, frameHeight: 64 })
+            .spritesheet('ghost_anim', `${COMMON_ASSETS_DIR}/ghost.png`, { frameWidth: 64, frameHeight: 64 })
+            .spritesheet('bat_anim', `${COMMON_ASSETS_DIR}/batpng.png`, { frameWidth: 64, frameHeight: 64 });
 
         // preload possible game backgrounds so the editor can offer them
         // Fallback default background (game_bg.png is not present in this repo)
-        this.load.image('game_bg', 'images/attract_bg.png');
+        this.load.image('game_bg', `${COMMON_ASSETS_DIR}/attract_bg.png`);
         // load all discovered numeric level backgrounds
         try {
             (AVAILABLE_BG_LEVELS || []).forEach((n) => {
-                this.load.image(`game_bg_${String(n)}`, `images/level${String(n)}.png`);
+                this.load.image(`game_bg_${String(n)}`, `${COMMON_ASSETS_DIR}/level${String(n)}.png`);
             });
         } catch (e) { /* ignore */ }
     }
@@ -1815,6 +1816,9 @@ class LevelEditorScene extends Phaser.Scene {
             case '-': return { kind: 'empty' };
             case '.': return { kind: 'empty' };
             case '#': return { kind: 'empty' };
+            case 'sand': return { kind: 'tile', texture: 'tiles', frame: 0 };
+            case 'water': return { kind: 'tile', texture: 'tiles', frame: 3 };
+            case 'mud': return { kind: 'tile', texture: 'tiles', frame: 4 };
             case 'f': return { kind: 'tile', texture: 'tiles', frame: 3 };
             case 'h': return { kind: 'tile', texture: 'tiles', frame: 1 };
             case 's': return { kind: 'tile', texture: 'tiles', frame: 5 };
@@ -1824,8 +1828,12 @@ class LevelEditorScene extends Phaser.Scene {
             case 'p': return { kind: 'obj', frame: OBJECT_FRAMES.pepita };
             case 'b': return { kind: 'obj', frame: OBJECT_FRAMES.dynamite_chest };
             case 'c': return { kind: 'obj', frame: OBJECT_FRAMES.cart };
+            case 'stones': return { kind: 'obj', frame: OBJECT_FRAMES.stones };
+            case 'wooden': return { kind: 'obj', frame: OBJECT_FRAMES.wooden };
+            case 'l': return { kind: 'obj', frame: OBJECT_FRAMES.heart };
+            case 'heart': return { kind: 'obj', frame: OBJECT_FRAMES.heart };
             case 'helmet': return { kind: 'obj', frame: OBJECT_FRAMES.helmet };
-            case 'm': return { kind: 'obj', frame: OBJECT_FRAMES.wall };
+            case 'm': return { kind: 'obj', frame: OBJECT_FRAMES.skeleton };
             case 'ghost': return { kind: 'ghost' };
             case 'bat': return { kind: 'bat' };
             case 'spider': return { kind: 'obj', frame: OBJECT_FRAMES.spider };
@@ -2191,8 +2199,10 @@ function drawMiniMapToken(scene, ctx, token, x, y, size, opts = {}) {
             return drawMiniMapFrame(scene, ctx, 'objects', OBJECT_FRAMES.dynamite_chest, x, y, size, { alpha: opts.alpha });
         case 'c':
             return drawMiniMapFrame(scene, ctx, 'objects', OBJECT_FRAMES.cart, x, y, size, { alpha: opts.alpha });
+        case 'stones':
+            return drawMiniMapFrame(scene, ctx, 'objects', OBJECT_FRAMES.stones, x, y, size, { alpha: opts.alpha });
         case 'm':
-            return drawMiniMapFrame(scene, ctx, 'objects', OBJECT_FRAMES.wall, x, y, size, { alpha: opts.alpha });
+            return drawMiniMapFrame(scene, ctx, 'objects', OBJECT_FRAMES.skeleton, x, y, size, { alpha: opts.alpha });
         case 'helmet':
             return drawMiniMapFrame(scene, ctx, 'objects', OBJECT_FRAMES.helmet, x, y, size, { alpha: opts.alpha });
         case 'ghost':
@@ -2241,7 +2251,7 @@ function drawMiniMapPreview(scene) {
         if (bgVal && showBg) {
             // prefer numbered levels textures
             if (/^\d+$/.test(bgVal)) {
-                bgLayers = [{ src: `images/level${bgVal}.png`, parallaxBgFactor: 1.0, parallaxBgAlpha: 1.0 }];
+                bgLayers = [{ src: `${COMMON_ASSETS_DIR}/level${bgVal}.png`, parallaxBgFactor: 1.0, parallaxBgAlpha: 1.0 }];
             } else {
                 bgLayers = [{ src: String(bgVal), parallaxBgFactor: 1.0, parallaxBgAlpha: 1.0 }];
             }

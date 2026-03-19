@@ -2,7 +2,7 @@
 // Frame 0-3:   dynamite, heart, stone, player
 // Frame 4-7:   dynamite_chest, door, gem, stones
 // Frame 8-11:  key, sand_pile, ghost, pepita
-// Frame 12-15: wall, hole1, hole2, explosion
+// Frame 12-15: skeleton/miner, hole1, hole2, explosion
 
 export const OBJECT_FRAMES = {
     dynamite_projectile: 0,
@@ -20,6 +20,7 @@ export const OBJECT_FRAMES = {
     spider: 10,
     snake: 10,
     pepita: 11,
+    skeleton: 12,
     wall: 12,
     wooden: 10,
     hole1: 13,
@@ -27,10 +28,11 @@ export const OBJECT_FRAMES = {
     exit: 14,
     explosion: 15
 };
-// Helmet uses the same spritesheet frame as the player/4th object (index 3)
-// Add as synonym so tools and game can reference `helmet` directly.
+// Helmet uses the same spritesheet frame as the player/4th object (index 3).
 //OBJECT_FRAMES.helmet = OBJECT_FRAMES.player;
-// Wooden plank: temporarily reuse the wall frame (index 12). Replace with a dedicated asset later.
+// `wall` is kept as a legacy alias for frame 12 because older code paths still reference it,
+// but gameplay/editor semantics for token `m` use `skeleton`.
+// Wooden plank temporarily reuses frame 10. Replace with a dedicated asset later.
 //OBJECT_FRAMES.wooden = OBJECT_FRAMES.wall;
 //OBJECT_FRAMES.cart = OBJECT_FRAMES.stones;
 
