@@ -19,6 +19,9 @@
 
         :root {
             color-scheme: dark;
+            --left-panel-width: 320px;
+            --right-panel-width: 420px;
+            --editor-min-width: 320px;
         }
 
         * {
@@ -109,20 +112,32 @@
 
         .app {
             display: grid;
-            grid-template-columns: 320px minmax(600px, 1fr) 420px;
+            grid-template-columns: var(--left-panel-width) minmax(var(--editor-min-width), 1fr) var(--right-panel-width);
             height: 100vh;
         }
 
         /* Responsive design */
         @media (max-width: 1400px) {
+            :root {
+                --left-panel-width: 280px;
+                --right-panel-width: 360px;
+                --editor-min-width: 300px;
+            }
+
             .app {
-                grid-template-columns: 280px 1fr 380px;
+                grid-template-columns: var(--left-panel-width) minmax(var(--editor-min-width), 1fr) var(--right-panel-width);
             }
         }
 
         @media (max-width: 1024px) {
+            :root {
+                --left-panel-width: 210px;
+                --right-panel-width: 260px;
+                --editor-min-width: 260px;
+            }
+
             .app {
-                grid-template-columns: 240px 1fr 300px;
+                grid-template-columns: var(--left-panel-width) minmax(var(--editor-min-width), 1fr) var(--right-panel-width);
             }
 
             .left-panel {
@@ -132,9 +147,116 @@
             .panel {
                 padding: 10px;
             }
+
+            .palette-item {
+                font-size: 9px;
+                padding: 5px 6px;
+            }
         }
 
-        @media (max-width: 768px) {
+        @media (max-width: 860px) {
+            :root {
+                --left-panel-width: 180px;
+                --right-panel-width: 230px;
+                --editor-min-width: 220px;
+            }
+
+            .left-panel,
+            .panel {
+                padding: 8px;
+            }
+
+            .left-panel h1,
+            .panel h1 {
+                font-size: 10px;
+            }
+
+            .section h2 {
+                font-size: 9px;
+                padding: 5px 6px;
+            }
+
+            label,
+            input,
+            select,
+            textarea,
+            button {
+                font-size: 8px;
+            }
+
+            .field-row {
+                grid-template-columns: 1fr;
+                row-gap: 4px;
+                min-height: 0;
+            }
+        }
+
+        /* Ultra-compact desktop/tablet preset for 4:3 screens (e.g. 800x600). */
+        @media (min-width: 641px) and (max-width: 900px) and (max-height: 700px) {
+            :root {
+                --left-panel-width: 150px;
+                --right-panel-width: 200px;
+                --editor-min-width: 180px;
+            }
+
+            .left-panel,
+            .panel {
+                padding: 6px;
+            }
+
+            .left-panel h1,
+            .panel h1 {
+                font-size: 9px;
+            }
+
+            .tiny {
+                font-size: 7px;
+            }
+
+            .section {
+                padding: 6px;
+                margin-bottom: 6px;
+            }
+
+            .section h2 {
+                font-size: 8px;
+                padding: 4px 5px;
+                margin-bottom: 5px;
+            }
+
+            .accordion h3 {
+                font-size: 8px;
+                padding: 6px 5px;
+            }
+
+            .palette-item {
+                font-size: 8px;
+                padding: 4px 5px;
+                gap: 5px;
+                margin: 2px 0;
+            }
+
+            label,
+            input,
+            select,
+            textarea,
+            button {
+                font-size: 7px;
+                padding: 4px;
+            }
+
+            .grid2,
+            .grid3,
+            .btn-row {
+                gap: 4px;
+            }
+
+            .field-row {
+                margin-bottom: 4px;
+            }
+        }
+
+        @media (max-width: 640px) {
             .app {
                 display: grid;
                 grid-template-columns: 1fr;
@@ -620,8 +742,8 @@
 
         #hScroll {
             left: 0px;
-            right: 452px;
-            /* leave right panel space */
+            right: calc(var(--right-panel-width) + 32px);
+            /* leave room for right panel and vertical scrollbar */
             bottom: 6px;
         }
 
@@ -635,13 +757,7 @@
             transform: none;
         }
 
-        @media (max-width: 1024px) {
-            #hScroll {
-                right: 380px;
-            }
-        }
-
-        @media (max-width: 768px) {
+        @media (max-width: 640px) {
             .editor-scrollbar {
                 display: none;
             }
@@ -656,7 +772,7 @@
             }
         }
 
-        @media (min-width: 769px) {
+        @media (min-width: 641px) {
             .mobile-toolbar {
                 display: none;
             }

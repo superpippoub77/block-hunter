@@ -4387,17 +4387,85 @@ function initResponsiveDesign() {
 
     // Close panels when clicking outside on different size changes
     function handleResize() {
-        const isMobile = window.innerWidth <= 768;
+        const isMobile = window.innerWidth <= 640;
         if (!isMobile) {
             leftPanel.classList.remove('open');
             rightPanel.classList.remove('open');
             panelOverlay?.classList.remove('active');
+        }
+        // Recompute fluid panel widths if in desktop mode
+        if (!isMobile) {
+            computeFluidPanelWidths();
         }
     }
 
     window.addEventListener('resize', handleResize);
     handleResize(); // Initial check
 }
+
+// ===== Fluid 3-Column Layout: Auto-fit panel widths for any 4:3 and wide screens =====
+function computeFluidPanelWidths() {
+    const root = document.documentElement;
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    const aspectRatio = w / h;
+    
+    // Min/max thresholds for panel widths
+    const minLeftWidth = 140;    // Absolute minimum left panel
+    const maxLeftWidth = 380;    // Maximum left panel width
+    const minRightWidth = 180;   // Absolute minimum right panel
+    const maxRightWidth = 450;   // Maximum right panel width
+    const minEditorWidth = 200;  // Minimum editor area
+    
+    let leftWidth = 320;
+    let rightWidth = 420;
+    
+    // Dynamic adjustment based on aspect ratio and window size
+    if (aspectRatio < 1.4) {
+        // Narrow/square aspect (e.g., 4:3 or worse)
+        const scale = Math.max(0.4, Math.min(1, (aspectRatio - 1) / 0.4));
+        leftWidth = minLeftWidth + (maxLeftWidth - minLeftWidth) * scale * 0.6;
+        rightWidth = minRightWidth + (maxRightWidth - minRightWidth) * scale * 0.65;
+    } else if (aspectRatio > 2) {
+        // Very wide (ultrawide)
+        leftWidth = Math.min(maxLeftWidth, 320 + (w - 1200) * 0.05);
+        rightWidth = Math.min(maxRightWidth, 420 + (w - 1200) * 0.05);
+    } else {
+        // Widescreen (16:9, etc) - use comfortable defaults with slight scaling
+        leftWidth = Math.min(maxLeftWidth, Math.max(minLeftWidth, 280 + (w - 1024) * 0.02));
+        rightWidth = Math.min(maxRightWidth, Math.max(minRightWidth, 360 + (w - 1024) * 0.025));
+    }
+    
+    // Ensure enough space for editor
+    const totalSidePanels = leftWidth + rightWidth;
+    if (totalSidePanels + minEditorWidth > w) {
+        const scale = (w - minEditorWidth) / totalSidePanels;
+        leftWidth *= scale;
+        rightWidth *= scale;
+    }
+    
+    // Apply computed widths to CSS variables
+    root.style.setProperty('--left-panel-width', Math.floor(leftWidth) + 'px');
+    root.style.setProperty('--right-panel-width', Math.floor(rightWidth) + 'px');
+    root.style.setProperty('--editor-min-width', Math.floor(minEditorWidth) + 'px');
+}
+
+// Initialize fluid layout on load and bind to resize
+window.addEventListener('load', () => {
+    const isMobile = window.innerWidth <= 640;
+    if (!isMobile) {
+        computeFluidPanelWidths();
+    }
+});
+
+window.addEventListener('resize', () => {
+    const isMobile = window.innerWidth <= 640;
+    if (!isMobile) {
+        // Debounce: only recompute every 100ms max
+        if (window.__fluidResizeDebounce) clearTimeout(window.__fluidResizeDebounce);
+        window.__fluidResizeDebounce = setTimeout(computeFluidPanelWidths, 100);
+    }
+});
 
 function initEditorLoadingOverlay() {
     if (window.__levelEditorLoadingInit) return;
