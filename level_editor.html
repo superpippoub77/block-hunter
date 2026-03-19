@@ -454,6 +454,55 @@
             display: flex;
         }
 
+        .editor-modal-title {
+            margin: 0;
+            font-size: 12px;
+            color: #d7ebff;
+        }
+
+        .asset-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 8px;
+            font-size: 8px;
+        }
+
+        .asset-table th,
+        .asset-table td {
+            border: 1px solid #2f4f7b;
+            padding: 5px;
+            vertical-align: middle;
+        }
+
+        .asset-table th {
+            color: #cbe5ff;
+            background: rgba(20, 36, 67, 0.85);
+        }
+
+        .used-flag {
+            display: inline-block;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 8px;
+            border: 1px solid #3d5b8d;
+        }
+
+        .used-flag.yes {
+            color: #ffb0a2;
+            border-color: #b35b4f;
+            background: rgba(100, 32, 28, 0.35);
+        }
+
+        .used-flag.no {
+            color: #b7f4c8;
+            border-color: #4d8f63;
+            background: rgba(24, 70, 41, 0.35);
+        }
+
+        .dict-editor-area {
+            min-height: 340px;
+        }
+
         .config-dialog {
             width: min(1000px, 96vw);
             max-height: 92vh;
@@ -844,7 +893,11 @@
         <aside class="panel">
             <div class="panel-header">
                 <h1>OPTIONS</h1>
-                <button id="openConfigDialogBtn" class="icon-btn" type="button" title="Configura game config">&#9881;</button>
+                <div style="display:flex; gap:6px;">
+                    <button id="openAssetsDialogBtn" class="icon-btn" type="button" title="Gestione immagini e musiche">ASSET</button>
+                    <button id="openDictionaryDialogBtn" class="icon-btn" type="button" title="Gestione dizionari">DIC</button>
+                    <button id="openConfigDialogBtn" class="icon-btn" type="button" title="Configura game config">&#9881;</button>
+                </div>
             </div>
             <div style="display:flex; gap:8px; margin-bottom:8px;">
                 <button id="exportTopBtn" type="button">Esporta JSON</button>
@@ -988,6 +1041,10 @@
                         <label for="batCount">Bat</label>
                         <input id="batCount" type="number" min="0" value="2">
                     </div>
+                    <div>
+                        <label for="spiderCount">Spider</label>
+                        <input id="spiderCount" type="number" min="0" value="0">
+                    </div>
                 </div>
                 <div class="grid2" style="margin-top:6px;">
                     <div>
@@ -999,6 +1056,25 @@
                         <label for="batSpeed">Bat Speed</label>
                         <input id="batSpeed" type="number" min="0" value="90">
                         <input id="batSpeedRange" type="range" min="0" max="200" step="1" value="90">
+                    </div>
+                    <div>
+                        <label for="spiderSpeed">Spider Speed</label>
+                        <input id="spiderSpeed" type="number" min="0" value="100">
+                        <input id="spiderSpeedRange" type="range" min="0" max="200" step="1" value="100">
+                    </div>
+                </div>
+                <div class="grid3" style="margin-top:6px;">
+                    <div>
+                        <label for="batFlightsBeforeRest">Bat flights before rest</label>
+                        <input id="batFlightsBeforeRest" type="number" min="1" value="4">
+                    </div>
+                    <div>
+                        <label for="batRestSeconds">Bat rest seconds</label>
+                        <input id="batRestSeconds" type="number" min="0" step="0.1" value="2">
+                    </div>
+                    <div>
+                        <label for="batRestIntervalSeconds">Bat rest interval seconds</label>
+                        <input id="batRestIntervalSeconds" type="number" min="0" step="0.1" value="0">
                     </div>
                 </div>
                 <div style="margin-top:6px;">
@@ -1411,7 +1487,7 @@
     <div id="configModal" class="config-modal">
         <div class="config-dialog">
             <div class="config-toolbar">
-                <h2 style="margin:0; font-size:12px; color:#d7ebff;">Configurazione Gioco (data/config.json)</h2>
+                <h2 class="editor-modal-title">Configurazione Gioco (data/config.json)</h2>
                 <div style="display:flex; gap:6px;">
                     <button id="reloadConfigBtn" type="button">Ricarica</button>
                     <button id="saveConfigBtn" type="button">Salva</button>
@@ -1421,6 +1497,78 @@
             <div class="tiny" style="margin-bottom:8px;">Il salvataggio crea backup automatico in `bck/` prima di aggiornare `data/config.json`.</div>
             <div id="configFormContainer" class="config-grid"></div>
             <div class="status" id="configStatusText"></div>
+        </div>
+    </div>
+
+    <div id="assetsModal" class="config-modal">
+        <div class="config-dialog">
+            <div class="config-toolbar">
+                <h2 class="editor-modal-title">Gestione Asset (Upload/Delete)</h2>
+                <div style="display:flex; gap:6px;">
+                    <button id="refreshAssetsBtn" type="button">Ricarica</button>
+                    <button id="closeAssetsDialogBtn" type="button">Chiudi</button>
+                </div>
+            </div>
+            <div class="grid3" style="margin-bottom:8px;">
+                <div>
+                    <label for="assetTypeSelect">Tipo asset</label>
+                    <select id="assetTypeSelect">
+                        <option value="background">Background</option>
+                        <option value="foreground">Foreground</option>
+                        <option value="music">Music</option>
+                    </select>
+                </div>
+                <div>
+                    <label for="assetUploadInput">File da caricare</label>
+                    <input id="assetUploadInput" type="file" accept=".png,.jpg,.jpeg,.gif,.webp,.svg,.mp3,.ogg,.wav,.m4a,.aac">
+                </div>
+                <div style="display:flex; align-items:end;">
+                    <button id="uploadAssetBtn" type="button">Upload</button>
+                </div>
+            </div>
+            <div class="tiny">Flag uso: se un asset e usato in un livello, il pulsante delete viene disabilitato.</div>
+            <div style="max-height:52vh; overflow:auto;">
+                <table class="asset-table">
+                    <thead>
+                        <tr>
+                            <th>Asset</th>
+                            <th>Usato</th>
+                            <th>Azione</th>
+                        </tr>
+                    </thead>
+                    <tbody id="assetTableBody"></tbody>
+                </table>
+            </div>
+            <div class="status" id="assetsStatusText"></div>
+        </div>
+    </div>
+
+    <div id="dictionaryModal" class="config-modal">
+        <div class="config-dialog">
+            <div class="config-toolbar">
+                <h2 class="editor-modal-title">Gestione Dizionari</h2>
+                <div style="display:flex; gap:6px;">
+                    <button id="refreshDictionaryBtn" type="button">Ricarica</button>
+                    <button id="closeDictionaryDialogBtn" type="button">Chiudi</button>
+                </div>
+            </div>
+            <div class="grid3" style="margin-bottom:8px;">
+                <div>
+                    <label for="dictionarySelect">File dizionario</label>
+                    <select id="dictionarySelect"></select>
+                </div>
+                <div>
+                    <label for="newDictionaryName">Nuovo dizionario</label>
+                    <input id="newDictionaryName" type="text" placeholder="es: pt.json">
+                </div>
+                <div style="display:flex; align-items:end; gap:6px;">
+                    <button id="createDictionaryBtn" type="button">Crea</button>
+                    <button id="saveDictionaryBtn" type="button">Salva</button>
+                </div>
+            </div>
+            <label for="dictionaryEditor">Contenuto JSON</label>
+            <textarea id="dictionaryEditor" class="dict-editor-area" placeholder="{}"></textarea>
+            <div class="status" id="dictionaryStatusText"></div>
         </div>
     </div>
 

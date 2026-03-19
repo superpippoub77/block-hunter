@@ -10,6 +10,7 @@ const OBJECT_FRAMES = {
     key: 8,
     sand_pile: 9,
     ghost: 10,
+    spider: 10,
     wooden: 10, // wooden plank alias (reuses frame 10)
     pepita: 11,
     wall: 12,
@@ -30,6 +31,8 @@ const BG_MANIFEST_PATH = 'data/background-images.json';
 const FG_MANIFEST_PATH = 'data/foreground-images.json';
 const MUSIC_MANIFEST_PATH = 'data/music-files.json';
 const CONFIG_JSON_PATH = 'data/config.json';
+const ASSETS_API_PATH = 'assets';
+const DICTIONARIES_API_PATH = 'dictionaries';
 
 // Available numeric level backgrounds discovered from images/level<N>.png
 const AVAILABLE_BG_LEVELS = [1,2,3,4,5,6];
@@ -61,7 +64,8 @@ const BASE_PALETTE_ITEMS = [
     { token: 'm', label: 'skeleton / wall (m)' },
     { token: 'stones', label: 'stones (stones)' },
     { token: 'ghost', label: 'ghost spawn' },
-    { token: 'bat', label: 'bat spawn' }
+    { token: 'bat', label: 'bat spawn' },
+    { token: 'spider', label: 'spider spawn' }
 ];
 
 // Palette shows all 24 wall variants (4 rows x 6 cols); rotation/mirroring applied after placement
@@ -134,8 +138,13 @@ const DEFAULT_LEVEL = {
     },
     ghost: 2,
     bat: 2,
+    spider: 0,
     ghostSpeed: 80,
     batSpeed: 90,
+    spiderSpeed: 100,
+    batFlightsBeforeRest: 4,
+    batRestSeconds: 2,
+    batRestIntervalSeconds: 0,
     backgroundEnabled: true,
     foregroundEnabled: true
 };
@@ -466,6 +475,7 @@ function tokenToMiniMapColor(token) {
     if (normalized === 'm') return '#6a6a6a';
     if (normalized === 'ghost') return '#64e1d8';
     if (normalized === 'bat') return '#7a58d1';
+    if (normalized === 'spider') return '#d17f57';
     if (WALL_TOKEN_REGEX.test(normalized)) return '#4b5f80';
     return '#526f9f';
 }
@@ -1802,6 +1812,7 @@ class LevelEditorScene extends Phaser.Scene {
             case 'm': return { kind: 'obj', frame: OBJECT_FRAMES.wall };
             case 'ghost': return { kind: 'ghost' };
             case 'bat': return { kind: 'bat' };
+            case 'spider': return { kind: 'obj', frame: OBJECT_FRAMES.spider };
             default: return { kind: 'text', text: normalized };
         }
     }
@@ -2171,6 +2182,8 @@ function drawMiniMapToken(scene, ctx, token, x, y, size, opts = {}) {
             return drawMiniMapFrame(scene, ctx, 'ghost_anim', 0, x, y, size, { alpha: opts.alpha });
         case 'bat':
             return drawMiniMapFrame(scene, ctx, 'bat_anim', 0, x, y, size, { alpha: opts.alpha });
+        case 'spider':
+            return drawMiniMapFrame(scene, ctx, 'objects', OBJECT_FRAMES.spider, x, y, size, { alpha: opts.alpha });
         default:
             return false;
     }
@@ -2509,8 +2522,13 @@ function readLevelFromForm() {
         },
         ghost: parseNumber(el('ghostCount')?.value, 0),
         bat: parseNumber(el('batCount')?.value, 0),
+        spider: parseNumber(el('spiderCount')?.value, 0),
         ghostSpeed: parseNumber(el('ghostSpeed')?.value, 80),
-        batSpeed: parseNumber(el('batSpeed')?.value, 90)
+        batSpeed: parseNumber(el('batSpeed')?.value, 90),
+        spiderSpeed: parseNumber(el('spiderSpeed')?.value, 100),
+        batFlightsBeforeRest: parseNumber(el('batFlightsBeforeRest')?.value, 4),
+        batRestSeconds: parseNumber(el('batRestSeconds')?.value, 2),
+        batRestIntervalSeconds: parseNumber(el('batRestIntervalSeconds')?.value, 0)
     };
 
     // tokenMap (optional mapping of shorthand tokens)
@@ -2604,10 +2622,16 @@ function applyLevelToForm(levelData) {
     el('levelSpeed').value = data.speed ?? DEFAULT_LEVEL.speed;
     el('ghostCount').value = data.ghost ?? DEFAULT_LEVEL.ghost;
     el('batCount').value = data.bat ?? DEFAULT_LEVEL.bat;
+    el('spiderCount').value = data.spider ?? DEFAULT_LEVEL.spider;
     el('ghostSpeed').value = data.ghostSpeed ?? DEFAULT_LEVEL.ghostSpeed;
     el('batSpeed').value = data.batSpeed ?? DEFAULT_LEVEL.batSpeed;
+    el('spiderSpeed').value = data.spiderSpeed ?? DEFAULT_LEVEL.spiderSpeed;
+    el('batFlightsBeforeRest').value = data.batFlightsBeforeRest ?? DEFAULT_LEVEL.batFlightsBeforeRest;
+    el('batRestSeconds').value = data.batRestSeconds ?? DEFAULT_LEVEL.batRestSeconds;
+    el('batRestIntervalSeconds').value = data.batRestIntervalSeconds ?? DEFAULT_LEVEL.batRestIntervalSeconds;
     try { if (el('ghostSpeedRange')) el('ghostSpeedRange').value = el('ghostSpeed').value; } catch (e) {}
     try { if (el('batSpeedRange')) el('batSpeedRange').value = el('batSpeed').value; } catch (e) {}
+    try { if (el('spiderSpeedRange')) el('spiderSpeedRange').value = el('spiderSpeed').value; } catch (e) {}
     el('objectiveLabel').value = data.objectiveLabel ?? DEFAULT_LEVEL.objectiveLabel;
     el('lightMode').value = resolvedLight;
     el('escapeRoute').value = String(!!data.escapeRoute);
@@ -2693,6 +2717,7 @@ function applyLevelToForm(levelData) {
         'id', 'map', 'playerStart', 'staticRocks', 'dynamicBoulders', 'speed', 'escapeRoute',
         'objectiveLabel', 'enemies', 'collectibles', 'traps', 'spawnPoints', 'timeLimit',
         'scoreRules', 'light', 'effects', 'ghost', 'bat', 'ghostSpeed', 'batSpeed',
+        'spider', 'spiderSpeed', 'batFlightsBeforeRest', 'batRestSeconds', 'batRestIntervalSeconds',
         'background', 'foreground', 'backgroundEnabled', 'foregroundEnabled', 'rain', 'fog', 'music',
         'gemsOneByOne', 'requiredGems', 'gemsRequired', 'playerStart2', 'timer'
     ]);
@@ -3267,6 +3292,260 @@ function bindLayerDnD(container, itemSelector) {
     });
 }
 
+function setAssetsStatus(message, isError = false) {
+    const target = el('assetsStatusText');
+    if (!target) return;
+    target.style.color = isError ? '#ff8f9a' : '#8ee89f';
+    target.textContent = message;
+}
+
+function setDictionaryStatus(message, isError = false) {
+    const target = el('dictionaryStatusText');
+    if (!target) return;
+    target.style.color = isError ? '#ff8f9a' : '#8ee89f';
+    target.textContent = message;
+}
+
+async function refreshMusicSelectOptions() {
+    const list = await fetchJsonListWithFallback(buildApiUrl('music'), MUSIC_MANIFEST_PATH);
+    const sel = el('levelMusic');
+    if (!sel) return;
+    const current = String(sel.value || '').trim();
+    sel.innerHTML = '';
+    const noneOpt = document.createElement('option');
+    noneOpt.value = '';
+    noneOpt.textContent = '(none)';
+    sel.appendChild(noneOpt);
+    list.forEach((p) => {
+        const name = String(p).split('/').pop();
+        const o = document.createElement('option');
+        o.value = p;
+        o.textContent = name;
+        sel.appendChild(o);
+    });
+    if (current) sel.value = current;
+}
+
+async function refreshImageSelectOptions() {
+    const [bgList, fgList] = await Promise.all([
+        fetchJsonListWithFallback(buildApiUrl('images/background'), BG_MANIFEST_PATH),
+        fetchJsonListWithFallback(buildApiUrl('images/foreground'), FG_MANIFEST_PATH)
+    ]);
+
+    const bgSel = el('bgImageSelect');
+    const fgSel = el('fgImageSelect');
+
+    if (bgSel) {
+        bgSel.innerHTML = '';
+        const placeholder = document.createElement('option');
+        placeholder.value = '';
+        placeholder.textContent = '-- scegli immagine background --';
+        bgSel.appendChild(placeholder);
+        bgList.forEach((p) => {
+            const name = String(p).split('/').pop();
+            const o = document.createElement('option');
+            o.value = name;
+            o.textContent = name;
+            bgSel.appendChild(o);
+        });
+    }
+
+    if (fgSel) {
+        fgSel.innerHTML = '';
+        const placeholder = document.createElement('option');
+        placeholder.value = '';
+        placeholder.textContent = '-- scegli immagine foreground --';
+        fgSel.appendChild(placeholder);
+        fgList.forEach((p) => {
+            const name = String(p).split('/').pop();
+            const o = document.createElement('option');
+            o.value = name;
+            o.textContent = name;
+            fgSel.appendChild(o);
+        });
+    }
+}
+
+async function refreshAssetsTable() {
+    const type = String(el('assetTypeSelect')?.value || 'background');
+    const body = el('assetTableBody');
+    if (!body) return;
+
+    body.innerHTML = '';
+    try {
+        const resp = await fetch(`${buildApiUrl(ASSETS_API_PATH)}?type=${encodeURIComponent(type)}`, { cache: 'no-store' });
+        const payload = await resp.json().catch(() => ({}));
+        if (!resp.ok || payload.ok === false) throw new Error(payload.error || `HTTP ${resp.status}`);
+
+        const list = Array.isArray(payload.assets) ? payload.assets : [];
+        if (!list.length) {
+            const tr = document.createElement('tr');
+            const td = document.createElement('td');
+            td.colSpan = 3;
+            td.textContent = 'Nessun asset trovato.';
+            tr.appendChild(td);
+            body.appendChild(tr);
+            setAssetsStatus('Elenco asset aggiornato.');
+            return;
+        }
+
+        list.forEach((item) => {
+            const tr = document.createElement('tr');
+
+            const nameTd = document.createElement('td');
+            nameTd.textContent = String(item.name || item.path || '');
+
+            const usedTd = document.createElement('td');
+            const badge = document.createElement('span');
+            const used = !!item.used;
+            badge.className = `used-flag ${used ? 'yes' : 'no'}`;
+            badge.textContent = used ? 'SI' : 'NO';
+            usedTd.appendChild(badge);
+
+            const actionTd = document.createElement('td');
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.textContent = 'Delete';
+            btn.disabled = used;
+            btn.title = used ? 'Asset in uso: non eliminabile' : 'Elimina asset';
+            btn.addEventListener('click', async () => {
+                try {
+                    const delResp = await fetch(buildApiUrl(ASSETS_API_PATH), {
+                        method: 'DELETE',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ type, fileName: item.name })
+                    });
+                    const delPayload = await delResp.json().catch(() => ({}));
+                    if (!delResp.ok || delPayload.ok === false) {
+                        throw new Error(delPayload.error || `HTTP ${delResp.status}`);
+                    }
+                    setAssetsStatus(`Eliminato: ${item.name}`);
+                    await refreshAssetsTable();
+                    await refreshImageSelectOptions();
+                    await refreshMusicSelectOptions();
+                } catch (e) {
+                    setAssetsStatus(`Errore delete: ${e.message}`, true);
+                }
+            });
+            actionTd.appendChild(btn);
+
+            tr.appendChild(nameTd);
+            tr.appendChild(usedTd);
+            tr.appendChild(actionTd);
+            body.appendChild(tr);
+        });
+
+        setAssetsStatus('Elenco asset aggiornato.');
+    } catch (e) {
+        setAssetsStatus(`Errore lettura asset: ${e.message}`, true);
+    }
+}
+
+async function uploadSelectedAsset() {
+    const type = String(el('assetTypeSelect')?.value || 'background');
+    const fileInput = el('assetUploadInput');
+    const file = fileInput?.files?.[0];
+    if (!file) {
+        setAssetsStatus('Seleziona un file da caricare.', true);
+        return;
+    }
+
+    try {
+        const base64Content = await new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => {
+                const raw = String(reader.result || '');
+                const idx = raw.indexOf(',');
+                resolve(idx >= 0 ? raw.slice(idx + 1) : raw);
+            };
+            reader.onerror = () => reject(new Error('Lettura file fallita'));
+            reader.readAsDataURL(file);
+        });
+
+        const resp = await fetch(buildApiUrl(`${ASSETS_API_PATH}/upload`), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                type,
+                fileName: file.name,
+                contentBase64: base64Content
+            })
+        });
+        const payload = await resp.json().catch(() => ({}));
+        if (!resp.ok || payload.ok === false) throw new Error(payload.error || `HTTP ${resp.status}`);
+
+        if (fileInput) fileInput.value = '';
+        setAssetsStatus(`Upload completato: ${file.name}`);
+        await refreshAssetsTable();
+        await refreshImageSelectOptions();
+        await refreshMusicSelectOptions();
+    } catch (e) {
+        setAssetsStatus(`Errore upload: ${e.message}`, true);
+    }
+}
+
+async function refreshDictionaryList() {
+    const sel = el('dictionarySelect');
+    if (!sel) return;
+    const current = String(sel.value || '').trim();
+    sel.innerHTML = '';
+
+    try {
+        const resp = await fetch(buildApiUrl(DICTIONARIES_API_PATH), { cache: 'no-store' });
+        const payload = await resp.json().catch(() => ({}));
+        if (!resp.ok || payload.ok === false) throw new Error(payload.error || `HTTP ${resp.status}`);
+        const list = Array.isArray(payload.items) ? payload.items : [];
+        list.forEach((name) => {
+            const o = document.createElement('option');
+            o.value = String(name);
+            o.textContent = String(name);
+            sel.appendChild(o);
+        });
+
+        if (current && list.includes(current)) {
+            sel.value = current;
+        }
+
+        if (sel.value) {
+            await loadDictionary(sel.value);
+        } else {
+            const editor = el('dictionaryEditor');
+            if (editor) editor.value = '{}';
+        }
+
+        setDictionaryStatus('Lista dizionari aggiornata.');
+    } catch (e) {
+        setDictionaryStatus(`Errore caricamento dizionari: ${e.message}`, true);
+    }
+}
+
+async function loadDictionary(name) {
+    if (!name) return;
+    try {
+        const resp = await fetch(`${buildApiUrl(DICTIONARIES_API_PATH)}?name=${encodeURIComponent(name)}`, { cache: 'no-store' });
+        const payload = await resp.json().catch(() => ({}));
+        if (!resp.ok || payload.ok === false) throw new Error(payload.error || `HTTP ${resp.status}`);
+        const editor = el('dictionaryEditor');
+        if (editor) editor.value = JSON.stringify(payload.data || {}, null, 2);
+        setDictionaryStatus(`Dizionario caricato: ${name}`);
+    } catch (e) {
+        setDictionaryStatus(`Errore caricamento dizionario: ${e.message}`, true);
+    }
+}
+
+async function saveDictionary(name, data) {
+    const resp = await fetch(buildApiUrl(DICTIONARIES_API_PATH), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, data })
+    });
+    const payload = await resp.json().catch(() => ({}));
+    if (!resp.ok || payload.ok === false) {
+        throw new Error(payload.error || `HTTP ${resp.status}`);
+    }
+    return payload;
+}
+
 function bindUI() {
     const applyGridBtn = el('applyGridBtn');
     const clearGridBtn = el('clearGridBtn');
@@ -3276,6 +3555,19 @@ function bindUI() {
     const loadLocalBtn = el('loadLocalBtn');
     const importJsonFile = el('importJsonFile');
     const openConfigDialogBtn = el('openConfigDialogBtn');
+    const openAssetsDialogBtn = el('openAssetsDialogBtn');
+    const closeAssetsDialogBtn = el('closeAssetsDialogBtn');
+    const refreshAssetsBtn = el('refreshAssetsBtn');
+    const uploadAssetBtn = el('uploadAssetBtn');
+    const assetTypeSelect = el('assetTypeSelect');
+    const assetsModal = el('assetsModal');
+    const openDictionaryDialogBtn = el('openDictionaryDialogBtn');
+    const closeDictionaryDialogBtn = el('closeDictionaryDialogBtn');
+    const refreshDictionaryBtn = el('refreshDictionaryBtn');
+    const createDictionaryBtn = el('createDictionaryBtn');
+    const saveDictionaryBtn = el('saveDictionaryBtn');
+    const dictionarySelect = el('dictionarySelect');
+    const dictionaryModal = el('dictionaryModal');
     const closeConfigDialogBtn = el('closeConfigDialogBtn');
     const reloadConfigBtn = el('reloadConfigBtn');
     const saveConfigBtn = el('saveConfigBtn');
@@ -3310,6 +3602,104 @@ function bindUI() {
         configModal.addEventListener('click', (ev) => {
             if (ev.target === configModal) {
                 configModal.classList.remove('open');
+            }
+        });
+    }
+
+    if (openAssetsDialogBtn) {
+        openAssetsDialogBtn.addEventListener('click', async () => {
+            if (assetsModal) assetsModal.classList.add('open');
+            await refreshAssetsTable();
+        });
+    }
+
+    if (closeAssetsDialogBtn) {
+        closeAssetsDialogBtn.addEventListener('click', () => {
+            if (assetsModal) assetsModal.classList.remove('open');
+        });
+    }
+
+    if (assetsModal) {
+        assetsModal.addEventListener('click', (ev) => {
+            if (ev.target === assetsModal) {
+                assetsModal.classList.remove('open');
+            }
+        });
+    }
+
+    if (refreshAssetsBtn) refreshAssetsBtn.addEventListener('click', refreshAssetsTable);
+    if (uploadAssetBtn) uploadAssetBtn.addEventListener('click', uploadSelectedAsset);
+    if (assetTypeSelect) assetTypeSelect.addEventListener('change', refreshAssetsTable);
+
+    if (openDictionaryDialogBtn) {
+        openDictionaryDialogBtn.addEventListener('click', async () => {
+            if (dictionaryModal) dictionaryModal.classList.add('open');
+            await refreshDictionaryList();
+        });
+    }
+
+    if (closeDictionaryDialogBtn) {
+        closeDictionaryDialogBtn.addEventListener('click', () => {
+            if (dictionaryModal) dictionaryModal.classList.remove('open');
+        });
+    }
+
+    if (dictionaryModal) {
+        dictionaryModal.addEventListener('click', (ev) => {
+            if (ev.target === dictionaryModal) {
+                dictionaryModal.classList.remove('open');
+            }
+        });
+    }
+
+    if (refreshDictionaryBtn) {
+        refreshDictionaryBtn.addEventListener('click', refreshDictionaryList);
+    }
+
+    if (dictionarySelect) {
+        dictionarySelect.addEventListener('change', async () => {
+            await loadDictionary(String(dictionarySelect.value || '').trim());
+        });
+    }
+
+    if (createDictionaryBtn) {
+        createDictionaryBtn.addEventListener('click', async () => {
+            const input = el('newDictionaryName');
+            const name = String(input?.value || '').trim();
+            if (!name) {
+                setDictionaryStatus('Inserisci il nome del nuovo dizionario.', true);
+                return;
+            }
+            try {
+                await saveDictionary(name, {});
+                if (input) input.value = '';
+                await refreshDictionaryList();
+                if (dictionarySelect) dictionarySelect.value = name;
+                await loadDictionary(name);
+                setDictionaryStatus(`Creato dizionario: ${name}`);
+            } catch (e) {
+                setDictionaryStatus(`Errore creazione dizionario: ${e.message}`, true);
+            }
+        });
+    }
+
+    if (saveDictionaryBtn) {
+        saveDictionaryBtn.addEventListener('click', async () => {
+            const name = String(dictionarySelect?.value || '').trim();
+            const raw = String(el('dictionaryEditor')?.value || '').trim();
+            if (!name) {
+                setDictionaryStatus('Seleziona un dizionario.', true);
+                return;
+            }
+            try {
+                const parsed = raw ? JSON.parse(raw) : {};
+                if (!isPlainObject(parsed)) {
+                    throw new Error('Il dizionario deve essere un oggetto JSON');
+                }
+                await saveDictionary(name, parsed);
+                setDictionaryStatus(`Dizionario salvato: ${name}`);
+            } catch (e) {
+                setDictionaryStatus(`Errore salvataggio dizionario: ${e.message}`, true);
             }
         });
     }
@@ -3442,7 +3832,8 @@ function bindUI() {
 
     const realtimeFields = [
         'playerRow', 'playerCol', 'gridCols', 'gridRows', 'mapTimer', 'revealMode',
-        'levelId', 'levelSpeed', 'ghostCount', 'batCount', 'ghostSpeed', 'batSpeed',
+        'levelId', 'levelSpeed', 'ghostCount', 'batCount', 'spiderCount', 'ghostSpeed', 'batSpeed', 'spiderSpeed',
+        'batFlightsBeforeRest', 'batRestSeconds', 'batRestIntervalSeconds',
         'objectiveLabel', 'lightMode', 'escapeRoute', 'srEnabled', 'srShardBurstCount',
         'srDynamicSize', 'srRotation', 'srChaotic', 'dbEnabled', 'dbSplitOnImpact',
         'dbDirections', 'dbSizes', 'dbSplitRange', 'dbMaxSplitGen', 'extraRootJson',
@@ -3618,6 +4009,12 @@ function bindUI() {
     if (batRange && batNum) {
         batRange.addEventListener('input', () => { batNum.value = batRange.value; drawMiniMapPreview(getScene()); });
         batNum.addEventListener('input', () => { batRange.value = batNum.value; drawMiniMapPreview(getScene()); });
+    }
+    const spiderRange = el('spiderSpeedRange');
+    const spiderNum = el('spiderSpeed');
+    if (spiderRange && spiderNum) {
+        spiderRange.addEventListener('input', () => { spiderNum.value = spiderRange.value; drawMiniMapPreview(getScene()); });
+        spiderNum.addEventListener('input', () => { spiderRange.value = spiderNum.value; drawMiniMapPreview(getScene()); });
     }
     const showBg = el('showBackground');
     if (showBg) {
