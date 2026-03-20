@@ -4942,8 +4942,13 @@ class GameScene extends Phaser.Scene {
         }
 
         try {
+            const touch = (window && window.TOUCH_INPUT) ? window.TOUCH_INPUT : null;
+            const touchJump = !!(touch && touch.jump);
             const p1JumpPressed = Array.isArray(this.p1JumpKeys) && this.p1JumpKeys.some(k => Phaser.Input.Keyboard.JustDown(k));
-            if (p1JumpPressed) this.attemptJumpFor(this.player, { inputX: velocityX, inputY: velocityY });
+            if (p1JumpPressed || (touchJump && !this._lastTouchJump)) {
+                this.attemptJumpFor(this.player, { inputX: velocityX, inputY: velocityY });
+            }
+            this._lastTouchJump = touchJump;
         } catch (e) { }
         try {
             const p2JumpPressed = Array.isArray(this.p2JumpKeys) && this.p2JumpKeys.some(k => Phaser.Input.Keyboard.JustDown(k));

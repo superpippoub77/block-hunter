@@ -6,7 +6,8 @@
     window.TOUCH_INPUT = {
         x: 0, // -1..1
         y: 0, // -1..1
-        action: false
+        action: false,
+        jump: false
     };
 
     const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -80,22 +81,27 @@
         setTimeout(updateRect, 50);
     }
 
-    function initActionButton() {
-        const btn = document.getElementById('actionBtn');
+    function initPressButton(buttonId, fieldName) {
+        const btn = document.getElementById(buttonId);
         if (!btn) return;
         btn.addEventListener('pointerdown', (ev) => {
             ev.preventDefault();
-            window.TOUCH_INPUT.action = true;
+            window.TOUCH_INPUT[fieldName] = true;
             btn.classList.add('pressed');
+            try { btn.setPointerCapture(ev.pointerId); } catch (e) {}
         });
         const end = (ev) => {
             ev && ev.preventDefault && ev.preventDefault();
-            window.TOUCH_INPUT.action = false;
+            window.TOUCH_INPUT[fieldName] = false;
             btn.classList.remove('pressed');
+            try {
+                if (ev && typeof ev.pointerId !== 'undefined') btn.releasePointerCapture(ev.pointerId);
+            } catch (e) {}
         };
         btn.addEventListener('pointerup', end);
         btn.addEventListener('pointercancel', end);
         btn.addEventListener('pointerleave', end);
+        btn.addEventListener('lostpointercapture', end);
     }
 
     // Allow keyboard fallback: map arrow keys/WASD to TOUCH_INPUT axes when on touch devices
@@ -111,6 +117,7 @@
             const p1cfg = panel.player1 || {};
             const actionKeys = Array.isArray(p1cfg.shoot) ? p1cfg.shoot : (p1cfg.shoot ? [p1cfg.shoot] : ['X','SPACE']);
             const actionAlt = Array.isArray(p1cfg.action) ? p1cfg.action : (p1cfg.action ? [p1cfg.action] : ['Z']);
+            const jumpKeys = Array.isArray(p1cfg.jump) ? p1cfg.jump : (p1cfg.jump ? [p1cfg.jump] : ['C']);
             const keysToCheck = [].concat(actionKeys || [], actionAlt || []);
             const isMatch = (configuredKey) => {
                 if (!configuredKey || !e.key) return false;
@@ -126,6 +133,7 @@
                 return e.key.toLowerCase() === ck.toLowerCase();
             };
             if (keysToCheck.some(isMatch)) window.TOUCH_INPUT.action = true;
+            if ((jumpKeys || []).some(isMatch)) window.TOUCH_INPUT.jump = true;
         });
         window.addEventListener('keyup', (e) => {
             if (!('ontouchstart' in window) && navigator.maxTouchPoints === 0) return;
@@ -135,6 +143,7 @@
             const p1cfg = panel.player1 || {};
             const actionKeys = Array.isArray(p1cfg.shoot) ? p1cfg.shoot : (p1cfg.shoot ? [p1cfg.shoot] : ['X','SPACE']);
             const actionAlt = Array.isArray(p1cfg.action) ? p1cfg.action : (p1cfg.action ? [p1cfg.action] : ['Z']);
+            const jumpKeys = Array.isArray(p1cfg.jump) ? p1cfg.jump : (p1cfg.jump ? [p1cfg.jump] : ['C']);
             const keysToCheck = [].concat(actionKeys || [], actionAlt || []);
             const isMatch = (configuredKey) => {
                 if (!configuredKey || !e.key) return false;
@@ -147,6 +156,7 @@
                 return e.key.toLowerCase() === ck.toLowerCase();
             };
             if (keysToCheck.some(isMatch)) window.TOUCH_INPUT.action = false;
+            if ((jumpKeys || []).some(isMatch)) window.TOUCH_INPUT.jump = false;
         });
     }
 
@@ -163,7 +173,8 @@
         }
 
         initJoystick();
-        initActionButton();
+        initPressButton('actionBtn', 'action');
+        initPressButton('jumpBtn', 'jump');
         initKeyboardFallback();
     });
 })();

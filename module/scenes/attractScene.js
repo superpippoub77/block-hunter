@@ -258,6 +258,16 @@ class AttractScene extends Phaser.Scene {
     }
 
     setupInput() {
+        const isTouchDevice = () => {
+            try {
+                return ('ontouchstart' in window)
+                    || (navigator.maxTouchPoints && navigator.maxTouchPoints > 0)
+                    || /Mobi|Android|iPhone|iPad|iPod|Touch/i.test(navigator.userAgent);
+            } catch (e) {
+                return false;
+            }
+        };
+
         // Coin insert (route to creditManager if available)
         this.input.keyboard.on('keydown-FIVE', () => {
             try {
@@ -288,6 +298,18 @@ class AttractScene extends Phaser.Scene {
 
         // Config page
         this.input.keyboard.on('keydown-T', () => this.openConfig());
+
+        this.input.on('pointerdown', (pointer, currentlyOver) => {
+            this.resetTimeout();
+
+            const isTouchPointer = !!(pointer && (pointer.wasTouch || pointer.pointerType === 'touch'));
+            const tappedInteractiveUi = Array.isArray(currentlyOver) && currentlyOver.length > 0;
+            if (!isTouchPointer && !isTouchDevice()) return;
+            if (!isFreeplayEnabled()) return;
+            if (tappedInteractiveUi) return;
+
+            this.startGame(1);
+        });
 
         // Any key resets timeout
         this.input.keyboard.on('keydown', () => this.resetTimeout());

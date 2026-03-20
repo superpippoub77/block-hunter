@@ -77,13 +77,18 @@
         #joystick { position: absolute; left: 16px; bottom: 12px; width: 120px; height: 120px; pointer-events: auto; }
         #joystick-base { position: absolute; left: 0; top: 0; width: 100%; height: 100%; border-radius: 50%; background: rgba(10,20,40,0.48); border: 2px solid rgba(120,160,220,0.12); }
         #joystick-thumb { position: absolute; left: 50%; top: 50%; width: 44px; height: 44px; margin-left: -22px; margin-top: -22px; border-radius: 50%; background: rgba(140,200,255,0.95); box-shadow: 0 6px 18px rgba(0,0,0,0.45); }
-        #actionBtn { position: absolute; right: 16px; bottom: 18px; width: 86px; height: 86px; border-radius: 50%; background: rgba(255,150,80,0.92); color: #111; font-weight: bold; font-size: 24px; border: none; pointer-events: auto; }
+        #touch-buttons { position: absolute; right: 16px; bottom: 18px; display: flex; flex-direction: column; gap: 14px; align-items: flex-end; pointer-events: none; }
+        #actionBtn, #jumpBtn { width: 86px; height: 86px; border-radius: 50%; color: #111; font-weight: bold; font-size: 24px; border: none; pointer-events: auto; box-shadow: 0 6px 18px rgba(0,0,0,0.45); }
+        #actionBtn { background: rgba(255,150,80,0.92); }
+        #jumpBtn { background: rgba(120,220,255,0.92); }
+        .touch-control.pressed { transform: scale(0.96); filter: brightness(0.92); }
         @media (pointer: coarse) {
             /* Show touch controls on coarse-pointer devices (touchscreens) */
             #touch-controls { display: block; }
             #joystick { width: 140px; height: 140px; }
             #joystick-thumb { width: 56px; height: 56px; margin-left: -28px; margin-top: -28px; }
-            #actionBtn { width: 100px; height: 100px; font-size: 28px; }
+            #touch-buttons { gap: 16px; }
+            #actionBtn, #jumpBtn { width: 100px; height: 100px; font-size: 28px; }
         }
     </style>
     <style>
@@ -137,7 +142,10 @@
             <div id="joystick-base"></div>
             <div id="joystick-thumb"></div>
         </div>
-        <button id="actionBtn" class="touch-control">A</button>
+        <div id="touch-buttons">
+            <button id="jumpBtn" class="touch-control" aria-label="Salto">J</button>
+            <button id="actionBtn" class="touch-control" aria-label="Azione">A</button>
+        </div>
     </div>
     <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
     <script type="module" src="game.js"></script>
