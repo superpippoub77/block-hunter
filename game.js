@@ -11741,28 +11741,14 @@ async function inizialization() {
         else if (requestedScaleMode === 'NONE') phaserScaleMode = Phaser.Scale.NONE;
         else if (requestedScaleMode === 'RESIZE') phaserScaleMode = Phaser.Scale.RESIZE;
 
-        // Determine game dimensions based on responsiveMode flag
-        let gameWidth = Number(CONFIG.width) || 800;
-        let gameHeight = Number(CONFIG.height) || 600;
-        
-        if (CONFIG.responsiveMode) {
-            // Responsive mode: adapt to window size while maintaining aspect ratio
-            const arcadeAspectRatio = gameWidth / gameHeight;
-            const windowWidth = window.innerWidth;
-            const windowHeight = window.innerHeight;
-            const windowAspectRatio = windowWidth / windowHeight;
-            
-            if (windowAspectRatio > arcadeAspectRatio) {
-                // Window is wider than arcade aspect ratio, fit to height
-                gameHeight = windowHeight;
-                gameWidth = Math.round(gameHeight * arcadeAspectRatio);
-            } else {
-                // Window is narrower, fit to width
-                gameWidth = windowWidth;
-                gameHeight = Math.round(gameWidth / arcadeAspectRatio);
-            }
-            
-            LOGGER.info('BOOT', 'Responsive mode enabled', `dimensions=${gameWidth}x${gameHeight} (window=${windowWidth}x${windowHeight})`);
+        // Keep a stable logical resolution so scenes that use 800x600 coordinates
+        // (loading, attract, overlays) stay centered while the canvas is scaled.
+        const gameWidth = Number(CONFIG.width) || 800;
+        const gameHeight = Number(CONFIG.height) || 600;
+        let effectiveScaleMode = phaserScaleMode;
+        if (CONFIG.responsiveMode && effectiveScaleMode === Phaser.Scale.RESIZE) {
+            LOGGER.warn('BOOT', 'responsiveMode + RESIZE can break fixed-coordinate scenes; using FIT.');
+            effectiveScaleMode = Phaser.Scale.FIT;
         }
 
         const config = {
@@ -11770,7 +11756,7 @@ async function inizialization() {
             // Use Phaser Scale manager to display the original 800x600 game in the
             // available viewport according to the requested scale mode.
             scale: {
-                mode: phaserScaleMode,
+                mode: effectiveScaleMode,
                 autoCenter: Phaser.Scale.CENTER_BOTH,
                 parent: 'game-container',
                 width: gameWidth,
@@ -11834,35 +11820,16 @@ async function inizialization() {
             GAME_STATE.topScores = Array.isArray(cfg.topScores) ? cfg.topScores.slice(0, 10) : [];
         }
 
-        new Phaser.Game(config);
+        const game = new Phaser.Game(config);
         LOGGER.info('BOOT', 'Istanza Phaser.Game creata con successo.');
 
         // Handle window resize for responsive mode
         if (CONFIG.responsiveMode) {
             window.addEventListener('resize', () => {
-                const arcadeAspectRatio = 800 / 600; // Original arcade aspect ratio
-                const windowWidth = window.innerWidth;
-                const windowHeight = window.innerHeight;
-                const windowAspectRatio = windowWidth / windowHeight;
-                
-                let newWidth = 800;
-                let newHeight = 600;
-                
-                if (windowAspectRatio > arcadeAspectRatio) {
-                    newHeight = windowHeight;
-                    newWidth = Math.round(newHeight * arcadeAspectRatio);
-                } else {
-                    newWidth = windowWidth;
-                    newHeight = Math.round(newWidth / arcadeAspectRatio);
+                if (game && game.scale) {
+                    game.scale.refresh();
                 }
-                
-                const game = Phaser.Games.instance || config;
-                if (game && game.canvas) {
-                    game.canvas.style.width = newWidth + 'px';
-                    game.canvas.style.height = newHeight + 'px';
-                }
-                
-                LOGGER.debug('BOOT', 'Window resize handled', `new dimensions=${newWidth}x${newHeight}`);
+                LOGGER.debug('BOOT', 'Window resize handled', `viewport=${window.innerWidth}x${window.innerHeight}`);
             });
         }
 
