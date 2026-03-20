@@ -302,9 +302,8 @@ class AttractScene extends Phaser.Scene {
         this.input.on('pointerdown', (pointer, currentlyOver) => {
             this.resetTimeout();
 
-            const isTouchPointer = !!(pointer && (pointer.wasTouch || pointer.pointerType === 'touch'));
             const tappedInteractiveUi = Array.isArray(currentlyOver) && currentlyOver.length > 0;
-            if (!isTouchPointer && !isTouchDevice()) return;
+            if (!isTouchDevice()) return;
             if (!isFreeplayEnabled()) return;
             if (tappedInteractiveUi) return;
 
