@@ -299,6 +299,25 @@ class PreloadScene extends Phaser.Scene {
         // Carica le traduzioni prima di avviare la scena iniziale
         const lang = CONFIG.language || 'it';
         loadTranslations(lang, () => {
+            // Startup shortcut: if T is held during boot, jump directly to config.
+            // A window flag can be set by early key listeners before Phaser keyboard is ready.
+            let startupConfigRequested = false;
+            try {
+                const keyT = this.input?.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.T);
+                startupConfigRequested = Boolean(keyT && keyT.isDown);
+            } catch (e) { }
+            try {
+                if (window && window.BH_STARTUP_CONFIG === true) {
+                    startupConfigRequested = true;
+                    window.BH_STARTUP_CONFIG = false;
+                }
+            } catch (e) { }
+
+            if (startupConfigRequested) {
+                this.scene.start('ConfigScene');
+                return;
+            }
+
             const bonusTestMode = CONFIG.bonusTestMode || {};
             if (bonusTestMode.enabled === true) {
                 const bonusLevelName = bonusTestMode.bonusLevel || 'bonus1';

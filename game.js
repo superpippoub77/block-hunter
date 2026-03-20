@@ -50,6 +50,20 @@ import {
 import { addSpikeCredit as addSpikeCreditBase } from './module/uiUtils.js';
 import { inizialization as inizializationBase } from './module/bootstrap.js';
 
+try {
+    window.BH_STARTUP_CONFIG = false;
+    window.addEventListener('keydown', (ev) => {
+        if (ev && typeof ev.key === 'string' && ev.key.toLowerCase() === 't') {
+            window.BH_STARTUP_CONFIG = true;
+        }
+    });
+    window.addEventListener('keyup', (ev) => {
+        if (ev && typeof ev.key === 'string' && ev.key.toLowerCase() === 't') {
+            window.BH_STARTUP_CONFIG = false;
+        }
+    });
+} catch (e) { /* ignore */ }
+
 // Global configuration (populated from /data/config.json)
 const CONFIG = {};
 
