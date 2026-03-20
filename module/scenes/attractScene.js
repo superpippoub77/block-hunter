@@ -479,43 +479,5 @@ class AttractScene extends Phaser.Scene {
     }
 }
 
-// ============================================================================
-// EXTRACTED SCENES (modularized under js/scenes)
-// ============================================================================
-const TopTenScene = createTopTenScene({
-    Phaser,
-    CONFIG,
-    GAME_STATE,
-    TRANSLATIONS,
-    GAME_FONT,
-    HUD_DEPTH,
-    drawTextPanel,
-    addSpikeCredit,
-    createCreditsManager,
-    createLanguageCarousel,
-    loadTranslations
-});
-
-const CreditsScene = createCreditsScene({
-    Phaser,
-    CONFIG,
-    GAME_STATE,
-    TRANSLATIONS,
-    GAME_FONT,
-    HUD_DEPTH,
-    drawTextPanel,
-    createCreditsManager,
-    createLanguageCarousel,
-    loadTranslations,
-    hasStartAccessForPlayers,
-    consumeCreditsForPlayers,
-    resetGameStateForNewRun,
-    isFreeplayEnabled
-});
-
-// ============================================================================
-// CONFIG SCENE
-// ============================================================================
-
     return AttractScene;
 }
