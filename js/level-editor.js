@@ -183,8 +183,8 @@ function parseRepeatValue(value, fallback = 1) {
 }
 
 function buildApiUrl(path) {
-    const clean = String(path ?? '').replace(/^\/+/, '');
-    return `${API_BASE_PATH}/${clean}`;
+    const clean = String(path ?? '').replace(/^\/+|\/+$/g, '');
+    return `${API_BASE_PATH}/${clean}/`;
 }
 
 async function fetchJsonListWithFallback(primaryUrl, fallbackUrl) {
