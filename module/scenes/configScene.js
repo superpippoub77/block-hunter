@@ -57,6 +57,8 @@ class ConfigScene extends Phaser.Scene {
     }
 
     create() {
+        this._defaultConfigSnapshot = JSON.parse(JSON.stringify(CONFIG || {}));
+
         // Background
         this.add.rectangle(400, 300, 800, 600, 0x001100);
 
@@ -173,10 +175,8 @@ class ConfigScene extends Phaser.Scene {
         applyBtn.on('pointerdown', () => {
             try {
                 localStorage.setItem('blockHunterConfig', JSON.stringify({
-                    tileSize: CONFIG.tileSize,
-                    objectSize: CONFIG.objectSize,
-                    playerSize: CONFIG.playerSize,
-                    helmetRadiusTiles: CONFIG.helmetRadiusTiles
+                    __fullConfig: true,
+                    values: JSON.parse(JSON.stringify(CONFIG || {}))
                 }));
             } catch (e) { }
             // show small confirmation
@@ -186,16 +186,178 @@ class ConfigScene extends Phaser.Scene {
         });
 
         resetBtn.on('pointerdown', () => {
-            CONFIG.tileSize = 32;
-            CONFIG.objectSize = OBJECT_NATIVE_SIZE;
-            CONFIG.playerSize = OBJECT_NATIVE_SIZE;
-            CONFIG.helmetRadiusTiles = 1.6;
+            Object.keys(CONFIG).forEach((k) => {
+                try { delete CONFIG[k]; } catch (e) { }
+            });
+            Object.assign(CONFIG, JSON.parse(JSON.stringify(this._defaultConfigSnapshot || {})));
+
             this.tileSizeText.setText(String(CONFIG.tileSize));
             this.objectSizeText.setText(String(CONFIG.objectSize));
             this.playerSizeText.setText(String(CONFIG.playerSize));
             try { localStorage.removeItem('blockHunterConfig'); } catch (e) { }
             this.updatePreviewSizes();
+            this.refreshAllConfigRows();
         });
+
+        // Live editor for all config keys
+        const editorX = 420;
+        const editorTop = 82;
+        const rowH = 22;
+        const visibleRows = 12;
+        this.allConfigOffset = 0;
+        this.allConfigRows = [];
+
+        this.add.text(editorX, 60, 'ALL CONFIG (LIVE):', {
+            fontSize: '12px',
+            fill: '#00ff00',
+            fontFamily: GAME_FONT
+        }).setOrigin(0, 0.5);
+
+        const formatValue = (value) => {
+            if (typeof value === 'string') {
+                return value.length > 24 ? `${value.slice(0, 21)}...` : value;
+            }
+            if (typeof value === 'number' || typeof value === 'boolean' || value == null) {
+                return String(value);
+            }
+            try {
+                const asJson = JSON.stringify(value);
+                return asJson.length > 24 ? `${asJson.slice(0, 21)}...` : asJson;
+            } catch (e) {
+                return '[object]';
+            }
+        };
+
+        const adjustNumber = (key, delta) => {
+            const curr = Number(CONFIG[key]);
+            if (!Number.isFinite(curr)) return;
+            const step = Math.abs(curr) >= 100 ? 10 : (Math.abs(curr) >= 10 ? 1 : 0.1);
+            const next = curr + (delta * step);
+            CONFIG[key] = Number(next.toFixed(3));
+            this.refreshAllConfigRows();
+            this.updatePreviewSizes();
+        };
+
+        const editKeyValue = (key) => {
+            const current = CONFIG[key];
+            const currentText = (typeof current === 'string') ? current : JSON.stringify(current);
+            const nextRaw = window.prompt(`Nuovo valore per ${key} (JSON valido per oggetti/array):`, currentText);
+            if (nextRaw == null) return;
+
+            try {
+                if (typeof current === 'number') {
+                    const parsed = Number(nextRaw);
+                    if (!Number.isFinite(parsed)) return;
+                    CONFIG[key] = parsed;
+                } else if (typeof current === 'boolean') {
+                    const normalized = String(nextRaw).trim().toLowerCase();
+                    if (normalized === 'true' || normalized === '1') CONFIG[key] = true;
+                    else if (normalized === 'false' || normalized === '0') CONFIG[key] = false;
+                    else return;
+                } else if (typeof current === 'string') {
+                    CONFIG[key] = String(nextRaw);
+                } else {
+                    CONFIG[key] = JSON.parse(nextRaw);
+                }
+            } catch (e) {
+                return;
+            }
+
+            this.refreshAllConfigRows();
+            this.updatePreviewSizes();
+        };
+
+        this.refreshAllConfigRows = () => {
+            this.allConfigRows.forEach((r) => {
+                try { r.keyText.destroy(); } catch (e) { }
+                try { r.valueText.destroy(); } catch (e) { }
+                try { r.decBtn && r.decBtn.destroy(); } catch (e) { }
+                try { r.incBtn && r.incBtn.destroy(); } catch (e) { }
+                try { r.toggleBtn && r.toggleBtn.destroy(); } catch (e) { }
+                try { r.editBtn && r.editBtn.destroy(); } catch (e) { }
+            });
+            this.allConfigRows = [];
+
+            const keys = Object.keys(CONFIG).sort((a, b) => a.localeCompare(b));
+            const maxOffset = Math.max(0, keys.length - visibleRows);
+            this.allConfigOffset = Math.min(Math.max(0, this.allConfigOffset), maxOffset);
+            const view = keys.slice(this.allConfigOffset, this.allConfigOffset + visibleRows);
+
+            view.forEach((key, idx) => {
+                const value = CONFIG[key];
+                const yRow = editorTop + (idx * rowH);
+
+                const keyText = this.add.text(editorX, yRow, key, {
+                    fontSize: '10px',
+                    fill: '#88ffaa',
+                    fontFamily: GAME_FONT
+                }).setOrigin(0, 0.5);
+
+                const valueText = this.add.text(editorX + 132, yRow, formatValue(value), {
+                    fontSize: '10px',
+                    fill: '#ffffff',
+                    fontFamily: GAME_FONT
+                }).setOrigin(0, 0.5);
+
+                const row = { keyText, valueText };
+
+                if (typeof value === 'number' && Number.isFinite(value)) {
+                    const decBtn = this.add.text(editorX + 272, yRow, '[-]', {
+                        fontSize: '10px',
+                        fill: '#ffaa66',
+                        fontFamily: GAME_FONT
+                    }).setOrigin(0, 0.5).setInteractive();
+                    const incBtn = this.add.text(editorX + 304, yRow, '[+]', {
+                        fontSize: '10px',
+                        fill: '#66ff66',
+                        fontFamily: GAME_FONT
+                    }).setOrigin(0, 0.5).setInteractive();
+                    decBtn.on('pointerdown', () => adjustNumber(key, -1));
+                    incBtn.on('pointerdown', () => adjustNumber(key, +1));
+                    row.decBtn = decBtn;
+                    row.incBtn = incBtn;
+                } else if (typeof value === 'boolean') {
+                    const toggleBtn = this.add.text(editorX + 272, yRow, '[TOGGLE]', {
+                        fontSize: '10px',
+                        fill: '#66ccff',
+                        fontFamily: GAME_FONT
+                    }).setOrigin(0, 0.5).setInteractive();
+                    toggleBtn.on('pointerdown', () => {
+                        CONFIG[key] = !CONFIG[key];
+                        this.refreshAllConfigRows();
+                        this.updatePreviewSizes();
+                    });
+                    row.toggleBtn = toggleBtn;
+                } else {
+                    const editBtn = this.add.text(editorX + 272, yRow, '[EDIT]', {
+                        fontSize: '10px',
+                        fill: '#ffee88',
+                        fontFamily: GAME_FONT
+                    }).setOrigin(0, 0.5).setInteractive();
+                    editBtn.on('pointerdown', () => editKeyValue(key));
+                    row.editBtn = editBtn;
+                }
+
+                this.allConfigRows.push(row);
+            });
+        };
+
+        this.input.on('wheel', (_pointer, _objects, _dx, dy) => {
+            if (!Number.isFinite(dy)) return;
+            this.allConfigOffset += dy > 0 ? 1 : -1;
+            this.refreshAllConfigRows();
+        });
+
+        this.input.keyboard.on('keydown-UP', () => {
+            this.allConfigOffset -= 1;
+            this.refreshAllConfigRows();
+        });
+        this.input.keyboard.on('keydown-DOWN', () => {
+            this.allConfigOffset += 1;
+            this.refreshAllConfigRows();
+        });
+
+        this.refreshAllConfigRows();
 
         // Objects section
         y += 10;

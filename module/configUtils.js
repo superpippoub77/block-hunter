@@ -4,6 +4,10 @@ export function mergeLocalConfig(config, objectNativeSize, logger) {
         const saved = localStorage.getItem('blockHunterConfig');
         if (saved) {
             const parsed = JSON.parse(saved);
+            if (parsed && parsed.__fullConfig === true && parsed.values && typeof parsed.values === 'object') {
+                Object.assign(config, parsed.values);
+                return;
+            }
             if (parsed.tileSize) config.tileSize = parsed.tileSize;
             if (parsed.objectSize) config.objectSize = parsed.objectSize;
             if (parsed.playerSize) config.playerSize = parsed.playerSize;
