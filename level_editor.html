@@ -1134,6 +1134,24 @@
                 <div class="btn-row" style="margin-top:8px;">
                     <button id="applyGridBtn" type="button">Applica Griglia</button>
                     <button id="clearGridBtn" type="button">Svuota</button>
+                    <button id="autoPopulateFromImageBtn" type="button">Auto Tiles da Immagine</button>
+                    <button id="autoPopulatePathSpawnsBtn" type="button">Auto Spawn da Percorso</button>
+                </div>
+                <label style="margin-top:8px; display:block;">
+                    <input id="preserveManualSpawns" type="checkbox" style="width:auto; margin-right:6px;" checked>
+                    Non cancellare spawn manuali prima del ricalcolo automatico
+                </label>
+                <div class="grid2" style="margin-top:8px;">
+                    <div>
+                        <label for="autoWallSensitivity">Sensibilita ostacoli (wall)</label>
+                        <input id="autoWallSensitivity" type="range" min="0" max="100" step="1" value="50">
+                        <div class="tiny" id="autoWallSensitivityValue">50</div>
+                    </div>
+                    <div>
+                        <label for="autoLiquidSensitivity">Sensibilita acqua/fango</label>
+                        <input id="autoLiquidSensitivity" type="range" min="0" max="100" step="1" value="50">
+                        <div class="tiny" id="autoLiquidSensitivityValue">50</div>
+                    </div>
                 </div>
                 <div class="tiny">Drag & Drop dalla palette nel canvas. Ruota la tile selezionata con ←/→ o rotella
                     mouse. Premi `h` per ribaltare orizzontalmente, `v` per ribaltare verticalmente. Premi Canc per

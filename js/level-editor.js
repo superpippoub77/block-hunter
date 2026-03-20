@@ -232,6 +232,493 @@ function layerFilenameFromSrc(src, type) {
     return raw.includes('/') ? raw.split('/').pop() : raw;
 }
 
+const AUTO_TILE_PROTECTED_TOKENS = new Set([
+    'g', 'd', 'k', 'p', 'l', 'exit', 'wooden', 'helmet', 'b', 'c', 'm', 'stones',
+    'ghost', 'bat', 'spider', 'snake', 'player', 'door', 'key', 'gem', 'heart'
+]);
+
+function randomWallVariantToken() {
+    const row = Math.floor(Math.random() * 4);
+    const col = Math.floor(Math.random() * 6);
+    return `w${row}${col}00`;
+}
+
+function isTerrainOrWallToken(token) {
+    const base = String(token || '').trim().replace(/\.$/, '');
+    if (!base || base === '-' || base === '#') return true;
+    if (WALL_TOKEN_REGEX.test(base)) return true;
+    return ['sand', 'water', 'mud', 'h', 'back', 'hole', 'hole2', 'floor', 'f', 's'].includes(base);
+}
+
+function resolveLayerToImagePath(src, type) {
+    const normalized = normalizeLayerSrc(src, type);
+    if (!normalized) return '';
+    if (/^(https?:|data:|blob:|\/)/i.test(normalized)) return normalized;
+    if (/^game_bg(_\d+)?$/i.test(normalized)) return '';
+
+    const targetDir = type === 'fg' ? FG_ASSETS_DIR : BG_ASSETS_DIR;
+    if (normalized.startsWith('assets/')) return normalized;
+    if (normalized.startsWith(`${targetDir}/`)) return normalized;
+    if (!normalized.includes('/')) return `${targetDir}/${normalized}`;
+    return normalized;
+}
+
+function loadImageElement(src) {
+    return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.onerror = () => reject(new Error(`Immagine non caricabile: ${src}`));
+        img.src = src;
+    });
+}
+
+function getAutoTileSensitivitySettings() {
+    const wallSensitivity = clamp(parseNumber(el('autoWallSensitivity')?.value, 50), 0, 100);
+    const liquidSensitivity = clamp(parseNumber(el('autoLiquidSensitivity')?.value, 50), 0, 100);
+    return { wallSensitivity, liquidSensitivity };
+}
+
+function refreshAutoTileSensitivityLabels() {
+    const wall = getAutoTileSensitivitySettings().wallSensitivity;
+    const liquid = getAutoTileSensitivitySettings().liquidSensitivity;
+    const wallTarget = el('autoWallSensitivityValue');
+    const liquidTarget = el('autoLiquidSensitivityValue');
+    if (wallTarget) wallTarget.textContent = String(wall);
+    if (liquidTarget) liquidTarget.textContent = String(liquid);
+}
+
+function classifyAutoTileFromPixel(r, g, b, a, structureBias = false, settings = { wallSensitivity: 50, liquidSensitivity: 50 }) {
+    if (a < 20) return null;
+
+    const max = Math.max(r, g, b);
+    const min = Math.min(r, g, b);
+    const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    const sat = max === 0 ? 0 : (max - min) / max;
+
+    const wallAdj = (Number(settings.wallSensitivity || 50) - 50) / 50;
+    const liquidAdj = (Number(settings.liquidSensitivity || 50) - 50) / 50;
+
+    const waterBlueVsGreen = 16 - (liquidAdj * 8);
+    const waterBlueVsRed = 20 - (liquidAdj * 10);
+    const waterBlueMin = 72 - (liquidAdj * 18);
+    const mudDeltaMin = 18 - (liquidAdj * 8);
+    const mudRedMin = 58 - (liquidAdj * 12);
+    const mudGreenMin = 40 - (liquidAdj * 10);
+    const mudSatMin = 0.14 - (liquidAdj * 0.05);
+
+    const looksWater = (b > g + waterBlueVsGreen) && (b > r + waterBlueVsRed) && (b >= waterBlueMin);
+    if (looksWater) return 'water';
+
+    const looksMud = (r > g) && (g >= b) && ((r - b) > mudDeltaMin) && r >= mudRedMin && g >= mudGreenMin && b <= 130 && sat >= mudSatMin;
+    if (looksMud) return 'mud';
+
+    const darkRock = lum <= (50 + wallAdj * 22);
+    const neutralSolid = sat <= (0.18 + wallAdj * 0.08) && lum <= (112 + wallAdj * 28);
+    const structureLike = structureBias && sat <= (0.30 + wallAdj * 0.06) && lum <= (132 + wallAdj * 24) && r >= 50 && g >= 50 && b >= 50;
+    if (darkRock || neutralSolid || structureLike) return 'wall';
+
+    return null;
+}
+
+function applyAutoTileToCell(cell, targetToken) {
+    if (!cell || !targetToken) return false;
+    const rawParts = String(cell.base || '-').split('/').map((s) => s.trim()).filter(Boolean);
+    const parts = rawParts.length ? rawParts : ['-'];
+
+    const normalizedParts = parts.map((part) => getRenderableTokenBase(part).replace(/\.$/, ''));
+    const hasProtected = normalizedParts.some((base) => AUTO_TILE_PROTECTED_TOKENS.has(base));
+    if (hasProtected) return false;
+
+    const terrainIdx = normalizedParts.findIndex((base) => isTerrainOrWallToken(base));
+    if (terrainIdx >= 0) {
+        if (normalizedParts[terrainIdx] === targetToken) return false;
+        parts[terrainIdx] = targetToken;
+    } else {
+        parts.unshift(targetToken);
+    }
+
+    const nextValue = parts.join('/');
+    if (nextValue === String(cell.base || '-')) return false;
+    cell.base = nextValue;
+    return true;
+}
+
+const AUTO_PATH_OBJECT_TOKENS = new Set(['g', 'ghost', 'bat', 'snake', 'spider']);
+const AUTO_PATH_ENEMY_TOKENS = ['ghost', 'bat', 'snake', 'spider'];
+
+function getCellTokenParts(cell) {
+    return String(cell?.base || '-')
+        .split('/')
+        .map((s) => String(s || '').trim())
+        .filter(Boolean);
+}
+
+function getCellTokenBases(cell) {
+    return getCellTokenParts(cell).map((part) => getRenderableTokenBase(part).replace(/\.$/, ''));
+}
+
+function setCellBasesPreservingDecorations(cell, nextBases) {
+    const safe = Array.isArray(nextBases) ? nextBases.filter(Boolean) : [];
+    cell.base = safe.length ? safe.join('/') : '-';
+}
+
+function getPrimaryTerrainToken(cell) {
+    const bases = getCellTokenBases(cell);
+    for (const base of bases) {
+        if (isTerrainOrWallToken(base)) return base;
+    }
+    return '-';
+}
+
+function isBlockedForPath(cell) {
+    const terrain = getPrimaryTerrainToken(cell);
+    if (!terrain || terrain === '-') return false;
+    if (terrain === '#' || terrain === 'h' || terrain === 'hole' || terrain === 'hole2' || terrain === 'back') return true;
+    if (WALL_TOKEN_REGEX.test(terrain)) return true;
+    return false;
+}
+
+function hasObjectToken(cell, token) {
+    const bases = getCellTokenBases(cell);
+    return bases.includes(token);
+}
+
+function clearAutoPathObjectTokens(scene) {
+    for (let y = 0; y < scene.rows; y++) {
+        for (let x = 0; x < scene.cols; x++) {
+            const cell = scene.cells[y]?.[x];
+            if (!cell) continue;
+            const next = getCellTokenBases(cell).filter((base) => !AUTO_PATH_OBJECT_TOKENS.has(base));
+            setCellBasesPreservingDecorations(cell, next);
+        }
+    }
+}
+
+function countTokenInScene(scene, token) {
+    let count = 0;
+    for (let y = 0; y < scene.rows; y++) {
+        for (let x = 0; x < scene.cols; x++) {
+            const cell = scene.cells[y]?.[x];
+            if (!cell) continue;
+            if (hasObjectToken(cell, token)) count++;
+        }
+    }
+    return count;
+}
+
+function addObjectTokenToCell(cell, token) {
+    const bases = getCellTokenBases(cell);
+    if (bases.includes(token)) return false;
+
+    const terrain = getPrimaryTerrainToken(cell);
+    const objects = bases.filter((base) => !isTerrainOrWallToken(base));
+    const next = [];
+    if (terrain && terrain !== '-') next.push(terrain);
+    next.push(...objects, token);
+    setCellBasesPreservingDecorations(cell, next);
+    return true;
+}
+
+function buildPathMap(scene, startRow, startCol) {
+    const keyOf = (r, c) => `${r},${c}`;
+    const inBounds = (r, c) => r >= 0 && c >= 0 && r < scene.rows && c < scene.cols;
+    const dirs = [[1,0],[-1,0],[0,1],[0,-1]];
+
+    const dist = new Map();
+    const queue = [];
+    if (!inBounds(startRow, startCol)) return { dist, neighborsByKey: new Map() };
+    if (isBlockedForPath(scene.cells[startRow]?.[startCol])) return { dist, neighborsByKey: new Map() };
+
+    const startKey = keyOf(startRow, startCol);
+    dist.set(startKey, 0);
+    queue.push([startRow, startCol]);
+
+    while (queue.length) {
+        const [r, c] = queue.shift();
+        const d = dist.get(keyOf(r, c)) ?? 0;
+        for (const [dr, dc] of dirs) {
+            const nr = r + dr;
+            const nc = c + dc;
+            if (!inBounds(nr, nc)) continue;
+            const nCell = scene.cells[nr]?.[nc];
+            if (!nCell || isBlockedForPath(nCell)) continue;
+            const nk = keyOf(nr, nc);
+            if (dist.has(nk)) continue;
+            dist.set(nk, d + 1);
+            queue.push([nr, nc]);
+        }
+    }
+
+    const neighborsByKey = new Map();
+    for (const key of dist.keys()) {
+        const [r, c] = key.split(',').map((v) => Number(v));
+        const neighbors = [];
+        for (const [dr, dc] of dirs) {
+            const nr = r + dr;
+            const nc = c + dc;
+            if (!inBounds(nr, nc)) continue;
+            if (dist.has(keyOf(nr, nc))) neighbors.push([nr, nc]);
+        }
+        neighborsByKey.set(key, neighbors);
+    }
+
+    return { dist, neighborsByKey };
+}
+
+function pickDistributedCells(candidates, count, minDist) {
+    const picked = [];
+    for (const c of candidates) {
+        if (picked.length >= count) break;
+        const ok = picked.every((p) => Math.abs(p.row - c.row) + Math.abs(p.col - c.col) >= minDist);
+        if (ok) picked.push(c);
+    }
+    return picked;
+}
+
+function chooseEnemyCandidates(candidates, neighborsByKey, type) {
+    const withDegree = candidates.map((c) => {
+        const degree = (neighborsByKey.get(`${c.row},${c.col}`) || []).length;
+        return { ...c, degree };
+    });
+
+    if (type === 'ghost') {
+        return withDegree.filter((c) => c.degree >= 3).sort((a, b) => b.dist - a.dist);
+    }
+    if (type === 'bat') {
+        return withDegree.filter((c) => c.left && c.right).sort((a, b) => b.dist - a.dist);
+    }
+    if (type === 'snake') {
+        return withDegree.filter((c) => c.up && c.down).sort((a, b) => b.dist - a.dist);
+    }
+    if (type === 'spider') {
+        return withDegree.filter((c) => c.degree <= 2).sort((a, b) => b.dist - a.dist);
+    }
+    return withDegree.sort((a, b) => b.dist - a.dist);
+}
+
+async function autoPopulatePathSpawns() {
+    const scene = getScene();
+    if (!scene) {
+        setStatus('Scene editor non disponibile.', true);
+        return;
+    }
+
+    const startRow = clamp(parseNumber(el('playerRow')?.value, 1), 0, Math.max(0, scene.rows - 1));
+    const startCol = clamp(parseNumber(el('playerCol')?.value, 1), 0, Math.max(0, scene.cols - 1));
+
+    const { dist, neighborsByKey } = buildPathMap(scene, startRow, startCol);
+    if (!dist.size) {
+        setStatus('Percorso non calcolabile: verifica posizione player e tile bloccanti.', true);
+        return;
+    }
+
+    const preserveManualSpawns = !!el('preserveManualSpawns')?.checked;
+    if (!preserveManualSpawns) {
+        clearAutoPathObjectTokens(scene);
+    }
+
+    const inBounds = (r, c) => r >= 0 && c >= 0 && r < scene.rows && c < scene.cols;
+    const keyOf = (r, c) => `${r},${c}`;
+
+    const walkable = [];
+    for (const [key, d] of dist.entries()) {
+        const [row, col] = key.split(',').map((v) => Number(v));
+        if (row === startRow && col === startCol) continue;
+        const cell = scene.cells[row]?.[col];
+        if (!cell || isBlockedForPath(cell)) continue;
+        const left = inBounds(row, col - 1) && dist.has(keyOf(row, col - 1));
+        const right = inBounds(row, col + 1) && dist.has(keyOf(row, col + 1));
+        const up = inBounds(row - 1, col) && dist.has(keyOf(row - 1, col));
+        const down = inBounds(row + 1, col) && dist.has(keyOf(row + 1, col));
+        walkable.push({ row, col, dist: d, left, right, up, down });
+    }
+
+    walkable.sort((a, b) => b.dist - a.dist);
+    if (!walkable.length) {
+        setStatus('Nessuna cella valida per spawn automatico.', true);
+        return;
+    }
+
+    const totalWalkable = walkable.length;
+    const defaultGems = clamp(Math.floor(totalWalkable * 0.08), 6, 40);
+    const gemCount = defaultGems;
+
+    const enemyCounts = {
+        ghost: clamp(parseNumber(el('ghostCount')?.value, 0), 0, 100),
+        bat: clamp(parseNumber(el('batCount')?.value, 0), 0, 100),
+        snake: clamp(parseNumber(el('snakeCount')?.value, 0), 0, 100),
+        spider: clamp(parseNumber(el('spiderCount')?.value, 0), 0, 100)
+    };
+
+    const occupied = new Set();
+    if (preserveManualSpawns) {
+        for (const c of walkable) {
+            const cell = scene.cells[c.row]?.[c.col];
+            if (!cell) continue;
+            const bases = getCellTokenBases(cell);
+            if (bases.some((b) => AUTO_PATH_OBJECT_TOKENS.has(b))) {
+                occupied.add(`${c.row},${c.col}`);
+            }
+        }
+    }
+
+    const gemsPicked = pickDistributedCells(walkable, gemCount, 4);
+    let addedGems = 0;
+    gemsPicked.forEach((c) => {
+        const cell = scene.cells[c.row]?.[c.col];
+        if (!cell) return;
+        if (occupied.has(`${c.row},${c.col}`)) return;
+        if (addObjectTokenToCell(cell, 'g')) {
+            occupied.add(`${c.row},${c.col}`);
+            addedGems++;
+        }
+    });
+
+    const addedEnemies = { ghost: 0, bat: 0, snake: 0, spider: 0 };
+    for (const enemy of AUTO_PATH_ENEMY_TOKENS) {
+        const requested = enemyCounts[enemy] || 0;
+        if (!requested) continue;
+
+        const candidates = chooseEnemyCandidates(walkable, neighborsByKey, enemy)
+            .filter((c) => !occupied.has(`${c.row},${c.col}`))
+            .filter((c) => c.dist >= 4);
+
+        const picked = pickDistributedCells(candidates, requested, enemy === 'ghost' ? 5 : 4);
+        picked.forEach((c) => {
+            const cell = scene.cells[c.row]?.[c.col];
+            if (!cell) return;
+            if (addObjectTokenToCell(cell, enemy)) {
+                occupied.add(`${c.row},${c.col}`);
+                addedEnemies[enemy]++;
+            }
+        });
+    }
+
+    const totalGems = countTokenInScene(scene, 'g');
+    const totalEnemies = {
+        ghost: countTokenInScene(scene, 'ghost'),
+        bat: countTokenInScene(scene, 'bat'),
+        snake: countTokenInScene(scene, 'snake'),
+        spider: countTokenInScene(scene, 'spider')
+    };
+
+    // Keep form counts aligned to what has been effectively placed.
+    if (el('ghostCount')) el('ghostCount').value = String(totalEnemies.ghost);
+    if (el('batCount')) el('batCount').value = String(totalEnemies.bat);
+    if (el('snakeCount')) el('snakeCount').value = String(totalEnemies.snake);
+    if (el('spiderCount')) el('spiderCount').value = String(totalEnemies.spider);
+
+    scene.renderGrid();
+    drawMiniMapPreview(scene);
+    setStatus(`Auto spawn completato. Aggiunti Gemme:${addedGems} Ghost:${addedEnemies.ghost} Bat:${addedEnemies.bat} Snake:${addedEnemies.snake} Spider:${addedEnemies.spider}. Totali Gemme:${totalGems} Ghost:${totalEnemies.ghost} Bat:${totalEnemies.bat} Snake:${totalEnemies.snake} Spider:${totalEnemies.spider}.`);
+}
+
+async function autoPopulateTilesFromLayers() {
+    const scene = getScene();
+    if (!scene) {
+        setStatus('Scene editor non disponibile.', true);
+        return;
+    }
+
+    const cols = Number(scene.cols) || 0;
+    const rows = Number(scene.rows) || 0;
+    if (cols <= 0 || rows <= 0) {
+        setStatus('Griglia non valida.', true);
+        return;
+    }
+
+    const bgLayers = readBackgroundLayersFromDOM().filter((l) => l && l.enabled !== false && String(l.src || '').trim());
+    const fgLayers = readForegroundLayersFromDOM().filter((l) => l && l.enabled !== false && String(l.src || '').trim());
+
+    const sources = [];
+    if (bgLayers[0]) {
+        sources.push({
+            type: 'bg',
+            src: resolveLayerToImagePath(bgLayers[0].src, 'bg'),
+            alpha: clamp(parseNumber(bgLayers[0].parallaxBgAlpha, 1), 0, 1),
+            rawSrc: String(bgLayers[0].src || '')
+        });
+    }
+    if (fgLayers[0]) {
+        sources.push({
+            type: 'fg',
+            src: resolveLayerToImagePath(fgLayers[0].src, 'fg'),
+            alpha: clamp(parseNumber(fgLayers[0].parallaxFgAlpha, 1), 0, 1),
+            rawSrc: String(fgLayers[0].src || '')
+        });
+    }
+
+    const usableSources = sources.filter((s) => !!s.src);
+    if (!usableSources.length) {
+        setStatus('Nessun layer BG/FG valido da analizzare.', true);
+        return;
+    }
+
+    const canvas = document.createElement('canvas');
+    canvas.width = cols;
+    canvas.height = rows;
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    if (!ctx) {
+        setStatus('Canvas di analisi non disponibile.', true);
+        return;
+    }
+
+    let loadedCount = 0;
+    for (const layer of usableSources) {
+        try {
+            const img = await loadImageElement(layer.src);
+            ctx.globalAlpha = layer.alpha;
+            ctx.drawImage(img, 0, 0, cols, rows);
+            loadedCount++;
+        } catch (_e) {
+            // Continue with other layers.
+        }
+    }
+    ctx.globalAlpha = 1;
+
+    if (!loadedCount) {
+        setStatus('Impossibile caricare i layer selezionati per l\'analisi.', true);
+        return;
+    }
+
+    const joinedSrc = usableSources.map((s) => `${s.rawSrc} ${s.src}`).join(' ').toLowerCase();
+    const structureBias = /(rock|stone|staccion|palo|pole|house|home|miner_house|column|wall|brick)/i.test(joinedSrc);
+    const settings = getAutoTileSensitivitySettings();
+
+    const pixelData = ctx.getImageData(0, 0, cols, rows).data;
+    let placedWalls = 0;
+    let placedWater = 0;
+    let placedMud = 0;
+
+    for (let y = 0; y < rows; y++) {
+        for (let x = 0; x < cols; x++) {
+            const idx = (y * cols + x) * 4;
+            const r = pixelData[idx];
+            const g = pixelData[idx + 1];
+            const b = pixelData[idx + 2];
+            const a = pixelData[idx + 3];
+
+            const detected = classifyAutoTileFromPixel(r, g, b, a, structureBias, settings);
+            if (!detected) continue;
+
+            const cell = scene.cells[y]?.[x];
+            if (!cell) continue;
+
+            const token = detected === 'wall' ? randomWallVariantToken() : detected;
+            const changed = applyAutoTileToCell(cell, token);
+            if (!changed) continue;
+
+            if (detected === 'wall') placedWalls++;
+            if (detected === 'water') placedWater++;
+            if (detected === 'mud') placedMud++;
+        }
+    }
+
+    scene.renderGrid();
+    drawMiniMapPreview(scene);
+    setStatus(`Auto tiles completato. Wall: ${placedWalls}, Water: ${placedWater}, Mud: ${placedMud}. Sens: W${settings.wallSensitivity}/L${settings.liquidSensitivity}`);
+}
+
 function parseNullableInput(text) {
     const raw = String(text ?? '').trim();
     if (!raw || raw.toLowerCase() === 'null') return null;
@@ -4042,6 +4529,10 @@ async function saveDictionary(name, data) {
 function bindUI() {
     const applyGridBtn = el('applyGridBtn');
     const clearGridBtn = el('clearGridBtn');
+    const autoPopulateFromImageBtn = el('autoPopulateFromImageBtn');
+    const autoPopulatePathSpawnsBtn = el('autoPopulatePathSpawnsBtn');
+    const autoWallSensitivity = el('autoWallSensitivity');
+    const autoLiquidSensitivity = el('autoLiquidSensitivity');
     const exportBtn = el('exportBtn');
     const copyJsonBtn = el('copyJsonBtn');
     const saveLocalBtn = el('saveLocalBtn');
@@ -4073,6 +4564,10 @@ function bindUI() {
     const reloadConfigBtn = el('reloadConfigBtn');
     const saveConfigBtn = el('saveConfigBtn');
     const configModal = el('configModal');
+
+    autoWallSensitivity?.addEventListener('input', refreshAutoTileSensitivityLabels);
+    autoLiquidSensitivity?.addEventListener('input', refreshAutoTileSensitivityLabels);
+    refreshAutoTileSensitivityLabels();
 
     if (openConfigDialogBtn) {
         openConfigDialogBtn.addEventListener('click', async () => {
@@ -4273,6 +4768,22 @@ function bindUI() {
         if (!scene) return;
         scene.resetGrid(scene.cols, scene.rows);
         setStatus('Griglia svuotata.');
+    });
+
+    autoPopulateFromImageBtn?.addEventListener('click', async () => {
+        try {
+            await autoPopulateTilesFromLayers();
+        } catch (error) {
+            setStatus(`Errore auto tiles: ${error.message}`, true);
+        }
+    });
+
+    autoPopulatePathSpawnsBtn?.addEventListener('click', async () => {
+        try {
+            await autoPopulatePathSpawns();
+        } catch (error) {
+            setStatus(`Errore auto spawn percorso: ${error.message}`, true);
+        }
     });
 
     exportBtn?.addEventListener('click', () => {
