@@ -167,10 +167,25 @@
             } catch (e) { return false; }
         };
 
-        if (!isTouchDevice()) {
+        const touchDevice = isTouchDevice();
+        try {
+            if (document.body) {
+                document.body.classList.toggle('touch-device', !!touchDevice);
+            }
+        } catch (e) { }
+
+        if (!touchDevice) {
             // Do not initialize touch UI on non-touch/desktop devices
             return;
         }
+
+        try {
+            const controls = document.getElementById('touch-controls');
+            if (controls) {
+                controls.style.display = 'block';
+                controls.removeAttribute('aria-hidden');
+            }
+        } catch (e) { }
 
         initJoystick();
         initPressButton('actionBtn', 'action');

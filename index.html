@@ -82,6 +82,13 @@
         #actionBtn { background: rgba(255,150,80,0.92); }
         #jumpBtn { background: rgba(120,220,255,0.92); }
         .touch-control.pressed { transform: scale(0.96); filter: brightness(0.92); }
+        body.touch-device #touch-controls {
+            display: block;
+        }
+        body.touch-device #joystick { width: 140px; height: 140px; }
+        body.touch-device #joystick-thumb { width: 56px; height: 56px; margin-left: -28px; margin-top: -28px; }
+        body.touch-device #touch-buttons { gap: 16px; }
+        body.touch-device #actionBtn, body.touch-device #jumpBtn { width: 100px; height: 100px; font-size: 28px; }
         @media (pointer: coarse) {
             /* Show touch controls on coarse-pointer devices (touchscreens) */
             #touch-controls { display: block; }
@@ -115,6 +122,7 @@
             pointer-events: auto; /* individual items can be interactive if needed */
         }
         /* Larger HUD items on touch devices */
+        body.touch-device #dom-hud .dom-hud-item { font-size: 18px; padding: 10px 12px; }
         @media (pointer: coarse) {
             #dom-hud .dom-hud-item { font-size: 18px; padding: 10px 12px; }
         }
