@@ -22,6 +22,11 @@ $TYPE_CONFIG = [
         'prefix'   => 'assets/images/foreground/',
         'exts'     => ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'],
     ],
+    'common' => [
+        'dir'      => $rootDir . '/assets/images/common',
+        'prefix'   => 'assets/images/common/',
+        'exts'     => ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'],
+    ],
     'music' => [
         'dir'      => $rootDir . '/assets/music',
         'prefix'   => 'assets/music/',
@@ -65,7 +70,7 @@ if ($method === 'GET') {
 
     if (!isset($TYPE_CONFIG[$type])) {
         http_response_code(400);
-        echo json_encode(['ok' => false, 'error' => 'invalid type; expected background, foreground or music']);
+        echo json_encode(['ok' => false, 'error' => 'invalid type; expected background, foreground, common or music']);
         exit;
     }
 

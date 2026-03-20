@@ -24,6 +24,10 @@ $TYPE_CONFIG = [
         'dir'  => $rootDir . '/assets/images/foreground',
         'exts' => ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'],
     ],
+    'common' => [
+        'dir'  => $rootDir . '/assets/images/common',
+        'exts' => ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'],
+    ],
     'music' => [
         'dir'  => $rootDir . '/assets/music',
         'exts' => ['mp3', 'ogg', 'wav', 'm4a', 'aac'],
@@ -45,7 +49,7 @@ $contentBase64 = isset($payload['contentBase64']) ? (string) $payload['contentBa
 
 if (!isset($TYPE_CONFIG[$type])) {
     http_response_code(400);
-    echo json_encode(['ok' => false, 'error' => 'invalid type; expected background, foreground or music']);
+    echo json_encode(['ok' => false, 'error' => 'invalid type; expected background, foreground, common or music']);
     exit;
 }
 
