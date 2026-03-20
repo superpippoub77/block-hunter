@@ -47,7 +47,19 @@ export async function inizialization(deps) {
             configStore.dynamiteSize = Math.max(8, Math.round((Number(configStore.objectSize) || objectNativeSize) * 0.6));
         }
 
-        const requestedScaleMode = String(configStore.scaleMode || 'FIT').toUpperCase();
+        const isTouchDevice = (() => {
+            try {
+                return ('ontouchstart' in window)
+                    || (navigator.maxTouchPoints && navigator.maxTouchPoints > 0)
+                    || /Mobi|Android|iPhone|iPad|iPod|Touch/i.test(navigator.userAgent || '');
+            } catch (e) {
+                return false;
+            }
+        })();
+
+        const baseScaleMode = String(configStore.scaleMode || 'FIT').toUpperCase();
+        const mobileScaleMode = String(configStore.mobileScaleMode || baseScaleMode).toUpperCase();
+        const requestedScaleMode = isTouchDevice ? mobileScaleMode : baseScaleMode;
         let phaserScaleMode = Phaser.Scale.FIT;
         if (requestedScaleMode === 'ENVELOP' || requestedScaleMode === 'ENVELOPE') phaserScaleMode = Phaser.Scale.ENVELOP;
         else if (requestedScaleMode === 'NONE') phaserScaleMode = Phaser.Scale.NONE;
@@ -127,12 +139,37 @@ export async function inizialization(deps) {
         logger.info('BOOT', 'Istanza Phaser.Game creata con successo.');
 
         if (configStore.responsiveMode) {
-            window.addEventListener('resize', () => {
+            const updateOrientationClass = () => {
+                try {
+                    const isPortrait = window.innerHeight >= window.innerWidth;
+                    if (document && document.body) {
+                        document.body.classList.toggle('portrait', isPortrait);
+                        document.body.classList.toggle('landscape', !isPortrait);
+                    }
+                } catch (e) { }
+            };
+
+            const refreshScale = () => {
                 if (game && game.scale) {
                     game.scale.refresh();
                 }
+                updateOrientationClass();
                 logger.debug('BOOT', 'Window resize handled', `viewport=${window.innerWidth}x${window.innerHeight}`);
+            };
+
+            window.addEventListener('resize', refreshScale);
+            window.addEventListener('orientationchange', () => {
+                // iOS/Safari can report stale dimensions briefly right after rotation
+                setTimeout(refreshScale, 60);
+                setTimeout(refreshScale, 240);
             });
+            try {
+                if (window.visualViewport) {
+                    window.visualViewport.addEventListener('resize', refreshScale);
+                }
+            } catch (e) { }
+
+            updateOrientationClass();
         }
 
         try {

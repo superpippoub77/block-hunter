@@ -106,6 +106,7 @@
     }
   },
   "scaleMode": "FIT",
+  "mobileScaleMode": "ENVELOP",
   "enableFullscreen": true,
   "responsiveMode": true,
   "freeplay": true,
