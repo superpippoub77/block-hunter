@@ -108,6 +108,7 @@
   "scaleMode": "FIT",
   "enableFullscreen": true,
   "responsiveMode": true,
+  "freeplay": true,
   "crt": {
     "enabled": true,
     "scanlineAlpha": 0.12,

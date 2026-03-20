@@ -68,6 +68,20 @@ const CONFIG = {};
 // Game state (populated from /data/config.json)
 const GAME_STATE = {};
 
+function isFreeplayEnabled() {
+    return Boolean(CONFIG && CONFIG.freeplay === true);
+}
+
+function hasStartAccessForPlayers(players) {
+    if (isFreeplayEnabled()) return true;
+    return (Number(GAME_STATE.credits) || 0) >= players;
+}
+
+function consumeCreditsForPlayers(players) {
+    if (isFreeplayEnabled()) return;
+    GAME_STATE.credits = Math.max(0, (Number(GAME_STATE.credits) || 0) - players);
+}
+
 
 const GAME_FONT = '"Press Start 2P"';
 // Depth value for HUD elements so they always render above game world/foreground
@@ -1336,12 +1350,12 @@ class AttractScene extends Phaser.Scene {
     }
 
     startGame(players) {
-        if (GAME_STATE.credits >= players) {
+        if (hasStartAccessForPlayers(players)) {
             const intro = this.sound.get('intro_bgm');
             if (intro && intro.isPlaying) {
                 intro.stop();
             }
-            GAME_STATE.credits -= players;
+            consumeCreditsForPlayers(players);
             resetGameStateForNewRun(players);
             this.scene.start('LevelSelectScene');
         }
@@ -1400,8 +1414,11 @@ class AttractScene extends Phaser.Scene {
         const story = t.story || '';
         const insertCoin = t.insert_coin || 'INSERT COIN';
         const credit = t.credit || 'CREDIT';
+        const freePlay = t.free_play || 'FREE PLAY';
         const player1 = t.player1 || 'PLAYER 1';
         const player2 = t.player2 || 'PLAYER 2';
+        const canStart1P = hasStartAccessForPlayers(1);
+        const canStart2P = hasStartAccessForPlayers(2);
 
         // Title used to be a text object; now we use an image. Keep backward compatibility
         if (this.titleText && typeof this.titleText.setText === 'function') {
@@ -1422,7 +1439,7 @@ class AttractScene extends Phaser.Scene {
         if (this.coinPanel) drawTextPanel(this.coinPanel, this.coinText, { paddingX: 14, paddingY: 8 });
 
         if (this.player1Panel) {
-            if (GAME_STATE.credits >= 1) {
+            if (canStart1P) {
                 // Highlight player panel when active
                 drawTextPanel(this.player1Panel, this.player1Text, { paddingX: 10, paddingY: 6 });
             } else {
@@ -1432,7 +1449,7 @@ class AttractScene extends Phaser.Scene {
         }
 
         if (this.player2Panel) {
-            if (GAME_STATE.credits >= 2) {
+            if (canStart2P) {
                 drawTextPanel(this.player2Panel, this.player2Text, { paddingX: 10, paddingY: 6 });
             } else {
                 this.player2Panel.clear();
@@ -1441,19 +1458,21 @@ class AttractScene extends Phaser.Scene {
 
         // Language is now shown via flag sprite, not text
 
-        if (GAME_STATE.credits === 0) {
+        if (isFreeplayEnabled()) {
+            this.coinText.setText(freePlay);
+        } else if (GAME_STATE.credits === 0) {
             this.coinText.setText(insertCoin);
         } else {
             this.coinText.setText(credit + ' ' + GAME_STATE.credits);
         }
 
-        if (GAME_STATE.credits >= 1) {
+        if (canStart1P) {
             this.player1Text.setText(player1).setStyle({ fill: '#00ff00' });
         } else {
             this.player1Text.setText(player1).setStyle({ fill: '#666666' });
         }
 
-        if (GAME_STATE.credits >= 2) {
+        if (canStart2P) {
             this.player2Text.setText(player2).setStyle({ fill: '#00ff00' });
         } else {
             this.player2Text.setText(player2).setStyle({ fill: '#666666' });
@@ -1856,9 +1875,9 @@ class CreditsScene extends Phaser.Scene {
 
         // Allow starting the game from Credits if credits available
         this.startGameFromCredits = (players) => {
-            if ((Number(GAME_STATE.credits) || 0) >= players) {
+            if (hasStartAccessForPlayers(players)) {
                 try { const intro = this.sound.get('intro_bgm'); if (intro && intro.isPlaying) intro.stop(); } catch (e) {}
-                GAME_STATE.credits = (Number(GAME_STATE.credits) || 0) - players;
+                consumeCreditsForPlayers(players);
                 resetGameStateForNewRun(players);
                 this.scene.start('LevelSelectScene');
             } else {
@@ -1907,15 +1926,19 @@ class CreditsScene extends Phaser.Scene {
             const t2 = TRANSLATIONS[GAME_STATE.language] || {};
             const insertCoin = t2.insert_coin || 'INSERT COIN';
             const credit = t2.credit || 'CREDIT';
+            const freePlay = t2.free_play || 'FREE PLAY';
             const player1 = t2.player1 || 'PLAYER 1';
             const player2 = t2.player2 || 'PLAYER 2';
+            const canStart1P = hasStartAccessForPlayers(1);
+            const canStart2P = hasStartAccessForPlayers(2);
 
             if (this.coinText) {
-                if ((Number(GAME_STATE.credits) || 0) <= 0) this.coinText.setText(insertCoin);
+                if (isFreeplayEnabled()) this.coinText.setText(freePlay);
+                else if ((Number(GAME_STATE.credits) || 0) <= 0) this.coinText.setText(insertCoin);
                 else this.coinText.setText(credit + ' ' + (Number(GAME_STATE.credits) || 0));
             }
-            if (this.player1Text) this.player1Text.setText((Number(GAME_STATE.credits) || 0) >= 1 ? player1 : player1).setStyle({ fill: (Number(GAME_STATE.credits) || 0) >= 1 ? '#00ff00' : '#666666' });
-            if (this.player2Text) this.player2Text.setText((Number(GAME_STATE.credits) || 0) >= 2 ? player2 : player2).setStyle({ fill: (Number(GAME_STATE.credits) || 0) >= 2 ? '#00ff00' : '#666666' });
+            if (this.player1Text) this.player1Text.setText(player1).setStyle({ fill: canStart1P ? '#00ff00' : '#666666' });
+            if (this.player2Text) this.player2Text.setText(player2).setStyle({ fill: canStart2P ? '#00ff00' : '#666666' });
         };
 
         this.resetCreditsTimer = () => {
