@@ -57,8 +57,20 @@ export async function inizialization(deps) {
             }
         })();
 
+        const updateAppHeight = () => {
+            try {
+                const vv = window.visualViewport;
+                const h = Math.round((vv && vv.height) ? vv.height : window.innerHeight);
+                if (h > 0) {
+                    document.documentElement.style.setProperty('--app-height', `${h}px`);
+                }
+            } catch (e) { }
+        };
+
+        updateAppHeight();
+
         const baseScaleMode = String(configStore.scaleMode || 'FIT').toUpperCase();
-        const mobileScaleMode = String(configStore.mobileScaleMode || baseScaleMode).toUpperCase();
+        const mobileScaleMode = String(configStore.mobileScaleMode || 'ENVELOP').toUpperCase();
         const requestedScaleMode = isTouchDevice ? mobileScaleMode : baseScaleMode;
         let phaserScaleMode = Phaser.Scale.FIT;
         if (requestedScaleMode === 'ENVELOP' || requestedScaleMode === 'ENVELOPE') phaserScaleMode = Phaser.Scale.ENVELOP;
@@ -150,6 +162,7 @@ export async function inizialization(deps) {
             };
 
             const refreshScale = () => {
+                updateAppHeight();
                 if (game && game.scale) {
                     game.scale.refresh();
                 }
@@ -170,6 +183,7 @@ export async function inizialization(deps) {
             } catch (e) { }
 
             updateOrientationClass();
+            updateAppHeight();
         }
 
         try {

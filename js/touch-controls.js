@@ -19,6 +19,7 @@
         if (!container || !base || !thumb) return;
 
         let active = false;
+        let activePointerId = null;
         let rect = null;
         let centerX = 0;
         let centerY = 0;
@@ -46,36 +47,55 @@
             const thumbY = ny * limited;
             setThumbPos(thumbX, thumbY);
             // normalize to -1..1 based on maxRadius
-            window.TOUCH_INPUT.x = clamp((thumbX / maxRadius), -1, 1);
-            window.TOUCH_INPUT.y = clamp((thumbY / maxRadius), -1, 1);
+            const rawX = clamp((thumbX / maxRadius), -1, 1);
+            const rawY = clamp((thumbY / maxRadius), -1, 1);
+            const deadzone = 0.12;
+            window.TOUCH_INPUT.x = Math.abs(rawX) < deadzone ? 0 : rawX;
+            window.TOUCH_INPUT.y = Math.abs(rawY) < deadzone ? 0 : rawY;
+        };
+
+        const resetJoystick = () => {
+            active = false;
+            activePointerId = null;
+            setThumbPos(0, 0);
+            window.TOUCH_INPUT.x = 0;
+            window.TOUCH_INPUT.y = 0;
         };
 
         container.addEventListener('pointerdown', (ev) => {
             ev.preventDefault();
+            if (active && activePointerId !== null) return;
             active = true;
+            activePointerId = ev.pointerId;
             updateRect();
-            container.setPointerCapture(ev.pointerId);
+            try { container.setPointerCapture(ev.pointerId); } catch (e) {}
             handlePointer(ev.clientX, ev.clientY);
         });
 
         container.addEventListener('pointermove', (ev) => {
-            if (!active) return;
+            if (!active || ev.pointerId !== activePointerId) return;
             ev.preventDefault();
             handlePointer(ev.clientX, ev.clientY);
         });
 
         const endPointer = (ev) => {
             if (!active) return;
-            active = false;
-            try { container.releasePointerCapture(ev.pointerId); } catch (e) {}
-            // animate thumb back to center
-            setThumbPos(0, 0);
-            window.TOUCH_INPUT.x = 0;
-            window.TOUCH_INPUT.y = 0;
+            if (ev && activePointerId !== null && typeof ev.pointerId !== 'undefined' && ev.pointerId !== activePointerId) return;
+            try {
+                if (ev && typeof ev.pointerId !== 'undefined') container.releasePointerCapture(ev.pointerId);
+            } catch (e) {}
+            resetJoystick();
         };
 
         container.addEventListener('pointerup', endPointer);
         container.addEventListener('pointercancel', endPointer);
+        container.addEventListener('lostpointercapture', endPointer);
+        window.addEventListener('pointerup', endPointer);
+        window.addEventListener('pointercancel', endPointer);
+        window.addEventListener('blur', resetJoystick);
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) resetJoystick();
+        });
         window.addEventListener('resize', updateRect);
         // initialize rect
         setTimeout(updateRect, 50);
@@ -84,24 +104,41 @@
     function initPressButton(buttonId, fieldName) {
         const btn = document.getElementById(buttonId);
         if (!btn) return;
+        let activePointerId = null;
+
+        const reset = () => {
+            activePointerId = null;
+            window.TOUCH_INPUT[fieldName] = false;
+            btn.classList.remove('pressed');
+        };
+
         btn.addEventListener('pointerdown', (ev) => {
             ev.preventDefault();
+            if (activePointerId !== null) return;
+            activePointerId = ev.pointerId;
             window.TOUCH_INPUT[fieldName] = true;
             btn.classList.add('pressed');
             try { btn.setPointerCapture(ev.pointerId); } catch (e) {}
         });
         const end = (ev) => {
+            if (activePointerId === null) return;
+            if (ev && typeof ev.pointerId !== 'undefined' && ev.pointerId !== activePointerId) return;
             ev && ev.preventDefault && ev.preventDefault();
-            window.TOUCH_INPUT[fieldName] = false;
-            btn.classList.remove('pressed');
             try {
                 if (ev && typeof ev.pointerId !== 'undefined') btn.releasePointerCapture(ev.pointerId);
             } catch (e) {}
+            reset();
         };
         btn.addEventListener('pointerup', end);
         btn.addEventListener('pointercancel', end);
         btn.addEventListener('pointerleave', end);
         btn.addEventListener('lostpointercapture', end);
+        window.addEventListener('pointerup', end);
+        window.addEventListener('pointercancel', end);
+        window.addEventListener('blur', reset);
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) reset();
+        });
     }
 
     // Allow keyboard fallback: map arrow keys/WASD to TOUCH_INPUT axes when on touch devices
