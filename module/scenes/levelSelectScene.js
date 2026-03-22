@@ -56,13 +56,63 @@ class LevelSelectScene extends Phaser.Scene {
         super('LevelSelectScene');
     }
 
+    getLevelSelectMetrics(width, height) {
+        const w = Math.max(320, Math.round(width || this.scale.width || CONFIG.width || 800));
+        const h = Math.max(240, Math.round(height || this.scale.height || CONFIG.height || 600));
+        const baseW = Number(CONFIG.width) || 800;
+        const baseH = Number(CONFIG.height) || 600;
+        const viewportScale = Phaser.Math.Clamp(Math.min(w / baseW, h / baseH), 0.62, 1.25);
+
+        return {
+            w,
+            h,
+            cx: Math.round(w / 2),
+            cy: Math.round(h / 2),
+            titleY: Math.round(h * 0.25),
+            titleFont: Math.max(18, Math.round(40 * viewportScale)),
+            optionStartY: Math.round(h * 0.42),
+            optionStep: Math.max(42, Math.round(70 * viewportScale)),
+            optionFont: Math.max(16, Math.round(32 * viewportScale)),
+            strokePadX: Math.max(8, Math.round(12 * viewportScale)),
+            strokePadY: Math.max(6, Math.round(8 * viewportScale)),
+            strokeThickness: Math.max(2, Math.round(3 * viewportScale))
+        };
+    }
+
+    applyResponsiveLayout(width, height) {
+        const m = this.getLevelSelectMetrics(width, height);
+
+        if (this.bgImage) {
+            this.bgImage.setPosition(m.cx, m.cy);
+            this.bgImage.setDisplaySize(m.w, m.h);
+        }
+        if (this.titleText) {
+            this.titleText.setPosition(m.cx, m.titleY);
+            this.titleText.setFontSize(`${m.titleFont}px`);
+        }
+
+        if (Array.isArray(this.diffTexts)) {
+            this.diffTexts.forEach((txt, idx) => {
+                if (!txt) return;
+                txt.setPosition(m.cx, m.optionStartY + idx * m.optionStep);
+                txt.setFontSize(`${m.optionFont}px`);
+            });
+        }
+
+        this._selectionStrokePadX = m.strokePadX;
+        this._selectionStrokePadY = m.strokePadY;
+        this._selectionStrokeThickness = m.strokeThickness;
+        if (this.updateSelection) this.updateSelection();
+    }
+
     create() {
         const t = TRANSLATIONS[GAME_STATE.language];
+        const metrics = this.getLevelSelectMetrics();
 
-        this.add.image(400, 300, 'bg').setDisplaySize(800, 600);
+        this.bgImage = this.add.image(metrics.cx, metrics.cy, 'bg').setDisplaySize(metrics.w, metrics.h);
 
-        this.add.text(400, 150, t.selectDifficulty, {
-            fontSize: '40px',
+        this.titleText = this.add.text(metrics.cx, metrics.titleY, t.selectDifficulty, {
+            fontSize: `${metrics.titleFont}px`,
             fill: '#ffff00',
             fontFamily: GAME_FONT
         }).setOrigin(0.5).setDepth(1);
@@ -72,9 +122,9 @@ class LevelSelectScene extends Phaser.Scene {
 
         // Difficulties configuration and selectable UI
         this.difficulties = [
-            { name: t.beginner, mult: 0.8, y: 250 },
-            { name: t.medium, mult: 1.0, y: 320 },
-            { name: t.hard || t.expert, mult: 1.3, y: 390 }
+            { name: t.beginner, mult: 0.8 },
+            { name: t.medium, mult: 1.0 },
+            { name: t.hard || t.expert, mult: 1.3 }
         ];
 
         // Keep references to text objects and selection state
@@ -114,15 +164,18 @@ class LevelSelectScene extends Phaser.Scene {
             if (selectedText) {
                 const b = selectedText.getBounds();
                 // draw a stroked rectangle a bit bigger than the text bounds
-                this.selectionGraphics.lineStyle(3, 0x00ff00, 1);
-                this.selectionGraphics.strokeRect(b.x - 12, b.y - 8, b.width + 24, b.height + 16);
+                const padX = Number(this._selectionStrokePadX) || 12;
+                const padY = Number(this._selectionStrokePadY) || 8;
+                const thickness = Number(this._selectionStrokeThickness) || 3;
+                this.selectionGraphics.lineStyle(thickness, 0x00ff00, 1);
+                this.selectionGraphics.strokeRect(b.x - padX, b.y - padY, b.width + (padX * 2), b.height + (padY * 2));
             }
         };
 
         // Create the text objects and wire pointer events
         this.difficulties.forEach((diff, idx) => {
-            const text = this.add.text(400, diff.y, diff.name, {
-                fontSize: '32px',
+            const text = this.add.text(metrics.cx, metrics.optionStartY + idx * metrics.optionStep, diff.name, {
+                fontSize: `${metrics.optionFont}px`,
                 fill: '#ffffff',
                 fontFamily: GAME_FONT
             }).setOrigin(0.5).setInteractive().setDepth(1);
@@ -151,6 +204,19 @@ class LevelSelectScene extends Phaser.Scene {
 
     // Ensure selection graphics and UI are above the attract overlay
     try { if (this.selectionGraphics && this.selectionGraphics.setDepth) this.selectionGraphics.setDepth(1); } catch (e) { }
+
+        this._onResponsiveResize = (gameSize) => {
+            const w = (gameSize && gameSize.width) ? gameSize.width : (this.scale.width || CONFIG.width);
+            const h = (gameSize && gameSize.height) ? gameSize.height : (this.scale.height || CONFIG.height);
+            this.applyResponsiveLayout(w, h);
+        };
+        this.scale.on('resize', this._onResponsiveResize, this);
+        this.events.once('shutdown', () => {
+            try {
+                if (this._onResponsiveResize) this.scale.off('resize', this._onResponsiveResize, this);
+            } catch (e) { }
+        });
+        this.applyResponsiveLayout();
 
         // Keyboard navigation: Up/Down to change selection, Enter/Space to confirm
         this.input.keyboard.on('keydown-UP', () => this.changeSelection(-1));

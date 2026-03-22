@@ -56,28 +56,81 @@ class GameOverScene extends Phaser.Scene {
         super('GameOverScene');
     }
 
+    getGameOverMetrics(width, height) {
+        const w = Math.max(320, Math.round(width || this.scale.width || CONFIG.width || 800));
+        const h = Math.max(240, Math.round(height || this.scale.height || CONFIG.height || 600));
+        const baseW = Number(CONFIG.width) || 800;
+        const baseH = Number(CONFIG.height) || 600;
+        const viewportScale = Phaser.Math.Clamp(Math.min(w / baseW, h / baseH), 0.62, 1.25);
+
+        return {
+            w,
+            h,
+            cx: Math.round(w / 2),
+            cy: Math.round(h / 2),
+            gameOverY: Math.round(h * 0.34),
+            scoreY: Math.round(h * 0.47),
+            enterNameY: Math.round(h * 0.58),
+            nameY: Math.round(h * 0.66),
+            gameOverFont: Math.max(16, Math.round(24 * viewportScale)),
+            scoreFont: Math.max(18, Math.round(32 * viewportScale)),
+            enterNameFont: Math.max(14, Math.round(24 * viewportScale)),
+            nameFont: Math.max(18, Math.round(32 * viewportScale))
+        };
+    }
+
+    applyGameOverLayout(width, height) {
+        const m = this.getGameOverMetrics(width, height);
+
+        if (this.bgRect) {
+            this.bgRect.setPosition(m.cx, m.cy);
+            this.bgRect.setSize(m.w, m.h);
+        }
+        if (this.gameOverOverlay) {
+            this.gameOverOverlay.setPosition(m.cx, m.cy);
+            this.gameOverOverlay.setSize(m.w, m.h);
+        }
+        if (this.gameOverTextObj) {
+            this.gameOverTextObj.setPosition(m.cx, m.gameOverY);
+            this.gameOverTextObj.setFontSize(`${m.gameOverFont}px`);
+        }
+        if (this.scoreTextObj) {
+            this.scoreTextObj.setPosition(m.cx, m.scoreY);
+            this.scoreTextObj.setFontSize(`${m.scoreFont}px`);
+        }
+        if (this.enterNameTextObj) {
+            this.enterNameTextObj.setPosition(m.cx, m.enterNameY);
+            this.enterNameTextObj.setFontSize(`${m.enterNameFont}px`);
+        }
+        if (this.nameText) {
+            this.nameText.setPosition(m.cx, m.nameY);
+            this.nameText.setFontSize(`${m.nameFont}px`);
+        }
+    }
+
     create() {
         const t = TRANSLATIONS[GAME_STATE.language] || {};
+        const metrics = this.getGameOverMetrics();
 
         const gameOverText = t.game_over || t.gameOver || t.gameOverText || 'GAME OVER';
         const scoreLabel = t.score_label || t.score || 'SCORE';
 
-        this.add.rectangle(400, 300, 800, 600, 0x220000);
+        this.bgRect = this.add.rectangle(metrics.cx, metrics.cy, metrics.w, metrics.h, 0x220000);
 
         // Dim background with attract overlay alpha so Game Over matches Attract UI
         try {
             const overlayAlpha = (typeof CONFIG.attractOverlayAlpha === 'number') ? CONFIG.attractOverlayAlpha : 0.35;
-            this.gameOverOverlay = this.add.rectangle(400, 300, 800, 600, 0x000000, overlayAlpha).setDepth(0.1);
+            this.gameOverOverlay = this.add.rectangle(metrics.cx, metrics.cy, metrics.w, metrics.h, 0x000000, overlayAlpha).setDepth(0.1);
         } catch (e) { /* ignore if CONFIG not ready */ }
 
-        this.add.text(400, 200, gameOverText, {
-            fontSize: '24px',
+        this.gameOverTextObj = this.add.text(metrics.cx, metrics.gameOverY, gameOverText, {
+            fontSize: `${metrics.gameOverFont}px`,
             fill: '#ff0000',
             fontFamily: GAME_FONT
         }).setOrigin(0.5).setDepth(1);
 
-        this.add.text(400, 280, `${scoreLabel}: ${GAME_STATE.score}`, {
-            fontSize: '32px',
+        this.scoreTextObj = this.add.text(metrics.cx, metrics.scoreY, `${scoreLabel}: ${GAME_STATE.score}`, {
+            fontSize: `${metrics.scoreFont}px`,
             fill: '#ffffff',
             fontFamily: GAME_FONT
         }).setOrigin(0.5).setDepth(1);
@@ -85,8 +138,8 @@ class GameOverScene extends Phaser.Scene {
         // Check if high score
         const lowestScore = GAME_STATE.topScores[GAME_STATE.topScores.length - 1].score;
         if (GAME_STATE.score > lowestScore) {
-            this.add.text(400, 350, t.enterName || 'ENTER YOUR NAME', {
-                fontSize: '24px',
+            this.enterNameTextObj = this.add.text(metrics.cx, metrics.enterNameY, t.enterName || 'ENTER YOUR NAME', {
+                fontSize: `${metrics.enterNameFont}px`,
                 fill: '#00ff00',
                 fontFamily: GAME_FONT
             }).setOrigin(0.5).setDepth(1);
@@ -95,8 +148,8 @@ class GameOverScene extends Phaser.Scene {
             this.nameChars = ['A', 'A', 'A'];
             this.currentCharIndex = 0;
             this.confirmed = [false, false, false];
-            this.nameText = this.add.text(400, 400, this._formatNameDisplay(), {
-                fontSize: '32px',
+            this.nameText = this.add.text(metrics.cx, metrics.nameY, this._formatNameDisplay(), {
+                fontSize: `${metrics.nameFont}px`,
                 fill: '#ffff00',
                 fontFamily: GAME_FONT
             }).setOrigin(0.5).setDepth(1);
@@ -130,6 +183,19 @@ class GameOverScene extends Phaser.Scene {
                 this.scene.start('AttractScene');
             });
         }
+
+        this._onResponsiveResize = (gameSize) => {
+            const w = (gameSize && gameSize.width) ? gameSize.width : (this.scale.width || CONFIG.width);
+            const h = (gameSize && gameSize.height) ? gameSize.height : (this.scale.height || CONFIG.height);
+            this.applyGameOverLayout(w, h);
+        };
+        this.scale.on('resize', this._onResponsiveResize, this);
+        this.events.once('shutdown', () => {
+            try {
+                if (this._onResponsiveResize) this.scale.off('resize', this._onResponsiveResize, this);
+            } catch (e) { }
+        });
+        this.applyGameOverLayout();
     }
 
     updateNameDisplay() {

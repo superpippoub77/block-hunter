@@ -70,7 +70,8 @@ export async function inizialization(deps) {
         updateAppHeight();
 
         const baseScaleMode = String(configStore.scaleMode || 'FIT').toUpperCase();
-        const mobileScaleMode = String(configStore.mobileScaleMode || 'ENVELOP').toUpperCase();
+        // FIT keeps the full frame visible and avoids crop/stretch on mobile orientation changes.
+        const mobileScaleMode = String(configStore.mobileScaleMode || 'FIT').toUpperCase();
         const requestedScaleMode = isTouchDevice ? mobileScaleMode : baseScaleMode;
         let phaserScaleMode = Phaser.Scale.FIT;
         if (requestedScaleMode === 'ENVELOP' || requestedScaleMode === 'ENVELOPE') phaserScaleMode = Phaser.Scale.ENVELOP;
@@ -82,6 +83,10 @@ export async function inizialization(deps) {
         let effectiveScaleMode = phaserScaleMode;
         if (configStore.responsiveMode && effectiveScaleMode === Phaser.Scale.RESIZE) {
             logger.warn('BOOT', 'responsiveMode + RESIZE can break fixed-coordinate scenes; using FIT.');
+            effectiveScaleMode = Phaser.Scale.FIT;
+        }
+        if (configStore.responsiveMode && effectiveScaleMode === Phaser.Scale.ENVELOP) {
+            logger.warn('BOOT', 'responsiveMode + ENVELOP can crop UI on narrow viewports; using FIT.');
             effectiveScaleMode = Phaser.Scale.FIT;
         }
 

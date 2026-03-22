@@ -56,6 +56,95 @@ class AttractScene extends Phaser.Scene {
         super('AttractScene');
     }
 
+    getAttractMetrics(width, height) {
+        const w = Math.max(320, Math.round(width || this.scale.width || CONFIG.width || 800));
+        const h = Math.max(240, Math.round(height || this.scale.height || CONFIG.height || 600));
+        const baseW = Number(CONFIG.width) || 800;
+        const baseH = Number(CONFIG.height) || 600;
+        const viewportScale = Phaser.Math.Clamp(Math.min(w / baseW, h / baseH), 0.62, 1.25);
+
+        return {
+            w,
+            h,
+            cx: Math.round(w / 2),
+            cy: Math.round(h / 2),
+            titleY: Math.round(h * 0.25),
+            instructionsY: Math.round(h * 0.47),
+            titleScale: Phaser.Math.Clamp(0.9 * viewportScale, 0.65, 1.15),
+            instructionsFont: Math.max(12, Math.round(16 * viewportScale)),
+            coinFont: Math.max(14, Math.round(24 * viewportScale)),
+            playerFont: Math.max(11, Math.round(18 * viewportScale)),
+            coinY: h - Math.max(68, Math.round(80 * viewportScale)),
+            playersY: h - Math.max(34, Math.round(46 * viewportScale)),
+            player1X: Math.round(w * 0.18),
+            player2X: Math.round(w * 0.82),
+            carouselY: h - Math.max(16, Math.round(30 * viewportScale)),
+            carouselGap: Math.max(52, Math.round(80 * viewportScale))
+        };
+    }
+
+    applyResponsiveLayout(width, height) {
+        const m = this.getAttractMetrics(width, height);
+
+        if (this.bgImage) {
+            this.bgImage.setPosition(m.cx, m.cy);
+            this.bgImage.setDisplaySize(m.w, m.h);
+        }
+        if (this.attractOverlay) {
+            this.attractOverlay.setPosition(m.cx, m.cy);
+            this.attractOverlay.setSize(m.w, m.h);
+        }
+
+        if (this.titleImage) {
+            this.titleImage.x = m.cx;
+            if (this.titleImage.visible) {
+                this.titleImage.y = Phaser.Math.Clamp(this.titleImage.y, -Math.round(m.h * 0.25), m.titleY);
+            }
+            if (!this.titleImage.getData('baseScaleLocked')) {
+                this.titleImage.setScale(m.titleScale);
+            }
+        }
+
+        if (this.instructionsText) {
+            this.instructionsText.setPosition(m.cx, m.instructionsY);
+            this.instructionsText.setFontSize(`${m.instructionsFont}px`);
+            this.instructionsText.setWordWrapWidth(Math.max(240, m.w - 64), true);
+        }
+
+        if (this.coinText) {
+            this.coinText.setPosition(m.cx, m.coinY);
+            this.coinText.setFontSize(`${m.coinFont}px`);
+        }
+        if (this.player1Text) {
+            this.player1Text.setPosition(m.player1X, m.playersY);
+            this.player1Text.setFontSize(`${m.playerFont}px`);
+        }
+        if (this.player2Text) {
+            this.player2Text.setPosition(m.player2X, m.playersY);
+            this.player2Text.setFontSize(`${m.playerFont}px`);
+        }
+
+        const flagSprite = this.carousel?.flagSprite || this.flagSprite;
+        const leftArrow = this.carousel?.leftArrow || this.leftArrow;
+        const rightArrow = this.carousel?.rightArrow || this.rightArrow;
+        if (flagSprite) {
+            flagSprite.setPosition(m.cx, m.carouselY);
+            flagSprite.baseX = m.cx;
+        }
+        if (leftArrow) {
+            leftArrow.setPosition(m.cx - m.carouselGap, m.carouselY);
+            leftArrow.setFontSize(`${Math.max(16, Math.round(m.playerFont * 1.35))}px`);
+        }
+        if (rightArrow) {
+            rightArrow.setPosition(m.cx + m.carouselGap, m.carouselY);
+            rightArrow.setFontSize(`${Math.max(16, Math.round(m.playerFont * 1.35))}px`);
+        }
+
+        if (this.coinPanel) drawTextPanel(this.coinPanel, this.coinText, { paddingX: 14, paddingY: 8 });
+        if (this.player1Panel && this.player1Text && Number(GAME_STATE.credits) >= 1) drawTextPanel(this.player1Panel, this.player1Text, { paddingX: 10, paddingY: 6 });
+        if (this.player2Panel && this.player2Text && Number(GAME_STATE.credits) >= 2) drawTextPanel(this.player2Panel, this.player2Text, { paddingX: 10, paddingY: 6 });
+    }
+
     create() {
         const gameMusic = this.sound.get('game_bgm');
         if (gameMusic && gameMusic.isPlaying) {
@@ -71,22 +160,23 @@ class AttractScene extends Phaser.Scene {
 
     // Background image (use parallaxBgFactor for consistency)
     const attractBgScroll = (typeof CONFIG.parallaxBgFactor === 'number') ? CONFIG.parallaxBgFactor : 0.96;
-    this.add.image(400, 300, 'bg').setDisplaySize(800, 600).setScrollFactor(attractBgScroll);
+    const metrics = this.getAttractMetrics();
+    this.bgImage = this.add.image(metrics.cx, metrics.cy, 'bg').setDisplaySize(metrics.w, metrics.h).setScrollFactor(attractBgScroll);
         // Configurable dark overlay to dim the background while UI is visible
         const overlayAlpha = (typeof CONFIG.attractOverlayAlpha === 'number') ? CONFIG.attractOverlayAlpha : 0.35;
-        this.attractOverlay = this.add.rectangle(400, 300, 800, 600, 0x000000, overlayAlpha).setDepth(0.1);
+        this.attractOverlay = this.add.rectangle(metrics.cx, metrics.cy, metrics.w, metrics.h, 0x000000, overlayAlpha).setDepth(0.1);
 
             // credit (place in attract mode bottom-right like other non-game scenes)
             try { addSpikeCredit(this); } catch (e) { }
 
         // Title image (loaded from images/title.png)
-        this.titleImage = this.add.image(400, -120, 'title').setOrigin(0.5);
-        this.titleImage.setScale(1.3);
+        this.titleImage = this.add.image(metrics.cx, -Math.round(metrics.h * 0.2), 'title').setOrigin(0.5);
+        this.titleImage.setScale(Math.max(0.75, metrics.titleScale * 1.18));
 
         this.tweens.add({
             targets: this.titleImage,
-            y: 150,
-            scale: 1,
+            y: metrics.titleY,
+            scale: metrics.titleScale,
             duration: 800,
             ease: 'Bounce.easeOut',
             onComplete: () => {
@@ -120,20 +210,20 @@ class AttractScene extends Phaser.Scene {
                         if (rotTween && rotTween.stop) rotTween.stop();
                         if (blinkTween && blinkTween.stop) blinkTween.stop();
                     } catch (e) { }
-                    this.titleImage.x = 400;
-                    this.titleImage.y = 150;
+                    this.titleImage.x = metrics.cx;
+                    this.titleImage.y = metrics.titleY;
                     this.titleImage.angle = 0;
                     this.titleImage.alpha = 1;
                     this.titleImage.setScale(1);
 
                     // subtitle removed: no subtitle sign created here
 
-                    const explorerImage = this.add.image(-220, 430, 'explorer').setOrigin(0.5);
+                    const explorerImage = this.add.image(-220, Math.round(metrics.h * 0.72), 'explorer').setOrigin(0.5);
                     explorerImage.setDepth(20);
                     // (no physics body on explorerImage in attract mode)
                     this.tweens.add({
                         targets: explorerImage,
-                        x: 400,
+                        x: metrics.cx,
                         duration: 2000,
                         ease: 'Sine.easeOut',
                         onComplete: () => {
@@ -146,7 +236,7 @@ class AttractScene extends Phaser.Scene {
 
                                     this.titleImage.setVisible(false);
 
-                                    const explosionTitle = this.add.image(400, 150, 'title_explosion').setOrigin(0.5);
+                                    const explosionTitle = this.add.image(metrics.cx, metrics.titleY, 'title_explosion').setOrigin(0.5);
                                     explosionTitle.setAlpha(0);
                                     explosionTitle.setDepth(21);
 
@@ -166,14 +256,14 @@ class AttractScene extends Phaser.Scene {
                                                     onComplete: () => {
                                                         try { explosionTitle.destroy(); } catch (e) { }
                                                         this.titleImage.setVisible(true);
-                                                        this.titleImage.x = 400;
-                                                        this.titleImage.y = -120;
+                                                        this.titleImage.x = metrics.cx;
+                                                        this.titleImage.y = -Math.round(metrics.h * 0.2);
                                                         this.titleImage.angle = 0;
                                                         this.titleImage.alpha = 1;
-                                                        this.titleImage.setScale(1);
+                                                        this.titleImage.setScale(metrics.titleScale);
                                                         this.tweens.add({
                                                             targets: this.titleImage,
-                                                            y: 150,
+                                                            y: metrics.titleY,
                                                             duration: 800,
                                                             ease: 'Bounce.easeOut'
                                                         });
@@ -190,16 +280,16 @@ class AttractScene extends Phaser.Scene {
             }
         });
 
-        this.instructionsText = this.add.text(400, 280, '', {
-            fontSize: '16px',
+        this.instructionsText = this.add.text(metrics.cx, metrics.instructionsY, '', {
+            fontSize: `${metrics.instructionsFont}px`,
             fill: '#ffffff',
             fontFamily: GAME_FONT,
             align: 'center'
         }).setOrigin(0.5);
-        this.instructionsText.y = -50;
+        this.instructionsText.y = -Math.round(metrics.h * 0.08);
         this.tweens.add({
             targets: this.instructionsText,
-            y: 280,
+            y: metrics.instructionsY,
             duration: 800,
             ease: 'Bounce.easeOut'
         });
@@ -218,19 +308,19 @@ class AttractScene extends Phaser.Scene {
 
         // Panels and UI elements (HUD placed on top using HUD_DEPTH)
         try {
-            this.creditManager = createCreditsManager(this, { gameState: GAME_STATE, config: CONFIG, hudDepth: HUD_DEPTH, font: GAME_FONT, x: 400 });
+            this.creditManager = createCreditsManager(this, { gameState: GAME_STATE, config: CONFIG, hudDepth: HUD_DEPTH, font: GAME_FONT, x: metrics.cx });
         } catch (e) {
             // fallback: create minimal texts directly
-            this.coinText = this.add.text(400, 520, '', { fontSize: '24px', fill: '#ffee00ff', fontFamily: GAME_FONT }).setOrigin(0.5).setDepth(HUD_DEPTH).setScrollFactor(0);
+            this.coinText = this.add.text(metrics.cx, metrics.coinY, '', { fontSize: `${metrics.coinFont}px`, fill: '#ffee00ff', fontFamily: GAME_FONT }).setOrigin(0.5).setDepth(HUD_DEPTH).setScrollFactor(0);
             this.coinPanel = null;
-            this.player1Text = this.add.text(150, 550, '', { fontSize: '18px', fill: '#666666', fontFamily: GAME_FONT }).setOrigin(0.5).setDepth(HUD_DEPTH).setScrollFactor(0);
+            this.player1Text = this.add.text(metrics.player1X, metrics.playersY, '', { fontSize: `${metrics.playerFont}px`, fill: '#666666', fontFamily: GAME_FONT }).setOrigin(0.5).setDepth(HUD_DEPTH).setScrollFactor(0);
             this.player1Panel = null;
-            this.player2Text = this.add.text(650, 550, '', { fontSize: '18px', fill: '#666666', fontFamily: GAME_FONT }).setOrigin(0.5).setDepth(HUD_DEPTH).setScrollFactor(0);
+            this.player2Text = this.add.text(metrics.player2X, metrics.playersY, '', { fontSize: `${metrics.playerFont}px`, fill: '#666666', fontFamily: GAME_FONT }).setOrigin(0.5).setDepth(HUD_DEPTH).setScrollFactor(0);
             this.player2Panel = null;
         }
 
         // Language selector with flags (use shared language carousel module)
-        this.carousel = createLanguageCarousel(this, { languages: this.languages, index: this.currentLangIndex, x: 400, y: 560, hudDepth: HUD_DEPTH, font: GAME_FONT });
+        this.carousel = createLanguageCarousel(this, { languages: this.languages, index: this.currentLangIndex, x: metrics.cx, y: metrics.carouselY, hudDepth: HUD_DEPTH, font: GAME_FONT });
 
         // Signature text for attract mode
         // signature text removed from bottom-center in AttractScene (keep credit via addSpikeCredit)
@@ -255,6 +345,19 @@ class AttractScene extends Phaser.Scene {
             this.resetTimeout();
             // Attract-mode decorative stones disabled (removed)
         });
+
+        this._onResponsiveResize = (gameSize) => {
+            const w = (gameSize && gameSize.width) ? gameSize.width : (this.scale.width || CONFIG.width);
+            const h = (gameSize && gameSize.height) ? gameSize.height : (this.scale.height || CONFIG.height);
+            this.applyResponsiveLayout(w, h);
+        };
+        this.scale.on('resize', this._onResponsiveResize, this);
+        this.events.once('shutdown', () => {
+            try {
+                if (this._onResponsiveResize) this.scale.off('resize', this._onResponsiveResize, this);
+            } catch (e) { }
+        });
+        this.applyResponsiveLayout();
     }
 
     setupInput() {
@@ -488,6 +591,8 @@ class AttractScene extends Phaser.Scene {
         } else {
             this.player2Text.setText(player2).setStyle({ fill: '#666666' });
         }
+
+        this.applyResponsiveLayout();
     }
 
     resetTimeout() {

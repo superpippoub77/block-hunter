@@ -4157,6 +4157,57 @@ class GameScene extends Phaser.Scene {
         });
     }
 
+    getHudResponsiveMetrics() {
+        const cam = this.cameras?.main;
+        const camW = (cam && cam.width) ? cam.width : (this.scale.width || CONFIG.width || 800);
+        const camH = (cam && cam.height) ? cam.height : (this.scale.height || CONFIG.height || 600);
+        const baseW = Number(CONFIG.width) || 800;
+        const baseH = Number(CONFIG.height) || 600;
+        const viewportScale = Phaser.Math.Clamp(Math.min(camW / baseW, camH / baseH), 0.62, 1.25);
+
+        return {
+            camW,
+            camH,
+            scoreX: Math.max(8, Math.round(10 * viewportScale)),
+            topBarHeight: Math.max(28, Math.round(36 * viewportScale)),
+            topHudY: Math.max(12, Math.round(18 * viewportScale)),
+            bottomBarHeight: Math.max(30, Math.round(40 * viewportScale)),
+            timerY: camH - Math.max(12, Math.round(16 * viewportScale)),
+            labelFont: Math.max(11, Math.round(16 * viewportScale)),
+            statFont: Math.max(10, Math.round(14 * viewportScale)),
+            timerLabelFont: Math.max(11, Math.round(16 * viewportScale)),
+            actionHintFont: Math.max(11, Math.round(14 * viewportScale)),
+            actionHintY: camH - Math.max(30, Math.round(48 * viewportScale)),
+            iconSize: Math.max(14, Math.round(24 * viewportScale)),
+            iconGap: Math.max(2, Math.round(3 * viewportScale)),
+            sectionGap: Math.max(8, Math.round(14 * viewportScale)),
+            pepitaSize: Math.max(8, Math.round(12 * viewportScale)),
+            pepitaGap: Math.max(1, Math.round(1.5 * viewportScale))
+        };
+    }
+
+    updateDomHudVisibility() {
+        try {
+            const domHudRoot = document.getElementById('dom-hud');
+            if (!domHudRoot) return;
+
+            const hasTouch = (('ontouchstart' in window) || (navigator.maxTouchPoints && navigator.maxTouchPoints > 0));
+            const vw = Math.max(0, window.innerWidth || 0);
+            const vh = Math.max(0, window.innerHeight || 0);
+            // Keep HUD readable also on small desktop windows.
+            const isSmallViewport = (vw > 0 && vw <= 980) || (vh > 0 && vh <= 700);
+            const shouldShowDomHud = !!hasTouch || isSmallViewport;
+
+            if (shouldShowDomHud) {
+                domHudRoot.style.display = 'flex';
+                domHudRoot.removeAttribute('aria-hidden');
+            } else {
+                domHudRoot.style.display = 'none';
+                domHudRoot.setAttribute('aria-hidden', 'true');
+            }
+        } catch (e) { }
+    }
+
     createUI() {
         console.log('Creating UI with language:', GAME_STATE.language);
         const t = TRANSLATIONS[GAME_STATE.language];
@@ -4171,25 +4222,24 @@ class GameScene extends Phaser.Scene {
         }
         this.hudContainer.setScrollFactor(0);
 
-        // Create HUD text objects and add them to the HUD container.
-        const cam = this.cameras?.main;
-        const camW = (cam && cam.width) ? cam.width : (this.scale.width || CONFIG.width);
-        const camH = (cam && cam.height) ? cam.height : (this.scale.height || CONFIG.height);
+        const metrics = this.getHudResponsiveMetrics();
+        const camW = metrics.camW;
+        const camH = metrics.camH;
 
         // Top HUD background overlay (semi-transparent) to improve readability
         try {
-            this.hudTopBg = this.add.rectangle(camW / 2, 18, camW, 36, 0x000000, 0.45).setOrigin(0.5, 0.5);
+            this.hudTopBg = this.add.rectangle(camW / 2, metrics.topHudY, camW, metrics.topBarHeight, 0x000000, 0.45).setOrigin(0.5, 0.5);
             this.hudContainer.add(this.hudTopBg);
         } catch (e) { this.hudTopBg = null; }
 
-        this.scoreText = this.add.text(10, 10, `${t.score_label}: ${GAME_STATE.score}`, {
-            fontSize: '16px',
+        this.scoreText = this.add.text(metrics.scoreX, 10, `${t.score_label}: ${GAME_STATE.score}`, {
+            fontSize: `${metrics.labelFont}px`,
             fill: '#ffffff',
             fontFamily: GAME_FONT
         });
         this.hudContainer.add(this.scoreText);
-        this.levelText = this.add.text(camW - 10, 10, `${t.level_label}: ${GAME_STATE.currentLevel + 1}`, {
-            fontSize: '16px',
+        this.levelText = this.add.text(camW - metrics.scoreX, 10, `${t.level_label}: ${GAME_STATE.currentLevel + 1}`, {
+            fontSize: `${metrics.labelFont}px`,
             fill: '#00ff00',
             fontFamily: GAME_FONT
         }).setOrigin(1, 0);
@@ -4200,22 +4250,23 @@ class GameScene extends Phaser.Scene {
         this.timerPepitas = []; // background (full-color)
         this.timerPepitasDisabled = []; // overlay (grayed) shown for elapsed slots
         this.timerPepitasCount = 20;
-        const pepitaSize = 12;
-        const pepitaGap = 1;
-        const pepitaY = camH - 16;
-        this.timerLabel = this.add.text(10, pepitaY, 'TIMER', {
-            fontSize: '16px',
+        const pepitaSize = metrics.pepitaSize;
+        const pepitaGap = metrics.pepitaGap;
+        const pepitaY = metrics.timerY;
+        const timerLabelText = t.time_label || t.time || 'TIME';
+        this.timerLabel = this.add.text(metrics.scoreX, pepitaY, timerLabelText, {
+            fontSize: `${metrics.timerLabelFont}px`,
             fill: '#ffffff',
             fontFamily: GAME_FONT
         }).setOrigin(0, 0.5);
         // Bottom HUD background overlay (semi-transparent) behind timer/pepitas
         try {
-            this.hudBottomBg = this.add.rectangle(camW / 2, pepitaY, camW, 40, 0x000000, 0.45).setOrigin(0.5, 0.5);
+            this.hudBottomBg = this.add.rectangle(camW / 2, pepitaY, camW, metrics.bottomBarHeight, 0x000000, 0.45).setOrigin(0.5, 0.5);
             this.hudContainer.add(this.hudBottomBg);
         } catch (e) { this.hudBottomBg = null; }
         this.hudContainer.add(this.timerLabel);
         const timerLabelWidth = Number(this.timerLabel?.width) || 52;
-        const pepitaStartX = 10 + timerLabelWidth + 8;
+        const pepitaStartX = metrics.scoreX + timerLabelWidth + 8;
         for (let i = 0; i < this.timerPepitasCount; i++) {
             // background full-color pepita
             const pepita = this.add.sprite(
@@ -4264,8 +4315,8 @@ class GameScene extends Phaser.Scene {
         // Action hint text shown when player is near a locked door and has a key
         try {
             if (!this.actionHint || !this.actionHint.destroy) {
-                this.actionHint = this.add.text(camW / 2, camH - 48, '', {
-                    fontSize: '14px',
+                this.actionHint = this.add.text(camW / 2, metrics.actionHintY, '', {
+                    fontSize: `${metrics.actionHintFont}px`,
                     fill: '#ffff00',
                     fontFamily: GAME_FONT,
                     backgroundColor: 'rgba(0,0,0,0.6)',
@@ -4312,18 +4363,7 @@ class GameScene extends Phaser.Scene {
             try {
                 const domHudRoot = document.getElementById('dom-hud');
                 if (domHudRoot) {
-                    // Only show the DOM HUD for actual touch devices.
-                    // Desktop and coarse-pointer devices should keep the in-canvas Phaser HUD.
-                    const hasTouch = (('ontouchstart' in window) || (navigator.maxTouchPoints && navigator.maxTouchPoints > 0));
-                    const shouldShowDomHud = !!hasTouch;
-                    if (shouldShowDomHud) {
-                        domHudRoot.style.display = 'flex';
-                        domHudRoot.removeAttribute('aria-hidden');
-                    } else {
-                        // keep it hidden for desktop/mouse users
-                        domHudRoot.style.display = 'none';
-                        domHudRoot.setAttribute('aria-hidden', 'true');
-                    }
+                    this.updateDomHudVisibility();
                 }
             } catch (e) { /* noop */ }
             // Remove legacy global Phaser text objects to avoid duplicate HUD elements
@@ -4340,46 +4380,69 @@ class GameScene extends Phaser.Scene {
     }
 
     updateHudLayout() {
-        const cam = this.cameras?.main;
-        const camW = (cam && cam.width) ? cam.width : (this.scale.width || CONFIG.width);
-        const camH = (cam && cam.height) ? cam.height : (this.scale.height || CONFIG.height);
+        const metrics = this.getHudResponsiveMetrics();
+        const camW = metrics.camW;
+        const camH = metrics.camH;
 
+        if (this.scoreText) {
+            this.scoreText.setPosition(metrics.scoreX, 10);
+            this.scoreText.setFontSize(`${metrics.labelFont}px`);
+        }
         if (this.levelText) {
-            this.levelText.setX(camW - 10);
+            this.levelText.setX(camW - metrics.scoreX);
+            this.levelText.setFontSize(`${metrics.labelFont}px`);
         }
         // reposition top HUD background
         try {
             if (this.hudTopBg) {
-                this.hudTopBg.setPosition(camW / 2, 18);
-                this.hudTopBg.setDisplaySize(camW, 36);
+                this.hudTopBg.setPosition(camW / 2, metrics.topHudY);
+                this.hudTopBg.setDisplaySize(camW, metrics.topBarHeight);
             }
         } catch (e) { }
         if (this.timerLabel) {
-            this.timerLabel.setY(camH - 16);
+            this.timerLabel.setPosition(metrics.scoreX, metrics.timerY);
+            this.timerLabel.setFontSize(`${metrics.timerLabelFont}px`);
         }
         // reposition bottom HUD background
         try {
-            const pepitaY = camH - 16;
+            const pepitaY = metrics.timerY;
             if (this.hudBottomBg) {
                 this.hudBottomBg.setPosition(camW / 2, pepitaY);
-                this.hudBottomBg.setDisplaySize(camW, 40);
+                this.hudBottomBg.setDisplaySize(camW, metrics.bottomBarHeight);
             }
         } catch (e) { }
         // reposition pepitas and disabled overlays
         if (this.timerPepitas && this.timerPepitas.length > 0) {
             const timerLabelWidth = Number(this.timerLabel?.width) || 52;
-            const pepitaStartX = 10 + timerLabelWidth + 8;
-            const pepitaSize = 12;
-            const pepitaGap = 1;
+            const pepitaStartX = metrics.scoreX + timerLabelWidth + 8;
+            const pepitaSize = metrics.pepitaSize;
+            const pepitaGap = metrics.pepitaGap;
+            const pepitaScaleFactor = (CONFIG.objectSize / OBJECT_NATIVE_SIZE) * (pepitaSize / OBJECT_NATIVE_SIZE);
             for (let i = 0; i < this.timerPepitas.length; i++) {
                 const px = pepitaStartX + i * (pepitaSize + pepitaGap);
-                const py = camH - 16;
+                const py = metrics.timerY;
                 const p = this.timerPepitas[i];
                 const d = this.timerPepitasDisabled[i];
-                if (p) { p.setPosition(px, py); }
-                if (d) { d.setPosition(px, py); }
+                if (p) {
+                    p.setPosition(px, py);
+                    p.setScale(pepitaScaleFactor);
+                }
+                if (d) {
+                    d.setPosition(px, py);
+                    d.setScale(pepitaScaleFactor);
+                }
             }
         }
+
+        try {
+            if (this.actionHint) {
+                this.actionHint.setPosition(camW / 2, metrics.actionHintY);
+                this.actionHint.setFontSize(`${metrics.actionHintFont}px`);
+            }
+        } catch (e) { }
+
+        this.refreshHudIcons();
+        this.updateDomHudVisibility();
     }
 
     createObjectivePointerUI() {
@@ -8053,10 +8116,8 @@ class GameScene extends Phaser.Scene {
         });
         this.topStatsObjects.length = 0;
 
-        const iconSize = 24;
-        const iconGap = 3;
-        const sectionGap = 14;
-        const topY = 18;
+        const metrics = this.getHudResponsiveMetrics();
+        const topY = metrics.topHudY;
 
         let scoreBounds;
         let levelBounds;
@@ -8066,8 +8127,14 @@ class GameScene extends Phaser.Scene {
         } catch (e) {
             return;
         }
-        const laneStart = scoreBounds.right + 14;
-        const laneEnd = levelBounds.x - 14;
+        const laneStart = scoreBounds.right + Math.max(8, Math.round(metrics.sectionGap * 0.7));
+        const laneEnd = levelBounds.x - Math.max(8, Math.round(metrics.sectionGap * 0.7));
+        const availableWidth = Math.max(120, laneEnd - laneStart);
+        const density = Phaser.Math.Clamp(availableWidth / 430, 0.58, 1);
+        const iconSize = Math.max(12, Math.round(metrics.iconSize * density));
+        const iconGap = Math.max(2, Math.round(metrics.iconGap * density));
+        const sectionGap = Math.max(6, Math.round(metrics.sectionGap * density));
+        const countFontSize = Math.max(10, Math.round(metrics.statFont * density));
         let x = laneStart;
 
         const addIcon = (frame) => {
@@ -8082,7 +8149,7 @@ class GameScene extends Phaser.Scene {
 
         const addCountText = (value, color = '#ffffff') => {
             const txt = this.add.text(x, topY, String(value), {
-                fontSize: '14px',
+                fontSize: `${countFontSize}px`,
                 fill: color,
                 fontFamily: GAME_FONT
             }).setOrigin(0, 0.5);
@@ -8147,7 +8214,6 @@ class GameScene extends Phaser.Scene {
 
         // Centra l'intero blocco tra punteggio e livello
         const usedWidth = x - laneStart;
-        const availableWidth = Math.max(0, laneEnd - laneStart);
         const offset = Math.max(0, (availableWidth - usedWidth) / 2);
         this.topStatsObjects.forEach((obj) => {
             if (obj && typeof obj.x === 'number') {

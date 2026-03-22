@@ -56,6 +56,59 @@ class PreloadScene extends Phaser.Scene {
         super('PreloadScene');
     }
 
+    getPreloadMetrics(width, height) {
+        const w = Math.max(320, Math.round(width || this.scale.width || CONFIG.width || 800));
+        const h = Math.max(240, Math.round(height || this.scale.height || CONFIG.height || 600));
+        const baseW = Number(CONFIG.width) || 800;
+        const baseH = Number(CONFIG.height) || 600;
+        const viewportScale = Phaser.Math.Clamp(Math.min(w / baseW, h / baseH), 0.62, 1.25);
+
+        return {
+            w,
+            h,
+            cx: Math.round(w / 2),
+            cy: Math.round(h / 2),
+            loadingFont: Math.max(18, Math.round(28 * viewportScale)),
+            listFont: Math.max(10, Math.round(14 * viewportScale)),
+            lineHeight: Math.max(14, Math.round(18 * viewportScale)),
+            linesBaseY: Math.round((h / 2) + Math.max(34, Math.round(42 * viewportScale))),
+            dotGap: Math.max(9, Math.round(14 * viewportScale))
+        };
+    }
+
+    applyPreloadLayout(width, height) {
+        const m = this.getPreloadMetrics(width, height);
+
+        if (this._preloadBg) {
+            this._preloadBg.setPosition(m.cx, m.cy);
+            this._preloadBg.setSize(m.w, m.h);
+        }
+
+        if (this.loadingText) {
+            this.loadingText.setPosition(m.cx, m.cy);
+            this.loadingText.setFontSize(`${m.loadingFont}px`);
+        }
+
+        if (Array.isArray(this._loadingDots) && this._loadingDots.length > 0 && this.loadingText) {
+            const baseRight = this.loadingText.x + (this.loadingText.width * 0.5) + 8;
+            this._loadingDots.forEach((dot, i) => {
+                try {
+                    dot.setFontSize(`${m.loadingFont}px`);
+                    dot.setPosition(baseRight + i * m.dotGap, this.loadingText.y);
+                } catch (e) { }
+            });
+        }
+
+        if (Array.isArray(this._loadedLines) && this._loadedLines.length > 0) {
+            this._loadedLines.forEach((lineObj, i) => {
+                try {
+                    lineObj.setFontSize(`${m.listFont}px`);
+                    lineObj.setPosition(m.cx, m.linesBaseY + i * m.lineHeight);
+                } catch (e) { }
+            });
+        }
+    }
+
     // Load title, background, tiles, objects, and all level JSON files
     preload() {
         let preloadAssetsQueued = false;
@@ -80,9 +133,11 @@ class PreloadScene extends Phaser.Scene {
             if (window && window.localStorage) localStorage.clear();
         } catch (e) { }
 
-        this.add.rectangle(400, 300, 800, 600, 0x000000, 1).setDepth(0);
-        const loadingText = this.add.text(400, 300, 'loading', {
-            fontSize: '28px',
+        const metrics = this.getPreloadMetrics();
+
+        this._preloadBg = this.add.rectangle(metrics.cx, metrics.cy, metrics.w, metrics.h, 0x000000, 1).setDepth(0);
+        this.loadingText = this.add.text(metrics.cx, metrics.cy, 'loading', {
+            fontSize: `${metrics.loadingFont}px`,
             fill: '#ffffff',
             fontFamily: GAME_FONT,
             stroke: '#000000',
@@ -92,18 +147,18 @@ class PreloadScene extends Phaser.Scene {
         // animate loading dots as 3 fixed dots; cycle brightness (alpha) so text size stays constant
         try {
             const baseStyle = {
-                fontSize: '28px',
+                fontSize: `${metrics.loadingFont}px`,
                 fill: '#ffffff',
                 fontFamily: GAME_FONT,
                 stroke: '#000000',
                 strokeThickness: 4
             };
             // main label without dots
-            const loadingTextMain = loadingText;
+            const loadingTextMain = this.loadingText;
             loadingTextMain.setText('loading');
 
             // spacing and starting X for dots (positioned right after the main text)
-            const dotSpacing = Math.max(12, Math.round(loadingTextMain.fontSize || 18));
+            const dotSpacing = metrics.dotGap;
             const baseRight = loadingTextMain.x + (loadingTextMain.width * 0.5) + 8;
 
             this._loadingDots = [];
@@ -139,14 +194,14 @@ class PreloadScene extends Phaser.Scene {
             });
             // List of recently loaded files shown under the loading text
             this._loadedLines = [];
-            const linesBaseY = 340;
-            const lineHeight = 18;
+            const linesBaseY = metrics.linesBaseY;
+            const lineHeight = metrics.lineHeight;
             try {
                 this.load.on('filecomplete', (key, type) => {
                     try {
                         const label = `${key} (${type})`;
-                        const txt = this.add.text(400, linesBaseY + this._loadedLines.length * lineHeight, label, {
-                            fontSize: '14px',
+                        const txt = this.add.text(metrics.cx, linesBaseY + this._loadedLines.length * lineHeight, label, {
+                            fontSize: `${metrics.listFont}px`,
                             fill: '#ffffff',
                             fontFamily: GAME_FONT
                         }).setOrigin(0.5, 0).setDepth(11);
@@ -173,8 +228,8 @@ class PreloadScene extends Phaser.Scene {
                 }
             } catch (e) { }
             // (title handled when its file is loaded via 'filecomplete-title')
-            if (loadingText && loadingText.destroy) {
-                loadingText.destroy();
+            if (this.loadingText && this.loadingText.destroy) {
+                this.loadingText.destroy();
             }
         });
     // add credit in loading scene
@@ -201,6 +256,20 @@ class PreloadScene extends Phaser.Scene {
 
         // Create graphics for remaining assets
         this.createAssets();
+
+        this._onPreloadResize = (gameSize) => {
+            const w = (gameSize && gameSize.width) ? gameSize.width : (this.scale.width || CONFIG.width);
+            const h = (gameSize && gameSize.height) ? gameSize.height : (this.scale.height || CONFIG.height);
+            this.applyPreloadLayout(w, h);
+        };
+        this.scale.on('resize', this._onPreloadResize, this);
+        this.events.once('shutdown', () => {
+            try {
+                if (this._onPreloadResize) this.scale.off('resize', this._onPreloadResize, this);
+            } catch (e) { }
+        });
+        this.applyPreloadLayout();
+
         // create a simple wooden plank texture at runtime (fallback asset)
         try {
             const plankW = Math.max(24, Math.round(CONFIG.objectSize ? CONFIG.objectSize * 0.9 : OBJECT_NATIVE_SIZE * 0.5));

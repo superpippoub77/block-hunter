@@ -56,6 +56,27 @@ class ConfigScene extends Phaser.Scene {
         super('ConfigScene');
     }
 
+    getConfigResponsiveMetrics(width, height) {
+        const w = Math.max(320, Math.round(width || this.scale.width || CONFIG.width || 800));
+        const h = Math.max(240, Math.round(height || this.scale.height || CONFIG.height || 600));
+        const baseW = Number(CONFIG.width) || 800;
+        const baseH = Number(CONFIG.height) || 600;
+        const zoom = Phaser.Math.Clamp(Math.min(w / baseW, h / baseH), 0.55, 1.6);
+
+        return { w, h, baseW, baseH, zoom };
+    }
+
+    applyResponsiveLayout(width, height) {
+        const m = this.getConfigResponsiveMetrics(width, height);
+        const cam = this.cameras && this.cameras.main;
+        if (!cam) return;
+
+        cam.setViewport(0, 0, m.w, m.h);
+        cam.setBackgroundColor('#001100');
+        cam.setZoom(m.zoom);
+        cam.centerOn(m.baseW / 2, m.baseH / 2);
+    }
+
     create() {
         this._defaultConfigSnapshot = JSON.parse(JSON.stringify(CONFIG || {}));
 
@@ -475,6 +496,19 @@ class ConfigScene extends Phaser.Scene {
             if (this.objectSizeText) this.objectSizeText.setText(String(CONFIG.objectSize));
             if (this.playerSizeText) this.playerSizeText.setText(String(CONFIG.playerSize));
         };
+
+        this._onResponsiveResize = (gameSize) => {
+            const w = (gameSize && gameSize.width) ? gameSize.width : (this.scale.width || CONFIG.width);
+            const h = (gameSize && gameSize.height) ? gameSize.height : (this.scale.height || CONFIG.height);
+            this.applyResponsiveLayout(w, h);
+        };
+        this.scale.on('resize', this._onResponsiveResize, this);
+        this.events.once('shutdown', () => {
+            try {
+                if (this._onResponsiveResize) this.scale.off('resize', this._onResponsiveResize, this);
+            } catch (e) { }
+        });
+        this.applyResponsiveLayout();
     }
 }
 
