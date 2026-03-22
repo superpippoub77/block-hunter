@@ -5429,13 +5429,10 @@ class GameScene extends Phaser.Scene {
         }
         if (isMoving) {
             let nextFacing = this.playerFacing || 'front';
-            if (Math.abs(velocityX) > Math.abs(velocityY)) {
-                const verticalFacing = this.playerVerticalFacing || 'front';
-                if (verticalFacing === 'back') {
-                    nextFacing = velocityX > 0 ? 'back_right' : 'back_left';
-                } else {
-                    nextFacing = velocityX > 0 ? 'right' : 'left';
-                }
+            if (Math.abs(velocityX) >= Math.abs(velocityY)) {
+                // Horizontal intent always uses lateral row (right/left),
+                // even when the previous vertical facing was 'back'.
+                nextFacing = velocityX > 0 ? 'right' : 'left';
             } else {
                 nextFacing = velocityY < 0 ? 'back' : 'front';
                 this.playerVerticalFacing = nextFacing;
@@ -5451,11 +5448,21 @@ class GameScene extends Phaser.Scene {
                 this.player.anims.play(animKey, true);
             }
             this.player.setFlipX(nextFacing === 'left');
+
+            // Slight tilt on diagonal movement for row1(front) and row3(up) animations.
+            const diagonalTiltDeg = 8;
+            const isDiagonalMove = Math.abs(velocityX) > 0 && Math.abs(velocityY) > 0;
+            const usesTiltRow = animKey === 'player_front_walk' || animKey === 'player_back_walk';
+            const targetAngle = (isDiagonalMove && usesTiltRow)
+                ? (velocityX > 0 ? diagonalTiltDeg : -diagonalTiltDeg)
+                : 0;
+            this.player.setAngle(targetAngle);
         } else {
             const currentAnimKey = this.player.anims.currentAnim?.key;
             if (this.player.anims.isPlaying && (currentAnimKey === 'player_front_walk' || currentAnimKey === 'player_back_walk' || currentAnimKey === 'player_right_walk')) {
                 this.player.anims.stop();
             }
+            this.player.setAngle(0);
 
             const facing = this.playerFacing || 'front';
             if (facing === 'back') {
@@ -5496,13 +5503,8 @@ class GameScene extends Phaser.Scene {
             if (this.player2 && this.player2.active) {
                 if (isMovingP2) {
                     let nextFacingP2 = this.player2Facing || 'front';
-                    if (Math.abs(p2VelocityX) > Math.abs(p2VelocityY)) {
-                        const verticalFacing2 = this.player2VerticalFacing || 'front';
-                        if (verticalFacing2 === 'back') {
-                            nextFacingP2 = p2VelocityX > 0 ? 'back_right' : 'back_left';
-                        } else {
-                            nextFacingP2 = p2VelocityX > 0 ? 'right' : 'left';
-                        }
+                    if (Math.abs(p2VelocityX) >= Math.abs(p2VelocityY)) {
+                        nextFacingP2 = p2VelocityX > 0 ? 'right' : 'left';
                     } else {
                         nextFacingP2 = p2VelocityY < 0 ? 'back' : 'front';
                         this.player2VerticalFacing = nextFacingP2;
@@ -5518,11 +5520,20 @@ class GameScene extends Phaser.Scene {
                         this.player2.anims.play(animKey2, true);
                     }
                     this.player2.setFlipX(nextFacingP2 === 'left');
+
+                    const diagonalTiltDeg2 = 8;
+                    const isDiagonalMove2 = Math.abs(p2VelocityX) > 0 && Math.abs(p2VelocityY) > 0;
+                    const usesTiltRow2 = animKey2 === 'player_front_walk' || animKey2 === 'player_back_walk';
+                    const targetAngle2 = (isDiagonalMove2 && usesTiltRow2)
+                        ? (p2VelocityX > 0 ? diagonalTiltDeg2 : -diagonalTiltDeg2)
+                        : 0;
+                    this.player2.setAngle(targetAngle2);
                 } else {
                     const currentAnimKey2 = this.player2.anims.currentAnim?.key;
                     if (this.player2.anims.isPlaying && (currentAnimKey2 === 'player_front_walk' || currentAnimKey2 === 'player_back_walk' || currentAnimKey2 === 'player_right_walk')) {
                         this.player2.anims.stop();
                     }
+                    this.player2.setAngle(0);
 
                     const facing2 = this.player2Facing || 'front';
                     if (facing2 === 'back') {
