@@ -156,25 +156,25 @@
     },
     {
       "key": "player_front",
-      "path": "assets/images/common/player_front.png",
+      "path": "assets/images/common/player_front_10.png",
       "inPreload": true,
       "exists": true
     },
     {
       "key": "player_back",
-      "path": "assets/images/common/player_back.png",
+      "path": "assets/images/common/player_front_10.png",
       "inPreload": true,
       "exists": true
     },
     {
       "key": "player_right",
-      "path": "assets/images/common/player_right.png",
+      "path": "assets/images/common/player_front_10.png",
       "inPreload": true,
       "exists": true
     },
     {
       "key": "player_back_right",
-      "path": "assets/images/common/player_back_rigth.png",
+      "path": "assets/images/common/player_front_10.png",
       "inPreload": true,
       "exists": true
     },

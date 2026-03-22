@@ -96,10 +96,10 @@ const PRELOAD_SPRITESHEET_CONFIGS = {
     objects: defaultFrame,
     bat: defaultFrame,
     ghost: defaultFrame,
-    player_front: { frameWidth: 139, frameHeight: 135 },
-    player_back: { frameWidth: 139, frameHeight: 135 },
-    player_right: { frameWidth: 139, frameHeight: 135 },
-    player_back_right: { frameWidth: 139, frameHeight: 135 }
+    player_front: { frameWidth: 64, frameHeight: 64 },
+    player_back: { frameWidth: 64, frameHeight: 64 },
+    player_right: { frameWidth: 64, frameHeight: 64 },
+    player_back_right: { frameWidth: 64, frameHeight: 64 }
 };
 const LOGGER = createLogger();
 

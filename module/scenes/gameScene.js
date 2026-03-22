@@ -82,15 +82,63 @@ class GameScene extends Phaser.Scene {
         };
 
         const playerFrontMaxFrame = getTextureMaxNumericFrame(this, 'player_front', 5);
-        const playerBackMaxFrame = getTextureMaxNumericFrame(this, 'player_back', 5);
-        const playerRightMaxFrame = getTextureMaxNumericFrame(this, 'player_right', 5);
-        const playerBackRightMaxFrame = getTextureMaxNumericFrame(this, 'player_back_right', 5);
+
+        // New definitive layout for player_front spritesheet:
+        // row 1 (0..9): front, idle 0..1 and walk 2..9
+        // row 2 (10..19): side, idle 10..11 and walk 12..19
+        const hasCombinedFrontSideSheet = playerFrontMaxFrame >= 19;
+        const hasCombinedBackSheet = playerFrontMaxFrame >= 29;
+
+        const frontWalkStart = hasCombinedFrontSideSheet ? 2 : 0;
+        const frontWalkEnd = hasCombinedFrontSideSheet ? 9 : playerFrontMaxFrame;
+        const frontIdleStart = 0;
+        const frontIdleEnd = hasCombinedFrontSideSheet ? 1 : Math.min(1, playerFrontMaxFrame);
+
+        // Lateral movement always uses the 2nd row of player_front with flipX for left.
+        const sideWalkTexture = 'player_front';
+        const sideWalkStart = hasCombinedFrontSideSheet ? 12 : frontWalkStart;
+        const sideWalkEnd = hasCombinedFrontSideSheet ? 19 : frontWalkEnd;
+        const sideIdleTexture = 'player_front';
+        const sideIdleStart = hasCombinedFrontSideSheet ? 10 : frontIdleStart;
+        const sideIdleEnd = hasCombinedFrontSideSheet ? 11 : frontIdleEnd;
+
+        const backWalkTexture = 'player_front';
+        const backWalkStart = hasCombinedBackSheet ? 22 : frontWalkStart;
+        const backWalkEnd = hasCombinedBackSheet ? 29 : frontWalkEnd;
+        const backIdleTexture = 'player_front';
+        const backIdleStart = hasCombinedBackSheet ? 20 : frontIdleStart;
+        const backIdleEnd = hasCombinedBackSheet ? 21 : frontIdleEnd;
+
+        if (!this.anims.exists('player_front_idle')) {
+            this.anims.create({
+                key: 'player_front_idle',
+                frames: this.anims.generateFrameNumbers('player_front', { start: frontIdleStart, end: frontIdleEnd }),
+                frameRate: 3,
+                repeat: -1
+            });
+        }
+        if (!this.anims.exists('player_side_idle')) {
+            this.anims.create({
+                key: 'player_side_idle',
+                frames: this.anims.generateFrameNumbers(sideIdleTexture, { start: sideIdleStart, end: sideIdleEnd }),
+                frameRate: 3,
+                repeat: -1
+            });
+        }
+        if (!this.anims.exists('player_back_idle')) {
+            this.anims.create({
+                key: 'player_back_idle',
+                frames: this.anims.generateFrameNumbers(backIdleTexture, { start: backIdleStart, end: backIdleEnd }),
+                frameRate: 3,
+                repeat: -1
+            });
+        }
 
         // Player front walk animation (used for down direction)
         if (!this.anims.exists('player_front_walk')) {
             this.anims.create({
                 key: 'player_front_walk',
-                frames: this.anims.generateFrameNumbers('player_front', { start: 0, end: playerFrontMaxFrame }),
+                frames: this.anims.generateFrameNumbers('player_front', { start: frontWalkStart, end: frontWalkEnd }),
                 frameRate: 10,
                 repeat: -1
             });
@@ -98,7 +146,7 @@ class GameScene extends Phaser.Scene {
         if (!this.anims.exists('player_back_walk')) {
             this.anims.create({
                 key: 'player_back_walk',
-                frames: this.anims.generateFrameNumbers('player_back', { start: 0, end: playerBackMaxFrame }),
+                frames: this.anims.generateFrameNumbers(backWalkTexture, { start: backWalkStart, end: backWalkEnd }),
                 frameRate: 10,
                 repeat: -1
             });
@@ -106,15 +154,7 @@ class GameScene extends Phaser.Scene {
         if (!this.anims.exists('player_right_walk')) {
             this.anims.create({
                 key: 'player_right_walk',
-                frames: this.anims.generateFrameNumbers('player_right', { start: 0, end: playerRightMaxFrame }),
-                frameRate: 10,
-                repeat: -1
-            });
-        }
-        if (!this.anims.exists('player_back_right_walk')) {
-            this.anims.create({
-                key: 'player_back_right_walk',
-                frames: this.anims.generateFrameNumbers('player_back_right', { start: 0, end: playerBackRightMaxFrame }),
+                frames: this.anims.generateFrameNumbers(sideWalkTexture, { start: sideWalkStart, end: sideWalkEnd }),
                 frameRate: 10,
                 repeat: -1
             });
@@ -5404,37 +5444,49 @@ class GameScene extends Phaser.Scene {
 
             let animKey = 'player_front_walk';
             if (nextFacing === 'back') animKey = 'player_back_walk';
-            else if (nextFacing === 'back_right' || nextFacing === 'back_left') animKey = 'player_back_right_walk';
+            else if (nextFacing === 'back_right' || nextFacing === 'back_left') animKey = 'player_back_walk';
             else if (nextFacing === 'right' || nextFacing === 'left') animKey = 'player_right_walk';
 
             if (!this.player.anims.isPlaying || this.player.anims.currentAnim?.key !== animKey) {
                 this.player.anims.play(animKey, true);
             }
-            this.player.setFlipX(nextFacing === 'left' || nextFacing === 'back_left');
+            this.player.setFlipX(nextFacing === 'left');
         } else {
             const currentAnimKey = this.player.anims.currentAnim?.key;
-            if (this.player.anims.isPlaying && (currentAnimKey === 'player_front_walk' || currentAnimKey === 'player_back_walk' || currentAnimKey === 'player_right_walk' || currentAnimKey === 'player_back_right_walk')) {
+            if (this.player.anims.isPlaying && (currentAnimKey === 'player_front_walk' || currentAnimKey === 'player_back_walk' || currentAnimKey === 'player_right_walk')) {
                 this.player.anims.stop();
             }
 
             const facing = this.playerFacing || 'front';
             if (facing === 'back') {
-                this.player.setTexture('player_back', 0);
+                if (!this.player.anims.isPlaying || this.player.anims.currentAnim?.key !== 'player_back_idle') {
+                    this.player.anims.play('player_back_idle', true);
+                }
                 this.player.setFlipX(false);
             } else if (facing === 'back_right') {
-                this.player.setTexture('player_back_right', 0);
+                if (!this.player.anims.isPlaying || this.player.anims.currentAnim?.key !== 'player_back_idle') {
+                    this.player.anims.play('player_back_idle', true);
+                }
                 this.player.setFlipX(false);
             } else if (facing === 'back_left') {
-                this.player.setTexture('player_back_right', 0);
-                this.player.setFlipX(true);
+                if (!this.player.anims.isPlaying || this.player.anims.currentAnim?.key !== 'player_back_idle') {
+                    this.player.anims.play('player_back_idle', true);
+                }
+                this.player.setFlipX(false);
             } else if (facing === 'right') {
-                this.player.setTexture('player_right', 0);
+                if (!this.player.anims.isPlaying || this.player.anims.currentAnim?.key !== 'player_side_idle') {
+                    this.player.anims.play('player_side_idle', true);
+                }
                 this.player.setFlipX(false);
             } else if (facing === 'left') {
-                this.player.setTexture('player_right', 0);
+                if (!this.player.anims.isPlaying || this.player.anims.currentAnim?.key !== 'player_side_idle') {
+                    this.player.anims.play('player_side_idle', true);
+                }
                 this.player.setFlipX(true);
             } else {
-                this.player.setTexture('player_front', 0);
+                if (!this.player.anims.isPlaying || this.player.anims.currentAnim?.key !== 'player_front_idle') {
+                    this.player.anims.play('player_front_idle', true);
+                }
                 this.player.setFlipX(false);
             }
         }
@@ -5459,37 +5511,49 @@ class GameScene extends Phaser.Scene {
 
                     let animKey2 = 'player_front_walk';
                     if (nextFacingP2 === 'back') animKey2 = 'player_back_walk';
-                    else if (nextFacingP2 === 'back_right' || nextFacingP2 === 'back_left') animKey2 = 'player_back_right_walk';
+                    else if (nextFacingP2 === 'back_right' || nextFacingP2 === 'back_left') animKey2 = 'player_back_walk';
                     else if (nextFacingP2 === 'right' || nextFacingP2 === 'left') animKey2 = 'player_right_walk';
 
                     if (!this.player2.anims.isPlaying || this.player2.anims.currentAnim?.key !== animKey2) {
                         this.player2.anims.play(animKey2, true);
                     }
-                    this.player2.setFlipX(nextFacingP2 === 'left' || nextFacingP2 === 'back_left');
+                    this.player2.setFlipX(nextFacingP2 === 'left');
                 } else {
                     const currentAnimKey2 = this.player2.anims.currentAnim?.key;
-                    if (this.player2.anims.isPlaying && (currentAnimKey2 === 'player_front_walk' || currentAnimKey2 === 'player_back_walk' || currentAnimKey2 === 'player_right_walk' || currentAnimKey2 === 'player_back_right_walk')) {
+                    if (this.player2.anims.isPlaying && (currentAnimKey2 === 'player_front_walk' || currentAnimKey2 === 'player_back_walk' || currentAnimKey2 === 'player_right_walk')) {
                         this.player2.anims.stop();
                     }
 
                     const facing2 = this.player2Facing || 'front';
                     if (facing2 === 'back') {
-                        this.player2.setTexture('player_back', 0);
+                        if (!this.player2.anims.isPlaying || this.player2.anims.currentAnim?.key !== 'player_back_idle') {
+                            this.player2.anims.play('player_back_idle', true);
+                        }
                         this.player2.setFlipX(false);
                     } else if (facing2 === 'back_right') {
-                        this.player2.setTexture('player_back_right', 0);
+                        if (!this.player2.anims.isPlaying || this.player2.anims.currentAnim?.key !== 'player_back_idle') {
+                            this.player2.anims.play('player_back_idle', true);
+                        }
                         this.player2.setFlipX(false);
                     } else if (facing2 === 'back_left') {
-                        this.player2.setTexture('player_back_right', 0);
-                        this.player2.setFlipX(true);
+                        if (!this.player2.anims.isPlaying || this.player2.anims.currentAnim?.key !== 'player_back_idle') {
+                            this.player2.anims.play('player_back_idle', true);
+                        }
+                        this.player2.setFlipX(false);
                     } else if (facing2 === 'right') {
-                        this.player2.setTexture('player_right', 0);
+                        if (!this.player2.anims.isPlaying || this.player2.anims.currentAnim?.key !== 'player_side_idle') {
+                            this.player2.anims.play('player_side_idle', true);
+                        }
                         this.player2.setFlipX(false);
                     } else if (facing2 === 'left') {
-                        this.player2.setTexture('player_right', 0);
+                        if (!this.player2.anims.isPlaying || this.player2.anims.currentAnim?.key !== 'player_side_idle') {
+                            this.player2.anims.play('player_side_idle', true);
+                        }
                         this.player2.setFlipX(true);
                     } else {
-                        this.player2.setTexture('player_front', 0);
+                        if (!this.player2.anims.isPlaying || this.player2.anims.currentAnim?.key !== 'player_front_idle') {
+                            this.player2.anims.play('player_front_idle', true);
+                        }
                         this.player2.setFlipX(false);
                     }
                 }
