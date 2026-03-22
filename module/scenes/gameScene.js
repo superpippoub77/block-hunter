@@ -7633,6 +7633,51 @@ class GameScene extends Phaser.Scene {
         this.scene.launch('GameOverScene');
     }
 
+    continueFromGameOver(players = 1) {
+        const requiredPlayers = Number(players) === 2 ? 2 : 1;
+        try {
+            GAME_STATE.isGameOver = false;
+            GAME_STATE.players = requiredPlayers;
+        } catch (e) { }
+
+        const continueLives = Math.max(1, Number(CONFIG.lives) || 1);
+
+        if (requiredPlayers === 2) {
+            GAME_STATE.livesP1 = Math.max(continueLives, Number(GAME_STATE.livesP1) || 0);
+            GAME_STATE.livesP2 = Math.max(continueLives, Number(GAME_STATE.livesP2) || 0);
+
+            try {
+                if (this.player && this.player.active === false) {
+                    this.player.setActive(true).setVisible(true);
+                    this.respawnPlayer(this.player);
+                }
+            } catch (e) { }
+            try {
+                if (this.player2 && this.player2.active === false) {
+                    this.player2.setActive(true).setVisible(true);
+                    this.respawnPlayer(this.player2);
+                }
+            } catch (e) { }
+        } else {
+            GAME_STATE.lives = Math.max(continueLives, Number(GAME_STATE.lives) || 0);
+            try {
+                if (this.player && this.player.active === false) {
+                    this.player.setActive(true).setVisible(true);
+                    this.respawnPlayer(this.player);
+                }
+            } catch (e) { }
+        }
+
+        try {
+            this.refreshHudIcons && this.refreshHudIcons();
+        } catch (e) { }
+
+        // Resume core gameplay loop audio after a continue.
+        try {
+            playLoopAudioSafely(this, 'game_bgm', 0.28);
+        } catch (e) { }
+    }
+
     _stopAllAudio() {
         try {
             // Rain
