@@ -3,20 +3,39 @@
   "version": "1.0.0",
   "description": "Block Hunter - Arcade game",
   "scripts": {
-  "start": "npx serve -p 8000",
-  "start:api": "node server.js",
+    "dev": "vite",
+    "start": "vite",
+    "preview": "vite preview",
+    "typecheck": "tsc -p tsconfig.json",
+    "assets:generate": "npm run generate:data-json",
+    "assets:generate:full": "npm run generate:data-json && npm run generate:asset-manifests",
+    "prebuild:web": "npm run assets:generate",
+    "build:web": "npm run typecheck && vite build",
+    "build": "npm run build:web",
+    "clean:dist": "rm -rf dist",
+    "clean:www": "rm -rf www",
+    "clean": "npm run clean:dist && npm run clean:www",
+    "build:www": "npm run build:web && npm run clean:www && mkdir -p www && cp -r dist/* www/",
+    "prepare:www": "npm run build:www",
+    "start:api": "node server.js",
     "generate:data-json": "node tools/generate-data-json.js",
     "generate:asset-manifests": "node tools/generate-asset-manifests.js",
+    "generate:all": "npm run assets:generate:full && npm run generate:icons",
     "cap:init": "npx cap init block-hunter com.example.blockhunter --web-dir=www",
     "cap:add:android": "npx cap add android",
-    "cap:copy": "npx cap copy",
+    "cap:copy": "npm run build:www && npx cap copy",
+    "cap:sync": "npm run build:www && npx cap sync",
     "cap:open:android": "npx cap open android",
-    "prepare:www": "rm -rf www && mkdir www && cp -r ./* www && rm -rf www/node_modules || true",
     "generate:icons": "node tools/generate-icons.js"
   },
   "devDependencies": {
     "@capacitor/cli": "^5.0.0",
     "@capacitor/core": "^5.0.0",
-    "sharp": "^0.32.0"
+    "sharp": "^0.32.0",
+    "typescript": "^5.9.2",
+    "vite": "^7.1.3"
+  },
+  "dependencies": {
+    "phaser": "^3.90.0"
   }
 }

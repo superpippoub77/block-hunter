@@ -2,6 +2,8 @@
 // BLOCKHUNTER - Arcade Game in Phaser 3
 // ============================================================================
 
+import Phaser from 'phaser';
+
 import { OBJECT_FRAMES, TILE_FRAMES, WALL_TILE_COLS } from './data/module/constants.js';
 import { createPreloadScene } from './module/scenes/preloadScene.js';
 import { createAttractScene } from './module/scenes/attractScene.js';

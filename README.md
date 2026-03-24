@@ -19,15 +19,34 @@ Controlli
 
 Avviare il gioco in locale
 
-Il modo più semplice è aprire `index.html` in un browser moderno (Chrome/Edge/Firefox). Alcuni browser bloccano i file locali per alcune funzioni (es. caricamento immagini/AudioContext); se riscontri problemi, avvia un server statico nella cartella del progetto.
+Setup consigliato con Vite + TypeScript:
 
-Esempio (PowerShell):
-
-```powershell
-# dalla root del progetto
-python -m http.server 8000
-# poi apri nel browser: http://localhost:8000/
+```bash
+npm install
+npm run dev
 ```
+
+Poi apri l'URL mostrato dal terminale (in genere `http://localhost:5173`).
+
+Build produzione:
+
+```bash
+npm run build
+npm run preview
+```
+
+Script principali (struttura consigliata):
+
+- `npm run dev`: avvio sviluppo locale con Vite.
+- `npm run typecheck`: controllo TypeScript.
+- `npm run build:web`: pipeline web completa (typecheck + Vite build).
+- `npm run build`: alias di `build:web`.
+- `npm run build:www`: build web e copia output in `www/` per Capacitor.
+- `npm run prepare:www`: alias di `build:www`.
+- `npm run assets:generate`: rigenera `data/data.json`.
+- `npm run assets:generate:full`: rigenera anche i manifest asset.
+- `npm run cap:copy`: build `www/` + `npx cap copy`.
+- `npm run cap:sync`: build `www/` + `npx cap sync`.
 
 Note sugli asset
 

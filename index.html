@@ -147,7 +147,7 @@
             #dom-hud .dom-hud-item { font-size: 18px; padding: 10px 12px; }
         }
     </style>
-    <link rel="manifest" href="/manifest.json">
+    <link rel="manifest" href="./manifest.json">
     <meta name="theme-color" content="#000000">
     <link rel="icon" href="images/title.png" type="image/png">
 </head>
@@ -175,34 +175,7 @@
             <button id="actionBtn" class="touch-control" aria-label="Azione">A</button>
         </div>
     </div>
-    <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
-    <script type="module" src="game.js"></script>
-        <script src="js/touch-controls.js"></script>
-    <script>
-        window.onload = async function () {
-            // Carica il font prima di inizializzare il gioco
-            try {
-                if (window.FontFace) {
-                    const font = new FontFace('Press Start 2P',
-                        "url('assets/fonts/PressStart2P-Regular.woff2'), url('assets/fonts/PressStart2P-Regular.woff'), url('assets/fonts/PressStart2P-Regular.ttf')"
-                    );
-                    await font.load();
-                    document.fonts.add(font);
-                    await document.fonts.ready;
-                } else {
-                    // fallback: attende comunque che i font siano caricati (non garantito su browser vecchi)
-                    if (document.fonts && document.fonts.ready) await document.fonts.ready;
-                }
-            } catch (e) {
-                console.warn('Impossibile caricare il font personalizzato, si userà il fallback.', e);
-            }
-            if (await inizialization()) {
-                console.log('Gioco inizializzato con successo.');
-            } else {
-                console.error('Errore durante l\'inizializzazione del gioco.');
-            }
-        };
-    </script>
+    <script type="module" src="./src/main.ts"></script>
 </body>
 
 </html>

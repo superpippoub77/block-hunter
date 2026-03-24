@@ -14,15 +14,14 @@ npm install --save-dev @capacitor/cli @capacitor/core
 npm init -y
 ```
 
-3) Build or serve your web app. For packaging, you should create a production web build in a `www/` or `build/` folder. If you use a simple static site, copy the repository files into `www/`.
-
-Example (quick):
+3) Build your web app with Vite and prepare `www/` for Capacitor:
 
 ```bash
-# a quick way to prepare web output for Capacitor is to copy the current folder into www
-rm -rf www && mkdir www && cp -r * www
-# remove node_modules/www if created
+npm install
+npm run prepare:www
 ```
+
+Questo comando esegue la build Vite (`dist/`) e copia il contenuto ottimizzato in `www/`.
 
 4) Initialize Capacitor (replace appId and appName):
 
