@@ -96,6 +96,8 @@ const PRELOAD_SPRITESHEET_CONFIGS = {
     objects: defaultFrame,
     bat: defaultFrame,
     ghost: defaultFrame,
+    spider: defaultFrame,
+    snake: defaultFrame,
     player_front: { frameWidth: 64, frameHeight: 64 },
     player_back: { frameWidth: 64, frameHeight: 64 },
     player_right: { frameWidth: 64, frameHeight: 64 },

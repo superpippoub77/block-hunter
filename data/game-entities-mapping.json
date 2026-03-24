@@ -191,12 +191,16 @@
         "onTakePlayer": []
       },
       "sprite": {
-        "animated": false,
-        "texture": "objects",
-        "frame": 10,
+        "animated": true,
+        "texture": "spider",
+        "fallbackFrame": 10,
         "animations": {
-          "idle": [],
-          "move": []
+          "idle": [
+            "spider_float"
+          ],
+          "move": [
+            "spider_float"
+          ]
         }
       }
     },
@@ -226,12 +230,16 @@
         "onTakePlayer": []
       },
       "sprite": {
-        "animated": false,
-        "texture": "objects",
-        "frame": 10,
+        "animated": true,
+        "texture": "snake",
+        "fallbackFrame": 10,
         "animations": {
-          "idle": [],
-          "move": []
+          "idle": [
+            "snake_float"
+          ],
+          "move": [
+            "snake_float"
+          ]
         }
       }
     },

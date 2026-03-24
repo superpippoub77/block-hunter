@@ -12,6 +12,8 @@ export function queueLegacyPreloadAssets(scene, logger, preloadSpritesheetConfig
         .spritesheet('objects', 'assets/images/common/obj_game.png', preloadSpritesheetConfigs.objects)
         .spritesheet('bat', 'assets/images/common/bat.png', preloadSpritesheetConfigs.bat)
         .spritesheet('ghost', 'assets/images/common/ghost.png', preloadSpritesheetConfigs.ghost)
+        .spritesheet('spider', 'assets/images/common/spider.png', preloadSpritesheetConfigs.spider)
+        .spritesheet('snake', 'assets/images/common/snake.png', preloadSpritesheetConfigs.snake)
         .spritesheet('player_front', 'assets/images/common/player_front_10.png', preloadSpritesheetConfigs.player_front)
         .spritesheet('player_back', 'assets/images/common/player_front_10.png', preloadSpritesheetConfigs.player_back)
         .spritesheet('player_right', 'assets/images/common/player_front_10.png', preloadSpritesheetConfigs.player_right)
