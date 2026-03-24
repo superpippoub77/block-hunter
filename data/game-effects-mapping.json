@@ -1,0 +1,76 @@
+{
+  "meta": {
+    "name": "Block Hunter Effects Mapping",
+    "version": "1.0.0",
+    "generatedAt": "2026-03-19",
+    "source": [
+      "game.js",
+      "data/module/constants.js"
+    ]
+  },
+  "effectProfiles": {
+    "none": {
+      "description": "Nessun effetto speciale"
+    },
+    "score_add": {
+      "description": "Aggiunge punti score"
+    },
+    "score_subtract": {
+      "description": "Sottrae punti score"
+    },
+    "lose_life": {
+      "description": "Perde una vita"
+    },
+    "lose_life_and_return_world_start": {
+      "description": "Perde una vita e torna al primo sottolivello del mondo corrente"
+    },
+    "steal_player_gem_stock": {
+      "description": "Ruba 1 gemma dallo stock player e la rilascia in mappa"
+    },
+    "blood_splatter": {
+      "description": "Effetto sangue al contatto con player"
+    },
+    "activate_cart_power": {
+      "description": "Attiva invulnerabilita cart per durata configurata"
+    },
+    "activate_helmet": {
+      "description": "Attiva casco (protezione da rocce) per durata configurata"
+    },
+    "activate_companion": {
+      "description": "Attiva companion helper per durata configurata"
+    },
+    "unlock_exit_on_gems": {
+      "description": "Sblocca uscita quando raggiunte gemme richieste"
+    },
+    "explode_dynamite": {
+      "description": "Esplosione dinamite"
+    },
+    "spawn_replacement_enemy": {
+      "description": "Rigenera nemico dopo distruzione"
+    },
+    "block_movement": {
+      "description": "Blocca il movimento dell'entita che collide"
+    },
+    "go_previous_level": {
+      "description": "Riporta al livello precedente o al target di back"
+    },
+    "level_complete": {
+      "description": "Completa il livello e avvia la transizione"
+    },
+    "open_if_key_available": {
+      "description": "Apre l'oggetto interattivo se il player possiede una chiave"
+    },
+    "add_life_plus_1": {
+      "description": "Aggiunge una vita al player o al profilo corrente"
+    },
+    "add_dynamite_count_plus_5": {
+      "description": "Aumenta di 5 il numero di dinamiti disponibili"
+    },
+    "add_wooden_plank_plus_1": {
+      "description": "Aumenta di 1 il numero di assi disponibili"
+    },
+    "spawn_stone_shards": {
+      "description": "Genera schegge di pietra alla distruzione"
+    }
+  }
+}

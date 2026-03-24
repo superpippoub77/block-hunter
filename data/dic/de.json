@@ -29,4 +29,23 @@
   "byline": "von SpikeCode",
   "topTen": "BESTENLISTE",
   "story": "In den tiefen unterirdischen Labyrinthen,\n sucht der Blockjäger nach Edelsteinen\n und weicht rollenden Felsen aus.\n Wirst du überleben und der Beste werden?"
+  ,
+  "obj_dynamite": "Dynamit — Projektil: verursacht Explosionen und Schaden.",
+  "obj_heart": "Herz — stellt ein Leben wieder her.",
+  "obj_stone": "Fels — rollendes Hindernis, das dich zerquetschen kann.",
+  "obj_player": "Spieler — das bist du.",
+  "obj_dynamite_chest": "Dynamitkiste — gibt zusätzliche Dynamit.",
+  "obj_door": "Tür — erfordert möglicherweise einen Schlüssel.",
+  "obj_gem": "Edelstein — sammle ihn, um deinen Punktestand zu erhöhen.",
+  "obj_cart": "Wagen / Steinhaufen — Umgebungs-Hindernis.",
+  "obj_key": "Schlüssel — zum Öffnen von Türen.",
+  "obj_sand_pile": "Sand — verlangsamt die Bewegung.",
+  "obj_ghost": "Geist — Feind, der dich verletzen kann.",
+  "obj_pepita": "Nugget — kleines Bonus-Sammelobjekt.",
+  "obj_wall": "Wand — solide, unpassierbare Fläche.",
+  "obj_wooden": "Holzplanke — Verbrauchsgegenstand, um Löcher zu bedecken.",
+  "obj_hole1": "Loch — eine Grube im Boden; kann mit einer Planke bedeckt werden.",
+  "obj_hole2": "Loch (Variante) — verhält sich wie ein normales Loch.",
+  "obj_explosion": "Explosion — visueller Effekt bei Detonationen.",
+  "obj_bat": "Fledermaus — fliegender Gegner (vorsicht beim Sammeln von Edelsteinen)."
 }

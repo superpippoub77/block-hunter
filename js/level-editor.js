@@ -10,39 +10,78 @@ const OBJECT_FRAMES = {
     key: 8,
     sand_pile: 9,
     ghost: 10,
+    spider: 10,
+    snake: 10,
+    wooden: 10, // wooden plank alias (reuses frame 10)
     pepita: 11,
     wall: 12,
     hole1: 13,
     hole2: 14,
+    exit: 14,
     explosion: 15,
-    cart: 7
+    cart: 7,
+    helmet: 3
 };
 
 const STORAGE_KEY = 'blockHunterLevelEditorState';
-const WALL_TOKEN_REGEX = /^w(\d)(\d)$/i;
+const WALL_TOKEN_REGEX = /^w(\d)(\d)(\d)([hv0])$/i;
+const COMMON_ASSETS_DIR = 'assets/images/common';
+const BG_ASSETS_DIR = 'assets/images/background';
+const FG_ASSETS_DIR = 'assets/images/foreground';
+const API_BASE_PATH = 'api';
+const BG_MANIFEST_PATH = 'data/background-images.json';
+const FG_MANIFEST_PATH = 'data/foreground-images.json';
+const MUSIC_MANIFEST_PATH = 'data/music-files.json';
+const CONFIG_JSON_PATH = 'data/config.json';
+const ASSETS_API_PATH = 'assets';
+const DICTIONARIES_API_PATH = 'dictionaries';
+const MAPPINGS_API_PATH = 'mappings';
+
+// Available numeric level backgrounds discovered from assets/images/common/level<N>.png
+const AVAILABLE_BG_LEVELS = [1,2,3,4,5,6];
 
 const BASE_PALETTE_ITEMS = [
-    { token: '-', label: 'vuoto' },
-    { token: 'f', label: 'floor' },
-    { token: 'h', label: 'hole1' },
-    { token: 's', label: 'hole2' },
-    { token: 'g', label: 'gem marker' },
-    { token: 'd', label: 'door' },
-    { token: 'k', label: 'key' },
-    { token: 'p', label: 'pepita' },
-    { token: 'b', label: 'dyn chest' },
-    { token: 'c', label: 'cart' },
-    { token: 'm', label: 'skeleton' },
+    //{ token: '-', label: 'vuoto (-)' },
+    { token: '.', label: 'hole invisibile (.)' },
+    { token: '#', label: 'muro invisibile (#)' },
+    // tiles
+    //{ token: 'f', label: 'sabbia / floor (f)' },
+    { token: 'h', label: 'hole (h)' },
+    //{ token: 's', label: 'hole2 / sand (s)' },
+    // additional tile tokens
+    { token: 'sand', label: 'sabbia (sand)' },
+    { token: 'water', label: 'pozzanghera / water (water)' },
+    { token: 'mud', label: 'fango / mud (mud)' },
+    { token: 'back', label: 'back (torna al livello precedente) (back)' },
+    // objects
+    { token: 'g', label: 'gem (g)' },
+    { token: 'd', label: 'door (d)' },
+    { token: 'k', label: 'key (k)' },
+    { token: 'p', label: 'pepita / gem pickup (p)' },
+    { token: 'l', label: 'cuore / life (l)' },
+    { token: 'exit', label: 'uscita / exit (exit)' },
+    { token: 'wooden', label: 'asse / wooden (wooden)' },
+    { token: 'helmet', label: 'helmet' },
+    { token: 'b', label: 'dynamite chest (b)' },
+    { token: 'c', label: 'cart / stones (c)' },
+    { token: 'm', label: 'skeleton (m)' },
+    { token: 'stones', label: 'stones (stones)' },
     { token: 'ghost', label: 'ghost spawn' },
-    { token: 'bat', label: 'bat spawn' }
+    { token: 'bat', label: 'bat spawn' },
+    { token: 'spider', label: 'spider spawn' },
+    { token: 'snake', label: 'snake spawn' }
 ];
 
-const WALL_PALETTE_ITEMS = Array.from({ length: 7 }, (_unused, frame) => (
-    Array.from({ length: 4 }, (_unusedRot, rot) => ({
-        token: `w${frame}${rot}`,
-        label: `wall ${frame} r${rot}`
-    }))
-)).flat();
+// Palette shows all 24 wall variants (4 rows x 6 cols); rotation/mirroring applied after placement
+const WALL_PALETTE_ITEMS = (() => {
+    const arr = [];
+    for (let r = 0; r < 4; r++) {
+        for (let c = 0; c < 6; c++) {
+            arr.push({ token: `w${r}${c}00`, label: `wall ${r}${c}` });
+        }
+    }
+    return arr;
+})();
 
 const PALETTE_ITEMS = [...BASE_PALETTE_ITEMS, ...WALL_PALETTE_ITEMS];
 
@@ -79,11 +118,41 @@ const DEFAULT_LEVEL = {
     spawnPoints: null,
     timeLimit: null,
     scoreRules: null,
-    light: 'piena',
+    effects: {
+        general: {
+            light: 'piena',
+            rain: {
+                enabled: false,
+                intensity: 1,
+                frequency: 180,
+                wind: 0,
+                direction: 'down',
+                interval: 5,
+                duration: 0
+            },
+            fog: {
+                enabled: false,
+                alpha: 0.15,
+                layers: 3,
+                speed: 'slow',
+                direction: 'left'
+            }
+        },
+        objects: {}
+    },
     ghost: 2,
     bat: 2,
+    spider: 0,
+    snake: 0,
     ghostSpeed: 80,
-    batSpeed: 90
+    batSpeed: 90,
+    spiderSpeed: 100,
+    snakeSpeed: 95,
+    batFlightsBeforeRest: 4,
+    batRestSeconds: 2,
+    batRestIntervalSeconds: 0,
+    backgroundEnabled: true,
+    foregroundEnabled: true
 };
 
 function el(id) {
@@ -105,6 +174,551 @@ function parseNumber(value, fallback = 0) {
     return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+function parseRepeatValue(value, fallback = 1) {
+    const raw = String(value ?? '').trim();
+    if (raw === '*') return '*';
+    const parsed = Number(raw);
+    if (!Number.isFinite(parsed)) return fallback;
+    return Math.max(1, Math.floor(parsed));
+}
+
+function buildApiUrl(path) {
+    const clean = String(path ?? '').replace(/^\/+|\/+$/g, '');
+    return `${API_BASE_PATH}/${clean}/`;
+}
+
+async function fetchJsonListWithFallback(primaryUrl, fallbackUrl) {
+    try {
+        const primary = await fetch(primaryUrl);
+        if (primary.ok) {
+            const data = await primary.json();
+            return Array.isArray(data) ? data : [];
+        }
+    } catch (_e) {
+        // Fallback handled below.
+    }
+
+    try {
+        const fallback = await fetch(fallbackUrl);
+        if (!fallback.ok) return [];
+        const data = await fallback.json();
+        return Array.isArray(data) ? data : [];
+    } catch (_e) {
+        return [];
+    }
+}
+
+function normalizeLayerSrc(rawValue, type) {
+    const raw = String(rawValue ?? '').trim();
+    if (!raw) return '';
+
+    if (/^(https?:|data:|blob:|\/)/i.test(raw)) return raw;
+    if (/^game_bg(_\d+)?$/i.test(raw)) return raw;
+    if (raw.startsWith(`${BG_ASSETS_DIR}/`) || raw.startsWith(`${FG_ASSETS_DIR}/`)) return raw;
+
+    const targetDir = type === 'fg' ? FG_ASSETS_DIR : BG_ASSETS_DIR;
+    if (raw.startsWith('images/')) return `${targetDir}/${raw.slice('images/'.length)}`;
+    if (!raw.includes('/')) return `${targetDir}/${raw}`;
+
+    return raw;
+}
+
+function layerFilenameFromSrc(src, type) {
+    const raw = String(src ?? '').trim();
+    if (!raw) return '';
+    const targetDir = type === 'fg' ? FG_ASSETS_DIR : BG_ASSETS_DIR;
+    if (raw.startsWith(`${targetDir}/`)) return raw.slice(targetDir.length + 1);
+    if (raw.startsWith('images/')) return raw.slice('images/'.length);
+    return raw.includes('/') ? raw.split('/').pop() : raw;
+}
+
+const AUTO_TILE_PROTECTED_TOKENS = new Set([
+    'g', 'd', 'k', 'p', 'l', 'exit', 'wooden', 'helmet', 'b', 'c', 'm', 'stones',
+    'ghost', 'bat', 'spider', 'snake', 'player', 'door', 'key', 'gem', 'heart'
+]);
+
+function randomWallVariantToken() {
+    const row = Math.floor(Math.random() * 4);
+    const col = Math.floor(Math.random() * 6);
+    return `w${row}${col}00`;
+}
+
+function isTerrainOrWallToken(token) {
+    const base = String(token || '').trim().replace(/\.$/, '');
+    if (!base || base === '-' || base === '#') return true;
+    if (WALL_TOKEN_REGEX.test(base)) return true;
+    return ['sand', 'water', 'mud', 'h', 'back', 'hole', 'hole2', 'floor', 'f', 's'].includes(base);
+}
+
+function resolveLayerToImagePath(src, type) {
+    const normalized = normalizeLayerSrc(src, type);
+    if (!normalized) return '';
+    if (/^(https?:|data:|blob:|\/)/i.test(normalized)) return normalized;
+    if (/^game_bg(_\d+)?$/i.test(normalized)) return '';
+
+    const targetDir = type === 'fg' ? FG_ASSETS_DIR : BG_ASSETS_DIR;
+    if (normalized.startsWith('assets/')) return normalized;
+    if (normalized.startsWith(`${targetDir}/`)) return normalized;
+    if (!normalized.includes('/')) return `${targetDir}/${normalized}`;
+    return normalized;
+}
+
+function loadImageElement(src) {
+    return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.onerror = () => reject(new Error(`Immagine non caricabile: ${src}`));
+        img.src = src;
+    });
+}
+
+function getAutoTileSensitivitySettings() {
+    const wallSensitivity = clamp(parseNumber(el('autoWallSensitivity')?.value, 50), 0, 100);
+    const liquidSensitivity = clamp(parseNumber(el('autoLiquidSensitivity')?.value, 50), 0, 100);
+    return { wallSensitivity, liquidSensitivity };
+}
+
+function refreshAutoTileSensitivityLabels() {
+    const wall = getAutoTileSensitivitySettings().wallSensitivity;
+    const liquid = getAutoTileSensitivitySettings().liquidSensitivity;
+    const wallTarget = el('autoWallSensitivityValue');
+    const liquidTarget = el('autoLiquidSensitivityValue');
+    if (wallTarget) wallTarget.textContent = String(wall);
+    if (liquidTarget) liquidTarget.textContent = String(liquid);
+}
+
+function classifyAutoTileFromPixel(r, g, b, a, structureBias = false, settings = { wallSensitivity: 50, liquidSensitivity: 50 }) {
+    if (a < 20) return null;
+
+    const max = Math.max(r, g, b);
+    const min = Math.min(r, g, b);
+    const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    const sat = max === 0 ? 0 : (max - min) / max;
+
+    const wallAdj = (Number(settings.wallSensitivity || 50) - 50) / 50;
+    const liquidAdj = (Number(settings.liquidSensitivity || 50) - 50) / 50;
+
+    const waterBlueVsGreen = 16 - (liquidAdj * 8);
+    const waterBlueVsRed = 20 - (liquidAdj * 10);
+    const waterBlueMin = 72 - (liquidAdj * 18);
+    const mudDeltaMin = 18 - (liquidAdj * 8);
+    const mudRedMin = 58 - (liquidAdj * 12);
+    const mudGreenMin = 40 - (liquidAdj * 10);
+    const mudSatMin = 0.14 - (liquidAdj * 0.05);
+
+    const looksWater = (b > g + waterBlueVsGreen) && (b > r + waterBlueVsRed) && (b >= waterBlueMin);
+    if (looksWater) return 'water';
+
+    const looksMud = (r > g) && (g >= b) && ((r - b) > mudDeltaMin) && r >= mudRedMin && g >= mudGreenMin && b <= 130 && sat >= mudSatMin;
+    if (looksMud) return 'mud';
+
+    const darkRock = lum <= (50 + wallAdj * 22);
+    const neutralSolid = sat <= (0.18 + wallAdj * 0.08) && lum <= (112 + wallAdj * 28);
+    const structureLike = structureBias && sat <= (0.30 + wallAdj * 0.06) && lum <= (132 + wallAdj * 24) && r >= 50 && g >= 50 && b >= 50;
+    if (darkRock || neutralSolid || structureLike) return 'wall';
+
+    return null;
+}
+
+function applyAutoTileToCell(cell, targetToken) {
+    if (!cell || !targetToken) return false;
+    const rawParts = String(cell.base || '-').split('/').map((s) => s.trim()).filter(Boolean);
+    const parts = rawParts.length ? rawParts : ['-'];
+
+    const normalizedParts = parts.map((part) => getRenderableTokenBase(part).replace(/\.$/, ''));
+    const hasProtected = normalizedParts.some((base) => AUTO_TILE_PROTECTED_TOKENS.has(base));
+    if (hasProtected) return false;
+
+    const terrainIdx = normalizedParts.findIndex((base) => isTerrainOrWallToken(base));
+    if (terrainIdx >= 0) {
+        if (normalizedParts[terrainIdx] === targetToken) return false;
+        parts[terrainIdx] = targetToken;
+    } else {
+        parts.unshift(targetToken);
+    }
+
+    const nextValue = parts.join('/');
+    if (nextValue === String(cell.base || '-')) return false;
+    cell.base = nextValue;
+    return true;
+}
+
+const AUTO_PATH_OBJECT_TOKENS = new Set(['g', 'ghost', 'bat', 'snake', 'spider']);
+const AUTO_PATH_ENEMY_TOKENS = ['ghost', 'bat', 'snake', 'spider'];
+
+function getCellTokenParts(cell) {
+    return String(cell?.base || '-')
+        .split('/')
+        .map((s) => String(s || '').trim())
+        .filter(Boolean);
+}
+
+function getCellTokenBases(cell) {
+    return getCellTokenParts(cell).map((part) => getRenderableTokenBase(part).replace(/\.$/, ''));
+}
+
+function setCellBasesPreservingDecorations(cell, nextBases) {
+    const safe = Array.isArray(nextBases) ? nextBases.filter(Boolean) : [];
+    cell.base = safe.length ? safe.join('/') : '-';
+}
+
+function getPrimaryTerrainToken(cell) {
+    const bases = getCellTokenBases(cell);
+    for (const base of bases) {
+        if (isTerrainOrWallToken(base)) return base;
+    }
+    return '-';
+}
+
+function isBlockedForPath(cell) {
+    const terrain = getPrimaryTerrainToken(cell);
+    if (!terrain || terrain === '-') return false;
+    if (terrain === '#' || terrain === 'h' || terrain === 'hole' || terrain === 'hole2' || terrain === 'back') return true;
+    if (WALL_TOKEN_REGEX.test(terrain)) return true;
+    return false;
+}
+
+function hasObjectToken(cell, token) {
+    const bases = getCellTokenBases(cell);
+    return bases.includes(token);
+}
+
+function clearAutoPathObjectTokens(scene) {
+    for (let y = 0; y < scene.rows; y++) {
+        for (let x = 0; x < scene.cols; x++) {
+            const cell = scene.cells[y]?.[x];
+            if (!cell) continue;
+            const next = getCellTokenBases(cell).filter((base) => !AUTO_PATH_OBJECT_TOKENS.has(base));
+            setCellBasesPreservingDecorations(cell, next);
+        }
+    }
+}
+
+function countTokenInScene(scene, token) {
+    let count = 0;
+    for (let y = 0; y < scene.rows; y++) {
+        for (let x = 0; x < scene.cols; x++) {
+            const cell = scene.cells[y]?.[x];
+            if (!cell) continue;
+            if (hasObjectToken(cell, token)) count++;
+        }
+    }
+    return count;
+}
+
+function addObjectTokenToCell(cell, token) {
+    const bases = getCellTokenBases(cell);
+    if (bases.includes(token)) return false;
+
+    const terrain = getPrimaryTerrainToken(cell);
+    const objects = bases.filter((base) => !isTerrainOrWallToken(base));
+    const next = [];
+    if (terrain && terrain !== '-') next.push(terrain);
+    next.push(...objects, token);
+    setCellBasesPreservingDecorations(cell, next);
+    return true;
+}
+
+function buildPathMap(scene, startRow, startCol) {
+    const keyOf = (r, c) => `${r},${c}`;
+    const inBounds = (r, c) => r >= 0 && c >= 0 && r < scene.rows && c < scene.cols;
+    const dirs = [[1,0],[-1,0],[0,1],[0,-1]];
+
+    const dist = new Map();
+    const queue = [];
+    if (!inBounds(startRow, startCol)) return { dist, neighborsByKey: new Map() };
+    if (isBlockedForPath(scene.cells[startRow]?.[startCol])) return { dist, neighborsByKey: new Map() };
+
+    const startKey = keyOf(startRow, startCol);
+    dist.set(startKey, 0);
+    queue.push([startRow, startCol]);
+
+    while (queue.length) {
+        const [r, c] = queue.shift();
+        const d = dist.get(keyOf(r, c)) ?? 0;
+        for (const [dr, dc] of dirs) {
+            const nr = r + dr;
+            const nc = c + dc;
+            if (!inBounds(nr, nc)) continue;
+            const nCell = scene.cells[nr]?.[nc];
+            if (!nCell || isBlockedForPath(nCell)) continue;
+            const nk = keyOf(nr, nc);
+            if (dist.has(nk)) continue;
+            dist.set(nk, d + 1);
+            queue.push([nr, nc]);
+        }
+    }
+
+    const neighborsByKey = new Map();
+    for (const key of dist.keys()) {
+        const [r, c] = key.split(',').map((v) => Number(v));
+        const neighbors = [];
+        for (const [dr, dc] of dirs) {
+            const nr = r + dr;
+            const nc = c + dc;
+            if (!inBounds(nr, nc)) continue;
+            if (dist.has(keyOf(nr, nc))) neighbors.push([nr, nc]);
+        }
+        neighborsByKey.set(key, neighbors);
+    }
+
+    return { dist, neighborsByKey };
+}
+
+function pickDistributedCells(candidates, count, minDist) {
+    const picked = [];
+    for (const c of candidates) {
+        if (picked.length >= count) break;
+        const ok = picked.every((p) => Math.abs(p.row - c.row) + Math.abs(p.col - c.col) >= minDist);
+        if (ok) picked.push(c);
+    }
+    return picked;
+}
+
+function chooseEnemyCandidates(candidates, neighborsByKey, type) {
+    const withDegree = candidates.map((c) => {
+        const degree = (neighborsByKey.get(`${c.row},${c.col}`) || []).length;
+        return { ...c, degree };
+    });
+
+    if (type === 'ghost') {
+        return withDegree.filter((c) => c.degree >= 3).sort((a, b) => b.dist - a.dist);
+    }
+    if (type === 'bat') {
+        return withDegree.filter((c) => c.left && c.right).sort((a, b) => b.dist - a.dist);
+    }
+    if (type === 'snake') {
+        return withDegree.filter((c) => c.up && c.down).sort((a, b) => b.dist - a.dist);
+    }
+    if (type === 'spider') {
+        return withDegree.filter((c) => c.degree <= 2).sort((a, b) => b.dist - a.dist);
+    }
+    return withDegree.sort((a, b) => b.dist - a.dist);
+}
+
+async function autoPopulatePathSpawns() {
+    const scene = getScene();
+    if (!scene) {
+        setStatus('Scene editor non disponibile.', true);
+        return;
+    }
+
+    const startRow = clamp(parseNumber(el('playerRow')?.value, 1), 0, Math.max(0, scene.rows - 1));
+    const startCol = clamp(parseNumber(el('playerCol')?.value, 1), 0, Math.max(0, scene.cols - 1));
+
+    const { dist, neighborsByKey } = buildPathMap(scene, startRow, startCol);
+    if (!dist.size) {
+        setStatus('Percorso non calcolabile: verifica posizione player e tile bloccanti.', true);
+        return;
+    }
+
+    const preserveManualSpawns = !!el('preserveManualSpawns')?.checked;
+    if (!preserveManualSpawns) {
+        clearAutoPathObjectTokens(scene);
+    }
+
+    const inBounds = (r, c) => r >= 0 && c >= 0 && r < scene.rows && c < scene.cols;
+    const keyOf = (r, c) => `${r},${c}`;
+
+    const walkable = [];
+    for (const [key, d] of dist.entries()) {
+        const [row, col] = key.split(',').map((v) => Number(v));
+        if (row === startRow && col === startCol) continue;
+        const cell = scene.cells[row]?.[col];
+        if (!cell || isBlockedForPath(cell)) continue;
+        const left = inBounds(row, col - 1) && dist.has(keyOf(row, col - 1));
+        const right = inBounds(row, col + 1) && dist.has(keyOf(row, col + 1));
+        const up = inBounds(row - 1, col) && dist.has(keyOf(row - 1, col));
+        const down = inBounds(row + 1, col) && dist.has(keyOf(row + 1, col));
+        walkable.push({ row, col, dist: d, left, right, up, down });
+    }
+
+    walkable.sort((a, b) => b.dist - a.dist);
+    if (!walkable.length) {
+        setStatus('Nessuna cella valida per spawn automatico.', true);
+        return;
+    }
+
+    const totalWalkable = walkable.length;
+    const defaultGems = clamp(Math.floor(totalWalkable * 0.08), 6, 40);
+    const gemCount = defaultGems;
+
+    const enemyCounts = {
+        ghost: clamp(parseNumber(el('ghostCount')?.value, 0), 0, 100),
+        bat: clamp(parseNumber(el('batCount')?.value, 0), 0, 100),
+        snake: clamp(parseNumber(el('snakeCount')?.value, 0), 0, 100),
+        spider: clamp(parseNumber(el('spiderCount')?.value, 0), 0, 100)
+    };
+
+    const occupied = new Set();
+    if (preserveManualSpawns) {
+        for (const c of walkable) {
+            const cell = scene.cells[c.row]?.[c.col];
+            if (!cell) continue;
+            const bases = getCellTokenBases(cell);
+            if (bases.some((b) => AUTO_PATH_OBJECT_TOKENS.has(b))) {
+                occupied.add(`${c.row},${c.col}`);
+            }
+        }
+    }
+
+    const gemsPicked = pickDistributedCells(walkable, gemCount, 4);
+    let addedGems = 0;
+    gemsPicked.forEach((c) => {
+        const cell = scene.cells[c.row]?.[c.col];
+        if (!cell) return;
+        if (occupied.has(`${c.row},${c.col}`)) return;
+        if (addObjectTokenToCell(cell, 'g')) {
+            occupied.add(`${c.row},${c.col}`);
+            addedGems++;
+        }
+    });
+
+    const addedEnemies = { ghost: 0, bat: 0, snake: 0, spider: 0 };
+    for (const enemy of AUTO_PATH_ENEMY_TOKENS) {
+        const requested = enemyCounts[enemy] || 0;
+        if (!requested) continue;
+
+        const candidates = chooseEnemyCandidates(walkable, neighborsByKey, enemy)
+            .filter((c) => !occupied.has(`${c.row},${c.col}`))
+            .filter((c) => c.dist >= 4);
+
+        const picked = pickDistributedCells(candidates, requested, enemy === 'ghost' ? 5 : 4);
+        picked.forEach((c) => {
+            const cell = scene.cells[c.row]?.[c.col];
+            if (!cell) return;
+            if (addObjectTokenToCell(cell, enemy)) {
+                occupied.add(`${c.row},${c.col}`);
+                addedEnemies[enemy]++;
+            }
+        });
+    }
+
+    const totalGems = countTokenInScene(scene, 'g');
+    const totalEnemies = {
+        ghost: countTokenInScene(scene, 'ghost'),
+        bat: countTokenInScene(scene, 'bat'),
+        snake: countTokenInScene(scene, 'snake'),
+        spider: countTokenInScene(scene, 'spider')
+    };
+
+    // Keep form counts aligned to what has been effectively placed.
+    if (el('ghostCount')) el('ghostCount').value = String(totalEnemies.ghost);
+    if (el('batCount')) el('batCount').value = String(totalEnemies.bat);
+    if (el('snakeCount')) el('snakeCount').value = String(totalEnemies.snake);
+    if (el('spiderCount')) el('spiderCount').value = String(totalEnemies.spider);
+
+    scene.renderGrid();
+    drawMiniMapPreview(scene);
+    setStatus(`Auto spawn completato. Aggiunti Gemme:${addedGems} Ghost:${addedEnemies.ghost} Bat:${addedEnemies.bat} Snake:${addedEnemies.snake} Spider:${addedEnemies.spider}. Totali Gemme:${totalGems} Ghost:${totalEnemies.ghost} Bat:${totalEnemies.bat} Snake:${totalEnemies.snake} Spider:${totalEnemies.spider}.`);
+}
+
+async function autoPopulateTilesFromLayers() {
+    const scene = getScene();
+    if (!scene) {
+        setStatus('Scene editor non disponibile.', true);
+        return;
+    }
+
+    const cols = Number(scene.cols) || 0;
+    const rows = Number(scene.rows) || 0;
+    if (cols <= 0 || rows <= 0) {
+        setStatus('Griglia non valida.', true);
+        return;
+    }
+
+    const bgLayers = readBackgroundLayersFromDOM().filter((l) => l && l.enabled !== false && String(l.src || '').trim());
+    const fgLayers = readForegroundLayersFromDOM().filter((l) => l && l.enabled !== false && String(l.src || '').trim());
+
+    const sources = [];
+    if (bgLayers[0]) {
+        sources.push({
+            type: 'bg',
+            src: resolveLayerToImagePath(bgLayers[0].src, 'bg'),
+            alpha: clamp(parseNumber(bgLayers[0].parallaxBgAlpha, 1), 0, 1),
+            rawSrc: String(bgLayers[0].src || '')
+        });
+    }
+    if (fgLayers[0]) {
+        sources.push({
+            type: 'fg',
+            src: resolveLayerToImagePath(fgLayers[0].src, 'fg'),
+            alpha: clamp(parseNumber(fgLayers[0].parallaxFgAlpha, 1), 0, 1),
+            rawSrc: String(fgLayers[0].src || '')
+        });
+    }
+
+    const usableSources = sources.filter((s) => !!s.src);
+    if (!usableSources.length) {
+        setStatus('Nessun layer BG/FG valido da analizzare.', true);
+        return;
+    }
+
+    const canvas = document.createElement('canvas');
+    canvas.width = cols;
+    canvas.height = rows;
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    if (!ctx) {
+        setStatus('Canvas di analisi non disponibile.', true);
+        return;
+    }
+
+    let loadedCount = 0;
+    for (const layer of usableSources) {
+        try {
+            const img = await loadImageElement(layer.src);
+            ctx.globalAlpha = layer.alpha;
+            ctx.drawImage(img, 0, 0, cols, rows);
+            loadedCount++;
+        } catch (_e) {
+            // Continue with other layers.
+        }
+    }
+    ctx.globalAlpha = 1;
+
+    if (!loadedCount) {
+        setStatus('Impossibile caricare i layer selezionati per l\'analisi.', true);
+        return;
+    }
+
+    const joinedSrc = usableSources.map((s) => `${s.rawSrc} ${s.src}`).join(' ').toLowerCase();
+    const structureBias = /(rock|stone|staccion|palo|pole|house|home|miner_house|column|wall|brick)/i.test(joinedSrc);
+    const settings = getAutoTileSensitivitySettings();
+
+    const pixelData = ctx.getImageData(0, 0, cols, rows).data;
+    let placedWalls = 0;
+    let placedWater = 0;
+    let placedMud = 0;
+
+    for (let y = 0; y < rows; y++) {
+        for (let x = 0; x < cols; x++) {
+            const idx = (y * cols + x) * 4;
+            const r = pixelData[idx];
+            const g = pixelData[idx + 1];
+            const b = pixelData[idx + 2];
+            const a = pixelData[idx + 3];
+
+            const detected = classifyAutoTileFromPixel(r, g, b, a, structureBias, settings);
+            if (!detected) continue;
+
+            const cell = scene.cells[y]?.[x];
+            if (!cell) continue;
+
+            const token = detected === 'wall' ? randomWallVariantToken() : detected;
+            const changed = applyAutoTileToCell(cell, token);
+            if (!changed) continue;
+
+            if (detected === 'wall') placedWalls++;
+            if (detected === 'water') placedWater++;
+            if (detected === 'mud') placedMud++;
+        }
+    }
+
+    scene.renderGrid();
+    drawMiniMapPreview(scene);
+    setStatus(`Auto tiles completato. Wall: ${placedWalls}, Water: ${placedWater}, Mud: ${placedMud}. Sens: W${settings.wallSensitivity}/L${settings.liquidSensitivity}`);
+}
+
 function parseNullableInput(text) {
     const raw = String(text ?? '').trim();
     if (!raw || raw.toLowerCase() === 'null') return null;
@@ -122,7 +736,234 @@ function parseNullableInput(text) {
     return raw;
 }
 
+function isPlainObject(value) {
+    return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function deepClone(value) {
+    return JSON.parse(JSON.stringify(value));
+}
+
+function getNumberRangeForKey(pathKey, currentValue) {
+    const key = String(pathKey || '').toLowerCase();
+    const n = Number(currentValue);
+    if (key.includes('alpha')) return { min: 0, max: 1, step: 0.01 };
+    if (key.includes('speed') || key.includes('factor') || key.includes('difficulty')) return { min: 0, max: Math.max(10, Math.ceil((Number.isFinite(n) ? n : 1) * 2)), step: 0.1 };
+    if (key.includes('duration') || key.includes('timeout') || key.includes('delay') || key.includes('lifetime')) return { min: 0, max: Math.max(60000, Math.ceil((Number.isFinite(n) ? n : 1000) * 3)), step: 1 };
+    if (key.includes('size') || key.includes('width') || key.includes('height') || key.includes('radius') || key.includes('tile')) return { min: 0, max: Math.max(2000, Math.ceil((Number.isFinite(n) ? n : 100) * 3)), step: 1 };
+    return { min: -100000, max: 100000, step: Number.isInteger(n) ? 1 : 0.1 };
+}
+
+function setPathValue(target, pathParts, value) {
+    let ref = target;
+    for (let i = 0; i < pathParts.length - 1; i++) {
+        const p = pathParts[i];
+        if (!isPlainObject(ref[p])) ref[p] = {};
+        ref = ref[p];
+    }
+    ref[pathParts[pathParts.length - 1]] = value;
+}
+
+let CONFIG_EDITOR_STATE = {
+    loadedConfig: null
+};
+
+let MAPPINGS_EDITOR_STATE = {
+    currentType: 'entities',
+    loadedDocuments: {
+        entities: null,
+        tiles: null,
+        effects: null
+    },
+    currentItemKey: ''
+};
+
+function setConfigStatus(message, isError = false) {
+    const target = el('configStatusText');
+    if (!target) return;
+    target.style.color = isError ? '#ff8f9a' : '#8ee89f';
+    target.textContent = message;
+}
+
+function buildConfigEditorUI(configObj) {
+    const container = el('configFormContainer');
+    if (!container) return;
+    container.innerHTML = '';
+
+    const cfg = deepClone(configObj || {});
+    CONFIG_EDITOR_STATE.loadedConfig = cfg;
+
+    const createCard = (title) => {
+        const card = document.createElement('div');
+        card.className = 'cfg-card';
+        const h = document.createElement('div');
+        h.className = 'cfg-title';
+        h.textContent = title;
+        card.appendChild(h);
+        return card;
+    };
+
+    const appendField = (parent, pathParts, key, value) => {
+        const row = document.createElement('div');
+        row.className = 'cfg-row';
+        const fullPath = [...pathParts, key].join('.');
+
+        const label = document.createElement('label');
+        label.textContent = fullPath;
+        row.appendChild(label);
+
+        if (typeof value === 'boolean') {
+            const cb = document.createElement('input');
+            cb.type = 'checkbox';
+            cb.checked = value;
+            cb.style.width = 'auto';
+            cb.addEventListener('change', () => setPathValue(CONFIG_EDITOR_STATE.loadedConfig, [...pathParts, key], !!cb.checked));
+            row.appendChild(cb);
+            parent.appendChild(row);
+            return;
+        }
+
+        if (typeof value === 'number') {
+            const wrap = document.createElement('div');
+            wrap.className = 'cfg-inline';
+            const range = document.createElement('input');
+            const number = document.createElement('input');
+            const meta = getNumberRangeForKey(fullPath, value);
+            range.type = 'range';
+            range.min = String(meta.min);
+            range.max = String(meta.max);
+            range.step = String(meta.step);
+            range.value = String(value);
+            number.type = 'number';
+            number.step = String(meta.step);
+            number.value = String(value);
+
+            const sync = (src, dst) => {
+                const v = Number(src.value);
+                if (!Number.isFinite(v)) return;
+                dst.value = String(v);
+                setPathValue(CONFIG_EDITOR_STATE.loadedConfig, [...pathParts, key], v);
+            };
+            range.addEventListener('input', () => sync(range, number));
+            number.addEventListener('input', () => sync(number, range));
+
+            wrap.appendChild(range);
+            wrap.appendChild(number);
+            row.appendChild(wrap);
+            parent.appendChild(row);
+            return;
+        }
+
+        if (typeof value === 'string') {
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.value = value;
+            input.addEventListener('input', () => setPathValue(CONFIG_EDITOR_STATE.loadedConfig, [...pathParts, key], String(input.value)));
+            row.appendChild(input);
+            parent.appendChild(row);
+            return;
+        }
+
+        // arrays or objects fallback: editable JSON textarea
+        const ta = document.createElement('textarea');
+        ta.style.minHeight = '72px';
+        ta.value = JSON.stringify(value, null, 2);
+        ta.addEventListener('input', () => {
+            try {
+                const parsed = JSON.parse(ta.value);
+                ta.style.borderColor = '#35507f';
+                setPathValue(CONFIG_EDITOR_STATE.loadedConfig, [...pathParts, key], parsed);
+            } catch (_e) {
+                ta.style.borderColor = '#b23f5a';
+            }
+        });
+        row.appendChild(ta);
+        parent.appendChild(row);
+    };
+
+    const appendObjectSection = (parent, obj, pathParts) => {
+        Object.keys(obj).sort().forEach((k) => {
+            const value = obj[k];
+            if (isPlainObject(value)) {
+                const details = document.createElement('details');
+                details.open = false;
+                details.style.marginBottom = '6px';
+                const summary = document.createElement('summary');
+                summary.textContent = [...pathParts, k].join('.');
+                summary.style.cursor = 'pointer';
+                summary.style.fontSize = '9px';
+                summary.style.color = '#cbe5ff';
+                details.appendChild(summary);
+                const inner = document.createElement('div');
+                inner.style.padding = '6px 2px 0 2px';
+                appendObjectSection(inner, value, [...pathParts, k]);
+                details.appendChild(inner);
+                parent.appendChild(details);
+            } else {
+                appendField(parent, pathParts, k, value);
+            }
+        });
+    };
+
+    const topLevelKeys = Object.keys(cfg).sort();
+    const generalCard = createCard('Generale');
+    let hasGeneral = false;
+
+    topLevelKeys.forEach((key) => {
+        const value = cfg[key];
+        if (isPlainObject(value)) {
+            const card = createCard(key);
+            appendObjectSection(card, value, [key]);
+            container.appendChild(card);
+        } else {
+            hasGeneral = true;
+            appendField(generalCard, [], key, value);
+        }
+    });
+
+    if (hasGeneral) {
+        container.prepend(generalCard);
+    }
+}
+
+async function loadConfigEditor() {
+    try {
+        const resp = await fetch(CONFIG_JSON_PATH, { cache: 'no-store' });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const cfg = await resp.json();
+        buildConfigEditorUI(cfg);
+        setConfigStatus('Configurazione caricata.');
+    } catch (e) {
+        setConfigStatus(`Errore caricamento config: ${e.message}`, true);
+    }
+}
+
+async function saveConfigEditor() {
+    if (!CONFIG_EDITOR_STATE.loadedConfig) {
+        setConfigStatus('Nessuna configurazione caricata.', true);
+        return;
+    }
+    try {
+        const resp = await fetch(buildApiUrl('config'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(CONFIG_EDITOR_STATE.loadedConfig)
+        });
+        const payload = await resp.json().catch(() => ({}));
+        if (!resp.ok || payload.ok === false) {
+            throw new Error(payload.error || `HTTP ${resp.status}`);
+        }
+        const backupFile = payload.backupFile ? ` Backup: ${payload.backupFile}` : '';
+        setConfigStatus(`Configurazione salvata.${backupFile}`);
+    } catch (e) {
+        setConfigStatus(`Errore salvataggio config: ${e.message}`, true);
+    }
+}
+
 function tokenToMiniMapColor(token) {
+    const raw = String(token ?? '').trim().toLowerCase();
+    if (/^exit(\[[^\]]+\])?$/.test(raw)) return '#526f9f';
+    if (/^(?:bck|back|back_level)(\[[^\]]+\])?$/.test(raw)) return '#526f9f';
     const normalized = normalizeToken(token);
     if (normalized === '-') return '#0f1f3e';
     if (normalized === 'f') return '#2f4f67';
@@ -131,12 +972,14 @@ function tokenToMiniMapColor(token) {
     if (normalized === 'g') return '#1f3f88';
     if (normalized === 'd') return '#7f5a22';
     if (normalized === 'k') return '#8f7918';
-    if (normalized === 'p') return '#a05e1e';
+    if (normalized === 'p' || normalized === 'l' || normalized === 'heart') return '#a05e1e';
     if (normalized === 'b') return '#8e2d2d';
     if (normalized === 'c') return '#2b8a8a';
     if (normalized === 'm') return '#6a6a6a';
     if (normalized === 'ghost') return '#64e1d8';
     if (normalized === 'bat') return '#7a58d1';
+    if (normalized === 'spider') return '#d17f57';
+    if (normalized === 'snake') return '#7bc96f';
     if (WALL_TOKEN_REGEX.test(normalized)) return '#4b5f80';
     return '#526f9f';
 }
@@ -144,12 +987,48 @@ function tokenToMiniMapColor(token) {
 function normalizeToken(token) {
     const raw = String(token ?? '-').trim();
     if (!raw) return '-';
-    if (raw === 'w') return 'w00';
-    const wallMatch = raw.match(WALL_TOKEN_REGEX);
-    if (wallMatch) {
-        const frame = clamp(Number(wallMatch[1]), 0, 6);
-        const rot = ((Number(wallMatch[2]) % 4) + 4) % 4;
-        return `w${frame}${rot}`;
+    // Allow token mapping via global CONFIG.tokenMap (loaded from data/config.json)
+    try {
+        const cfgMap = (typeof window !== 'undefined' && window.CONFIG && window.CONFIG.tokenMap) ? window.CONFIG.tokenMap : null;
+        if (cfgMap && typeof cfgMap === 'object') {
+            // try exact, lower and upper keys; avoid infinite recursion if mapping equals raw
+            const tryKeys = [raw, raw.toLowerCase(), raw.toUpperCase()];
+            for (let k of tryKeys) {
+                if (k && cfgMap[k] && String(cfgMap[k]).trim() !== raw) {
+                    return normalizeToken(String(cfgMap[k]));
+                }
+            }
+        }
+    } catch (e) { /* ignore */ }
+    if (raw === 'w') return 'w0000';
+    // accept full tokens wRCRF (row, col, rot, flip)
+    const wallMatch4 = raw.match(/^w(\d)(\d)(\d)([hv0])$/i);
+    if (wallMatch4) {
+        const row = clamp(Number(wallMatch4[1]), 0, 3);
+        const col = clamp(Number(wallMatch4[2]), 0, 5);
+        const rot = ((Number(wallMatch4[3]) % 4) + 4) % 4;
+        const flip = String(wallMatch4[4]).toLowerCase() === 'h' ? 'h' : (String(wallMatch4[4]).toLowerCase() === 'v' ? 'v' : '0');
+        return `w${row}${col}${rot}${flip}`;
+    }
+    // accept legacy 3-digit tokens wRCR (row, col, rot)
+    const wallMatch3 = raw.match(/^w(\d)(\d)(\d)$/i);
+    if (wallMatch3) {
+        const row = clamp(Number(wallMatch3[1]), 0, 3);
+        const col = clamp(Number(wallMatch3[2]), 0, 5);
+        const rot = ((Number(wallMatch3[3]) % 4) + 4) % 4;
+        return `w${row}${col}${rot}0`;
+    }
+    // fallback: accept legacy 2-digit tokens wFR (frame, rot) and convert to new scheme
+    const wallMatch2 = raw.match(/^w(\d)(\d)$/i);
+    if (wallMatch2) {
+        const frame = clamp(Number(wallMatch2[1]), 0, 6);
+        const rot = ((Number(wallMatch2[2]) % 4) + 4) % 4;
+        // map legacy frame -> row/col. Prefer row 0 for frames 0..5, frame 6 -> row1 col0
+        let row = 0;
+        let col = frame;
+        if (col > 5) { row = 1; col = Math.max(0, frame - 6); }
+        col = clamp(col, 0, 5);
+        return `w${row}${col}${rot}0`;
     }
     return raw;
 }
@@ -158,9 +1037,11 @@ function rotateWallToken(token, delta) {
     const normalized = normalizeToken(token);
     const match = normalized.match(WALL_TOKEN_REGEX);
     if (!match) return normalized;
-    const frame = Number(match[1]);
-    const rot = ((Number(match[2]) + delta) % 4 + 4) % 4;
-    return `w${frame}${rot}`;
+    const row = Number(match[1]);
+    const col = Number(match[2]);
+    const rot = ((Number(match[3]) + delta) % 4 + 4) % 4; // only cycle 0..3 for rotation
+    const flip = match[4] ? String(match[4]).toLowerCase() : '0';
+    return `w${row}${col}${rot}${flip}`;
 }
 
 function splitToken(tokenString) {
@@ -181,44 +1062,367 @@ function joinToken(base, reveal) {
     return r ? `${b}/${r}` : b;
 }
 
+function parseDecoratedToken(tokenInput) {
+    let raw = String(tokenInput ?? '').trim();
+    if (!raw) {
+        return {
+            raw: '',
+            base: '',
+            target: '',
+            effects: '',
+            invisible: false
+        };
+    }
+
+    let invisible = false;
+    if (raw.endsWith('.')) {
+        invisible = true;
+        raw = raw.slice(0, -1).trim();
+    }
+
+    let effects = '';
+    const effectsMatch = raw.match(/\((.*)\)$/);
+    if (effectsMatch) {
+        effects = String(effectsMatch[1] || '').trim();
+        raw = raw.slice(0, effectsMatch.index).trim();
+    }
+
+    let target = '';
+    let base = raw;
+    const targetMatch = raw.match(/^(.*)\[([^\]]+)\]$/);
+    if (targetMatch) {
+        base = String(targetMatch[1] || '').trim();
+        target = String(targetMatch[2] || '').trim();
+    }
+
+    return {
+        raw: String(tokenInput ?? '').trim(),
+        base,
+        target,
+        effects,
+        invisible
+    };
+}
+
+function composeDecoratedToken(meta) {
+    const safeBase = String(meta?.base || '').trim();
+    if (!safeBase) return '-';
+
+    let out = safeBase;
+    const target = String(meta?.target || '').trim();
+    if (target && /^(exit|back|bck|back_level)$/i.test(safeBase)) {
+        out += `[${target}]`;
+    }
+
+    const effects = String(meta?.effects || '').trim();
+    if (effects) {
+        out += `(${effects})`;
+    }
+
+    if (meta?.invisible) {
+        out += '.';
+    }
+    return out;
+}
+
+function getRenderableTokenBase(tokenInput) {
+    return parseDecoratedToken(tokenInput).base || String(tokenInput || '').trim();
+}
+
+function splitEffectsList(text) {
+    const raw = String(text || '').trim();
+    if (!raw) return [];
+    const out = [];
+    let cur = '';
+    let braceDepth = 0;
+    for (let i = 0; i < raw.length; i++) {
+        const ch = raw[i];
+        if (ch === '{') braceDepth++;
+        if (ch === '}') braceDepth = Math.max(0, braceDepth - 1);
+        if (ch === ',' && braceDepth === 0) {
+            if (cur.trim()) out.push(cur.trim());
+            cur = '';
+            continue;
+        }
+        cur += ch;
+    }
+    if (cur.trim()) out.push(cur.trim());
+    return out;
+}
+
+function parseEffectEntry(entry) {
+    const raw = String(entry || '').trim();
+    if (!raw) return { name: '', options: {} };
+    const match = raw.match(/^([a-zA-Z0-9_\-]+)(?:\{(.*)\})?$/);
+    if (!match) return { name: raw.toLowerCase(), options: {} };
+
+    const name = String(match[1] || '').trim().toLowerCase();
+    const body = String(match[2] || '').trim();
+    if (!body) return { name, options: {} };
+
+    const options = {};
+    body.split(/[;,]/).forEach((piece) => {
+        const token = String(piece || '').trim();
+        if (!token) return;
+        const kv = token.split(/[:=]/);
+        const key = String(kv[0] || '').trim();
+        const value = String(kv.slice(1).join(':') || '').trim();
+        if (!key || !value) return;
+        options[key] = value;
+    });
+
+    return { name, options };
+}
+
+function clearGuidedEffectOptionInputs() {
+    [
+        'selectedLampRadius',
+        'selectedLampColor',
+        'selectedPulseScale',
+        'selectedPulseDuration',
+        'selectedFloatAmplitude',
+        'selectedFloatDuration',
+        'selectedHaloRadius',
+        'selectedHaloColor',
+        'selectedOutlineThickness',
+        'selectedOutlineColor'
+    ].forEach((id) => {
+        const node = el(id);
+        if (node) node.value = '';
+    });
+}
+
+function buildEffectEntry(name, options = {}) {
+    const keys = Object.keys(options).filter((k) => String(options[k] || '').trim() !== '');
+    if (!keys.length) return name;
+    const body = keys.map((k) => `${k}:${String(options[k]).trim()}`).join(';');
+    return `${name}{${body}}`;
+}
+
+function buildSelectedEffectsFromControls() {
+    const known = [];
+    if (el('selectedFxLamp')?.checked) {
+        known.push(buildEffectEntry('lamp', {
+            radiusTiles: el('selectedLampRadius')?.value,
+            color: el('selectedLampColor')?.value
+        }));
+    }
+    if (el('selectedFxPulse')?.checked) {
+        known.push(buildEffectEntry('pulse', {
+            scale: el('selectedPulseScale')?.value,
+            duration: el('selectedPulseDuration')?.value
+        }));
+    }
+    if (el('selectedFxFloat')?.checked) {
+        known.push(buildEffectEntry('float', {
+            amplitudeTiles: el('selectedFloatAmplitude')?.value,
+            duration: el('selectedFloatDuration')?.value
+        }));
+    }
+    if (el('selectedFxHalo')?.checked) {
+        known.push(buildEffectEntry('halo', {
+            radiusTiles: el('selectedHaloRadius')?.value,
+            color: el('selectedHaloColor')?.value
+        }));
+    }
+    if (el('selectedFxOutline')?.checked) {
+        known.push(buildEffectEntry('outline', {
+            thickness: el('selectedOutlineThickness')?.value,
+            color: el('selectedOutlineColor')?.value
+        }));
+    }
+
+    const custom = splitEffectsList(el('selectedTokenEffectsCustom')?.value || '');
+    const combined = [...known, ...custom].filter(Boolean);
+    return combined.join(',');
+}
+
+function refreshSelectedEffectsPreview() {
+    const toggle = (checkId, groupId) => {
+        const group = el(groupId);
+        if (!group) return;
+        const enabled = !!el(checkId)?.checked;
+        group.style.display = enabled ? '' : 'none';
+    };
+
+    toggle('selectedFxLamp', 'selectedLampOptions');
+    toggle('selectedFxPulse', 'selectedPulseOptions');
+    toggle('selectedFxFloat', 'selectedFloatOptions');
+    toggle('selectedFxHalo', 'selectedHaloOptions');
+    toggle('selectedFxOutline', 'selectedOutlineOptions');
+
+    const preview = el('selectedTokenEffects');
+    if (!preview) return;
+    preview.value = buildSelectedEffectsFromControls();
+}
+
+function buildObjectsEffectsFromWizard() {
+    const out = {};
+
+    const pushIfEnabled = (name, enabledId, fieldMap) => {
+        if (!el(enabledId)?.checked) return;
+        const cfg = { enabled: true };
+        Object.keys(fieldMap).forEach((k) => {
+            const node = el(fieldMap[k]);
+            const raw = String(node?.value ?? '').trim();
+            if (!raw) return;
+            const num = Number(raw);
+            cfg[k] = Number.isFinite(num) ? num : raw;
+        });
+        out[name] = cfg;
+    };
+
+    pushIfEnabled('lamp', 'objFxLampEnabled', {
+        radiusTiles: 'objFxLampRadius',
+        color: 'objFxLampColor'
+    });
+    pushIfEnabled('pulse', 'objFxPulseEnabled', {
+        scale: 'objFxPulseScale',
+        duration: 'objFxPulseDuration'
+    });
+    pushIfEnabled('float', 'objFxFloatEnabled', {
+        amplitudeTiles: 'objFxFloatAmplitude',
+        duration: 'objFxFloatDuration'
+    });
+    pushIfEnabled('halo', 'objFxHaloEnabled', {
+        radiusTiles: 'objFxHaloRadius',
+        color: 'objFxHaloColor'
+    });
+    pushIfEnabled('outline', 'objFxOutlineEnabled', {
+        thickness: 'objFxOutlineThickness',
+        color: 'objFxOutlineColor'
+    });
+
+    return out;
+}
+
+function applyObjectsEffectsWizard(objectsEffects) {
+    const root = (objectsEffects && typeof objectsEffects === 'object' && !Array.isArray(objectsEffects)) ? objectsEffects : {};
+
+    const applyOne = (name, enabledId, fields) => {
+        const cfg = (root[name] && typeof root[name] === 'object' && !Array.isArray(root[name])) ? root[name] : null;
+        const enabled = !!(cfg && cfg.enabled !== false);
+        if (el(enabledId)) el(enabledId).checked = enabled;
+        Object.keys(fields).forEach((k) => {
+            const node = el(fields[k]);
+            if (!node) return;
+            node.value = cfg && cfg[k] != null ? String(cfg[k]) : '';
+        });
+    };
+
+    applyOne('lamp', 'objFxLampEnabled', {
+        radiusTiles: 'objFxLampRadius',
+        color: 'objFxLampColor'
+    });
+    applyOne('pulse', 'objFxPulseEnabled', {
+        scale: 'objFxPulseScale',
+        duration: 'objFxPulseDuration'
+    });
+    applyOne('float', 'objFxFloatEnabled', {
+        amplitudeTiles: 'objFxFloatAmplitude',
+        duration: 'objFxFloatDuration'
+    });
+    applyOne('halo', 'objFxHaloEnabled', {
+        radiusTiles: 'objFxHaloRadius',
+        color: 'objFxHaloColor'
+    });
+    applyOne('outline', 'objFxOutlineEnabled', {
+        thickness: 'objFxOutlineThickness',
+        color: 'objFxOutlineColor'
+    });
+}
+
 class LevelEditorScene extends Phaser.Scene {
     constructor() {
         super('LevelEditorScene');
         this.cols = 12;
         this.rows = 12;
-        this.cellSize = 48;
+        this.cellSize = 64;
+        this.baseCellSize = 64; // cell size without zoom (overridable by slider)
+        this.zoom = 2; // default start zoom (2x) to show enlarged map
         this.gridOffsetX = 18;
         this.gridOffsetY = 18;
+        this.gridPadding = 18; // fixed padding used for layout and scrolling math
         // these will be computed from the actual canvas size on create / resize
         this.gridAreaWidth = 0;
         this.gridAreaHeight = 0;
         this.cells = [];
         this.selectedCell = null;
+        this.selectedTokenIndex = 0;
         this.paletteItems = [];
-        this.lastBrushToken = 'w00';
+        this.lastBrushToken = 'w0000';
+        this._dragNoTile = false; // true when user holds '.' while dragging to mark invisible
     }
 
     preload() {
         this.load
-            .spritesheet('tiles', 'images/tiles.png', { frameWidth: 64, frameHeight: 64 })
-            .spritesheet('wall_tiles', 'images/wall.png', { frameWidth: 64, frameHeight: 64 })
-            .spritesheet('objects', 'images/obj_game.png', { frameWidth: 64, frameHeight: 64 })
-            .spritesheet('ghost_anim', 'images/ghost.png', { frameWidth: 64, frameHeight: 64 })
-            .spritesheet('bat_anim', 'images/batpng.png', { frameWidth: 64, frameHeight: 64 });
+            .spritesheet('tiles', `${COMMON_ASSETS_DIR}/tiles.png`, { frameWidth: 64, frameHeight: 64 })
+            .spritesheet('wall_tiles', `${COMMON_ASSETS_DIR}/wall_completed.png`, { frameWidth: 64, frameHeight: 64 })
+            .spritesheet('objects', `${COMMON_ASSETS_DIR}/obj_game.png`, { frameWidth: 64, frameHeight: 64 })
+            .spritesheet('ghost_anim', `${COMMON_ASSETS_DIR}/ghost.png`, { frameWidth: 64, frameHeight: 64 })
+            .spritesheet('bat_anim', `${COMMON_ASSETS_DIR}/batpng.png`, { frameWidth: 64, frameHeight: 64 });
+
+        // preload possible game backgrounds so the editor can offer them
+        // Fallback default background (game_bg.png is not present in this repo)
+        this.load.image('game_bg', `${COMMON_ASSETS_DIR}/attract_bg.png`);
+        // load all discovered numeric level backgrounds
+        try {
+            (AVAILABLE_BG_LEVELS || []).forEach((n) => {
+                this.load.image(`game_bg_${String(n)}`, `${COMMON_ASSETS_DIR}/level${String(n)}.png`);
+            });
+        } catch (e) { /* ignore */ }
     }
 
     create() {
         this.input.mouse?.disableContextMenu();
-        this.cameras.main.setBackgroundColor('#091022');
+        // Darker background to increase tile visibility
+        this.cameras.main.setBackgroundColor('#03050a');
 
         this.gridLayer = this.add.container(0, 0);
         this.paletteLayer = this.add.container(0, 0);
         this.selectionLayer = this.add.container(0, 0);
 
         this.resetGrid(this.cols, this.rows);
+        // initialize tile size slider (if present in DOM)
+        try {
+            const tileSlider = el('tileSizeSlider');
+            const tileValue = el('tileSizeValue');
+            if (tileSlider) {
+                // set initial display
+                tileValue && (tileValue.textContent = `${tileSlider.value} px`);
+                tileSlider.addEventListener('input', () => {
+                    try {
+                        tileValue && (tileValue.textContent = `${tileSlider.value} px`);
+                        const v = Number(tileSlider.value) || 64;
+                        this.setTileBaseSize(v);
+                        // If auto-grid-from-bg is enabled, recompute cols/rows based on the
+                        // background image natural size and the new tile size. Otherwise
+                        // update background without auto-grid.
+                        try {
+                            const autoChk = el('autoGridFromBg');
+                            if (autoChk && autoChk.checked) {
+                                this.updateEditorBackgroundImage();
+                            } else {
+                                this.updateEditorBackgroundImage(true);
+                            }
+                        } catch (e) { try { this.updateEditorBackgroundImage(true); } catch(e){} }
+                    } catch (e) { }
+                });
+            }
+        } catch (e) { }
         this.createPalette();
         this.setupInputHandlers();
+        this.setupScrollbars();
         this.renderGrid();
+
+        // populate background select with available backgrounds
+        try {
+            this.populateBackgroundOptions();
+        } catch (e) {
+            // ignore
+        }
+        // ensure editor background image is created/updated
+        try { this.updateEditorBackgroundImage(); } catch (e) { /* ignore */ }
 
         // Recompute layout on resize (Phaser RESIZE mode will update this.scale)
         this.scale.on('resize', (gameSize) => {
@@ -234,7 +1438,268 @@ class LevelEditorScene extends Phaser.Scene {
         window.dispatchEvent(new CustomEvent('level-editor-ready'));
     }
 
-    resetGrid(cols, rows) {
+    populateBackgroundOptions() {
+        const sel = el('levelBackground');
+        if (!sel) return;
+        // clear existing options
+        sel.innerHTML = '';
+        const addOption = (value, label) => {
+            const o = document.createElement('option');
+            o.value = value;
+            o.textContent = label;
+            sel.appendChild(o);
+        };
+
+        addOption('', '(default)');
+        // prefer numbered level backgrounds if textures exist
+        try {
+            (AVAILABLE_BG_LEVELS || []).forEach((n) => {
+                const key = `game_bg_${String(n)}`;
+                if (this.textures.exists(key)) {
+                    addOption(String(n), `level${String(n)}`);
+                }
+            });
+        } catch (e) { /* ignore */ }
+        // add generic game_bg if present and not already represented
+        if (this.textures.exists('game_bg')) {
+            addOption('game_bg', 'game_bg');
+        }
+    }
+
+    getBackgroundKeyFromValue(val) {
+        if (!val) return null;
+        if (/^\d+$/.test(String(val))) {
+            const k = `game_bg_${String(val)}`;
+            return this.textures.exists(k) ? k : null;
+        }
+        if (this.textures.exists(val)) return val;
+        // fallback: try game_bg
+        return this.textures.exists('game_bg') ? 'game_bg' : null;
+    }
+
+    updateEditorBackgroundImage(skipAutoGrid = false) {
+        const show = !!el('showBackground')?.checked;
+        const showForeground = !!el('showForeground')?.checked;
+        const destroyEditorBackgrounds = () => {
+            try {
+                if (Array.isArray(this.editorBgImages)) {
+                    this.editorBgImages.forEach((img) => {
+                        try { img.destroy(); } catch (e) { }
+                    });
+                }
+            } catch (e) { }
+            this.editorBgImages = [];
+            this.editorBgImage = null;
+        };
+
+        const destroyEditorForegrounds = () => {
+            try {
+                if (Array.isArray(this.editorFgImages)) {
+                    this.editorFgImages.forEach((img) => {
+                        try { img.destroy(); } catch (e) { }
+                    });
+                }
+            } catch (e) { }
+            this.editorFgImages = [];
+            this.editorFgImage = null;
+        };
+
+        const resolveBgLayerSrc = (layer) => {
+            if (!layer) return '';
+            const srcRaw = layer.src;
+            if (typeof srcRaw === 'number') return String(srcRaw);
+            return String(srcRaw || '').trim();
+        };
+
+        const resolveBgTextureKey = (src, idx) => {
+            const raw = String(src || '').trim();
+            if (!raw) return null;
+            if (/^\d+$/.test(raw)) {
+                const numbered = `game_bg_${raw}`;
+                return this.textures.exists(numbered) ? numbered : null;
+            }
+            if (this.textures.exists(raw)) return raw;
+
+            const safeKey = `editor_bg_${idx}_${raw.replace(/[^a-z0-9_.-]+/gi, '_')}`;
+            if (this.textures.exists(safeKey)) return safeKey;
+
+            try {
+                this.load.image(safeKey, raw);
+                this.load.once('complete', () => {
+                    try { this.updateEditorBackgroundImage(skipAutoGrid); } catch (e) { }
+                });
+                this.load.start();
+            } catch (e) { }
+            return null;
+        };
+
+        const resolveFgLayerSrc = (layer) => {
+            if (!layer) return '';
+            return String(layer.src || '').trim();
+        };
+
+        const resolveFgTextureKey = (src, idx) => {
+            const raw = String(src || '').trim();
+            if (!raw) return null;
+            if (this.textures.exists(raw)) return raw;
+
+            const safeKey = `editor_fg_${idx}_${raw.replace(/[^a-z0-9_.-]+/gi, '_')}`;
+            if (this.textures.exists(safeKey)) return safeKey;
+
+            try {
+                this.load.image(safeKey, raw);
+                this.load.once('complete', () => {
+                    try { this.updateEditorBackgroundImage(skipAutoGrid); } catch (e) { }
+                });
+                this.load.start();
+            } catch (e) { }
+            return null;
+        };
+
+        const domLayers = readBackgroundLayersFromDOM();
+        let bgLayers = Array.isArray(domLayers) ? domLayers.slice() : [];
+        if (!bgLayers.length) {
+            const val = String(el('levelBackground')?.value ?? '').trim();
+            const fallbackKey = this.getBackgroundKeyFromValue(val);
+            if (fallbackKey) {
+                bgLayers = [{ src: fallbackKey, parallaxBgAlpha: 1, enabled: true }];
+            }
+        }
+
+        const enabledLayers = bgLayers.filter((ly) => ly && ly.enabled !== false && resolveBgLayerSrc(ly));
+
+        if (!show || !enabledLayers.length) {
+            destroyEditorBackgrounds();
+        } else {
+            const primaryLayer = enabledLayers[0];
+            const primaryKey = resolveBgTextureKey(resolveBgLayerSrc(primaryLayer), 0);
+            if (!primaryKey) {
+                destroyEditorBackgrounds();
+            } else {
+
+                // If an actual texture frame exists and the user requested auto-grid-from-bg,
+                // compute cols/rows from the natural background size assuming 64x64 cells.
+                // Passing `skipAutoGrid=true` prevents this behavior (useful when the user
+                // is only changing tile size and doesn't want cols/rows recomputed).
+                try {
+                    const autoChk = el('autoGridFromBg');
+                    if (!skipAutoGrid && autoChk && autoChk.checked) {
+                        const frame = this.textures.getFrame(primaryKey, 0);
+                        if (frame && Number.isFinite(frame.cutWidth) && Number.isFinite(frame.cutHeight)) {
+                            // Use the configured tile size (pixel dimension) when computing cols/rows.
+                            const tileSizeInput = Number(el('tileSizeSlider')?.value) || 64;
+                            const nCols = clamp(Math.floor(Number(frame.cutWidth) / tileSizeInput), 4, 120);
+                            const nRows = clamp(Math.floor(Number(frame.cutHeight) / tileSizeInput), 4, 120);
+                            if (nCols > 0 && nRows > 0 && (nCols !== this.cols || nRows !== this.rows)) {
+                                const colsEl = el('gridCols');
+                                const rowsEl = el('gridRows');
+                                if (colsEl) colsEl.value = String(nCols);
+                                if (rowsEl) rowsEl.value = String(nRows);
+                                // Apply grid but skip bg update inside resetGrid to avoid recursion
+                                try { this.resetGrid(nCols, nRows, true); } catch (e) { /* ignore */ }
+                            }
+                        }
+                    }
+                } catch (e) {
+                    // ignore any issues while probing textures
+                }
+
+                const gridW = this.cellSize * this.cols;
+                const gridH = this.cellSize * this.rows;
+                destroyEditorBackgrounds();
+                this.editorBgImages = [];
+
+                const buildRepeatCount = (raw, span, step) => {
+                    const parsed = parseRepeatValue(raw, 1);
+                    if (parsed !== '*') return parsed;
+                    const safeStep = Math.max(1, Math.abs(step || span));
+                    return Math.max(1, Math.ceil(span / safeStep) + 2);
+                };
+
+                enabledLayers.forEach((layer, idx) => {
+                    const textureKey = resolveBgTextureKey(resolveBgLayerSrc(layer), idx);
+                    if (!textureKey) return;
+
+                    const alpha = parseNumber(layer.parallaxBgAlpha, 1);
+                    const offsetX = parseNumber(layer.offsetX ?? layer.left ?? layer.x ?? layer.positionX, 0);
+                    const offsetY = parseNumber(layer.offsetY ?? layer.top ?? layer.y ?? layer.positionY, 0);
+
+                    const stepX = parseNumber(layer.repeatStepX ?? layer.replicaStepX ?? layer.repeatOffsetX ?? layer.replicaOffsetX, gridW) || gridW;
+                    const stepY = parseNumber(layer.repeatStepY ?? layer.replicaStepY ?? layer.repeatOffsetY ?? layer.replicaOffsetY, gridH) || gridH;
+
+                    const countX = buildRepeatCount(layer.repeatX ?? layer.replicaX ?? layer.repeatCountX ?? layer.replicaCountX ?? 1, gridW + Math.abs(offsetX), stepX);
+                    const countY = buildRepeatCount(layer.repeatY ?? layer.replicaY ?? layer.repeatCountY ?? layer.replicaCountY ?? 1, gridH + Math.abs(offsetY), stepY);
+
+                    for (let iy = 0; iy < countY; iy++) {
+                        for (let ix = 0; ix < countX; ix++) {
+                            const img = this.add.image(0, 0, textureKey).setDepth(-500 - idx);
+                            const x = this.gridOffsetX + offsetX + (stepX * ix) + gridW / 2;
+                            const y = this.gridOffsetY + offsetY + (stepY * iy) + gridH / 2;
+                            img.setDisplaySize(gridW, gridH);
+                            img.setPosition(x, y);
+                            img.setAlpha(clamp(alpha, 0, 1));
+                            this.editorBgImages.push(img);
+                        }
+                    }
+                });
+
+                this.editorBgImage = this.editorBgImages.length ? this.editorBgImages[0] : null;
+            }
+        }
+        const gridW = this.cellSize * this.cols;
+        const gridH = this.cellSize * this.rows;
+        const buildRepeatCount = (raw, span, step) => {
+            const parsed = parseRepeatValue(raw, 1);
+            if (parsed !== '*') return parsed;
+            const safeStep = Math.max(1, Math.abs(step || span));
+            return Math.max(1, Math.ceil(span / safeStep) + 2);
+        };
+
+        const domFgLayers = readForegroundLayersFromDOM();
+        const enabledFgLayers = Array.isArray(domFgLayers)
+            ? domFgLayers.filter((ly) => ly && ly.enabled !== false && resolveFgLayerSrc(ly))
+            : [];
+
+        destroyEditorForegrounds();
+        if (!showForeground || !enabledFgLayers.length) {
+            return;
+        }
+
+        enabledFgLayers.forEach((layer, idx) => {
+            const textureKey = resolveFgTextureKey(resolveFgLayerSrc(layer), idx);
+            if (!textureKey) return;
+
+            const alpha = parseNumber(layer.parallaxFgAlpha, 1);
+            const offsetX = parseNumber(layer.offsetX ?? layer.left ?? layer.x ?? layer.positionX, 0);
+            const offsetY = parseNumber(layer.offsetY ?? layer.top ?? layer.y ?? layer.positionY, 0);
+
+            const stepX = parseNumber(layer.repeatStepX ?? layer.replicaStepX ?? layer.repeatOffsetX ?? layer.replicaOffsetX, gridW) || gridW;
+            const stepY = parseNumber(layer.repeatStepY ?? layer.replicaStepY ?? layer.repeatOffsetY ?? layer.replicaOffsetY, gridH) || gridH;
+
+            const countX = buildRepeatCount(layer.repeatX ?? layer.replicaX ?? layer.repeatCountX ?? layer.replicaCountX ?? 1, gridW + Math.abs(offsetX), stepX);
+            const countY = buildRepeatCount(layer.repeatY ?? layer.replicaY ?? layer.repeatCountY ?? layer.replicaCountY ?? 1, gridH + Math.abs(offsetY), stepY);
+
+            for (let iy = 0; iy < countY; iy++) {
+                for (let ix = 0; ix < countX; ix++) {
+                    const img = this.add.image(0, 0, textureKey).setDepth(500 + idx);
+                    const x = this.gridOffsetX + offsetX + (stepX * ix) + gridW / 2;
+                    const y = this.gridOffsetY + offsetY + (stepY * iy) + gridH / 2;
+                    img.setDisplaySize(gridW, gridH);
+                    img.setPosition(x, y);
+                    img.setAlpha(clamp(alpha, 0, 1));
+                    this.editorFgImages.push(img);
+                }
+            }
+        });
+
+        this.editorFgImage = this.editorFgImages.length ? this.editorFgImages[0] : null;
+    }
+
+    resetGrid(cols, rows, skipBgUpdate = false) {
+        const prevCells = Array.isArray(this.cells) ? this.cells : [];
+        const prevRows = Number(this.rows) || 0;
+        const prevCols = Number(this.cols) || 0;
+
         this.cols = clamp(Math.floor(cols), 4, 40);
         this.rows = clamp(Math.floor(rows), 4, 40);
 
@@ -251,7 +1716,9 @@ class LevelEditorScene extends Phaser.Scene {
         this.gridAreaWidth = availW;
         this.gridAreaHeight = availH;
 
-        this.cellSize = clamp(Math.floor(Math.min(this.gridAreaWidth / this.cols, this.gridAreaHeight / this.rows)), 20, 64);
+        // compute base cell size (without zoom) and apply current zoom
+        this.baseCellSize = clamp(Math.floor(Math.min(this.gridAreaWidth / this.cols, this.gridAreaHeight / this.rows)), 20, 64);
+        this.cellSize = clamp(Math.floor(this.baseCellSize * this.zoom), 8, 256);
 
         // compute actual grid pixel dimensions
         const gridW = this.cellSize * this.cols;
@@ -268,12 +1735,127 @@ class LevelEditorScene extends Phaser.Scene {
             startY: 24
         };
 
-        this.cells = Array.from({ length: this.rows }, () => Array.from({ length: this.cols }, () => ({
-            base: '-',
-            reveal: null
-        })));
+        this.cells = Array.from({ length: this.rows }, (_, r) => Array.from({ length: this.cols }, (_, c) => {
+            const prevCell = (r < prevRows && c < prevCols && prevCells[r] && prevCells[r][c]) ? prevCells[r][c] : null;
+            if (prevCell && typeof prevCell === 'object') {
+                return {
+                    base: normalizeToken(prevCell.base ?? '-'),
+                    reveal: prevCell.reveal ? normalizeToken(prevCell.reveal) : null
+                };
+            }
+            return {
+                base: '-',
+                reveal: null
+            };
+        }));
         this.selectedCell = null;
         this.renderGrid();
+        // update background image after layout changes (unless explicitly skipped)
+        if (!skipBgUpdate) {
+            try { this.updateEditorBackgroundImage(); } catch (e) { /* ignore */ }
+        }
+        try { this.updateScrollbars(); } catch (e) { /* ignore */ }
+    }
+
+    // Recompute layout when zoom changes without resetting cells
+    setZoom(zoom) {
+        const z = Math.max(0.2, Math.min(4, Number(zoom) || 1));
+        this.zoom = z;
+        // recompute display cellSize from baseCellSize
+        this.cellSize = clamp(Math.floor(this.baseCellSize * this.zoom), 8, 256);
+        // recompute grid offsets using previously computed gridAreaWidth/Height
+        const gridW = this.cellSize * this.cols;
+        const gridH = this.cellSize * this.rows;
+        const totalW = Math.max(200, Math.floor(this.scale.width || this.sys.game.config.width || 1000));
+        const totalH = Math.max(100, Math.floor(this.scale.height || this.sys.game.config.height || 700));
+        const padding = 18;
+        this.gridOffsetX = Math.max(padding, Math.floor((Math.max(64, totalW - (this.paletteArea?.width || 360) - padding * 3) - gridW) / 2) + padding);
+        this.gridOffsetY = Math.max(padding, Math.floor((totalH - gridH) / 2));
+        // update background image and re-render
+        // Zoom should not trigger auto-grid recomputation, otherwise cells may be reset.
+        try { this.updateEditorBackgroundImage(true); } catch (e) {}
+        this.renderGrid();
+        // update scrollbar ranges after zooming/resizing cells
+        try { this.updateScrollbars(); } catch (e) { /* ignore */ }
+    }
+
+    setTileBaseSize(size) {
+        const s = clamp(Math.floor(Number(size) || 64), 8, 256);
+        this.baseCellSize = s;
+        // recompute cellSize using current zoom
+        this.cellSize = clamp(Math.floor(this.baseCellSize * this.zoom), 8, 256);
+        // recompute offsets similar to setZoom
+        const totalW = Math.max(200, Math.floor(this.scale.width || this.sys.game.config.width || 1000));
+        const totalH = Math.max(100, Math.floor(this.scale.height || this.sys.game.config.height || 700));
+        const padding = 18;
+        const gridW = this.cellSize * this.cols;
+        const gridH = this.cellSize * this.rows;
+        this.gridOffsetX = Math.max(padding, Math.floor((Math.max(64, totalW - (this.paletteArea?.width || 360) - padding * 3) - gridW) / 2) + padding);
+        this.gridOffsetY = Math.max(padding, Math.floor((totalH - gridH) / 2));
+        try { this.updateEditorBackgroundImage(); } catch (e) {}
+        this.renderGrid();
+        try { this.updateScrollbars(); } catch (e) { }
+    }
+
+    setupScrollbars() {
+        // link DOM scroll inputs (created in HTML) to pan the grid
+        const h = el('hScroll');
+        const v = el('vScroll');
+        if (!h && !v) return;
+
+        const onH = () => {
+            try {
+                const val = Number(h.value) || 0;
+                const gridW = this.cellSize * this.cols;
+                const max = Math.max(0, gridW - (this.gridAreaWidth || 0));
+                const clamped = clamp(val, 0, max);
+                this.gridOffsetX = this.gridPadding - clamped;
+                this.renderGrid();
+            } catch (e) { /* ignore */ }
+        };
+
+        const onV = () => {
+            try {
+                const val = Number(v.value) || 0;
+                const gridH = this.cellSize * this.rows;
+                const max = Math.max(0, gridH - (this.gridAreaHeight || 0));
+                const clamped = clamp(val, 0, max);
+                this.gridOffsetY = this.gridPadding - clamped;
+                this.renderGrid();
+            } catch (e) { /* ignore */ }
+        };
+
+        if (h) {
+            h.addEventListener('input', onH);
+            h.addEventListener('change', onH);
+        }
+        if (v) {
+            v.addEventListener('input', onV);
+            v.addEventListener('change', onV);
+        }
+
+        // ensure initial ranges are set
+        this.updateScrollbars();
+    }
+
+    updateScrollbars() {
+        const h = el('hScroll');
+        const v = el('vScroll');
+        const gridW = this.cellSize * this.cols;
+        const gridH = this.cellSize * this.rows;
+        const maxX = Math.max(0, gridW - (this.gridAreaWidth || 0));
+        const maxY = Math.max(0, gridH - (this.gridAreaHeight || 0));
+        if (h) {
+            h.max = String(Math.floor(maxX));
+            // derive current scroll value from gridOffsetX
+            const scrollX = clamp(Math.floor(this.gridPadding - this.gridOffsetX), 0, Math.floor(maxX));
+            h.value = String(scrollX);
+        }
+        if (v) {
+            v.max = String(Math.floor(maxY));
+            const scrollY = clamp(Math.floor(this.gridPadding - this.gridOffsetY), 0, Math.floor(maxY));
+            v.value = String(scrollY);
+        }
     }
 
     onResize(width, height) {
@@ -282,6 +1864,7 @@ class LevelEditorScene extends Phaser.Scene {
             this.resetGrid(this.cols, this.rows);
             this.createPalette();
             this.renderGrid();
+            try { this.updateEditorBackgroundImage(); } catch (e) { /* ignore */ }
         } catch (e) {
             // ignore during early initialization
         }
@@ -293,12 +1876,18 @@ class LevelEditorScene extends Phaser.Scene {
             if (!cell) return;
 
             this.selectedCell = cell;
+            try {
+                const rawParts = String(this.cells[cell.row]?.[cell.col]?.base || '').split('/').map((s) => s.trim()).filter(Boolean);
+                this.selectedTokenIndex = Math.max(0, rawParts.length - 1);
+            } catch (e) {
+                this.selectedTokenIndex = 0;
+            }
             this.updateSelectedCellInfo();
 
             if (pointer.rightButtonDown()) {
                 this.rotateSelectedCell(1);
             } else if (this.lastBrushToken) {
-                this.placeToken(cell.col, cell.row, this.lastBrushToken);
+                this.placeToken(cell.col, cell.row, this.lastBrushToken, { noTile: !!this._dragNoTile });
             }
             this.renderGrid();
         });
@@ -321,6 +1910,61 @@ class LevelEditorScene extends Phaser.Scene {
             this.renderGrid();
         });
 
+        // Mirror: 'H' = horizontal flip (flipX), 'V' = vertical flip (flipY)
+        this.input.keyboard.on('keydown-H', () => {
+            this.mirrorSelectedCell('h');
+            this.renderGrid();
+        });
+
+        this.input.keyboard.on('keydown-V', () => {
+            this.mirrorSelectedCell('v');
+            this.renderGrid();
+        });
+
+        // Track '.' key for marking dragged items as invisible (noTile)
+        try {
+            window.addEventListener('keydown', (ev) => {
+                try {
+                    if (ev && ev.key === '.') {
+                        // hold modifier for dragging
+                        this._dragNoTile = true;
+                        // if a cell is selected, toggle notile on its last token
+                        if (this.selectedCell) {
+                            try {
+                                const { row, col } = this.selectedCell;
+                                const cell = this.cells[row] && this.cells[row][col] ? this.cells[row][col] : null;
+                                if (cell && cell.base && cell.base !== '-') {
+                                    const parts = String(cell.base).split('/').map(s => s.trim()).filter(Boolean);
+                                    if (parts.length) {
+                                        const last = parts[parts.length - 1];
+                                        if (String(last).endsWith('.')) {
+                                            // remove trailing dot
+                                            parts[parts.length - 1] = String(last).slice(0, -1);
+                                        } else {
+                                            parts[parts.length - 1] = String(last) + '.';
+                                        }
+                                        cell.base = parts.join('/');
+                                        this.updateSelectedCellInfo();
+                                        this.renderGrid();
+                                    }
+                                }
+                            } catch (e) { }
+                        }
+                    }
+                } catch (e) { }
+            });
+            window.addEventListener('keyup', (ev) => {
+                try {
+                    if (ev && ev.key === '.') this._dragNoTile = false;
+                } catch (e) { }
+            });
+        } catch (e) { }
+
+        // Open wall variant picker with 'W' (was 'V' before; 'V' now flips vertical)
+        this.input.keyboard.on('keydown-W', () => {
+            this.toggleWallVariantPicker();
+        });
+
         this.input.keyboard.on('keydown-DELETE', () => {
             this.clearSelectedCell();
         });
@@ -332,6 +1976,11 @@ class LevelEditorScene extends Phaser.Scene {
     }
 
     createPalette() {
+        // If DOM palette exists, skip drawing the in-canvas palette to avoid duplication.
+        if (typeof document !== 'undefined' && document.getElementById('domPalette-tiles')) {
+            return;
+        }
+
         this.paletteLayer.removeAll(true);
         this.paletteItems = [];
 
@@ -376,28 +2025,67 @@ class LevelEditorScene extends Phaser.Scene {
             container.setInteractive(new Phaser.Geom.Rectangle(-58, -24, 116, 48), Phaser.Geom.Rectangle.Contains);
             this.input.setDraggable(container);
 
-            container.on('pointerdown', () => {
+            container.on('pointerdown', (pointer) => {
                 this.lastBrushToken = container.getData('token');
+                try {
+                    // start drag immediately so a single press allows dragging
+                    if (this.input && typeof this.input.startDrag === 'function') {
+                        this.input.startDrag(container, pointer);
+                    }
+                } catch (e) {
+                    // ignore if startDrag not available
+                }
             });
 
             container.on('dragstart', () => {
                 container.setScale(1.06);
                 container.setAlpha(0.9);
                 this.lastBrushToken = container.getData('token');
+                // mark initial noTile state from global flag
+                try { container.setData('noTile', !!this._dragNoTile); } catch (e) { }
             });
 
             container.on('drag', (_pointer, dragX, dragY) => {
-                container.setPosition(dragX, dragY);
+                try {
+                    // snap visual while dragging to nearest cell center for precise placement
+                    const localX = dragX - this.gridOffsetX;
+                    const localY = dragY - this.gridOffsetY;
+                    const col = Math.floor(localX / this.cellSize);
+                    const row = Math.floor(localY / this.cellSize);
+                    if (col >= 0 && col < this.cols && row >= 0 && row < this.rows) {
+                        const snapX = this.gridOffsetX + col * this.cellSize + this.cellSize / 2;
+                        const snapY = this.gridOffsetY + row * this.cellSize + this.cellSize / 2;
+                        container.setPosition(snapX, snapY);
+                    } else {
+                        container.setPosition(dragX, dragY);
+                    }
+                } catch (e) {
+                    container.setPosition(dragX, dragY);
+                }
             });
 
             container.on('dragend', (pointer) => {
-                const cell = this.getGridCellFromPointer(pointer.worldX, pointer.worldY);
-                if (cell) {
-                    this.selectedCell = cell;
-                    this.placeToken(cell.col, cell.row, container.getData('token'));
-                    this.updateSelectedCellInfo();
-                    this.renderGrid();
-                }
+                try {
+                    // use the (possibly snapped) container position to determine target cell
+                    const worldX = container.x;
+                    const worldY = container.y;
+                    const cell = this.getGridCellFromPointer(worldX, worldY);
+                    if (cell) {
+                        this.selectedCell = cell;
+                        // respect noTile modifier on the dragged container
+                        const tok = container.getData('token');
+                        const noTile = !!container.getData('noTile') || !!this._dragNoTile;
+                        this.placeToken(cell.col, cell.row, tok, { noTile });
+                        try {
+                            const rawParts = String(this.cells[cell.row]?.[cell.col]?.base || '').split('/').map((s) => s.trim()).filter(Boolean);
+                            this.selectedTokenIndex = Math.max(0, rawParts.length - 1);
+                        } catch (e) {
+                            this.selectedTokenIndex = 0;
+                        }
+                        this.updateSelectedCellInfo();
+                        this.renderGrid();
+                    }
+                } catch (e) { /* ignore */ }
                 container.setPosition(container.getData('originX'), container.getData('originY'));
                 container.setScale(1);
                 container.setAlpha(1);
@@ -419,20 +2107,41 @@ class LevelEditorScene extends Phaser.Scene {
         return { col, row };
     }
 
-    placeToken(col, row, token) {
+    placeToken(col, row, token, opts = {}) {
         if (!this.cells[row] || !this.cells[row][col]) return;
         const cell = this.cells[row][col];
         const useReveal = !!el('revealMode')?.checked;
         const normalized = normalizeToken(token);
-
+        // If reveal mode is active, set reveal token (legacy support)
         if (useReveal) {
             cell.reveal = normalized === '-' ? null : normalized;
             return;
         }
 
-        cell.base = normalized;
-        if (normalized === '-') {
+        // Support multiple objects in same cell by appending with '/'
+        const noTile = !!opts.noTile;
+        const tokenToPlace = noTile ? `${normalized}.` : normalized;
+
+        if (!cell.base || cell.base === '-' ) {
+            cell.base = tokenToPlace;
             cell.reveal = null;
+            this.selectedTokenIndex = 0;
+            return;
+        }
+
+        // Append new token to existing base separated by '/'
+        // Avoid duplicating same token consecutively
+        try {
+            const parts = String(cell.base || '').split('/').map(s => s.trim()).filter(Boolean);
+            const last = parts.length ? parts[parts.length - 1] : null;
+            if (last !== tokenToPlace) {
+                parts.push(tokenToPlace);
+                cell.base = parts.join('/');
+                this.selectedTokenIndex = Math.max(0, parts.length - 1);
+            }
+        } catch (e) {
+            cell.base = `${cell.base}/${tokenToPlace}`;
+            this.selectedTokenIndex = Math.max(0, String(cell.base).split('/').filter(Boolean).length - 1);
         }
     }
 
@@ -462,19 +2171,141 @@ class LevelEditorScene extends Phaser.Scene {
         cell.base = rotateWallToken(cell.base, delta);
     }
 
+    mirrorSelectedCell(axis) {
+        if (!this.selectedCell) return;
+        const { row, col } = this.selectedCell;
+        const cell = this.cells[row]?.[col];
+        if (!cell) return;
+
+        const useReveal = !!el('revealMode')?.checked;
+        const targetKey = useReveal && cell.reveal ? 'reveal' : 'base';
+        const token = normalizeToken(cell[targetKey] || '-');
+        const match = token.match(WALL_TOKEN_REGEX);
+        if (!match) return;
+        const r = Number(match[1]);
+        const c = Number(match[2]);
+        const currentRot = Number(match[3]);
+        const currentFlip = String(match[4] ?? '0').toLowerCase();
+        const desired = axis === 'h' ? 'h' : 'v';
+        // Toggle: if already flipped on the same axis, remove flip (0); otherwise set to desired
+        const newFlip = currentFlip === desired ? '0' : desired;
+        cell[targetKey] = `w${r}${c}${currentRot}${newFlip}`;
+    }
+
+    toggleWallVariantPicker() {
+        if (this.variantPickerContainer) {
+            this.closeWallVariantPicker();
+            return;
+        }
+        this.showWallVariantPicker();
+    }
+
+    showWallVariantPicker() {
+        if (!this.selectedCell) return;
+        const { row: selRow, col: selCol } = this.selectedCell;
+        const cell = this.cells[selRow]?.[selCol];
+        if (!cell) return;
+
+        // only for wall tokens
+        const baseToken = normalizeToken(cell.base || '-');
+        if (!WALL_TOKEN_REGEX.test(baseToken)) return;
+
+        const startX = (this.paletteArea && Number.isFinite(this.paletteArea.startX)) ? this.paletteArea.startX : 880;
+        const startY = (this.paletteArea && Number.isFinite(this.paletteArea.startY)) ? this.paletteArea.startY + 280 : 120;
+
+        const picker = this.add.container(startX, startY);
+        picker.setDepth(2000);
+
+        const cols = 6;
+        const rows = 4;
+        const iconSize = 40;
+        const padding = 6;
+
+        const bgW = cols * (iconSize + padding) + padding;
+        const bgH = rows * (iconSize + padding) + padding;
+        const bg = this.add.rectangle(0, 0, bgW, bgH, 0x061025, 0.95).setOrigin(0);
+        bg.setStrokeStyle(2, 0x2b4f86, 1);
+        picker.add(bg);
+
+        for (let r = 0; r < rows; r++) {
+            for (let c = 0; c < cols; c++) {
+                const px = padding + c * (iconSize + padding);
+                const py = padding + r * (iconSize + padding);
+                const token = `w${r}${c}00`;
+                const cellBox = this.add.container(px + iconSize / 2, py + iconSize / 2);
+                const box = this.add.rectangle(0, 0, iconSize, iconSize, 0x102449, 0.95).setStrokeStyle(1, 0x2b4f86, 1);
+                cellBox.add(box);
+                // draw variant visual (no rotation)
+                this.addTokenVisual(cellBox, token, 0, 0, iconSize - 8);
+                cellBox.setSize(iconSize, iconSize);
+                cellBox.setInteractive(new Phaser.Geom.Rectangle(-iconSize/2, -iconSize/2, iconSize, iconSize), Phaser.Geom.Rectangle.Contains);
+                cellBox.on('pointerdown', () => {
+                    // preserve existing rotation if any
+                    const current = normalizeToken(cell.base || '-');
+                    const m = current.match(WALL_TOKEN_REGEX);
+                    const currentRot = m ? Number(m[3]) : 0;
+                    const currentFlip = m ? String(m[4]).toLowerCase() : '0';
+                    cell.base = `w${r}${c}${currentRot}${currentFlip}`;
+                    this.closeWallVariantPicker();
+                    this.renderGrid();
+                });
+                picker.add(cellBox);
+            }
+        }
+
+        // close on outside click
+        const outsideHandler = (pointer) => {
+            const worldX = pointer.worldX;
+            const worldY = pointer.worldY;
+            const localX = worldX - picker.x;
+            const localY = worldY - picker.y;
+            if (localX < 0 || localY < 0 || localX > bgW || localY > bgH) {
+                this.input.off('pointerdown', outsideHandler);
+                this.closeWallVariantPicker();
+            }
+        };
+        this.input.on('pointerdown', outsideHandler);
+
+        this.variantPickerContainer = picker;
+    }
+
+    closeWallVariantPicker() {
+        if (!this.variantPickerContainer) return;
+        try { this.variantPickerContainer.destroy(true); } catch (e) { /* ignore */ }
+        this.variantPickerContainer = null;
+    }
+
     tokenToRenderInfo(token) {
-        const normalized = normalizeToken(token);
+        const baseToken = getRenderableTokenBase(token);
+        const raw = String(baseToken ?? '').trim().toLowerCase();
+        if (/^exit(\[[^\]]+\])?$/.test(raw)) {
+            return { kind: 'obj', frame: OBJECT_FRAMES.exit };
+        }
+        if (/^(?:bck|back|back_level)(\[[^\]]+\])?$/.test(raw)) {
+            return { kind: 'tile', texture: 'tiles', frame: 5 };
+        }
+        const normalized = normalizeToken(baseToken);
         const wallMatch = normalized.match(WALL_TOKEN_REGEX);
         if (wallMatch) {
-            return {
-                kind: 'wall',
-                frame: Number(wallMatch[1]),
-                rot: Number(wallMatch[2])
-            };
-        }
+                const row = Number(wallMatch[1]);
+                const col = Number(wallMatch[2]);
+                const rot = Number(wallMatch[3]);
+                const flip = String(wallMatch[4] ?? '0').toLowerCase();
+                return {
+                    kind: 'wall',
+                    frame: row * 6 + col,
+                    rot,
+                    flip
+                };
+            }
 
         switch (normalized) {
             case '-': return { kind: 'empty' };
+            case '.': return { kind: 'empty' };
+            case '#': return { kind: 'empty' };
+            case 'sand': return { kind: 'tile', texture: 'tiles', frame: 0 };
+            case 'water': return { kind: 'tile', texture: 'tiles', frame: 3 };
+            case 'mud': return { kind: 'tile', texture: 'tiles', frame: 4 };
             case 'f': return { kind: 'tile', texture: 'tiles', frame: 3 };
             case 'h': return { kind: 'tile', texture: 'tiles', frame: 1 };
             case 's': return { kind: 'tile', texture: 'tiles', frame: 5 };
@@ -484,15 +2315,32 @@ class LevelEditorScene extends Phaser.Scene {
             case 'p': return { kind: 'obj', frame: OBJECT_FRAMES.pepita };
             case 'b': return { kind: 'obj', frame: OBJECT_FRAMES.dynamite_chest };
             case 'c': return { kind: 'obj', frame: OBJECT_FRAMES.cart };
-            case 'm': return { kind: 'obj', frame: OBJECT_FRAMES.wall };
+            case 'stones': return { kind: 'obj', frame: OBJECT_FRAMES.stones };
+            case 'wooden': return { kind: 'obj', frame: OBJECT_FRAMES.wooden };
+            case 'l': return { kind: 'obj', frame: OBJECT_FRAMES.heart };
+            case 'heart': return { kind: 'obj', frame: OBJECT_FRAMES.heart };
+            case 'helmet': return { kind: 'obj', frame: OBJECT_FRAMES.helmet };
+            case 'm': return { kind: 'obj', frame: OBJECT_FRAMES.skeleton };
             case 'ghost': return { kind: 'ghost' };
             case 'bat': return { kind: 'bat' };
+            case 'spider': return { kind: 'obj', frame: OBJECT_FRAMES.spider };
+            case 'snake': return { kind: 'obj', frame: OBJECT_FRAMES.snake };
             default: return { kind: 'text', text: normalized };
         }
     }
 
     addTokenVisual(container, token, x, y, size) {
-        const info = this.tokenToRenderInfo(token);
+        // support token lists joined by '/': render the topmost (last) token visually
+        let mainToken = String(token ?? '-');
+        try {
+            const parts = mainToken.split('/').map(s => s.trim()).filter(Boolean);
+            if (parts.length > 0) mainToken = parts[parts.length - 1];
+        } catch (e) { }
+        // strip trailing '.' marker for invisible/noTile when rendering visual
+        let invisible = false;
+        if (mainToken.endsWith('.')) { invisible = true; mainToken = mainToken.slice(0, -1); }
+
+        const info = this.tokenToRenderInfo(mainToken);
         const scale = size / 64;
 
         if (info.kind === 'empty') {
@@ -504,6 +2352,7 @@ class LevelEditorScene extends Phaser.Scene {
         if (info.kind === 'tile') {
             const tile = this.add.sprite(x, y, info.texture, info.frame);
             tile.setScale(scale);
+            if (invisible) tile.setAlpha(0.35);
             container.add(tile);
             return;
         }
@@ -511,40 +2360,32 @@ class LevelEditorScene extends Phaser.Scene {
         if (info.kind === 'wall') {
             const wall = this.add.sprite(x, y, 'wall_tiles', info.frame);
             wall.setScale(scale);
-            wall.setAngle(info.rot * 90);
+            if (info.flip === 'h') wall.setFlipX(true);
+            else if (info.flip === 'v') wall.setFlipY(true);
+            else wall.setAngle((info.rot || 0) * 90);
+            if (invisible) wall.setAlpha(0.35);
             container.add(wall);
             return;
         }
 
         if (info.kind === 'obj') {
-            const floor = this.add.sprite(x, y, 'tiles', 3);
-            floor.setScale(scale);
-            floor.setAlpha(0.45);
             const obj = this.add.sprite(x, y, 'objects', info.frame);
             obj.setScale(scale * 0.9);
-            container.add(floor);
+            if (invisible) obj.setAlpha(0.35);
             container.add(obj);
             return;
         }
 
         if (info.kind === 'ghost') {
-            const floor = this.add.sprite(x, y, 'tiles', 3);
-            floor.setScale(scale);
-            floor.setAlpha(0.45);
             const ghost = this.add.sprite(x, y, 'ghost_anim', 0);
             ghost.setScale(scale * 0.9);
-            container.add(floor);
             container.add(ghost);
             return;
         }
 
         if (info.kind === 'bat') {
-            const floor = this.add.sprite(x, y, 'tiles', 3);
-            floor.setScale(scale);
-            floor.setAlpha(0.45);
             const bat = this.add.sprite(x, y, 'bat_anim', 0);
             bat.setScale(scale * 0.9);
-            container.add(floor);
             container.add(bat);
             return;
         }
@@ -569,32 +2410,71 @@ class LevelEditorScene extends Phaser.Scene {
                 const cx = x + this.cellSize / 2;
                 const cy = y + this.cellSize / 2;
 
-                const bg = this.add.rectangle(cx, cy, this.cellSize - 1, this.cellSize - 1, 0x0f1f3e, 0.65)
-                    .setStrokeStyle(1, 0x304f83, 0.8);
+                // choose background color for invisible wall (#) and invisible tile (.)
+                const normBase = normalizeToken(this.cells[row][col].base);
+                let bgColor = 0x0f1f3e;
+                let bgAlpha = 0; // default transparent
+                if (normBase === '#') {
+                    bgColor = 0x8b4513; // brown for invisible wall
+                    bgAlpha = 1;
+                } else if (normBase === '.') {
+                    bgColor = 0x000000; // black for invisible tile
+                    bgAlpha = 1;
+                }
+                const bg = this.add.rectangle(cx, cy, this.cellSize, this.cellSize, bgColor, bgAlpha)
+                    .setStrokeStyle(1, 0x304f83, 0.35);
                 this.gridLayer.add(bg);
 
                 const cell = this.cells[row][col];
-                this.addTokenVisual(this.gridLayer, cell.base, cx, cy, this.cellSize - 8);
+                // Render main visual using last token if multiple present
+                this.addTokenVisual(this.gridLayer, cell.base, cx, cy, this.cellSize);
 
-                if (cell.reveal) {
-                    const tag = this.add.text(
-                        x + this.cellSize - 2,
-                        y + 2,
-                        `/${cell.reveal}`,
-                        {
+                // If any token in the cell includes trailing '.', show 'notile' marker
+                try {
+                    const hasNoTile = String(cell.base || '').split('/').some(t => (String(t || '').trim().endsWith('.')));
+                    if (hasNoTile) {
+                        const nt = this.add.text(cx, cy + Math.floor(this.cellSize * 0.18), 'notile', {
                             fontFamily: 'monospace',
-                            fontSize: `${Math.max(8, Math.floor(this.cellSize * 0.19))}px`,
-                            color: '#ffd76a',
-                            backgroundColor: '#1f1300'
-                        }
-                    ).setOrigin(1, 0);
-                    this.gridLayer.add(tag);
-                }
+                            fontSize: `${Math.max(8, Math.floor(this.cellSize * 0.16))}px`,
+                            color: '#ffffff'
+                        }).setOrigin(0.5, 0);
+                        this.gridLayer.add(nt);
+                    }
+                } catch (e) { }
+
+                // Show small tag for additional stacked tokens (beyond first) in top-left
+                try {
+                    const parts = String(cell.base || '').split('/').map(s => s.trim()).filter(Boolean);
+                    if (parts.length > 1) {
+                        const extra = parts.slice(0, Math.min(parts.length - 1, 3)).join('/');
+                        const tag = this.add.text(
+                            x + 2,
+                            y + 2,
+                            `${extra}`,
+                            {
+                                fontFamily: 'monospace',
+                                fontSize: `${Math.max(8, Math.floor(this.cellSize * 0.14))}px`,
+                                color: '#ffd76a',
+                                backgroundColor: '#1f1300'
+                            }
+                        ).setOrigin(0, 0);
+                        this.gridLayer.add(tag);
+                    }
+                } catch (e) { }
             }
         }
 
         const borderW = this.cols * this.cellSize;
         const borderH = this.rows * this.cellSize;
+        // ensure editor background (if present) matches current grid position/size so it scrolls with tiles
+        try {
+            if (Array.isArray(this.editorBgImages) && this.editorBgImages.length) {
+                this.updateEditorBackgroundImage(true);
+            } else if (this.editorBgImage) {
+                this.editorBgImage.setDisplaySize(borderW, borderH);
+                this.editorBgImage.setPosition(this.gridOffsetX + borderW / 2, this.gridOffsetY + borderH / 2);
+            }
+        } catch (e) { /* ignore background reposition errors */ }
         const border = this.add.rectangle(
             this.gridOffsetX + borderW / 2,
             this.gridOffsetY + borderH / 2,
@@ -608,7 +2488,7 @@ class LevelEditorScene extends Phaser.Scene {
         if (this.selectedCell) {
             const sx = this.gridOffsetX + this.selectedCell.col * this.cellSize + this.cellSize / 2;
             const sy = this.gridOffsetY + this.selectedCell.row * this.cellSize + this.cellSize / 2;
-            const s = this.add.rectangle(sx, sy, this.cellSize - 2, this.cellSize - 2, 0x4db6ff, 0.16)
+            const s = this.add.rectangle(sx, sy, this.cellSize, this.cellSize, 0x4db6ff, 0.12)
                 .setStrokeStyle(2, 0xffdd77, 1);
             this.selectionLayer.add(s);
         }
@@ -625,8 +2505,11 @@ class LevelEditorScene extends Phaser.Scene {
         }
         const { row, col } = this.selectedCell;
         const cell = this.cells[row]?.[col];
+        const base = cell?.base || '-';
         const reveal = cell?.reveal ? ` / ${cell.reveal}` : '';
-        infoEl.textContent = `Cella ${row},${col}: ${cell?.base || '-'}${reveal}`;
+        // indicate notile if any token in base is marked with trailing '.'
+        const hasNoTile = String(base).split('/').some(t => String(t || '').trim().endsWith('.'));
+        infoEl.textContent = `Cella ${row},${col}: ${base}${reveal}` + (hasNoTile ? ' [notile]' : '');
     }
 
     toTilesMatrix() {
@@ -644,9 +2527,25 @@ class LevelEditorScene extends Phaser.Scene {
         for (let y = 0; y < this.rows; y++) {
             for (let x = 0; x < this.cols; x++) {
                 const raw = tiles[y]?.[x] ?? '-';
-                const parsed = splitToken(raw);
-                this.cells[y][x].base = parsed.base;
-                this.cells[y][x].reveal = parsed.reveal;
+                const rawText = String(raw ?? '-').trim();
+                // If raw contains multiple '/' tokens, preserve whole string in base
+                try {
+                    // Preserve inline decorated tokens as-is, otherwise splitToken can
+                    // interpret '/' as reveal separator and lose inline effects.
+                    const hasInlineDecorations = /[(){}\[\]]/.test(rawText);
+                    if ((rawText.includes('/') && rawText.split('/').length > 2) || hasInlineDecorations) {
+                        this.cells[y][x].base = rawText || '-';
+                        this.cells[y][x].reveal = null;
+                    } else {
+                        const parsed = splitToken(rawText);
+                        this.cells[y][x].base = parsed.base;
+                        this.cells[y][x].reveal = parsed.reveal;
+                    }
+                } catch (e) {
+                    const parsed = splitToken(rawText);
+                    this.cells[y][x].base = parsed.base;
+                    this.cells[y][x].reveal = parsed.reveal;
+                }
             }
         }
 
@@ -686,51 +2585,61 @@ function drawMiniMapFrame(scene, ctx, textureKey, frameIndex, x, y, size, opts =
 
     const alpha = Number.isFinite(opts.alpha) ? opts.alpha : 1;
     const rotation = Number.isFinite(opts.rotation) ? opts.rotation : 0;
+    const flipX = !!opts.flipX;
+    const flipY = !!opts.flipY;
 
     ctx.save();
     ctx.globalAlpha = alpha;
 
-    if (rotation !== 0) {
-        ctx.translate(x + size / 2, y + size / 2);
-        ctx.rotate(rotation);
-        ctx.drawImage(
-            sourceImage,
-            frame.cutX,
-            frame.cutY,
-            frame.cutWidth,
-            frame.cutHeight,
-            -size / 2,
-            -size / 2,
-            size,
-            size
-        );
-    } else {
-        ctx.drawImage(
-            sourceImage,
-            frame.cutX,
-            frame.cutY,
-            frame.cutWidth,
-            frame.cutHeight,
-            x,
-            y,
-            size,
-            size
-        );
+    // apply flips and rotation, keeping drawing centered
+    ctx.translate(x + size / 2, y + size / 2);
+    if (flipX || flipY) {
+        ctx.scale(flipX ? -1 : 1, flipY ? -1 : 1);
     }
+    if (rotation !== 0) ctx.rotate(rotation);
+
+    ctx.drawImage(
+        sourceImage,
+        frame.cutX,
+        frame.cutY,
+        frame.cutWidth,
+        frame.cutHeight,
+        -size / 2,
+        -size / 2,
+        size,
+        size
+    );
 
     ctx.restore();
     return true;
 }
 
 function drawMiniMapToken(scene, ctx, token, x, y, size, opts = {}) {
-    const normalized = normalizeToken(token);
+    const baseToken = getRenderableTokenBase(token);
+    const raw = String(baseToken ?? '').trim().toLowerCase();
+    if (/^exit(\[[^\]]+\])?$/.test(raw)) {
+        return drawMiniMapFrame(scene, ctx, 'objects', OBJECT_FRAMES.exit, x, y, size, { alpha: opts.alpha });
+    }
+    if (/^(?:bck|back|back_level)(\[[^\]]+\])?$/.test(raw)) {
+        return drawMiniMapFrame(scene, ctx, 'tiles', 5, x, y, size, { alpha: opts.alpha });
+    }
+    const normalized = normalizeToken(baseToken);
     const wallMatch = normalized.match(WALL_TOKEN_REGEX);
     if (wallMatch) {
-        const wallFrame = clamp(Number(wallMatch[1]), 0, 6);
-        const wallRot = ((Number(wallMatch[2]) % 4) + 4) % 4;
+        const row = clamp(Number(wallMatch[1]), 0, 3);
+        const col = clamp(Number(wallMatch[2]), 0, 5);
+        const rot = ((Number(wallMatch[3]) % 4) + 4) % 4;
+        const flip = String(wallMatch[4] ?? '0').toLowerCase();
+        const wallFrame = row * 6 + col;
+        if (flip === 'h') {
+            return drawMiniMapFrame(scene, ctx, 'wall_tiles', wallFrame, x, y, size, { alpha: opts.alpha, flipX: true });
+        }
+        if (flip === 'v') {
+            return drawMiniMapFrame(scene, ctx, 'wall_tiles', wallFrame, x, y, size, { alpha: opts.alpha, flipY: true });
+        }
         return drawMiniMapFrame(scene, ctx, 'wall_tiles', wallFrame, x, y, size, {
             alpha: opts.alpha,
-            rotation: wallRot * (Math.PI / 2)
+            rotation: rot * (Math.PI / 2)
         });
     }
 
@@ -740,38 +2649,57 @@ function drawMiniMapToken(scene, ctx, token, x, y, size, opts = {}) {
         case '-':
             return false;
         case 'f':
-            return drawMiniMapFrame(scene, ctx, 'tiles', 3, x, y, size, { alpha: opts.alpha });
+            // floor -> use sand frame
+            return drawMiniMapFrame(scene, ctx, 'tiles', 0, x, y, size, { alpha: opts.alpha });
+        case 'sand':
+            return drawMiniMapFrame(scene, ctx, 'tiles', 0, x, y, size, { alpha: opts.alpha });
         case 'h':
             return drawMiniMapFrame(scene, ctx, 'tiles', 1, x, y, size, { alpha: opts.alpha });
+        case '.':
+            return drawMiniMapFrame(scene, ctx, 'tiles', 1, x, y, size, { alpha: opts.alpha });
         case 's':
+            // legacy s token used as 'back' or hole2/sand depending on convention; keep mapping to back/frame5 for compatibility
+            return drawMiniMapFrame(scene, ctx, 'tiles', 5, x, y, size, { alpha: opts.alpha });
+        case 'water':
+            return drawMiniMapFrame(scene, ctx, 'tiles', 3, x, y, size, { alpha: opts.alpha });
+        case 'mud':
+            return drawMiniMapFrame(scene, ctx, 'tiles', 4, x, y, size, { alpha: opts.alpha });
+        case 'back':
             return drawMiniMapFrame(scene, ctx, 'tiles', 5, x, y, size, { alpha: opts.alpha });
         case 'g':
-            drawFloor(0.55);
             return drawMiniMapFrame(scene, ctx, 'objects', OBJECT_FRAMES.gem, x, y, size, { alpha: opts.alpha });
         case 'd':
-            drawFloor(0.55);
             return drawMiniMapFrame(scene, ctx, 'objects', OBJECT_FRAMES.door, x, y, size, { alpha: opts.alpha });
         case 'k':
-            drawFloor(0.55);
             return drawMiniMapFrame(scene, ctx, 'objects', OBJECT_FRAMES.key, x, y, size, { alpha: opts.alpha });
         case 'p':
-            drawFloor(0.55);
             return drawMiniMapFrame(scene, ctx, 'objects', OBJECT_FRAMES.pepita, x, y, size, { alpha: opts.alpha });
+        case 'wooden':
+            return drawMiniMapFrame(scene, ctx, 'objects', OBJECT_FRAMES.wooden, x, y, size, { alpha: opts.alpha });
+        case 'exit':
+            return drawMiniMapFrame(scene, ctx, 'objects', OBJECT_FRAMES.exit, x, y, size, { alpha: opts.alpha });
+        case 'l':
+            return drawMiniMapFrame(scene, ctx, 'objects', OBJECT_FRAMES.heart, x, y, size, { alpha: opts.alpha });
+        case 'heart':
+            return drawMiniMapFrame(scene, ctx, 'objects', OBJECT_FRAMES.heart, x, y, size, { alpha: opts.alpha });
         case 'b':
-            drawFloor(0.55);
             return drawMiniMapFrame(scene, ctx, 'objects', OBJECT_FRAMES.dynamite_chest, x, y, size, { alpha: opts.alpha });
         case 'c':
-            drawFloor(0.55);
             return drawMiniMapFrame(scene, ctx, 'objects', OBJECT_FRAMES.cart, x, y, size, { alpha: opts.alpha });
+        case 'stones':
+            return drawMiniMapFrame(scene, ctx, 'objects', OBJECT_FRAMES.stones, x, y, size, { alpha: opts.alpha });
         case 'm':
-            drawFloor(0.55);
-            return drawMiniMapFrame(scene, ctx, 'objects', OBJECT_FRAMES.wall, x, y, size, { alpha: opts.alpha });
+            return drawMiniMapFrame(scene, ctx, 'objects', OBJECT_FRAMES.skeleton, x, y, size, { alpha: opts.alpha });
+        case 'helmet':
+            return drawMiniMapFrame(scene, ctx, 'objects', OBJECT_FRAMES.helmet, x, y, size, { alpha: opts.alpha });
         case 'ghost':
-            drawFloor(0.55);
             return drawMiniMapFrame(scene, ctx, 'ghost_anim', 0, x, y, size, { alpha: opts.alpha });
         case 'bat':
-            drawFloor(0.55);
             return drawMiniMapFrame(scene, ctx, 'bat_anim', 0, x, y, size, { alpha: opts.alpha });
+        case 'spider':
+            return drawMiniMapFrame(scene, ctx, 'objects', OBJECT_FRAMES.spider, x, y, size, { alpha: opts.alpha });
+        case 'snake':
+            return drawMiniMapFrame(scene, ctx, 'objects', OBJECT_FRAMES.snake, x, y, size, { alpha: opts.alpha });
         default:
             return false;
     }
@@ -789,7 +2717,7 @@ function drawMiniMapPreview(scene) {
     const height = canvas.height;
     ctx.imageSmoothingEnabled = false;
     ctx.clearRect(0, 0, width, height);
-
+    // compute map rectangle first so bg/fg images can be clipped to it
     const rows = scene.rows || 1;
     const cols = scene.cols || 1;
     const cell = Math.max(2, Math.floor(Math.min(width / cols, height / rows)));
@@ -798,24 +2726,124 @@ function drawMiniMapPreview(scene) {
     const offX = Math.floor((width - mapW) / 2);
     const offY = Math.floor((height - mapH) / 2);
 
-    ctx.fillStyle = '#060d1f';
-    ctx.fillRect(0, 0, width, height);
+    // draw layered background images (support multiple bg layers from DOM or select)
+    const showBg = !!el('showBackground')?.checked;
+    // try layers from DOM editor first
+    const domBgLayers = readBackgroundLayersFromDOM();
+    let bgLayers = null;
+    if (Array.isArray(domBgLayers) && domBgLayers.length > 0) bgLayers = domBgLayers;
+    else {
+        // fallback: read from single select value
+        const bgVal = String(el('levelBackground')?.value ?? '').trim();
+        if (bgVal && showBg) {
+            // prefer numbered levels textures
+            if (/^\d+$/.test(bgVal)) {
+                bgLayers = [{ src: `${COMMON_ASSETS_DIR}/level${bgVal}.png`, parallaxBgFactor: 1.0, parallaxBgAlpha: 1.0 }];
+            } else {
+                bgLayers = [{ src: String(bgVal), parallaxBgFactor: 1.0, parallaxBgAlpha: 1.0 }];
+            }
+        }
+    }
+
+    // simple image cache to avoid reloading
+    window.__levelEditorImageCache = window.__levelEditorImageCache || {};
+    const drawLayerImage = (layer) => {
+        if (!layer || !layer.src) return false;
+        if (layer.enabled === false) return false;
+        const src = String(layer.src || '').trim();
+        if (!src) return false;
+        const cache = window.__levelEditorImageCache;
+        if (!cache[src]) {
+            const img = new Image();
+            try { img.crossOrigin = 'anonymous'; } catch (e) {}
+            cache[src] = { img, loaded: false };
+            img.onload = () => { cache[src].loaded = true; drawMiniMapPreview(scene); };
+            img.onerror = () => { cache[src].loaded = false; };
+            img.src = src;
+            return false;
+        }
+        const entry = cache[src];
+        if (!entry.loaded) return false;
+        const img = entry.img;
+        const alpha = Number.isFinite(layer.parallaxBgAlpha) ? layer.parallaxBgAlpha : 1.0;
+        const offsetX = parseNumber(layer.offsetX ?? layer.left ?? layer.x ?? layer.positionX, 0);
+        const offsetY = parseNumber(layer.offsetY ?? layer.top ?? layer.y ?? layer.positionY, 0);
+        const stepX = parseNumber(layer.repeatStepX ?? layer.replicaStepX ?? layer.repeatOffsetX ?? layer.replicaOffsetX, mapW) || mapW;
+        const stepY = parseNumber(layer.repeatStepY ?? layer.replicaStepY ?? layer.repeatOffsetY ?? layer.replicaOffsetY, mapH) || mapH;
+        const repeatX = parseRepeatValue(layer.repeatX ?? layer.replicaX ?? layer.repeatCountX ?? layer.replicaCountX ?? 1, 1);
+        const repeatY = parseRepeatValue(layer.repeatY ?? layer.replicaY ?? layer.repeatCountY ?? layer.replicaCountY ?? 1, 1);
+        const countX = (repeatX === '*') ? Math.max(1, Math.ceil((mapW + Math.abs(offsetX)) / Math.max(1, Math.abs(stepX))) + 2) : repeatX;
+        const countY = (repeatY === '*') ? Math.max(1, Math.ceil((mapH + Math.abs(offsetY)) / Math.max(1, Math.abs(stepY))) + 2) : repeatY;
+        try {
+            ctx.save();
+            // clip to map rectangle so image stays inside blue mini-map
+            ctx.beginPath();
+            ctx.rect(offX, offY, mapW, mapH);
+            ctx.clip();
+            ctx.globalAlpha = alpha;
+            for (let iy = 0; iy < countY; iy++) {
+                for (let ix = 0; ix < countX; ix++) {
+                    const dx = offX + offsetX + stepX * ix;
+                    const dy = offY + offsetY + stepY * iy;
+                    ctx.drawImage(img, dx, dy, mapW, mapH);
+                }
+            }
+            ctx.restore();
+        } catch (e) {
+            return false;
+        }
+        return true;
+    };
+
+    if (showBg && Array.isArray(bgLayers) && bgLayers.length > 0) {
+        bgLayers.forEach((ly) => drawLayerImage(ly));
+    }
+
+    // only clear with solid color when there are no background layers
+    if (!showBg || !Array.isArray(bgLayers) || bgLayers.length === 0) {
+        ctx.fillStyle = '#060d1f';
+        ctx.fillRect(0, 0, width, height);
+    }
 
     for (let row = 0; row < rows; row++) {
         for (let col = 0; col < cols; col++) {
             const cellData = scene.cells?.[row]?.[col];
             const base = cellData?.base || '-';
+            const normBase = normalizeToken(base);
+            // treat '-' as empty (background shows through). For '.' and '#' draw explicit colors:
+            const isEmptyToken = normBase === '-';
             const reveal = cellData?.reveal;
 
             const x = offX + col * cell;
             const y = offY + row * cell;
-            ctx.fillStyle = '#0f1f3e';
-            ctx.fillRect(x, y, cell, cell);
-
-            const rendered = drawMiniMapToken(scene, ctx, base, x, y, cell);
-            if (!rendered) {
-                ctx.fillStyle = tokenToMiniMapColor(base);
+            // If the base token is an invisible wall (#) or invisible tile (.), draw a solid color
+            if (normBase === '#') {
+                ctx.fillStyle = '#8b4513'; // brown for invisible wall
                 ctx.fillRect(x, y, cell, cell);
+            } else if (normBase === '.') {
+                ctx.fillStyle = '#000000'; // black for invisible tile
+                ctx.fillRect(x, y, cell, cell);
+            } else if (!isEmptyToken) {
+                // If there are no background layers, draw a solid cell background.
+                if (!showBg || !Array.isArray(bgLayers) || bgLayers.length === 0) {
+                    ctx.fillStyle = '#0f1f3e';
+                    ctx.fillRect(x, y, cell, cell);
+                }
+
+                const rendered = drawMiniMapToken(scene, ctx, base, x, y, cell);
+                if (!rendered) {
+                    // if a background image is present, draw semi-transparent tile color
+                    if (showBg && Array.isArray(bgLayers) && bgLayers.length > 0) {
+                        ctx.save();
+                        ctx.globalAlpha = 0.85;
+                        ctx.fillStyle = tokenToMiniMapColor(base);
+                        ctx.fillRect(x, y, cell, cell);
+                        ctx.restore();
+                    } else {
+                        ctx.fillStyle = tokenToMiniMapColor(base);
+                        ctx.fillRect(x, y, cell, cell);
+                    }
+                }
             }
 
             if (reveal) {
@@ -859,6 +2887,60 @@ function drawMiniMapPreview(scene) {
     ctx.strokeStyle = '#7cc7ff';
     ctx.lineWidth = 1.5;
     ctx.strokeRect(offX + 0.5, offY + 0.5, mapW - 1, mapH - 1);
+
+    // draw foreground layers over the map (from DOM or fallback)
+    const showFg = !!el('showForeground')?.checked;
+    const domFg = readForegroundLayersFromDOM();
+    let fgLayers = null;
+    if (Array.isArray(domFg) && domFg.length > 0) fgLayers = domFg;
+    else {
+        const fgVal = String(el('levelForeground')?.value ?? '').trim();
+        if (fgVal) fgLayers = [{ src: fgVal, parallaxFgFactor: 1.0, parallaxFgAlpha: 1.0 }];
+    }
+    if (showFg && Array.isArray(fgLayers) && fgLayers.length > 0) {
+        fgLayers.forEach((ly) => {
+            if (!ly || !ly.src) return;
+            if (ly.enabled === false) return;
+            const src = String(ly.src || '').trim();
+            const cache = window.__levelEditorImageCache || {};
+            if (!cache[src]) {
+                const img = new Image();
+                try { img.crossOrigin = 'anonymous'; } catch (e) {}
+                cache[src] = { img, loaded: false };
+                img.onload = () => { cache[src].loaded = true; drawMiniMapPreview(scene); };
+                img.onerror = () => { cache[src].loaded = false; };
+                img.src = src;
+                window.__levelEditorImageCache = cache;
+                return;
+            }
+            const entry = cache[src];
+            if (!entry.loaded) return;
+            const offsetX = parseNumber(ly.offsetX ?? ly.left ?? ly.x ?? ly.positionX, 0);
+            const offsetY = parseNumber(ly.offsetY ?? ly.top ?? ly.y ?? ly.positionY, 0);
+            const stepX = parseNumber(ly.repeatStepX ?? ly.replicaStepX ?? ly.repeatOffsetX ?? ly.replicaOffsetX, mapW) || mapW;
+            const stepY = parseNumber(ly.repeatStepY ?? ly.replicaStepY ?? ly.repeatOffsetY ?? ly.replicaOffsetY, mapH) || mapH;
+            const repeatX = parseRepeatValue(ly.repeatX ?? ly.replicaX ?? ly.repeatCountX ?? ly.replicaCountX ?? 1, 1);
+            const repeatY = parseRepeatValue(ly.repeatY ?? ly.replicaY ?? ly.repeatCountY ?? ly.replicaCountY ?? 1, 1);
+            const countX = (repeatX === '*') ? Math.max(1, Math.ceil((mapW + Math.abs(offsetX)) / Math.max(1, Math.abs(stepX))) + 2) : repeatX;
+            const countY = (repeatY === '*') ? Math.max(1, Math.ceil((mapH + Math.abs(offsetY)) / Math.max(1, Math.abs(stepY))) + 2) : repeatY;
+            try {
+                ctx.save();
+                // clip to map rectangle so fg stays inside mini-map
+                ctx.beginPath();
+                ctx.rect(offX, offY, mapW, mapH);
+                ctx.clip();
+                ctx.globalAlpha = Number.isFinite(ly.parallaxFgAlpha) ? ly.parallaxFgAlpha : 1.0;
+                for (let iy = 0; iy < countY; iy++) {
+                    for (let ix = 0; ix < countX; ix++) {
+                        const dx = offX + offsetX + stepX * ix;
+                        const dy = offY + offsetY + stepY * iy;
+                        ctx.drawImage(entry.img, dx, dy, mapW, mapH);
+                    }
+                }
+                ctx.restore();
+            } catch (e) { /* ignore */ }
+        });
+    }
 }
 
 function readLevelFromForm() {
@@ -888,6 +2970,8 @@ function readLevelFromForm() {
     const splitRangeRaw = String(el('dbSplitRange')?.value ?? '2,3').split(',').map((x) => Number(x.trim())).filter((x) => Number.isFinite(x));
     const splitRange = splitRangeRaw.length >= 2 ? [splitRangeRaw[0], splitRangeRaw[1]] : [2, 3];
 
+    const objectsEffects = buildObjectsEffectsFromWizard();
+
     const level = {
         id: String(el('levelId')?.value ?? '1.0').trim() || '1.0',
         map: {
@@ -909,7 +2993,13 @@ function readLevelFromForm() {
         },
         dynamicBoulders: {
             enabled: parseBool(el('dbEnabled')?.value, true),
-            directions: String(el('dbDirections')?.value || '').split(',').map((x) => x.trim()).filter(Boolean),
+            directions: (function(){
+                const elDirs = el('dbDirections');
+                if (elDirs && elDirs.options) {
+                    return Array.from(elDirs.options).filter(o=>o.selected).map(o=>o.value).filter(Boolean);
+                }
+                return String(el('dbDirections')?.value || '').split(',').map((x) => x.trim()).filter(Boolean);
+            })(),
             sizes: dbSizes,
             splitOnImpact: parseBool(el('dbSplitOnImpact')?.value, false),
             splitPiecesRange: splitRange,
@@ -924,18 +3014,121 @@ function readLevelFromForm() {
         spawnPoints: null,
         timeLimit: null,
         scoreRules: null,
-        light: String(el('lightMode')?.value || 'piena').trim(),
+        effects: {
+            general: {
+                light: String(el('lightMode')?.value || 'piena').trim(),
+                rain: {
+                    enabled: !!el('rainEnabled')?.checked,
+                    intensity: parseNumber(el('rainIntensity')?.value, 1),
+                    frequency: parseNumber(el('rainFrequency')?.value, 180),
+                    wind: parseNumber(el('rainWind')?.value, 0),
+                    direction: String(el('rainDirection')?.value || 'down'),
+                    interval: parseNumber(el('rainInterval')?.value, 5),
+                    duration: parseNumber(el('rainDuration')?.value, 0)
+                },
+                fog: {
+                    enabled: !!el('fogEnabled')?.checked,
+                    alpha: parseNumber(el('fogAlpha')?.value, 0.15),
+                    layers: Math.max(1, parseNumber(el('fogLayers')?.value, 3)),
+                    speed: String(el('fogSpeed')?.value || 'slow'),
+                    direction: String(el('fogDirection')?.value || 'left')
+                }
+            },
+            objects: objectsEffects
+        },
         ghost: parseNumber(el('ghostCount')?.value, 0),
         bat: parseNumber(el('batCount')?.value, 0),
+        spider: parseNumber(el('spiderCount')?.value, 0),
+        snake: parseNumber(el('snakeCount')?.value, 0),
         ghostSpeed: parseNumber(el('ghostSpeed')?.value, 80),
-        batSpeed: parseNumber(el('batSpeed')?.value, 90)
+        batSpeed: parseNumber(el('batSpeed')?.value, 90),
+        spiderSpeed: parseNumber(el('spiderSpeed')?.value, 100),
+        snakeSpeed: parseNumber(el('snakeSpeed')?.value, 95),
+        batFlightsBeforeRest: parseNumber(el('batFlightsBeforeRest')?.value, 4),
+        batRestSeconds: parseNumber(el('batRestSeconds')?.value, 2),
+        batRestIntervalSeconds: parseNumber(el('batRestIntervalSeconds')?.value, 0)
     };
+
+    // tokenMap (optional mapping of shorthand tokens)
+    try {
+        const rawTokenMap = String(el('tokenMapJson')?.value ?? '').trim();
+        if (rawTokenMap) {
+            try {
+                const parsedMap = JSON.parse(rawTokenMap);
+                if (parsedMap && typeof parsedMap === 'object' && !Array.isArray(parsedMap)) {
+                    level.tokenMap = parsedMap;
+                }
+            } catch (e) {
+                // ignore parse errors and skip tokenMap
+            }
+        }
+    } catch (e) {}
+
+    // include background/foreground enabled flags
+    level.backgroundEnabled = !!el('showBackground')?.checked;
+    level.foregroundEnabled = !!el('showForeground')?.checked;
+
+    // background can be single or multiple
+    // Prefer structured background layers UI if present
+    const bgList = readBackgroundLayersFromDOM();
+    if (bgList && bgList.length) {
+        level.background = bgList;
+    } else {
+        const bgEl = el('levelBackground');
+        if (bgEl && bgEl.options) {
+            const selected = Array.from(bgEl.options).filter(o => o.selected).map(o => (o.value === '' ? null : (/^\d+$/.test(o.value) ? Number(o.value) : o.value)));
+            const real = selected.filter(v => v !== null);
+            if (real.length === 1) level.background = real[0];
+            else if (real.length > 1) level.background = real;
+        }
+    }
+
+    // foreground (optional) can be single or multiple
+    const fgList = readForegroundLayersFromDOM();
+    if (fgList && fgList.length) {
+        level.foreground = fgList;
+    } else {
+        const fgEl = el('levelForeground');
+        if (fgEl && fgEl.options) {
+            const selectedF = Array.from(fgEl.options).filter(o => o.selected).map(o => (o.value === '' ? null : o.value));
+            const realF = selectedF.filter(v => v !== null);
+            if (realF.length === 1) level.foreground = realF[0];
+            else if (realF.length > 1) level.foreground = realF;
+        }
+    }
+
+    // music (optional)
+    try {
+        const mu = String(el('levelMusic')?.value || '').trim();
+        if (mu) level.music = mu;
+    } catch (e) { /* ignore */ }
+
+    // gems one-by-one flag (per-map)
+    try {
+        if (el('gemsOneByOne')) {
+            level.map.gemsOneByOne = !!el('gemsOneByOne').checked;
+        }
+    } catch (e) { }
 
     return { ...level, ...extra, map: level.map, playerStart: level.playerStart };
 }
 
 function applyLevelToForm(levelData) {
     const data = { ...DEFAULT_LEVEL, ...(levelData || {}) };
+    const effectsRoot = (data.effects && typeof data.effects === 'object' && !Array.isArray(data.effects)) ? data.effects : {};
+    const generalEffects = (effectsRoot.general && typeof effectsRoot.general === 'object' && !Array.isArray(effectsRoot.general)) ? effectsRoot.general : {};
+    const objectsEffects = (effectsRoot.objects && typeof effectsRoot.objects === 'object' && !Array.isArray(effectsRoot.objects)) ? effectsRoot.objects : {};
+    const resolvedLight = generalEffects.light ?? data.light ?? DEFAULT_LEVEL.effects.general.light;
+    const resolvedRain = {
+        ...(DEFAULT_LEVEL.effects?.general?.rain || {}),
+        ...(data.rain || {}),
+        ...(generalEffects.rain || {})
+    };
+    const resolvedFog = {
+        ...(DEFAULT_LEVEL.effects?.general?.fog || {}),
+        ...(data.fog || {}),
+        ...(generalEffects.fog || {})
+    };
     const mapData = data.map || {};
     const staticRocks = { ...DEFAULT_LEVEL.staticRocks, ...(data.staticRocks || {}) };
     const dynamicBoulders = { ...DEFAULT_LEVEL.dynamicBoulders, ...(data.dynamicBoulders || {}) };
@@ -947,14 +3140,57 @@ function applyLevelToForm(levelData) {
     el('levelSpeed').value = data.speed ?? DEFAULT_LEVEL.speed;
     el('ghostCount').value = data.ghost ?? DEFAULT_LEVEL.ghost;
     el('batCount').value = data.bat ?? DEFAULT_LEVEL.bat;
+    el('spiderCount').value = data.spider ?? DEFAULT_LEVEL.spider;
+    el('snakeCount').value = data.snake ?? DEFAULT_LEVEL.snake;
     el('ghostSpeed').value = data.ghostSpeed ?? DEFAULT_LEVEL.ghostSpeed;
     el('batSpeed').value = data.batSpeed ?? DEFAULT_LEVEL.batSpeed;
+    el('spiderSpeed').value = data.spiderSpeed ?? DEFAULT_LEVEL.spiderSpeed;
+    el('snakeSpeed').value = data.snakeSpeed ?? DEFAULT_LEVEL.snakeSpeed;
+    el('batFlightsBeforeRest').value = data.batFlightsBeforeRest ?? DEFAULT_LEVEL.batFlightsBeforeRest;
+    el('batRestSeconds').value = data.batRestSeconds ?? DEFAULT_LEVEL.batRestSeconds;
+    el('batRestIntervalSeconds').value = data.batRestIntervalSeconds ?? DEFAULT_LEVEL.batRestIntervalSeconds;
+    try { if (el('ghostSpeedRange')) el('ghostSpeedRange').value = el('ghostSpeed').value; } catch (e) {}
+    try { if (el('batSpeedRange')) el('batSpeedRange').value = el('batSpeed').value; } catch (e) {}
+    try { if (el('spiderSpeedRange')) el('spiderSpeedRange').value = el('spiderSpeed').value; } catch (e) {}
+    try { if (el('snakeSpeedRange')) el('snakeSpeedRange').value = el('snakeSpeed').value; } catch (e) {}
     el('objectiveLabel').value = data.objectiveLabel ?? DEFAULT_LEVEL.objectiveLabel;
-    el('lightMode').value = data.light ?? DEFAULT_LEVEL.light;
+    el('lightMode').value = resolvedLight;
     el('escapeRoute').value = String(!!data.escapeRoute);
+    // legacy background/foreground selects are optional; layers DOM is authoritative
 
     el('playerRow').value = data.playerStart?.row ?? DEFAULT_LEVEL.playerStart.row;
     el('playerCol').value = data.playerStart?.col ?? DEFAULT_LEVEL.playerStart.col;
+
+    // background/foreground toggles
+    if (el('showBackground')) el('showBackground').checked = data.backgroundEnabled !== undefined ? !!data.backgroundEnabled : true;
+    if (el('showForeground')) el('showForeground').checked = data.foregroundEnabled !== undefined ? !!data.foregroundEnabled : true;
+    if (el('autoGridFromBg')) el('autoGridFromBg').checked = true;
+    if (el('rainEnabled')) el('rainEnabled').checked = !!resolvedRain.enabled;
+    if (el('rainIntensity')) el('rainIntensity').value = resolvedRain.intensity ?? 1;
+    if (el('rainFrequency')) el('rainFrequency').value = resolvedRain.frequency ?? 180;
+    if (el('rainWind')) el('rainWind').value = resolvedRain.wind ?? 0;
+    if (el('rainDirection')) el('rainDirection').value = resolvedRain.direction ?? 'down';
+    if (el('rainInterval')) el('rainInterval').value = resolvedRain.interval ?? 5;
+    if (el('rainDuration')) el('rainDuration').value = resolvedRain.duration ?? 0;
+
+    // populate fog editor if present
+    try {
+        if (el('fogEnabled')) el('fogEnabled').checked = !!resolvedFog.enabled;
+        if (el('fogAlpha')) el('fogAlpha').value = resolvedFog.alpha ?? 0.15;
+        if (el('fogLayers')) el('fogLayers').value = resolvedFog.layers ?? 3;
+        if (el('fogSpeed')) el('fogSpeed').value = resolvedFog.speed ?? 'slow';
+        if (el('fogDirection')) el('fogDirection').value = resolvedFog.direction ?? 'left';
+    } catch (e) {}
+
+    try { applyObjectsEffectsWizard(objectsEffects); } catch (e) {}
+
+    // populate tokenMap editor if present
+    try {
+        const tmEl = el('tokenMapJson');
+        if (tmEl) {
+            tmEl.value = data.tokenMap && typeof data.tokenMap === 'object' ? JSON.stringify(data.tokenMap, null, 2) : '{}';
+        }
+    } catch (e) {}
 
     el('srEnabled').value = String(!!staticRocks.enabled);
     el('srDynamicSize').value = staticRocks.dynamicSize === null ? 'null' : JSON.stringify(staticRocks.dynamicSize);
@@ -964,7 +3200,15 @@ function applyLevelToForm(levelData) {
 
     el('dbEnabled').value = String(!!dynamicBoulders.enabled);
     el('dbSplitOnImpact').value = String(!!dynamicBoulders.splitOnImpact);
-    el('dbDirections').value = Array.isArray(dynamicBoulders.directions) ? dynamicBoulders.directions.join(',') : 'top,bottom,left,right';
+    try {
+        const dirsEl = el('dbDirections');
+        if (dirsEl && dirsEl.options) {
+            const vals = Array.isArray(dynamicBoulders.directions) ? dynamicBoulders.directions : (dynamicBoulders.directions ? String(dynamicBoulders.directions).split(',').map(s=>s.trim()) : []);
+            Array.from(dirsEl.options).forEach(o => { o.selected = vals.includes(o.value); });
+        } else {
+            el('dbDirections').value = Array.isArray(dynamicBoulders.directions) ? dynamicBoulders.directions.join(',') : 'top,bottom,left,right';
+        }
+    } catch (e) { el('dbDirections').value = Array.isArray(dynamicBoulders.directions) ? dynamicBoulders.directions.join(',') : 'top,bottom,left,right'; }
     el('dbSizes').value = dynamicBoulders.sizes === null ? 'null' : JSON.stringify(dynamicBoulders.sizes, null, 2);
     const range = Array.isArray(dynamicBoulders.splitPiecesRange) && dynamicBoulders.splitPiecesRange.length >= 2
         ? dynamicBoulders.splitPiecesRange
@@ -972,10 +3216,31 @@ function applyLevelToForm(levelData) {
     el('dbSplitRange').value = `${range[0]},${range[1]}`;
     el('dbMaxSplitGen').value = dynamicBoulders.maxSplitGeneration ?? 1;
 
+    // Populate background/foreground layer editors if present
+    try { applyBackgroundLayersToDOM(data.background); } catch (e) {}
+    try { applyForegroundLayersToDOM(data.foreground); } catch (e) {}
+
+    // music
+    try {
+        if (el('levelMusic')) el('levelMusic').value = data.music ? String(data.music) : '';
+        try { if (window.__editorMusicAudio && data.music) { window.__editorMusicAudio.src = String(data.music); } } catch (e) {}
+    } catch (e) {}
+
+    // set gemsOneByOne checkbox if present in map or top-level
+    try {
+        if (el('gemsOneByOne')) {
+            el('gemsOneByOne').checked = Boolean((mapData && typeof mapData.gemsOneByOne !== 'undefined') ? mapData.gemsOneByOne : (typeof data.gemsOneByOne !== 'undefined' ? data.gemsOneByOne : false));
+        }
+    } catch (e) { }
+
     const knownKeys = new Set([
+        'tokenMap',
         'id', 'map', 'playerStart', 'staticRocks', 'dynamicBoulders', 'speed', 'escapeRoute',
         'objectiveLabel', 'enemies', 'collectibles', 'traps', 'spawnPoints', 'timeLimit',
-        'scoreRules', 'light', 'ghost', 'bat', 'ghostSpeed', 'batSpeed'
+        'scoreRules', 'light', 'effects', 'ghost', 'bat', 'ghostSpeed', 'batSpeed',
+        'spider', 'spiderSpeed', 'snake', 'snakeSpeed', 'batFlightsBeforeRest', 'batRestSeconds', 'batRestIntervalSeconds',
+        'background', 'foreground', 'backgroundEnabled', 'foregroundEnabled', 'rain', 'fog', 'music',
+        'gemsOneByOne', 'requiredGems', 'gemsRequired', 'playerStart2', 'timer'
     ]);
     const extra = {};
     Object.keys(data).forEach((key) => {
@@ -997,14 +3262,1497 @@ function exportJsonToFile(levelData) {
     URL.revokeObjectURL(url);
 }
 
+function importLevelFromText(text, filename) {
+    try {
+        const parsed = JSON.parse(text);
+        applyLevelToForm(parsed);
+        const scene = getScene();
+        scene?.loadFromJson(parsed);
+        scene?.updateEditorBackgroundImage?.();
+        setStatus(`Import completato: ${filename || 'clipboard/file'}`);
+    } catch (error) {
+        setStatus(`Errore import: ${error.message}`, true);
+    }
+}
+
+// --- Background / Foreground DOM editors ---
+function readBackgroundLayersFromDOM() {
+    if (typeof document === 'undefined') return null;
+    const container = el('bgLayersContainer');
+    if (!container) return null;
+    const layers = [];
+    const items = Array.from(container.querySelectorAll('.bg-layer'));
+    items.forEach((it) => {
+        const enabled = !!it.querySelector('.bg-enabled')?.checked;
+        let src = '';
+        const sel = it.querySelector('select.bg-src');
+        if (sel) {
+            const v = String(sel.value || '').trim();
+            src = v ? `${BG_ASSETS_DIR}/${v}` : '';
+        } else {
+            src = normalizeLayerSrc(it.querySelector('.bg-src')?.value, 'bg');
+        }
+        if (!src) return; // skip empty
+        const factor = parseNumber(it.querySelector('.bg-factor')?.value, 1.0);
+        const alpha = parseNumber(it.querySelector('.bg-alpha')?.value, 1.0);
+        const offsetX = parseNumber(it.querySelector('.bg-offset-x')?.value, 0);
+        const offsetY = parseNumber(it.querySelector('.bg-offset-y')?.value, 0);
+        const repeatX = parseRepeatValue(it.querySelector('.bg-repeat-x')?.value, 1);
+        const repeatY = parseRepeatValue(it.querySelector('.bg-repeat-y')?.value, 1);
+        const stepX = parseNumber(it.querySelector('.bg-step-x')?.value, 0);
+        const stepY = parseNumber(it.querySelector('.bg-step-y')?.value, 0);
+        layers.push({
+            src,
+            enabled,
+            parallaxBgFactor: factor,
+            parallaxBgAlpha: alpha,
+            offsetX,
+            offsetY,
+            repeatX,
+            repeatY,
+            repeatStepX: stepX,
+            repeatStepY: stepY
+        });
+    });
+    return layers;
+}
+
+function readForegroundLayersFromDOM() {
+    if (typeof document === 'undefined') return null;
+    const container = el('fgLayersContainer');
+    if (!container) return null;
+    const layers = [];
+    const items = Array.from(container.querySelectorAll('.fg-layer'));
+    items.forEach((it) => {
+        const enabled = !!it.querySelector('.fg-enabled')?.checked;
+        let src = '';
+        const sel = it.querySelector('select.fg-src');
+        if (sel) {
+            const v = String(sel.value || '').trim();
+            src = v ? `${FG_ASSETS_DIR}/${v}` : '';
+        } else {
+            src = normalizeLayerSrc(it.querySelector('.fg-src')?.value, 'fg');
+        }
+        if (!src) return;
+        const factor = parseNumber(it.querySelector('.fg-factor')?.value, 1.0);
+        const alpha = parseNumber(it.querySelector('.fg-alpha')?.value, 1.0);
+        const offsetX = parseNumber(it.querySelector('.fg-offset-x')?.value, 0);
+        const offsetY = parseNumber(it.querySelector('.fg-offset-y')?.value, 0);
+        const repeatX = parseRepeatValue(it.querySelector('.fg-repeat-x')?.value, 1);
+        const repeatY = parseRepeatValue(it.querySelector('.fg-repeat-y')?.value, 1);
+        const stepX = parseNumber(it.querySelector('.fg-step-x')?.value, 0);
+        const stepY = parseNumber(it.querySelector('.fg-step-y')?.value, 0);
+        layers.push({
+            src,
+            enabled,
+            parallaxFgFactor: factor,
+            parallaxFgAlpha: alpha,
+            offsetX,
+            offsetY,
+            repeatX,
+            repeatY,
+            repeatStepX: stepX,
+            repeatStepY: stepY
+        });
+    });
+    return layers;
+}
+
+function applyBackgroundLayersToDOM(bg) {
+    const container = el('bgLayersContainer');
+    if (!container) return;
+    container.innerHTML = '';
+    ensureBgHeader();
+    if (!bg) return;
+    const arr = Array.isArray(bg) ? bg : (bg ? [bg] : []);
+    arr.forEach((layer, idx) => {
+        const src = layer?.src || String(layer || '').trim();
+        const enabled = layer?.enabled !== false;
+        const factor = layer?.parallaxBgFactor ?? 1.0;
+        const alpha = layer?.parallaxBgAlpha ?? 1.0;
+        const offsetX = layer?.offsetX ?? layer?.left ?? layer?.x ?? layer?.positionX ?? 0;
+        const offsetY = layer?.offsetY ?? layer?.top ?? layer?.y ?? layer?.positionY ?? 0;
+        const repeatX = layer?.repeatX ?? layer?.replicaX ?? layer?.repeatCountX ?? layer?.replicaCountX ?? 1;
+        const repeatY = layer?.repeatY ?? layer?.replicaY ?? layer?.repeatCountY ?? layer?.replicaCountY ?? 1;
+        const stepX = layer?.repeatStepX ?? layer?.replicaStepX ?? layer?.repeatOffsetX ?? layer?.replicaOffsetX ?? 0;
+        const stepY = layer?.repeatStepY ?? layer?.replicaStepY ?? layer?.repeatOffsetY ?? layer?.replicaOffsetY ?? 0;
+        const elRow = createBgLayerElement({ src, enabled, factor, alpha, offsetX, offsetY, repeatX, repeatY, stepX, stepY, idx });
+        container.appendChild(elRow);
+    });
+    // If no radio is selected, default to the first background layer
+    try {
+        const anyChecked = !!container.querySelector('input.bg-active-radio:checked');
+        if (!anyChecked) {
+            const firstRadio = container.querySelector('input.bg-active-radio');
+            if (firstRadio) firstRadio.checked = true;
+        }
+    } catch (e) { /* ignore */ }
+}
+
+function applyForegroundLayersToDOM(fg) {
+    const container = el('fgLayersContainer');
+    if (!container) return;
+    container.innerHTML = '';
+    ensureFgHeader();
+    if (!fg) return;
+    const arr = Array.isArray(fg) ? fg : (fg ? [fg] : []);
+    arr.forEach((layer, idx) => {
+        const src = layer?.src || String(layer || '').trim();
+        const enabled = layer?.enabled !== false;
+        const factor = layer?.parallaxFgFactor ?? 1.0;
+        const alpha = layer?.parallaxFgAlpha ?? 1.0;
+        const offsetX = layer?.offsetX ?? layer?.left ?? layer?.x ?? layer?.positionX ?? 0;
+        const offsetY = layer?.offsetY ?? layer?.top ?? layer?.y ?? layer?.positionY ?? 0;
+        const repeatX = layer?.repeatX ?? layer?.replicaX ?? layer?.repeatCountX ?? layer?.replicaCountX ?? 1;
+        const repeatY = layer?.repeatY ?? layer?.replicaY ?? layer?.repeatCountY ?? layer?.replicaCountY ?? 1;
+        const stepX = layer?.repeatStepX ?? layer?.replicaStepX ?? layer?.repeatOffsetX ?? layer?.replicaOffsetX ?? 0;
+        const stepY = layer?.repeatStepY ?? layer?.replicaStepY ?? layer?.repeatOffsetY ?? layer?.replicaOffsetY ?? 0;
+        container.appendChild(createFgLayerElement({ src, enabled, factor, alpha, offsetX, offsetY, repeatX, repeatY, stepX, stepY, idx }));
+    });
+}
+
+function createBgLayerElement(cfg = {}) {
+    const src = cfg.src || '';
+    const factor = cfg.factor ?? 1.0;
+    const alpha = cfg.alpha ?? 1.0;
+    const enabled = cfg.enabled !== false;
+    const offsetX = cfg.offsetX ?? 0;
+    const offsetY = cfg.offsetY ?? 0;
+    const repeatX = cfg.repeatX ?? 1;
+    const repeatY = cfg.repeatY ?? 1;
+    const stepX = cfg.stepX ?? 0;
+    const stepY = cfg.stepY ?? 0;
+
+    const wrapper = document.createElement('div');
+    wrapper.className = 'bg-layer';
+    wrapper.draggable = true;
+    wrapper.style.display = 'grid';
+    wrapper.style.gridTemplateColumns = '1fr';
+    wrapper.style.gap = '4px';
+    wrapper.style.marginBottom = '8px';
+    wrapper.style.padding = '6px';
+    wrapper.style.border = '1px solid #2c3f63';
+    wrapper.style.borderRadius = '4px';
+    wrapper.style.background = 'rgba(10,20,44,0.45)';
+
+    const rowTop = document.createElement('div');
+    rowTop.style.display = 'grid';
+    rowTop.style.gridTemplateColumns = '22px 22px 1fr 96px';
+    rowTop.style.gap = '6px';
+
+    const enabledChk = document.createElement('input');
+    enabledChk.type = 'checkbox';
+    enabledChk.className = 'bg-enabled';
+    enabledChk.checked = enabled;
+    enabledChk.title = 'Layer attivo';
+
+    // radio to select this layer as active background
+    const radio = document.createElement('input');
+    radio.type = 'radio';
+    radio.name = 'bgActive';
+    radio.className = 'bg-active-radio';
+    radio.title = 'Usa come background principale';
+    radio.addEventListener('change', () => {
+        try { setStatus('Background principale impostato.'); } catch (e) {}
+        try { const scene = getScene(); scene?.updateEditorBackgroundImage?.(); } catch (e) {}
+    });
+
+    // second column: select of available bg images (fallback to text input)
+    let inp;
+    const masterSelect = el('bgImageSelect');
+    if (masterSelect) {
+        const sel = document.createElement('select'); sel.className = 'bg-src'; sel.classList.add('bg-src'); sel.style.width = '100%';
+        // copy options from masterSelect
+        Array.from(masterSelect.options).forEach((o) => {
+            const opt = document.createElement('option'); opt.value = o.value; opt.textContent = o.textContent; sel.appendChild(opt);
+        });
+        // set value from src keeping only the filename
+        const current = layerFilenameFromSrc(src, 'bg');
+        if (current) try { sel.value = current; } catch (e) {}
+        inp = sel;
+    } else {
+        inp = document.createElement('input'); inp.className = 'bg-src'; inp.placeholder = `src (es. ${BG_ASSETS_DIR}/bg_10.png)`; inp.value = src || '';
+    }
+    const f = document.createElement('input'); f.className = 'bg-factor'; f.type = 'number'; f.step = '0.1'; f.value = String(factor);
+    const a = document.createElement('input'); a.className = 'bg-alpha'; a.type = 'number'; a.step = '0.05'; a.value = String(alpha);
+    const moveUp = document.createElement('button');
+    moveUp.type = 'button';
+    moveUp.textContent = '↑';
+    moveUp.title = 'Sposta su';
+    moveUp.className = 'layer-move-up';
+    moveUp.style.padding = '4px';
+    moveUp.addEventListener('click', () => {
+        const parent = wrapper.parentElement;
+        if (!parent) return;
+        const prev = wrapper.previousElementSibling;
+        if (prev && !prev.classList.contains('bg-header')) {
+            parent.insertBefore(wrapper, prev);
+            refreshLayerPreviews();
+        }
+    });
+
+    const moveDown = document.createElement('button');
+    moveDown.type = 'button';
+    moveDown.textContent = '↓';
+    moveDown.title = 'Sposta giu';
+    moveDown.className = 'layer-move-down';
+    moveDown.style.padding = '4px';
+    moveDown.addEventListener('click', () => {
+        const parent = wrapper.parentElement;
+        if (!parent) return;
+        const next = wrapper.nextElementSibling;
+        if (next) {
+            parent.insertBefore(next, wrapper);
+            refreshLayerPreviews();
+        }
+    });
+
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.textContent = '✖';
+    del.title = 'Rimuovi';
+    del.style.padding = '4px';
+    del.addEventListener('click', () => { wrapper.remove(); refreshLayerPreviews(); });
+
+    const actions = document.createElement('div');
+    actions.style.display = 'grid';
+    actions.style.gridTemplateColumns = 'repeat(3, 1fr)';
+    actions.style.gap = '4px';
+    actions.appendChild(moveUp);
+    actions.appendChild(moveDown);
+    actions.appendChild(del);
+
+    const rowMid = document.createElement('div');
+    rowMid.style.display = 'grid';
+    rowMid.style.gridTemplateColumns = 'repeat(4, 1fr)';
+    rowMid.style.gap = '6px';
+
+    const ox = document.createElement('input'); ox.className = 'bg-offset-x'; ox.type = 'number'; ox.step = '1'; ox.value = String(offsetX); ox.title = 'offsetX'; ox.placeholder = 'offX';
+    const oy = document.createElement('input'); oy.className = 'bg-offset-y'; oy.type = 'number'; oy.step = '1'; oy.value = String(offsetY); oy.title = 'offsetY'; oy.placeholder = 'offY';
+
+    const rowBottom = document.createElement('div');
+    rowBottom.style.display = 'grid';
+    rowBottom.style.gridTemplateColumns = 'repeat(4, 1fr)';
+    rowBottom.style.gap = '6px';
+
+    const rx = document.createElement('input'); rx.className = 'bg-repeat-x'; rx.type = 'text'; rx.value = String(repeatX); rx.title = 'repeatX / replicaX'; rx.placeholder = 'repX';
+    const ry = document.createElement('input'); ry.className = 'bg-repeat-y'; ry.type = 'text'; ry.value = String(repeatY); ry.title = 'repeatY / replicaY'; ry.placeholder = 'repY';
+    const sx = document.createElement('input'); sx.className = 'bg-step-x'; sx.type = 'number'; sx.step = '1'; sx.value = String(stepX); sx.title = 'repeatStepX'; sx.placeholder = 'stepX';
+    const sy = document.createElement('input'); sy.className = 'bg-step-y'; sy.type = 'number'; sy.step = '1'; sy.value = String(stepY); sy.title = 'repeatStepY'; sy.placeholder = 'stepY';
+
+    rowTop.appendChild(enabledChk);
+    rowTop.appendChild(radio);
+    rowTop.appendChild(inp);
+    rowTop.appendChild(actions);
+
+    rowMid.appendChild(f);
+    rowMid.appendChild(a);
+    rowMid.appendChild(ox);
+    rowMid.appendChild(oy);
+
+    rowBottom.appendChild(rx);
+    rowBottom.appendChild(ry);
+    rowBottom.appendChild(sx);
+    rowBottom.appendChild(sy);
+
+    wrapper.appendChild(rowTop);
+    wrapper.appendChild(rowMid);
+    wrapper.appendChild(rowBottom);
+
+    wrapper.addEventListener('dragstart', (ev) => {
+        const t = ev.target;
+        if (t && (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'BUTTON' || t.tagName === 'TEXTAREA')) {
+            ev.preventDefault();
+            return;
+        }
+        wrapper.classList.add('dragging');
+        try {
+            ev.dataTransfer.effectAllowed = 'move';
+            ev.dataTransfer.setData('text/plain', 'bg-layer');
+        } catch (e) { }
+    });
+    wrapper.addEventListener('dragend', () => {
+        wrapper.classList.remove('dragging');
+    });
+
+    return wrapper;
+}
+
+function createFgLayerElement(cfg = {}) {
+    const src = cfg.src || '';
+    const factor = cfg.factor ?? 1.0;
+    const alpha = cfg.alpha ?? 1.0;
+    const enabled = cfg.enabled !== false;
+    const offsetX = cfg.offsetX ?? 0;
+    const offsetY = cfg.offsetY ?? 0;
+    const repeatX = cfg.repeatX ?? 1;
+    const repeatY = cfg.repeatY ?? 1;
+    const stepX = cfg.stepX ?? 0;
+    const stepY = cfg.stepY ?? 0;
+
+    const wrapper = document.createElement('div');
+    wrapper.className = 'fg-layer';
+    wrapper.draggable = true;
+    wrapper.style.display = 'grid';
+    wrapper.style.gridTemplateColumns = '1fr';
+    wrapper.style.gap = '4px';
+    wrapper.style.marginBottom = '8px';
+    wrapper.style.padding = '6px';
+    wrapper.style.border = '1px solid #2c3f63';
+    wrapper.style.borderRadius = '4px';
+    wrapper.style.background = 'rgba(10,20,44,0.45)';
+
+    const rowTop = document.createElement('div');
+    rowTop.style.display = 'grid';
+    rowTop.style.gridTemplateColumns = '22px 1fr 96px';
+    rowTop.style.gap = '6px';
+
+    const enabledChk = document.createElement('input');
+    enabledChk.type = 'checkbox';
+    enabledChk.className = 'fg-enabled';
+    enabledChk.checked = enabled;
+    enabledChk.title = 'Layer attivo';
+
+    let inp;
+    const masterSelect = el('fgImageSelect');
+    if (masterSelect) {
+        const sel = document.createElement('select'); sel.className = 'fg-src'; sel.style.width = '100%';
+        Array.from(masterSelect.options).forEach((o) => {
+            const opt = document.createElement('option'); opt.value = o.value; opt.textContent = o.textContent; sel.appendChild(opt);
+        });
+        const current = layerFilenameFromSrc(src, 'fg');
+        if (current) try { sel.value = current; } catch (e) {}
+        inp = sel;
+    } else {
+        inp = document.createElement('input'); inp.className = 'fg-src'; inp.placeholder = `src (es. ${FG_ASSETS_DIR}/foreground2.png)`; inp.value = src || '';
+    }
+    const f = document.createElement('input'); f.className = 'fg-factor'; f.type = 'number'; f.step = '0.1'; f.value = String(factor);
+    const a = document.createElement('input'); a.className = 'fg-alpha'; a.type = 'number'; a.step = '0.05'; a.value = String(alpha);
+    const moveUp = document.createElement('button');
+    moveUp.type = 'button';
+    moveUp.textContent = '↑';
+    moveUp.title = 'Sposta su';
+    moveUp.className = 'layer-move-up';
+    moveUp.style.padding = '4px';
+    moveUp.addEventListener('click', () => {
+        const parent = wrapper.parentElement;
+        if (!parent) return;
+        const prev = wrapper.previousElementSibling;
+        if (prev && !prev.classList.contains('fg-header')) {
+            parent.insertBefore(wrapper, prev);
+            refreshLayerPreviews();
+        }
+    });
+
+    const moveDown = document.createElement('button');
+    moveDown.type = 'button';
+    moveDown.textContent = '↓';
+    moveDown.title = 'Sposta giu';
+    moveDown.className = 'layer-move-down';
+    moveDown.style.padding = '4px';
+    moveDown.addEventListener('click', () => {
+        const parent = wrapper.parentElement;
+        if (!parent) return;
+        const next = wrapper.nextElementSibling;
+        if (next) {
+            parent.insertBefore(next, wrapper);
+            refreshLayerPreviews();
+        }
+    });
+
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.textContent = '✖';
+    del.title = 'Rimuovi';
+    del.style.padding = '4px';
+    del.addEventListener('click', () => { wrapper.remove(); refreshLayerPreviews(); });
+
+    const actions = document.createElement('div');
+    actions.style.display = 'grid';
+    actions.style.gridTemplateColumns = 'repeat(3, 1fr)';
+    actions.style.gap = '4px';
+    actions.appendChild(moveUp);
+    actions.appendChild(moveDown);
+    actions.appendChild(del);
+
+    const rowMid = document.createElement('div');
+    rowMid.style.display = 'grid';
+    rowMid.style.gridTemplateColumns = 'repeat(4, 1fr)';
+    rowMid.style.gap = '6px';
+
+    const ox = document.createElement('input'); ox.className = 'fg-offset-x'; ox.type = 'number'; ox.step = '1'; ox.value = String(offsetX); ox.title = 'offsetX'; ox.placeholder = 'offX';
+    const oy = document.createElement('input'); oy.className = 'fg-offset-y'; oy.type = 'number'; oy.step = '1'; oy.value = String(offsetY); oy.title = 'offsetY'; oy.placeholder = 'offY';
+
+    const rowBottom = document.createElement('div');
+    rowBottom.style.display = 'grid';
+    rowBottom.style.gridTemplateColumns = 'repeat(4, 1fr)';
+    rowBottom.style.gap = '6px';
+
+    const rx = document.createElement('input'); rx.className = 'fg-repeat-x'; rx.type = 'text'; rx.value = String(repeatX); rx.title = 'repeatX / replicaX'; rx.placeholder = 'repX';
+    const ry = document.createElement('input'); ry.className = 'fg-repeat-y'; ry.type = 'text'; ry.value = String(repeatY); ry.title = 'repeatY / replicaY'; ry.placeholder = 'repY';
+    const sx = document.createElement('input'); sx.className = 'fg-step-x'; sx.type = 'number'; sx.step = '1'; sx.value = String(stepX); sx.title = 'repeatStepX'; sx.placeholder = 'stepX';
+    const sy = document.createElement('input'); sy.className = 'fg-step-y'; sy.type = 'number'; sy.step = '1'; sy.value = String(stepY); sy.title = 'repeatStepY'; sy.placeholder = 'stepY';
+
+    rowTop.appendChild(enabledChk);
+    rowTop.appendChild(inp);
+    rowTop.appendChild(actions);
+
+    rowMid.appendChild(f);
+    rowMid.appendChild(a);
+    rowMid.appendChild(ox);
+    rowMid.appendChild(oy);
+
+    rowBottom.appendChild(rx);
+    rowBottom.appendChild(ry);
+    rowBottom.appendChild(sx);
+    rowBottom.appendChild(sy);
+
+    wrapper.appendChild(rowTop);
+    wrapper.appendChild(rowMid);
+    wrapper.appendChild(rowBottom);
+
+    wrapper.addEventListener('dragstart', (ev) => {
+        const t = ev.target;
+        if (t && (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'BUTTON' || t.tagName === 'TEXTAREA')) {
+            ev.preventDefault();
+            return;
+        }
+        wrapper.classList.add('dragging');
+        try {
+            ev.dataTransfer.effectAllowed = 'move';
+            ev.dataTransfer.setData('text/plain', 'fg-layer');
+        } catch (e) { }
+    });
+    wrapper.addEventListener('dragend', () => {
+        wrapper.classList.remove('dragging');
+    });
+
+    return wrapper;
+}
+
+function ensureBgHeader() {
+    const container = el('bgLayersContainer');
+    if (!container) return;
+    if (container.querySelector('.bg-header')) return;
+    const header = document.createElement('div');
+    header.className = 'bg-header';
+    header.style.display = 'block';
+    header.style.marginBottom = '6px';
+    header.style.color = '#9fb8df';
+    header.style.fontSize = '8px';
+    header.textContent = 'BG: [enabled][active][image] | [factor,alpha,offX,offY] | [repX,repY,stepX,stepY]';
+    container.appendChild(header);
+}
+
+function ensureFgHeader() {
+    const container = el('fgLayersContainer');
+    if (!container) return;
+    if (container.querySelector('.fg-header')) return;
+    const header = document.createElement('div');
+    header.className = 'fg-header';
+    header.style.display = 'block';
+    header.style.marginBottom = '6px';
+    header.style.color = '#9fb8df';
+    header.style.fontSize = '8px';
+    header.textContent = 'FG: [enabled][image] | [factor,alpha,offX,offY] | [repX,repY,stepX,stepY]';
+    container.appendChild(header);
+}
+
+function refreshLayerPreviews() {
+    try {
+        const scene = getScene();
+        scene?.updateEditorBackgroundImage?.(true);
+        drawMiniMapPreview(scene);
+    } catch (e) { }
+}
+
+function bindLayerDnD(container, itemSelector) {
+    if (!container || container.dataset.dndBound === '1') return;
+    container.dataset.dndBound = '1';
+
+    const getDragAfterElement = (clientY) => {
+        const draggableElements = Array.from(container.querySelectorAll(`${itemSelector}:not(.dragging)`));
+        let closest = null;
+        let closestOffset = Number.NEGATIVE_INFINITY;
+
+        draggableElements.forEach((child) => {
+            const box = child.getBoundingClientRect();
+            const offset = clientY - box.top - box.height / 2;
+            if (offset < 0 && offset > closestOffset) {
+                closestOffset = offset;
+                closest = child;
+            }
+        });
+
+        return closest;
+    };
+
+    container.addEventListener('dragover', (ev) => {
+        const dragging = container.querySelector(`${itemSelector}.dragging`);
+        if (!dragging) return;
+        ev.preventDefault();
+        const afterElement = getDragAfterElement(ev.clientY);
+        if (!afterElement) {
+            container.appendChild(dragging);
+        } else {
+            container.insertBefore(dragging, afterElement);
+        }
+    });
+
+    container.addEventListener('drop', (ev) => {
+        const dragging = container.querySelector(`${itemSelector}.dragging`);
+        if (!dragging) return;
+        ev.preventDefault();
+        dragging.classList.remove('dragging');
+        refreshLayerPreviews();
+    });
+
+    container.addEventListener('dragend', () => {
+        const dragging = container.querySelector(`${itemSelector}.dragging`);
+        if (dragging) dragging.classList.remove('dragging');
+    });
+}
+
+function setAssetsStatus(message, isError = false) {
+    const target = el('assetsStatusText');
+    if (!target) return;
+    target.style.color = isError ? '#ff8f9a' : '#8ee89f';
+    target.textContent = message;
+}
+
+function setDictionaryStatus(message, isError = false) {
+    const target = el('dictionaryStatusText');
+    if (!target) return;
+    target.style.color = isError ? '#ff8f9a' : '#8ee89f';
+    target.textContent = message;
+}
+
+function setMappingsStatus(message, isError = false) {
+    const target = el('mappingsStatusText');
+    if (!target) return;
+    target.style.color = isError ? '#ff8f9a' : '#8ee89f';
+    target.textContent = message;
+}
+
+function getDefaultMappingDocument(type) {
+    if (type === 'effects') {
+        return {
+            meta: {
+                name: 'Block Hunter Effects Mapping',
+                version: '1.0.0'
+            },
+            effectProfiles: {}
+        };
+    }
+    if (type === 'tiles') {
+        return {
+            meta: {
+                name: 'Block Hunter Tiles Mapping',
+                version: '1.0.0'
+            },
+            tileSets: {},
+            tiles: {}
+        };
+    }
+    return {
+        meta: {
+            name: 'Block Hunter Entity Mapping',
+            version: '1.0.0'
+        },
+        includes: {
+            effects: 'data/game-effects-mapping.json',
+            tiles: 'data/game-tiles-mapping.json'
+        },
+        entities: {}
+    };
+}
+
+function getMappingItemRootKey(type) {
+    if (type === 'effects') return 'effectProfiles';
+    if (type === 'tiles') return 'tiles';
+    return 'entities';
+}
+
+function getMappingCollection(type) {
+    const doc = MAPPINGS_EDITOR_STATE.loadedDocuments[type];
+    const rootKey = getMappingItemRootKey(type);
+    if (!doc || !isPlainObject(doc[rootKey])) return {};
+    return doc[rootKey];
+}
+
+function buildDefaultMappingItem(type, name) {
+    if (type === 'effects') {
+        return {
+            description: `Nuovo profilo effetto ${name}`
+        };
+    }
+
+    return {
+        category: type === 'tiles' ? 'tile' : 'entity',
+        tokens: [name],
+        scoring: {},
+        effects: {},
+        audio: {},
+        sprite: {
+            animated: false,
+            texture: type === 'tiles' ? 'tiles' : 'objects',
+            frame: 0,
+            animations: {
+                idle: [],
+                move: []
+            }
+        }
+    };
+}
+
+async function fetchMappingDocument(type) {
+    const resp = await fetch(`${buildApiUrl(MAPPINGS_API_PATH)}?type=${encodeURIComponent(type)}`, { cache: 'no-store' });
+    const payload = await resp.json().catch(() => ({}));
+    if (!resp.ok || payload.ok === false) {
+        throw new Error(payload.error || `HTTP ${resp.status}`);
+    }
+    return payload;
+}
+
+async function saveMappingDocument(type, data) {
+    const resp = await fetch(`${buildApiUrl(MAPPINGS_API_PATH)}?type=${encodeURIComponent(type)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ data })
+    });
+    const payload = await resp.json().catch(() => ({}));
+    if (!resp.ok || payload.ok === false) {
+        throw new Error(payload.error || `HTTP ${resp.status}`);
+    }
+    return payload;
+}
+
+function createTextureFrameCanvas(textureKey, frameIndex, size = 96, drawOptions = {}) {
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return canvas;
+
+    const scene = getScene();
+    if (!scene) return canvas;
+
+    const ok = drawMiniMapFrame(scene, ctx, textureKey, frameIndex, 0, 0, size, drawOptions);
+    if (!ok) {
+        ctx.fillStyle = '#11203c';
+        ctx.fillRect(0, 0, size, size);
+        ctx.strokeStyle = '#395a88';
+        ctx.strokeRect(1, 1, size - 2, size - 2);
+        ctx.fillStyle = '#90b7ec';
+        ctx.font = '10px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText('n/a', size / 2, size / 2 + 4);
+    }
+    return canvas;
+}
+
+function summarizeMappingItem(type, item) {
+    if (!item || typeof item !== 'object') return 'record vuoto';
+    if (type === 'effects') return String(item.description || 'profilo effetto');
+    const tokenCount = Array.isArray(item.tokens) ? item.tokens.length : 0;
+    const texture = item?.sprite?.texture || 'no-texture';
+    const frame = item?.sprite?.frame ?? 'n/a';
+    return `${item.category || 'n/a'} | token=${tokenCount} | ${texture}:${frame}`;
+}
+
+function refreshMappingItemList(preferredKey = '') {
+    const type = MAPPINGS_EDITOR_STATE.currentType;
+    const listEl = el('mappingItemList');
+    const metaEl = el('mappingMetaInfo');
+    if (!listEl || !metaEl) return;
+
+    const doc = MAPPINGS_EDITOR_STATE.loadedDocuments[type] || getDefaultMappingDocument(type);
+    const rootKey = getMappingItemRootKey(type);
+    const collection = getMappingCollection(type);
+    const keys = Object.keys(collection).sort((a, b) => a.localeCompare(b));
+    listEl.innerHTML = '';
+
+    metaEl.textContent = `Tipo: ${type} | root: ${rootKey} | elementi: ${keys.length}`;
+
+    if (!keys.length) {
+        const empty = document.createElement('div');
+        empty.className = 'tiny';
+        empty.style.color = '#9fc5f3';
+        empty.textContent = 'Nessun record presente. Usa Aggiungi per crearne uno.';
+        listEl.appendChild(empty);
+        MAPPINGS_EDITOR_STATE.currentItemKey = '';
+        const editor = el('mappingItemEditor');
+        if (editor) editor.value = '{}';
+        renderMappingPreview(null);
+        return;
+    }
+
+    const targetKey = preferredKey && collection[preferredKey] ? preferredKey : (collection[MAPPINGS_EDITOR_STATE.currentItemKey] ? MAPPINGS_EDITOR_STATE.currentItemKey : keys[0]);
+    MAPPINGS_EDITOR_STATE.currentItemKey = targetKey;
+
+    keys.forEach((key) => {
+        const row = document.createElement('button');
+        row.type = 'button';
+        row.className = `mapping-item-row${key === targetKey ? ' active' : ''}`;
+        row.dataset.mappingKey = key;
+
+        const title = document.createElement('div');
+        title.className = 'mapping-item-name';
+        title.textContent = key;
+
+        const meta = document.createElement('div');
+        meta.className = 'mapping-item-meta';
+        meta.textContent = summarizeMappingItem(type, collection[key]);
+
+        row.appendChild(title);
+        row.appendChild(meta);
+        row.addEventListener('click', () => selectMappingItem(key));
+        listEl.appendChild(row);
+    });
+
+    selectMappingItem(targetKey);
+}
+
+function collectScenarioEntries(item) {
+    if (!item || typeof item !== 'object') return [];
+    const scenarios = [];
+    const scoring = isPlainObject(item.scoring) ? item.scoring : {};
+    const effects = isPlainObject(item.effects) ? item.effects : {};
+    const audio = isPlainObject(item.audio) ? item.audio : {};
+    const events = new Set([...Object.keys(scoring), ...Object.keys(effects), ...Object.keys(audio)]);
+
+    events.forEach((eventName) => {
+        scenarios.push({
+            title: eventName,
+            body: [
+                `score: ${JSON.stringify(scoring[eventName] ?? null)}`,
+                `effects: ${JSON.stringify(effects[eventName] ?? [])}`,
+                `audio: ${JSON.stringify(audio[eventName] ?? [])}`
+            ].join(' | ')
+        });
+    });
+
+    if (!scenarios.length && item.description) {
+        scenarios.push({
+            title: 'Descrizione',
+            body: String(item.description)
+        });
+    }
+
+    return scenarios;
+}
+
+function normalizeAnimationFrames(frames) {
+    if (!Array.isArray(frames)) return [];
+    return frames
+        .map((entry) => {
+            if (typeof entry === 'number') return { frame: entry };
+            if (isPlainObject(entry) && typeof entry.frame === 'number') return { frame: entry.frame };
+            return null;
+        })
+        .filter(Boolean);
+}
+
+function renderAnimationGroups(item) {
+    const host = el('mappingAnimationGroups');
+    if (!host) return;
+    host.innerHTML = '';
+
+    if (!item || typeof item !== 'object') {
+        host.textContent = 'Nessun record selezionato.';
+        return;
+    }
+
+    const sprite = item.sprite || {};
+    const animations = isPlainObject(sprite.animations) ? sprite.animations : {};
+    const texture = sprite.texture;
+    const entries = Object.entries(animations);
+
+    if (!texture || !entries.length) {
+        const empty = document.createElement('div');
+        empty.className = 'tiny';
+        empty.textContent = 'Nessuna sequenza animata definita.';
+        host.appendChild(empty);
+        return;
+    }
+
+    entries.forEach(([name, rawFrames]) => {
+        const frames = normalizeAnimationFrames(rawFrames);
+        const group = document.createElement('div');
+        const title = document.createElement('div');
+        title.className = 'mapping-scenario-title';
+        title.textContent = `${name} (${frames.length} frame)`;
+        group.appendChild(title);
+
+        const strip = document.createElement('div');
+        strip.className = 'mapping-animation-strip';
+
+        if (!frames.length) {
+            const empty = document.createElement('div');
+            empty.className = 'tiny';
+            empty.textContent = 'Sequenza vuota';
+            strip.appendChild(empty);
+        } else {
+            frames.forEach((entry, index) => {
+                const frameBox = document.createElement('div');
+                frameBox.className = 'mapping-animation-frame';
+                frameBox.appendChild(createTextureFrameCanvas(texture, entry.frame, 54));
+                const label = document.createElement('div');
+                label.className = 'mapping-animation-label';
+                label.textContent = `#${index} -> ${entry.frame}`;
+                frameBox.appendChild(label);
+                strip.appendChild(frameBox);
+            });
+        }
+
+        group.appendChild(strip);
+        host.appendChild(group);
+    });
+}
+
+function renderMappingPreview(item) {
+    const stage = el('mappingPreviewStage');
+    const meta = el('mappingPreviewMeta');
+    const scenarios = el('mappingScenarioList');
+    if (!stage || !meta || !scenarios) return;
+
+    stage.innerHTML = '';
+    meta.innerHTML = '';
+    scenarios.innerHTML = '';
+
+    if (!item || typeof item !== 'object') {
+        meta.textContent = 'Nessun record selezionato.';
+        renderAnimationGroups(null);
+        return;
+    }
+
+    const type = MAPPINGS_EDITOR_STATE.currentType;
+    const sprite = item.sprite || {};
+    const texture = sprite.texture;
+    const frame = sprite.frame;
+
+    if (texture && typeof frame === 'number') {
+        stage.appendChild(createTextureFrameCanvas(texture, frame, 144, {
+            flipX: !!sprite.flipX,
+            flipY: !!sprite.flipY,
+            rotation: Number(sprite.rotation || 0) * (Math.PI / 180)
+        }));
+    } else {
+        const empty = document.createElement('div');
+        empty.className = 'tiny';
+        empty.style.color = '#9fc5f3';
+        empty.textContent = type === 'effects' ? 'Gli effect profile non hanno sprite diretto.' : 'Record senza texture/frame numerico previewabile.';
+        stage.appendChild(empty);
+    }
+
+    [
+        `Categoria: ${item.category || (type === 'effects' ? 'effectProfile' : 'n/a')}`,
+        `Token: ${JSON.stringify(item.tokens || [])}`,
+        `Texture: ${texture || 'n/a'}`,
+        `Frame usato: ${frame ?? 'n/a'}`,
+        `Animato: ${sprite.animated === true ? 'si' : 'no'}`
+    ].forEach((text) => {
+        const row = document.createElement('div');
+        row.textContent = text;
+        meta.appendChild(row);
+    });
+
+    const scenarioEntries = collectScenarioEntries(item);
+    if (!scenarioEntries.length) {
+        const empty = document.createElement('div');
+        empty.className = 'tiny';
+        empty.textContent = 'Nessuna situazione configurata.';
+        scenarios.appendChild(empty);
+    } else {
+        scenarioEntries.forEach((entry) => {
+            const box = document.createElement('div');
+            box.className = 'mapping-scenario-item';
+            const title = document.createElement('div');
+            title.className = 'mapping-scenario-title';
+            title.textContent = entry.title;
+            const body = document.createElement('div');
+            body.className = 'mapping-scenario-body';
+            body.textContent = entry.body;
+            box.appendChild(title);
+            box.appendChild(body);
+            scenarios.appendChild(box);
+        });
+    }
+
+    renderAnimationGroups(item);
+}
+
+function previewMappingEditorValue() {
+    const raw = String(el('mappingItemEditor')?.value || '').trim();
+    if (!raw) {
+        renderMappingPreview(null);
+        return;
+    }
+    try {
+        const parsed = JSON.parse(raw);
+        renderMappingPreview(parsed);
+        setMappingsStatus('Preview aggiornata dal record JSON.');
+    } catch (e) {
+        setMappingsStatus(`JSON record non valido: ${e.message}`, true);
+    }
+}
+
+function selectMappingItem(key) {
+    const type = MAPPINGS_EDITOR_STATE.currentType;
+    const collection = getMappingCollection(type);
+    const item = collection[key];
+    MAPPINGS_EDITOR_STATE.currentItemKey = key;
+    document.querySelectorAll('.mapping-item-row').forEach((node) => {
+        node.classList.toggle('active', String(node.dataset.mappingKey || '') === key);
+    });
+    const editor = el('mappingItemEditor');
+    if (editor) editor.value = JSON.stringify(item || {}, null, 2);
+    renderMappingPreview(item || null);
+}
+
+async function loadMappingsEditor(preferredType = null) {
+    const type = preferredType || String(el('mappingTypeSelect')?.value || MAPPINGS_EDITOR_STATE.currentType || 'entities');
+    MAPPINGS_EDITOR_STATE.currentType = type;
+    try {
+        const payload = await fetchMappingDocument(type);
+        MAPPINGS_EDITOR_STATE.loadedDocuments[type] = payload.data || getDefaultMappingDocument(type);
+        refreshMappingItemList();
+        setMappingsStatus(`Mapping ${type} caricato.`);
+    } catch (e) {
+        MAPPINGS_EDITOR_STATE.loadedDocuments[type] = getDefaultMappingDocument(type);
+        refreshMappingItemList();
+        setMappingsStatus(`Errore caricamento mapping ${type}: ${e.message}`, true);
+    }
+}
+
+function applyCurrentMappingRecord() {
+    const type = MAPPINGS_EDITOR_STATE.currentType;
+    const key = String(MAPPINGS_EDITOR_STATE.currentItemKey || '').trim();
+    const raw = String(el('mappingItemEditor')?.value || '').trim();
+    if (!key) {
+        setMappingsStatus('Seleziona o crea un record.', true);
+        return false;
+    }
+    try {
+        const parsed = raw ? JSON.parse(raw) : {};
+        const doc = MAPPINGS_EDITOR_STATE.loadedDocuments[type] || getDefaultMappingDocument(type);
+        const rootKey = getMappingItemRootKey(type);
+        if (!isPlainObject(doc[rootKey])) doc[rootKey] = {};
+        doc[rootKey][key] = parsed;
+        MAPPINGS_EDITOR_STATE.loadedDocuments[type] = doc;
+        refreshMappingItemList(key);
+        renderMappingPreview(parsed);
+        setMappingsStatus(`Record applicato: ${key}`);
+        return true;
+    } catch (e) {
+        setMappingsStatus(`Errore parsing record: ${e.message}`, true);
+        return false;
+    }
+}
+
+function addMappingItem() {
+    const type = MAPPINGS_EDITOR_STATE.currentType;
+    const input = el('newMappingItemName');
+    const name = String(input?.value || '').trim();
+    if (!name) {
+        setMappingsStatus('Inserisci il nome del nuovo record.', true);
+        return;
+    }
+    const doc = MAPPINGS_EDITOR_STATE.loadedDocuments[type] || getDefaultMappingDocument(type);
+    const rootKey = getMappingItemRootKey(type);
+    if (!isPlainObject(doc[rootKey])) doc[rootKey] = {};
+    if (doc[rootKey][name]) {
+        setMappingsStatus(`Il record ${name} esiste gia.`, true);
+        return;
+    }
+    doc[rootKey][name] = buildDefaultMappingItem(type, name);
+    MAPPINGS_EDITOR_STATE.loadedDocuments[type] = doc;
+    MAPPINGS_EDITOR_STATE.currentItemKey = name;
+    if (input) input.value = '';
+    refreshMappingItemList(name);
+    setMappingsStatus(`Creato record: ${name}`);
+}
+
+async function persistCurrentMappingDocument() {
+    if (!applyCurrentMappingRecord()) return;
+    const type = MAPPINGS_EDITOR_STATE.currentType;
+    const doc = MAPPINGS_EDITOR_STATE.loadedDocuments[type] || getDefaultMappingDocument(type);
+    try {
+        const payload = await saveMappingDocument(type, doc);
+        const backup = payload.backupFile ? ` Backup: ${payload.backupFile}` : '';
+        setMappingsStatus(`File ${type} salvato.${backup}`);
+    } catch (e) {
+        setMappingsStatus(`Errore salvataggio mapping ${type}: ${e.message}`, true);
+    }
+}
+
+async function refreshMusicSelectOptions() {
+    const list = await fetchJsonListWithFallback(buildApiUrl('music'), MUSIC_MANIFEST_PATH);
+    const sel = el('levelMusic');
+    if (!sel) return;
+    const current = String(sel.value || '').trim();
+    sel.innerHTML = '';
+    const noneOpt = document.createElement('option');
+    noneOpt.value = '';
+    noneOpt.textContent = '(none)';
+    sel.appendChild(noneOpt);
+    list.forEach((p) => {
+        const name = String(p).split('/').pop();
+        const o = document.createElement('option');
+        o.value = p;
+        o.textContent = name;
+        sel.appendChild(o);
+    });
+    if (current) sel.value = current;
+}
+
+async function refreshImageSelectOptions() {
+    const [bgList, fgList] = await Promise.all([
+        fetchJsonListWithFallback(buildApiUrl('images/background'), BG_MANIFEST_PATH),
+        fetchJsonListWithFallback(buildApiUrl('images/foreground'), FG_MANIFEST_PATH)
+    ]);
+
+    const bgSel = el('bgImageSelect');
+    const fgSel = el('fgImageSelect');
+
+    if (bgSel) {
+        bgSel.innerHTML = '';
+        const placeholder = document.createElement('option');
+        placeholder.value = '';
+        placeholder.textContent = '-- scegli immagine background --';
+        bgSel.appendChild(placeholder);
+        bgList.forEach((p) => {
+            const name = String(p).split('/').pop();
+            const o = document.createElement('option');
+            o.value = name;
+            o.textContent = name;
+            bgSel.appendChild(o);
+        });
+    }
+
+    if (fgSel) {
+        fgSel.innerHTML = '';
+        const placeholder = document.createElement('option');
+        placeholder.value = '';
+        placeholder.textContent = '-- scegli immagine foreground --';
+        fgSel.appendChild(placeholder);
+        fgList.forEach((p) => {
+            const name = String(p).split('/').pop();
+            const o = document.createElement('option');
+            o.value = name;
+            o.textContent = name;
+            fgSel.appendChild(o);
+        });
+    }
+}
+
+async function refreshAssetsTable() {
+    const type = String(el('assetTypeSelect')?.value || 'background');
+    const body = el('assetTableBody');
+    if (!body) return;
+
+    body.innerHTML = '';
+    try {
+        const resp = await fetch(`${buildApiUrl(ASSETS_API_PATH)}?type=${encodeURIComponent(type)}`, { cache: 'no-store' });
+        const payload = await resp.json().catch(() => ({}));
+        if (!resp.ok || payload.ok === false) throw new Error(payload.error || `HTTP ${resp.status}`);
+
+        const list = Array.isArray(payload.assets) ? payload.assets : [];
+        if (!list.length) {
+            const tr = document.createElement('tr');
+            const td = document.createElement('td');
+            td.colSpan = 3;
+            td.textContent = 'Nessun asset trovato.';
+            tr.appendChild(td);
+            body.appendChild(tr);
+            setAssetsStatus('Elenco asset aggiornato.');
+            return;
+        }
+
+        list.forEach((item) => {
+            const tr = document.createElement('tr');
+
+            const nameTd = document.createElement('td');
+            nameTd.textContent = String(item.name || item.path || '');
+
+            const usedTd = document.createElement('td');
+            const badge = document.createElement('span');
+            const used = !!item.used;
+            badge.className = `used-flag ${used ? 'yes' : 'no'}`;
+            badge.textContent = used ? 'SI' : 'NO';
+            usedTd.appendChild(badge);
+
+            const actionTd = document.createElement('td');
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.textContent = 'Delete';
+            btn.disabled = used;
+            btn.title = used ? 'Asset in uso: non eliminabile' : 'Elimina asset';
+            btn.addEventListener('click', async () => {
+                try {
+                    const delResp = await fetch(buildApiUrl(ASSETS_API_PATH), {
+                        method: 'DELETE',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ type, fileName: item.name })
+                    });
+                    const delPayload = await delResp.json().catch(() => ({}));
+                    if (!delResp.ok || delPayload.ok === false) {
+                        throw new Error(delPayload.error || `HTTP ${delResp.status}`);
+                    }
+                    setAssetsStatus(`Eliminato: ${item.name}`);
+                    await refreshAssetsTable();
+                    await refreshImageSelectOptions();
+                    await refreshMusicSelectOptions();
+                } catch (e) {
+                    setAssetsStatus(`Errore delete: ${e.message}`, true);
+                }
+            });
+            actionTd.appendChild(btn);
+
+            tr.appendChild(nameTd);
+            tr.appendChild(usedTd);
+            tr.appendChild(actionTd);
+            body.appendChild(tr);
+        });
+
+        setAssetsStatus('Elenco asset aggiornato.');
+    } catch (e) {
+        setAssetsStatus(`Errore lettura asset: ${e.message}`, true);
+    }
+}
+
+async function uploadSelectedAsset() {
+    const type = String(el('assetTypeSelect')?.value || 'background');
+    const fileInput = el('assetUploadInput');
+    const file = fileInput?.files?.[0];
+    if (!file) {
+        setAssetsStatus('Seleziona un file da caricare.', true);
+        return;
+    }
+
+    try {
+        const base64Content = await new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => {
+                const raw = String(reader.result || '');
+                const idx = raw.indexOf(',');
+                resolve(idx >= 0 ? raw.slice(idx + 1) : raw);
+            };
+            reader.onerror = () => reject(new Error('Lettura file fallita'));
+            reader.readAsDataURL(file);
+        });
+
+        const resp = await fetch(buildApiUrl(`${ASSETS_API_PATH}/upload`), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                type,
+                fileName: file.name,
+                contentBase64: base64Content
+            })
+        });
+        const payload = await resp.json().catch(() => ({}));
+        if (!resp.ok || payload.ok === false) throw new Error(payload.error || `HTTP ${resp.status}`);
+
+        if (fileInput) fileInput.value = '';
+        setAssetsStatus(`Upload completato: ${file.name}`);
+        await refreshAssetsTable();
+        await refreshImageSelectOptions();
+        await refreshMusicSelectOptions();
+    } catch (e) {
+        setAssetsStatus(`Errore upload: ${e.message}`, true);
+    }
+}
+
+async function refreshDictionaryList() {
+    const sel = el('dictionarySelect');
+    if (!sel) return;
+    const current = String(sel.value || '').trim();
+    sel.innerHTML = '';
+
+    try {
+        const resp = await fetch(buildApiUrl(DICTIONARIES_API_PATH), { cache: 'no-store' });
+        const payload = await resp.json().catch(() => ({}));
+        if (!resp.ok || payload.ok === false) throw new Error(payload.error || `HTTP ${resp.status}`);
+        const list = Array.isArray(payload.items) ? payload.items : [];
+        list.forEach((name) => {
+            const o = document.createElement('option');
+            o.value = String(name);
+            o.textContent = String(name);
+            sel.appendChild(o);
+        });
+
+        if (current && list.includes(current)) {
+            sel.value = current;
+        }
+
+        if (sel.value) {
+            await loadDictionary(sel.value);
+        } else {
+            const editor = el('dictionaryEditor');
+            if (editor) editor.value = '{}';
+        }
+
+        setDictionaryStatus('Lista dizionari aggiornata.');
+    } catch (e) {
+        setDictionaryStatus(`Errore caricamento dizionari: ${e.message}`, true);
+    }
+}
+
+async function loadDictionary(name) {
+    if (!name) return;
+    try {
+        const resp = await fetch(`${buildApiUrl(DICTIONARIES_API_PATH)}?name=${encodeURIComponent(name)}`, { cache: 'no-store' });
+        const payload = await resp.json().catch(() => ({}));
+        if (!resp.ok || payload.ok === false) throw new Error(payload.error || `HTTP ${resp.status}`);
+        const editor = el('dictionaryEditor');
+        if (editor) editor.value = JSON.stringify(payload.data || {}, null, 2);
+        setDictionaryStatus(`Dizionario caricato: ${name}`);
+    } catch (e) {
+        setDictionaryStatus(`Errore caricamento dizionario: ${e.message}`, true);
+    }
+}
+
+async function saveDictionary(name, data) {
+    const resp = await fetch(buildApiUrl(DICTIONARIES_API_PATH), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, data })
+    });
+    const payload = await resp.json().catch(() => ({}));
+    if (!resp.ok || payload.ok === false) {
+        throw new Error(payload.error || `HTTP ${resp.status}`);
+    }
+    return payload;
+}
+
 function bindUI() {
     const applyGridBtn = el('applyGridBtn');
     const clearGridBtn = el('clearGridBtn');
+    const autoPopulateFromImageBtn = el('autoPopulateFromImageBtn');
+    const autoPopulatePathSpawnsBtn = el('autoPopulatePathSpawnsBtn');
+    const autoWallSensitivity = el('autoWallSensitivity');
+    const autoLiquidSensitivity = el('autoLiquidSensitivity');
     const exportBtn = el('exportBtn');
     const copyJsonBtn = el('copyJsonBtn');
     const saveLocalBtn = el('saveLocalBtn');
     const loadLocalBtn = el('loadLocalBtn');
     const importJsonFile = el('importJsonFile');
+    const openConfigDialogBtn = el('openConfigDialogBtn');
+    const openAssetsDialogBtn = el('openAssetsDialogBtn');
+    const closeAssetsDialogBtn = el('closeAssetsDialogBtn');
+    const refreshAssetsBtn = el('refreshAssetsBtn');
+    const uploadAssetBtn = el('uploadAssetBtn');
+    const assetTypeSelect = el('assetTypeSelect');
+    const assetsModal = el('assetsModal');
+    const openDictionaryDialogBtn = el('openDictionaryDialogBtn');
+    const openMappingsDialogBtn = el('openMappingsDialogBtn');
+    const closeDictionaryDialogBtn = el('closeDictionaryDialogBtn');
+    const refreshDictionaryBtn = el('refreshDictionaryBtn');
+    const createDictionaryBtn = el('createDictionaryBtn');
+    const saveDictionaryBtn = el('saveDictionaryBtn');
+    const dictionarySelect = el('dictionarySelect');
+    const dictionaryModal = el('dictionaryModal');
+    const closeMappingsDialogBtn = el('closeMappingsDialogBtn');
+    const reloadMappingsBtn = el('reloadMappingsBtn');
+    const saveMappingsFileBtn = el('saveMappingsFileBtn');
+    const addMappingItemBtn = el('addMappingItemBtn');
+    const saveMappingItemBtn = el('saveMappingItemBtn');
+    const mappingTypeSelect = el('mappingTypeSelect');
+    const mappingsModal = el('mappingsModal');
+    const closeConfigDialogBtn = el('closeConfigDialogBtn');
+    const reloadConfigBtn = el('reloadConfigBtn');
+    const saveConfigBtn = el('saveConfigBtn');
+    const configModal = el('configModal');
+
+    autoWallSensitivity?.addEventListener('input', refreshAutoTileSensitivityLabels);
+    autoLiquidSensitivity?.addEventListener('input', refreshAutoTileSensitivityLabels);
+    refreshAutoTileSensitivityLabels();
+
+    if (openConfigDialogBtn) {
+        openConfigDialogBtn.addEventListener('click', async () => {
+            if (configModal) configModal.classList.add('open');
+            await loadConfigEditor();
+        });
+    }
+
+    if (closeConfigDialogBtn) {
+        closeConfigDialogBtn.addEventListener('click', () => {
+            if (configModal) configModal.classList.remove('open');
+        });
+    }
+
+    if (reloadConfigBtn) {
+        reloadConfigBtn.addEventListener('click', async () => {
+            await loadConfigEditor();
+        });
+    }
+
+    if (saveConfigBtn) {
+        saveConfigBtn.addEventListener('click', async () => {
+            await saveConfigEditor();
+        });
+    }
+
+    if (configModal) {
+        configModal.addEventListener('click', (ev) => {
+            if (ev.target === configModal) {
+                configModal.classList.remove('open');
+            }
+        });
+    }
+
+    if (openAssetsDialogBtn) {
+        openAssetsDialogBtn.addEventListener('click', async () => {
+            if (assetsModal) assetsModal.classList.add('open');
+            await refreshAssetsTable();
+        });
+    }
+
+    if (closeAssetsDialogBtn) {
+        closeAssetsDialogBtn.addEventListener('click', () => {
+            if (assetsModal) assetsModal.classList.remove('open');
+        });
+    }
+
+    if (assetsModal) {
+        assetsModal.addEventListener('click', (ev) => {
+            if (ev.target === assetsModal) {
+                assetsModal.classList.remove('open');
+            }
+        });
+    }
+
+    if (refreshAssetsBtn) refreshAssetsBtn.addEventListener('click', refreshAssetsTable);
+    if (uploadAssetBtn) uploadAssetBtn.addEventListener('click', uploadSelectedAsset);
+    if (assetTypeSelect) assetTypeSelect.addEventListener('change', refreshAssetsTable);
+
+    if (openDictionaryDialogBtn) {
+        openDictionaryDialogBtn.addEventListener('click', async () => {
+            if (dictionaryModal) dictionaryModal.classList.add('open');
+            await refreshDictionaryList();
+        });
+    }
+
+    if (closeDictionaryDialogBtn) {
+        closeDictionaryDialogBtn.addEventListener('click', () => {
+            if (dictionaryModal) dictionaryModal.classList.remove('open');
+        });
+    }
+
+    if (dictionaryModal) {
+        dictionaryModal.addEventListener('click', (ev) => {
+            if (ev.target === dictionaryModal) {
+                dictionaryModal.classList.remove('open');
+            }
+        });
+    }
+
+    if (openMappingsDialogBtn) {
+        openMappingsDialogBtn.addEventListener('click', async () => {
+            if (mappingsModal) mappingsModal.classList.add('open');
+            await loadMappingsEditor(String(mappingTypeSelect?.value || 'entities'));
+        });
+    }
+
+    if (closeMappingsDialogBtn) {
+        closeMappingsDialogBtn.addEventListener('click', () => {
+            if (mappingsModal) mappingsModal.classList.remove('open');
+        });
+    }
+
+    if (mappingsModal) {
+        mappingsModal.addEventListener('click', (ev) => {
+            if (ev.target === mappingsModal) {
+                mappingsModal.classList.remove('open');
+            }
+        });
+    }
+
+    if (mappingTypeSelect) {
+        mappingTypeSelect.addEventListener('change', async () => {
+            await loadMappingsEditor(String(mappingTypeSelect.value || 'entities'));
+        });
+    }
+
+    if (reloadMappingsBtn) {
+        reloadMappingsBtn.addEventListener('click', async () => {
+            await loadMappingsEditor();
+        });
+    }
+
+    if (saveMappingsFileBtn) {
+        saveMappingsFileBtn.addEventListener('click', async () => {
+            await persistCurrentMappingDocument();
+        });
+    }
+
+    if (addMappingItemBtn) {
+        addMappingItemBtn.addEventListener('click', addMappingItem);
+    }
+
+    if (saveMappingItemBtn) {
+        saveMappingItemBtn.addEventListener('click', () => {
+            applyCurrentMappingRecord();
+        });
+    }
+
+    const mappingItemEditor = el('mappingItemEditor');
+    if (mappingItemEditor) {
+        mappingItemEditor.addEventListener('input', previewMappingEditorValue);
+    }
+
+    if (refreshDictionaryBtn) {
+        refreshDictionaryBtn.addEventListener('click', refreshDictionaryList);
+    }
+
+    if (dictionarySelect) {
+        dictionarySelect.addEventListener('change', async () => {
+            await loadDictionary(String(dictionarySelect.value || '').trim());
+        });
+    }
+
+    if (createDictionaryBtn) {
+        createDictionaryBtn.addEventListener('click', async () => {
+            const input = el('newDictionaryName');
+            const name = String(input?.value || '').trim();
+            if (!name) {
+                setDictionaryStatus('Inserisci il nome del nuovo dizionario.', true);
+                return;
+            }
+            try {
+                await saveDictionary(name, {});
+                if (input) input.value = '';
+                await refreshDictionaryList();
+                if (dictionarySelect) dictionarySelect.value = name;
+                await loadDictionary(name);
+                setDictionaryStatus(`Creato dizionario: ${name}`);
+            } catch (e) {
+                setDictionaryStatus(`Errore creazione dizionario: ${e.message}`, true);
+            }
+        });
+    }
+
+    if (saveDictionaryBtn) {
+        saveDictionaryBtn.addEventListener('click', async () => {
+            const name = String(dictionarySelect?.value || '').trim();
+            const raw = String(el('dictionaryEditor')?.value || '').trim();
+            if (!name) {
+                setDictionaryStatus('Seleziona un dizionario.', true);
+                return;
+            }
+            try {
+                const parsed = raw ? JSON.parse(raw) : {};
+                if (!isPlainObject(parsed)) {
+                    throw new Error('Il dizionario deve essere un oggetto JSON');
+                }
+                await saveDictionary(name, parsed);
+                setDictionaryStatus(`Dizionario salvato: ${name}`);
+            } catch (e) {
+                setDictionaryStatus(`Errore salvataggio dizionario: ${e.message}`, true);
+            }
+        });
+    }
 
     applyGridBtn?.addEventListener('click', () => {
         const scene = getScene();
@@ -1020,6 +4768,22 @@ function bindUI() {
         if (!scene) return;
         scene.resetGrid(scene.cols, scene.rows);
         setStatus('Griglia svuotata.');
+    });
+
+    autoPopulateFromImageBtn?.addEventListener('click', async () => {
+        try {
+            await autoPopulateTilesFromLayers();
+        } catch (error) {
+            setStatus(`Errore auto tiles: ${error.message}`, true);
+        }
+    });
+
+    autoPopulatePathSpawnsBtn?.addEventListener('click', async () => {
+        try {
+            await autoPopulatePathSpawns();
+        } catch (error) {
+            setStatus(`Errore auto spawn percorso: ${error.message}`, true);
+        }
     });
 
     exportBtn?.addEventListener('click', () => {
@@ -1076,11 +4840,7 @@ function bindUI() {
 
         try {
             const text = await file.text();
-            const parsed = JSON.parse(text);
-            applyLevelToForm(parsed);
-            const scene = getScene();
-            scene?.loadFromJson(parsed);
-            setStatus(`Import completato: ${file.name}`);
+            importLevelFromText(text, file.name);
         } catch (error) {
             setStatus(`Errore import: ${error.message}`, true);
         } finally {
@@ -1088,13 +4848,72 @@ function bindUI() {
         }
     });
 
+    // Top-level import/export buttons (header)
+    const exportTop = el('exportTopBtn');
+    const copyTop = el('copyTopBtn');
+    const importTop = el('importTopBtn');
+    const importTopFile = el('importTopFile');
+
+    if (exportTop) {
+        exportTop.addEventListener('click', () => {
+            try {
+                const level = readLevelFromForm();
+                exportJsonToFile(level);
+                setStatus('JSON esportato con successo.');
+            } catch (error) {
+                setStatus(`Errore export: ${error.message}`, true);
+            }
+        });
+    }
+    if (copyTop) {
+        copyTop.addEventListener('click', async () => {
+            try {
+                const level = readLevelFromForm();
+                await navigator.clipboard.writeText(JSON.stringify(level, null, 2));
+                setStatus('JSON copiato negli appunti.');
+            } catch (error) {
+                setStatus(`Errore copia: ${error.message}`, true);
+            }
+        });
+    }
+    if (importTop) {
+        importTop.addEventListener('click', () => {
+            if (importTopFile) importTopFile.click();
+        });
+    }
+    if (importTopFile) {
+        importTopFile.addEventListener('change', async (ev) => {
+            const file = ev.target?.files?.[0];
+            if (!file) return;
+            try {
+                const text = await file.text();
+                importLevelFromText(text, file.name);
+            } catch (e) {
+                setStatus(`Errore import: ${e.message}`, true);
+            } finally {
+                ev.target.value = '';
+            }
+        });
+    }
+
     const realtimeFields = [
         'playerRow', 'playerCol', 'gridCols', 'gridRows', 'mapTimer', 'revealMode',
-        'levelId', 'levelSpeed', 'ghostCount', 'batCount', 'ghostSpeed', 'batSpeed',
+        'levelId', 'levelSpeed', 'ghostCount', 'batCount', 'spiderCount', 'snakeCount', 'ghostSpeed', 'batSpeed', 'spiderSpeed', 'snakeSpeed',
+        'batFlightsBeforeRest', 'batRestSeconds', 'batRestIntervalSeconds',
         'objectiveLabel', 'lightMode', 'escapeRoute', 'srEnabled', 'srShardBurstCount',
         'srDynamicSize', 'srRotation', 'srChaotic', 'dbEnabled', 'dbSplitOnImpact',
-        'dbDirections', 'dbSizes', 'dbSplitRange', 'dbMaxSplitGen', 'extraRootJson'
+        'dbDirections', 'dbSizes', 'dbSplitRange', 'dbMaxSplitGen', 'extraRootJson',
+        'objFxLampEnabled', 'objFxLampRadius', 'objFxLampColor',
+        'objFxPulseEnabled', 'objFxPulseScale', 'objFxPulseDuration',
+        'objFxFloatEnabled', 'objFxFloatAmplitude', 'objFxFloatDuration',
+        'objFxHaloEnabled', 'objFxHaloRadius', 'objFxHaloColor',
+        'objFxOutlineEnabled', 'objFxOutlineThickness', 'objFxOutlineColor'
     ];
+
+    // include rain controls for realtime preview updates
+    realtimeFields.push('rainEnabled', 'rainIntensity', 'rainFrequency', 'rainWind', 'rainDirection', 'rainInterval', 'rainDuration');
+    // fog realtime controls
+    realtimeFields.push('fogEnabled', 'fogAlpha', 'fogLayers', 'fogSpeed', 'fogDirection');
 
     realtimeFields.forEach((id) => {
         const input = el(id);
@@ -1102,6 +4921,316 @@ function bindUI() {
         input.addEventListener('input', () => drawMiniMapPreview(getScene()));
         input.addEventListener('change', () => drawMiniMapPreview(getScene()));
     });
+    
+    // Music controls: preview/play selected track from data/music
+    try {
+        window.__editorMusicAudio = window.__editorMusicAudio || new Audio();
+        const audio = window.__editorMusicAudio;
+        audio.loop = true;
+        const playBtn = el('playMusicBtn');
+        const stopBtn = el('stopMusicBtn');
+        const musicSel = el('levelMusic');
+        const vol = el('musicVolume');
+        const previewBtn = el('previewMusicBtn');
+
+        // preview audio instance (separate from main player)
+        window.__editorMusicPreviewAudio = window.__editorMusicPreviewAudio || new Audio();
+        const pAudio = window.__editorMusicPreviewAudio;
+        pAudio.loop = false;
+
+        if (musicSel) {
+            musicSel.addEventListener('change', () => {
+                try {
+                    const v = String(musicSel.value || '').trim();
+                    if (v) audio.src = v;
+                    setStatus(`Musica selezionata: ${v || '(none)'}`);
+                } catch (e) { /* ignore */ }
+            });
+        }
+        if (playBtn) playBtn.addEventListener('click', async () => {
+            try {
+                const src = String(musicSel?.value || '').trim();
+                if (!src) { setStatus('Nessuna traccia selezionata.', true); return; }
+                if (!audio.src || audio.src.indexOf(src) === -1) audio.src = src;
+                audio.volume = parseFloat(vol?.value ?? 0.6) || 0.6;
+                await audio.play();
+                setStatus('Musica in riproduzione...');
+            } catch (e) { setStatus(`Errore riproduzione: ${e.message}`, true); }
+        });
+        if (stopBtn) stopBtn.addEventListener('click', () => { try { audio.pause(); audio.currentTime = 0; setStatus('Musica fermata.'); } catch (e) {} });
+        if (vol) vol.addEventListener('input', () => { try { audio.volume = parseFloat(vol.value) || 0; pAudio.volume = parseFloat(vol.value) || 0; } catch (e) {} });
+
+        if (previewBtn) {
+            previewBtn.addEventListener('click', async () => {
+                try {
+                    const src = String(musicSel?.value || '').trim();
+                    if (!src) { setStatus('Nessuna traccia selezionata per preview.', true); return; }
+                    // toggle: if preview playing, stop it
+                    if (!pAudio.paused && !pAudio.ended) {
+                        try { clearTimeout(pAudio._previewTimeout); } catch (e) {}
+                        pAudio.pause(); pAudio.currentTime = 0;
+                        setStatus('Preview fermata.');
+                        return;
+                    }
+                    if (!pAudio.src || pAudio.src.indexOf(src) === -1) pAudio.src = src;
+                    pAudio.volume = parseFloat(vol?.value ?? 0.6) || 0.6;
+                    pAudio.currentTime = 0;
+                    await pAudio.play();
+                    setStatus('Preview in riproduzione...');
+                    // auto-stop preview after 6s if still playing
+                    try { clearTimeout(pAudio._previewTimeout); } catch (e) {}
+                    pAudio._previewTimeout = setTimeout(() => {
+                        try { pAudio.pause(); pAudio.currentTime = 0; setStatus('Preview terminata.'); } catch (e) {}
+                    }, 6000);
+                    pAudio.addEventListener('ended', () => { try { clearTimeout(pAudio._previewTimeout); setStatus('Preview terminata.'); } catch (e) {} }, { once: true });
+                } catch (e) { setStatus(`Errore preview: ${e.message}`, true); }
+            });
+        }
+    } catch (e) { /* ignore music UI errors */ }
+
+    // Populate levelMusic select dynamically from API with static manifest fallback
+    async function populateMusicOptions() {
+        try {
+            const list = await fetchJsonListWithFallback(buildApiUrl('music'), MUSIC_MANIFEST_PATH);
+            const sel = el('levelMusic');
+            if (!sel) return;
+            // clear existing options and add (none)
+            sel.innerHTML = '';
+            const noneOpt = document.createElement('option'); noneOpt.value = ''; noneOpt.textContent = '(none)'; sel.appendChild(noneOpt);
+            list.forEach((p) => {
+                const name = String(p).split('/').pop();
+                const o = document.createElement('option'); o.value = p; o.textContent = name; sel.appendChild(o);
+            });
+        } catch (e) {
+            // ignore
+        }
+    }
+
+    try { populateMusicOptions(); } catch (e) {}
+
+    // Populate bg/fg image selects dynamically from server assets images folders
+    async function populateImageOptions() {
+        try {
+            const [bgList, fgList] = await Promise.all([
+                fetchJsonListWithFallback(buildApiUrl('images/background'), BG_MANIFEST_PATH),
+                fetchJsonListWithFallback(buildApiUrl('images/foreground'), FG_MANIFEST_PATH)
+            ]);
+
+            const bgSel = el('bgImageSelect');
+            const fgSel = el('fgImageSelect');
+            if (bgSel) {
+                // keep a default placeholder option
+                bgSel.innerHTML = '';
+                const placeholder = document.createElement('option'); placeholder.value = ''; placeholder.textContent = '-- scegli immagine background --'; bgSel.appendChild(placeholder);
+                bgList.forEach((p) => {
+                    const name = String(p).split('/').pop();
+                    const o = document.createElement('option'); o.value = name; o.textContent = name; bgSel.appendChild(o);
+                });
+            }
+            if (fgSel) {
+                fgSel.innerHTML = '';
+                const placeholder = document.createElement('option'); placeholder.value = ''; placeholder.textContent = '-- scegli immagine foreground --'; fgSel.appendChild(placeholder);
+                fgList.forEach((p) => {
+                    const name = String(p).split('/').pop();
+                    const o = document.createElement('option'); o.value = name; o.textContent = name; fgSel.appendChild(o);
+                });
+            }
+        } catch (e) {
+            // ignore
+        }
+    }
+
+    try { populateImageOptions(); } catch (e) {}
+    
+    // zoom slider
+    const zoomSlider = el('zoomSlider');
+    if (zoomSlider) {
+        zoomSlider.addEventListener('input', () => {
+            const scene = getScene();
+            if (!scene) return;
+            const z = parseFloat(zoomSlider.value) || 1;
+            try { scene.setZoom(z); } catch (e) {}
+            drawMiniMapPreview(scene);
+        });
+    }
+
+    // background select and toggle (legacy selector may be absent)
+    const bgSelect = el('levelBackground');
+    if (bgSelect) {
+        bgSelect.addEventListener('change', () => {
+            const scene = getScene();
+            scene?.updateEditorBackgroundImage?.();
+            drawMiniMapPreview(scene);
+        });
+    }
+    // sync range sliders with numeric inputs for speeds
+    const ghostRange = el('ghostSpeedRange');
+    const ghostNum = el('ghostSpeed');
+    if (ghostRange && ghostNum) {
+        ghostRange.addEventListener('input', () => { ghostNum.value = ghostRange.value; drawMiniMapPreview(getScene()); });
+        ghostNum.addEventListener('input', () => { ghostRange.value = ghostNum.value; drawMiniMapPreview(getScene()); });
+    }
+    const batRange = el('batSpeedRange');
+    const batNum = el('batSpeed');
+    if (batRange && batNum) {
+        batRange.addEventListener('input', () => { batNum.value = batRange.value; drawMiniMapPreview(getScene()); });
+        batNum.addEventListener('input', () => { batRange.value = batNum.value; drawMiniMapPreview(getScene()); });
+    }
+    const spiderRange = el('spiderSpeedRange');
+    const spiderNum = el('spiderSpeed');
+    if (spiderRange && spiderNum) {
+        spiderRange.addEventListener('input', () => { spiderNum.value = spiderRange.value; drawMiniMapPreview(getScene()); });
+        spiderNum.addEventListener('input', () => { spiderRange.value = spiderNum.value; drawMiniMapPreview(getScene()); });
+    }
+    const snakeRange = el('snakeSpeedRange');
+    const snakeNum = el('snakeSpeed');
+    if (snakeRange && snakeNum) {
+        snakeRange.addEventListener('input', () => { snakeNum.value = snakeRange.value; drawMiniMapPreview(getScene()); });
+        snakeNum.addEventListener('input', () => { snakeRange.value = snakeNum.value; drawMiniMapPreview(getScene()); });
+    }
+    const showBg = el('showBackground');
+    if (showBg) {
+        showBg.addEventListener('change', () => {
+            const scene = getScene();
+            scene?.updateEditorBackgroundImage?.();
+            drawMiniMapPreview(scene);
+        });
+    }
+    const showFg = el('showForeground');
+    if (showFg) {
+        showFg.addEventListener('change', () => {
+            const scene = getScene();
+            scene?.updateEditorBackgroundImage?.();
+            drawMiniMapPreview(scene);
+        });
+    }
+
+    const bgLayerContainer = el('bgLayersContainer');
+    if (bgLayerContainer) {
+        const onBgLayerChange = () => {
+            const scene = getScene();
+            scene?.updateEditorBackgroundImage?.(true);
+            drawMiniMapPreview(scene);
+        };
+        bgLayerContainer.addEventListener('input', onBgLayerChange);
+        bgLayerContainer.addEventListener('change', onBgLayerChange);
+    }
+
+    const fgLayerContainer = el('fgLayersContainer');
+    if (fgLayerContainer) {
+        const onFgLayerChange = () => {
+            const scene = getScene();
+            scene?.updateEditorBackgroundImage?.(true);
+            drawMiniMapPreview(scene);
+        };
+        fgLayerContainer.addEventListener('input', onFgLayerChange);
+        fgLayerContainer.addEventListener('change', onFgLayerChange);
+    }
+
+    // auto-grid-from-background toggle
+    const autoGridChk = el('autoGridFromBg');
+    if (autoGridChk) {
+        autoGridChk.addEventListener('change', () => {
+            const scene = getScene();
+            scene?.updateEditorBackgroundImage?.();
+            drawMiniMapPreview(scene);
+        });
+    }
+
+    const applySelectedTokenPropsBtn = el('applySelectedTokenPropsBtn');
+    if (applySelectedTokenPropsBtn) {
+        applySelectedTokenPropsBtn.addEventListener('click', () => {
+            const scene = getScene();
+            if (!scene || !scene.selectedCell) {
+                setStatus('Nessuna cella selezionata.', true);
+                return;
+            }
+            const { row, col } = scene.selectedCell;
+            const cell = scene.cells[row]?.[col];
+            if (!cell) return;
+
+            const parts = String(cell.base || '-').split('/').map((s) => s.trim()).filter(Boolean);
+            if (!parts.length) {
+                setStatus('Nessun oggetto da modificare in questa cella.', true);
+                return;
+            }
+
+            const idx = clamp(parseNumber(el('selectedTokenIndex')?.value, parts.length - 1), 0, parts.length - 1);
+            const base = String(el('selectedTokenBase')?.value || '').trim();
+            const target = String(el('selectedTokenTargetLevel')?.value || '').trim();
+            const effects = String(buildSelectedEffectsFromControls() || '').trim();
+            const invisible = !!el('selectedTokenInvisible')?.checked;
+
+            parts[idx] = composeDecoratedToken({ base, target, effects, invisible });
+            cell.base = parts.join('/');
+            scene.selectedTokenIndex = idx;
+            scene.updateSelectedCellInfo();
+            scene.renderGrid();
+            drawMiniMapPreview(scene);
+            setStatus('Proprieta oggetto applicate.');
+        });
+    }
+
+    const removeSelectedTokenBtn = el('removeSelectedTokenBtn');
+    if (removeSelectedTokenBtn) {
+        removeSelectedTokenBtn.addEventListener('click', () => {
+            const scene = getScene();
+            if (!scene || !scene.selectedCell) {
+                setStatus('Nessuna cella selezionata.', true);
+                return;
+            }
+            const { row, col } = scene.selectedCell;
+            const cell = scene.cells[row]?.[col];
+            if (!cell) return;
+
+            const parts = String(cell.base || '-').split('/').map((s) => s.trim()).filter(Boolean);
+            if (!parts.length) {
+                setStatus('Nessun oggetto da rimuovere.', true);
+                return;
+            }
+            const idx = clamp(parseNumber(el('selectedTokenIndex')?.value, parts.length - 1), 0, parts.length - 1);
+            parts.splice(idx, 1);
+            cell.base = parts.length ? parts.join('/') : '-';
+            scene.selectedTokenIndex = Math.max(0, parts.length - 1);
+            scene.updateSelectedCellInfo();
+            scene.renderGrid();
+            drawMiniMapPreview(scene);
+            setStatus('Oggetto rimosso dalla cella.');
+        });
+    }
+
+    const selectedTokenIndex = el('selectedTokenIndex');
+    if (selectedTokenIndex) {
+        selectedTokenIndex.addEventListener('change', () => {
+            const scene = getScene();
+            scene?.updateSelectedCellInfo();
+        });
+    }
+
+    [
+        'selectedFxLamp',
+        'selectedFxPulse',
+        'selectedFxFloat',
+        'selectedFxHalo',
+        'selectedFxOutline',
+        'selectedTokenEffectsCustom',
+        'selectedLampRadius',
+        'selectedLampColor',
+        'selectedPulseScale',
+        'selectedPulseDuration',
+        'selectedFloatAmplitude',
+        'selectedFloatDuration',
+        'selectedHaloRadius',
+        'selectedHaloColor',
+        'selectedOutlineThickness',
+        'selectedOutlineColor'
+    ]
+        .forEach((id) => {
+            const node = el(id);
+            if (!node) return;
+            node.addEventListener('input', refreshSelectedEffectsPreview);
+            node.addEventListener('change', refreshSelectedEffectsPreview);
+        });
 }
 
 window.addEventListener('level-editor-ready', () => {
@@ -1110,7 +5239,751 @@ window.addEventListener('level-editor-ready', () => {
     if (scene) {
         scene.loadFromJson(DEFAULT_LEVEL);
     }
+    // Build DOM palette (left column) and wire drag/drop handlers
+    try { buildDomPalette(); } catch (e) { /* ignore */ }
+    try { setupDomDragAndDrop(); } catch (e) { /* ignore */ }
+    try { setupRightAccordion(); } catch (e) { /* ignore */ }
     bindUI();
     drawMiniMapPreview(scene);
     setStatus('Editor pronto.');
 });
+
+// Convert right-panel sections into accordions and bind toggles
+function setupRightAccordion() {
+    if (typeof document === 'undefined') return;
+    const panel = document.querySelector('.panel');
+    if (!panel) return;
+    const sections = Array.from(panel.querySelectorAll('.section'));
+    sections.forEach((sec, idx) => {
+        const h2 = sec.querySelector('h2');
+        if (!h2) return;
+        // color tone class per section for quick visual distinction
+        const tone = (idx % 6) + 1;
+        sec.classList.add(`section-tone-${tone}`);
+        // add +/- indicator
+        let ind = h2.querySelector('.section-indicator');
+        if (!ind) {
+            ind = document.createElement('span');
+            ind.className = 'section-indicator';
+            ind.style.marginRight = '8px';
+            ind.style.fontFamily = 'monospace';
+            ind.style.fontWeight = 'bold';
+            h2.prepend(ind);
+        }
+        // wrap all nodes after h2 into .section-body
+        let body = sec.querySelector('.section-body');
+        if (!body) {
+            body = document.createElement('div');
+            body.className = 'section-body';
+            // move nodes after h2 into body
+            let node = h2.nextSibling;
+            const toMove = [];
+            while (node) {
+                toMove.push(node);
+                node = node.nextSibling;
+            }
+            toMove.forEach(n => body.appendChild(n));
+            sec.appendChild(body);
+        }
+        // default: collapsed
+        sec.classList.add('collapsed');
+        // set initial indicator state
+        try { ind.textContent = sec.classList.contains('collapsed') ? '+' : '-'; } catch (e) {}
+        // toggle on click and update indicator
+        h2.addEventListener('click', () => {
+            sec.classList.toggle('collapsed');
+            try { ind.textContent = sec.classList.contains('collapsed') ? '+' : '-'; } catch (e) {}
+        });
+    });
+}
+
+// hook add bg/fg buttons if present
+window.addEventListener('load', () => {
+    const refreshLayerVisuals = () => {
+        refreshLayerPreviews();
+    };
+
+    try { bindLayerDnD(el('bgLayersContainer'), '.bg-layer'); } catch (e) {}
+    try { bindLayerDnD(el('fgLayersContainer'), '.fg-layer'); } catch (e) {}
+
+    const setAllLayerEnabled = (containerId, checkboxClass, enabled) => {
+        try {
+            const container = el(containerId);
+            if (!container) return;
+            const checks = Array.from(container.querySelectorAll(`input.${checkboxClass}`));
+            checks.forEach((c) => { c.checked = !!enabled; });
+            refreshLayerVisuals();
+        } catch (e) { }
+    };
+
+    try {
+        const addBg = el('addBgLayerBtn');
+        if (addBg) addBg.addEventListener('click', () => {
+            const container = el('bgLayersContainer');
+            if (!container) return;
+            ensureBgHeader();
+            container.appendChild(createBgLayerElement({ src: '', factor: 1.0, alpha: 1.0, enabled: true }));
+            try { getScene()?.updateEditorBackgroundImage?.(true); } catch (e) {}
+            try { drawMiniMapPreview(getScene()); } catch (e) {}
+        });
+    } catch (e) {}
+    try {
+        const addFg = el('addFgLayerBtn');
+        if (addFg) addFg.addEventListener('click', () => {
+            const container = el('fgLayersContainer');
+            if (!container) return;
+            ensureFgHeader();
+            container.appendChild(createFgLayerElement({ src: '', factor: 1.0, alpha: 1.0, enabled: true }));
+            try { getScene()?.updateEditorBackgroundImage?.(true); } catch (e) {}
+            try { drawMiniMapPreview(getScene()); } catch (e) {}
+        });
+    } catch (e) {}
+    try {
+        const bgEnableAllBtn = el('bgEnableAllBtn');
+        if (bgEnableAllBtn) bgEnableAllBtn.addEventListener('click', () => {
+            setAllLayerEnabled('bgLayersContainer', 'bg-enabled', true);
+            try { setStatus('Tutti i background attivati.'); } catch (e) { }
+        });
+    } catch (e) {}
+
+    try {
+        const bgDisableAllBtn = el('bgDisableAllBtn');
+        if (bgDisableAllBtn) bgDisableAllBtn.addEventListener('click', () => {
+            setAllLayerEnabled('bgLayersContainer', 'bg-enabled', false);
+            try { setStatus('Tutti i background disattivati.'); } catch (e) { }
+        });
+    } catch (e) {}
+
+    try {
+        const fgEnableAllBtn = el('fgEnableAllBtn');
+        if (fgEnableAllBtn) fgEnableAllBtn.addEventListener('click', () => {
+            setAllLayerEnabled('fgLayersContainer', 'fg-enabled', true);
+            try { setStatus('Tutti i foreground attivati.'); } catch (e) { }
+        });
+    } catch (e) {}
+
+    try {
+        const fgDisableAllBtn = el('fgDisableAllBtn');
+        if (fgDisableAllBtn) fgDisableAllBtn.addEventListener('click', () => {
+            setAllLayerEnabled('fgLayersContainer', 'fg-enabled', false);
+            try { setStatus('Tutti i foreground disattivati.'); } catch (e) { }
+        });
+    } catch (e) {}
+});
+
+// Build left DOM palette inside #domPalette-* containers. Creates simple accordion groups
+function buildDomPalette() {
+
+    function applyRightPanelFieldLayout() {
+        const panel = document.querySelector('.panel');
+        if (!panel) return;
+
+        let tooltipNode = document.getElementById('fieldTooltip');
+        const hideTooltip = () => {
+            if (tooltipNode) tooltipNode.remove();
+            tooltipNode = null;
+        };
+        const showTooltip = (anchor, text) => {
+            if (!anchor || !text) return;
+            hideTooltip();
+            const tip = document.createElement('div');
+            tip.id = 'fieldTooltip';
+            tip.className = 'field-tooltip';
+            tip.textContent = text;
+            document.body.appendChild(tip);
+            const rect = anchor.getBoundingClientRect();
+            const margin = 8;
+            let left = rect.left;
+            let top = rect.bottom + margin;
+            const maxLeft = window.innerWidth - tip.offsetWidth - margin;
+            if (left > maxLeft) left = Math.max(margin, maxLeft);
+            if (top + tip.offsetHeight > window.innerHeight - margin) {
+                top = Math.max(margin, rect.top - tip.offsetHeight - margin);
+            }
+            tip.style.left = `${left}px`;
+            tip.style.top = `${top}px`;
+            tooltipNode = tip;
+            window.setTimeout(() => {
+                const closeIfOpen = () => {
+                    hideTooltip();
+                    document.removeEventListener('click', closeIfOpen, true);
+                    document.removeEventListener('keydown', onEsc, true);
+                };
+                const onEsc = (ev) => {
+                    if (ev.key === 'Escape') closeIfOpen();
+                };
+                document.addEventListener('click', closeIfOpen, true);
+                document.addEventListener('keydown', onEsc, true);
+            }, 0);
+        };
+
+        const legendMap = {
+            levelId: 'Identificativo univoco del livello (es. 1.0, 2.3).',
+            levelSpeed: 'Moltiplicatore generale della velocita della mappa.',
+            gridCols: 'Numero di colonne della griglia.',
+            gridRows: 'Numero di righe della griglia.',
+            mapTimer: 'Tempo massimo del livello in secondi.',
+            ghostCount: 'Numero totale di ghost presenti nel livello.',
+            batCount: 'Numero totale di bat presenti nel livello.',
+            ghostSpeed: 'Velocita di movimento dei ghost.',
+            batSpeed: 'Velocita di movimento dei bat.',
+            objectiveLabel: 'Chiave testo per l obiettivo mostrato al giocatore.',
+            escapeRoute: 'Abilita o disabilita la via di uscita del livello.',
+            lightMode: 'Modalita di illuminazione globale del livello.',
+            playerRow: 'Riga iniziale del player.',
+            playerCol: 'Colonna iniziale del player.'
+        };
+
+        const labels = Array.from(panel.querySelectorAll('label[for]'));
+        labels.forEach((labelNode) => {
+            if (!(labelNode instanceof HTMLElement)) return;
+            if (labelNode.dataset.layoutDone === '1') return;
+
+            const fieldId = String(labelNode.getAttribute('for') || '').trim();
+            if (!fieldId) return;
+
+            const parent = labelNode.parentElement;
+            if (!parent || !(parent instanceof HTMLElement)) return;
+            if (parent.closest('.config-dialog')) return;
+
+            const directChildren = Array.from(parent.children);
+            if (!directChildren.includes(labelNode)) return;
+
+            const controls = directChildren.filter((child) => {
+                if (!(child instanceof HTMLElement)) return false;
+                if (child === labelNode) return false;
+                if (child.classList.contains('tiny')) return false;
+                return ['INPUT', 'SELECT', 'TEXTAREA'].includes(child.tagName);
+            });
+
+            if (!controls.length) return;
+
+            const row = document.createElement('div');
+            row.className = 'field-row';
+
+            labelNode.classList.add('field-label');
+            labelNode.dataset.layoutDone = '1';
+            const longLabel = labelNode.textContent.trim();
+            labelNode.textContent = `${longLabel} :`;
+            const tipText = legendMap[fieldId] || `Campo ${longLabel}: modifica questo valore per influenzare il comportamento della mappa.`;
+            labelNode.title = tipText;
+            row.appendChild(labelNode);
+
+            const valueWrap = document.createElement('div');
+            valueWrap.className = 'field-value';
+            controls.forEach((ctrl) => valueWrap.appendChild(ctrl));
+            row.appendChild(valueWrap);
+
+            const firstTiny = parent.querySelector(':scope > .tiny');
+            if (firstTiny) parent.insertBefore(row, firstTiny);
+            else parent.appendChild(row);
+
+            labelNode.addEventListener('click', (ev) => {
+                ev.preventDefault();
+                ev.stopPropagation();
+                showTooltip(labelNode, tipText);
+            });
+        });
+
+        const inlineLabels = Array.from(panel.querySelectorAll('label:not([for])'));
+        inlineLabels.forEach((labelNode) => {
+            if (!(labelNode instanceof HTMLElement)) return;
+            if (labelNode.dataset.layoutDone === '1') return;
+            if (labelNode.closest('.config-dialog')) return;
+
+            const check = labelNode.querySelector('input[type="checkbox"], input[type="radio"]');
+            if (!(check instanceof HTMLElement)) return;
+
+            const parent = labelNode.parentElement;
+            if (!parent || !(parent instanceof HTMLElement)) return;
+            const directChildren = Array.from(parent.children);
+            if (!directChildren.includes(labelNode)) return;
+
+            const text = labelNode.textContent.trim();
+            if (!text) return;
+            const checkId = String(check.id || '').trim();
+            const tipText = legendMap[checkId] || `Campo ${text}: attiva o disattiva questa opzione per cambiare il comportamento della mappa.`;
+
+            const row = document.createElement('div');
+            row.className = 'field-row';
+
+            const pseudoLabel = document.createElement('label');
+            pseudoLabel.className = 'field-label';
+            pseudoLabel.textContent = `${text} :`;
+            pseudoLabel.title = tipText;
+            row.appendChild(pseudoLabel);
+
+            const valueWrap = document.createElement('div');
+            valueWrap.className = 'field-value';
+            check.style.width = 'auto';
+            valueWrap.appendChild(check);
+            row.appendChild(valueWrap);
+
+            parent.insertBefore(row, labelNode);
+
+            pseudoLabel.addEventListener('click', (ev) => {
+                ev.preventDefault();
+                ev.stopPropagation();
+                showTooltip(pseudoLabel, tipText);
+            });
+
+            labelNode.remove();
+        });
+    }
+
+        try { applyRightPanelFieldLayout(); } catch (e) {}
+    if (typeof document === 'undefined') return;
+    const tilesContainer = el('domPalette-tiles');
+    const objectsContainer = el('domPalette-objects');
+    const wallsContainer = el('domPalette-walls');
+    if (!tilesContainer && !objectsContainer && !wallsContainer) return;
+
+    // classify tokens
+    const tileKeys = new Set(['-', '.', '#', 'f', 'h', 's', 'sand', 'water', 'mud', 'back']);
+    const wallKeys = new Set(WALL_PALETTE_ITEMS.map(i => normalizeToken(i.token)));
+
+    // populate tiles
+    PALETTE_ITEMS.forEach((it) => {
+        const tokenNorm = normalizeToken(it.token);
+        if (tileKeys.has(it.token) || tileKeys.has(tokenNorm)) {
+            if (!tilesContainer) return;
+            const elItem = makePaletteItem(it.label || it.token, tokenNorm);
+            tilesContainer.appendChild(elItem);
+        }
+    });
+
+    // populate objects (exclude walls and tile keys)
+    PALETTE_ITEMS.forEach((it) => {
+        const tokenNorm = normalizeToken(it.token);
+        if (wallKeys.has(tokenNorm)) return;
+        if (tileKeys.has(it.token) || tileKeys.has(tokenNorm)) return;
+        if (!objectsContainer) return;
+        const elItem = makePaletteItem(it.label || it.token, tokenNorm);
+        objectsContainer.appendChild(elItem);
+    });
+
+    // populate walls
+    if (wallsContainer) {
+        WALL_PALETTE_ITEMS.forEach((it) => {
+            const tokenNorm = normalizeToken(it.token);
+            const elItem = makePaletteItem(it.label || it.token, tokenNorm);
+            wallsContainer.appendChild(elItem);
+        });
+    }
+
+    // accordion toggles
+    const accHeads = Array.from(document.querySelectorAll('.accordion h3'));
+    accHeads.forEach((h) => {
+        // add +/- indicator
+        let ind = h.querySelector('.accordion-indicator');
+        if (!ind) {
+            ind = document.createElement('span');
+            ind.className = 'accordion-indicator';
+            ind.style.marginRight = '8px';
+            ind.style.fontFamily = 'monospace';
+            ind.style.fontWeight = 'bold';
+            h.prepend(ind);
+        }
+        // set initial state based on content visibility
+        const content = h.nextElementSibling;
+        try { ind.textContent = (content && (content.style.display === 'block' || getComputedStyle(content).display !== 'none')) ? '-' : '+'; } catch (e) {}
+        h.addEventListener('click', () => {
+            const content = h.nextElementSibling;
+            if (!content) return;
+            const isNowVisible = content.style.display === 'block' ? false : true;
+            content.style.display = isNowVisible ? 'block' : 'none';
+            try { ind.textContent = isNowVisible ? '-' : '+'; } catch (e) {}
+        });
+    });
+
+    // expand objects group by default
+    // keep all left accordions collapsed by default
+
+    function makePaletteItem(labelText, token) {
+        const d = document.createElement('div');
+        d.className = 'palette-item';
+        d.draggable = true;
+        d.dataset.token = token;
+        // build content: canvas preview + label
+        const previewSize = 36;
+        const canvas = document.createElement('canvas');
+        canvas.width = previewSize;
+        canvas.height = previewSize;
+        canvas.style.width = `${previewSize}px`;
+        canvas.style.height = `${previewSize}px`;
+        canvas.style.flex = '0 0 auto';
+        canvas.style.marginRight = '8px';
+
+        const txt = document.createElement('div');
+        txt.style.flex = '1 1 auto';
+        // Avoid appending the token in parentheses if the label already contains it
+        if (String(labelText || '').includes(`(${token})`)) {
+            txt.textContent = String(labelText || '');
+        } else {
+            txt.textContent = `${labelText} (${token})`;
+        }
+        d.style.display = 'flex';
+        d.style.alignItems = 'center';
+        d.appendChild(canvas);
+        d.appendChild(txt);
+
+        // try to draw using Phaser textures if scene is ready
+        try {
+            const scene = getScene();
+            const ctx = canvas.getContext('2d');
+            if (scene && ctx) {
+                ctx.imageSmoothingEnabled = false;
+                const drawn = drawMiniMapToken(scene, ctx, token, 0, 0, previewSize, { alpha: 1 });
+                if (!drawn) {
+                    // fallback: fill with color
+                    ctx.fillStyle = tokenToMiniMapColor(token);
+                    ctx.fillRect(0, 0, previewSize, previewSize);
+                    ctx.fillStyle = '#fff';
+                    ctx.font = '10px monospace';
+                    ctx.fillText(token, 2, 12);
+                }
+            }
+        } catch (e) {
+            // ignore drawing errors
+        }
+
+        d.addEventListener('dragstart', (ev) => {
+            try { ev.dataTransfer.setData('text/plain', token); } catch (e) { /* ignore */ }
+            const scene = getScene();
+            if (scene) scene.lastBrushToken = token;
+        });
+
+        d.addEventListener('click', () => {
+            const scene = getScene();
+            if (scene) {
+                scene.lastBrushToken = token;
+                setStatus(`Brush selezionato: ${token}`);
+            }
+        });
+
+        return d;
+    }
+}
+
+// Setup dragover/drop handlers on #editor-game to place tokens into the Phaser grid
+function setupDomDragAndDrop() {
+    if (typeof document === 'undefined') return;
+    const target = document.getElementById('editor-game');
+    if (!target) return;
+
+    target.addEventListener('dragover', (ev) => {
+        ev.preventDefault();
+        try { ev.dataTransfer.dropEffect = 'copy'; } catch (e) {}
+    });
+
+    target.addEventListener('drop', (ev) => {
+        ev.preventDefault();
+        const token = (ev.dataTransfer && (ev.dataTransfer.getData('text/plain') || ev.dataTransfer.getData('Text'))) || null;
+        if (!token) {
+            setStatus('Nessun token nel drop', true);
+            return;
+        }
+
+        const rect = target.getBoundingClientRect();
+        const x = ev.clientX - rect.left;
+        const y = ev.clientY - rect.top;
+        const scene = getScene();
+        if (!scene) {
+            setStatus('Editor non pronto', true);
+            return;
+        }
+        const cell = scene.getGridCellFromPointer(x, y);
+        if (!cell) {
+            setStatus('Drop fuori dalla griglia', true);
+            return;
+        }
+
+        scene.placeToken(cell.col, cell.row, token);
+        scene.selectedCell = cell;
+        try {
+            const rawParts = String(scene.cells[cell.row]?.[cell.col]?.base || '').split('/').map((s) => s.trim()).filter(Boolean);
+            scene.selectedTokenIndex = Math.max(0, rawParts.length - 1);
+        } catch (e) {
+            scene.selectedTokenIndex = 0;
+        }
+        scene.updateSelectedCellInfo();
+        scene.renderGrid();
+        drawMiniMapPreview(scene);
+        setStatus(`Token ${token} posato in ${cell.row},${cell.col}`);
+    });
+}
+
+function fillSelectedTokenEditor(scene) {
+    const infoEl = el('selectedObjectInfo');
+    const idxEl = el('selectedTokenIndex');
+    const baseEl = el('selectedTokenBase');
+    const invEl = el('selectedTokenInvisible');
+    const targetEl = el('selectedTokenTargetLevel');
+    const fxEl = el('selectedTokenEffects');
+    const fxCustomEl = el('selectedTokenEffectsCustom');
+    const knownChecks = {
+        lamp: el('selectedFxLamp'),
+        pulse: el('selectedFxPulse'),
+        float: el('selectedFxFloat'),
+        halo: el('selectedFxHalo'),
+        outline: el('selectedFxOutline')
+    };
+
+    if (!infoEl || !idxEl || !baseEl || !invEl || !targetEl || !fxEl || !fxCustomEl) return;
+
+    if (!scene || !scene.selectedCell) {
+        infoEl.textContent = 'Nessun oggetto selezionato.';
+        idxEl.innerHTML = '';
+        baseEl.value = '';
+        invEl.checked = false;
+        targetEl.value = '';
+        fxEl.value = '';
+        fxCustomEl.value = '';
+        Object.values(knownChecks).forEach((c) => { if (c) c.checked = false; });
+        clearGuidedEffectOptionInputs();
+        refreshSelectedEffectsPreview();
+        return;
+    }
+
+    const { row, col } = scene.selectedCell;
+    const cell = scene.cells[row]?.[col];
+    const parts = String(cell?.base || '-').split('/').map((s) => s.trim()).filter(Boolean);
+    if (!parts.length || (parts.length === 1 && parts[0] === '-')) {
+        infoEl.textContent = `Cella ${row},${col}: nessun oggetto.`;
+        idxEl.innerHTML = '';
+        baseEl.value = '';
+        invEl.checked = false;
+        targetEl.value = '';
+        fxEl.value = '';
+        fxCustomEl.value = '';
+        Object.values(knownChecks).forEach((c) => { if (c) c.checked = false; });
+        clearGuidedEffectOptionInputs();
+        refreshSelectedEffectsPreview();
+        return;
+    }
+
+    idxEl.innerHTML = '';
+    parts.forEach((token, i) => {
+        const parsed = parseDecoratedToken(token);
+        const o = document.createElement('option');
+        o.value = String(i);
+        o.textContent = `${i + 1}. ${parsed.base || token}`;
+        idxEl.appendChild(o);
+    });
+
+    const pickedIndex = clamp(Number(scene.selectedTokenIndex) || 0, 0, parts.length - 1);
+    scene.selectedTokenIndex = pickedIndex;
+    idxEl.value = String(pickedIndex);
+
+    const parsed = parseDecoratedToken(parts[pickedIndex]);
+    baseEl.value = parsed.base;
+    invEl.checked = !!parsed.invisible;
+    targetEl.value = parsed.target;
+
+    Object.values(knownChecks).forEach((c) => { if (c) c.checked = false; });
+    clearGuidedEffectOptionInputs();
+    const customEffects = [];
+    splitEffectsList(parsed.effects).forEach((entry) => {
+        const clean = String(entry || '').trim();
+        if (!clean) return;
+        const parsedEntry = parseEffectEntry(clean);
+        const name = parsedEntry.name;
+        const options = parsedEntry.options || {};
+        if (!['lamp', 'pulse', 'float', 'halo', 'outline'].includes(name) || !knownChecks[name]) {
+            customEffects.push(clean);
+            return;
+        }
+        knownChecks[name].checked = true;
+
+        if (name === 'lamp') {
+            if (el('selectedLampRadius') && options.radiusTiles != null) el('selectedLampRadius').value = options.radiusTiles;
+            if (el('selectedLampColor') && options.color != null) el('selectedLampColor').value = options.color;
+        } else if (name === 'pulse') {
+            if (el('selectedPulseScale') && options.scale != null) el('selectedPulseScale').value = options.scale;
+            if (el('selectedPulseDuration') && options.duration != null) el('selectedPulseDuration').value = options.duration;
+        } else if (name === 'float') {
+            if (el('selectedFloatAmplitude') && options.amplitudeTiles != null) el('selectedFloatAmplitude').value = options.amplitudeTiles;
+            if (el('selectedFloatDuration') && options.duration != null) el('selectedFloatDuration').value = options.duration;
+        } else if (name === 'halo') {
+            if (el('selectedHaloRadius') && options.radiusTiles != null) el('selectedHaloRadius').value = options.radiusTiles;
+            if (el('selectedHaloColor') && options.color != null) el('selectedHaloColor').value = options.color;
+        } else if (name === 'outline') {
+            if (el('selectedOutlineThickness') && options.thickness != null) el('selectedOutlineThickness').value = options.thickness;
+            if (el('selectedOutlineColor') && options.color != null) el('selectedOutlineColor').value = options.color;
+        }
+    });
+    fxCustomEl.value = customEffects.join(',');
+    refreshSelectedEffectsPreview();
+    infoEl.textContent = `Cella ${row},${col}: oggetto ${pickedIndex + 1}/${parts.length}`;
+}
+
+const _originalUpdateSelectedCellInfo = LevelEditorScene.prototype.updateSelectedCellInfo;
+LevelEditorScene.prototype.updateSelectedCellInfo = function updateSelectedCellInfoExtended() {
+    _originalUpdateSelectedCellInfo.call(this);
+    fillSelectedTokenEditor(this);
+};
+
+// ===== Responsive Design: Mobile Panel Toggle =====
+function initResponsiveDesign() {
+    const leftPanel = document.querySelector('.left-panel');
+    const rightPanel = document.querySelector('.panel');
+    const panelOverlay = document.getElementById('panelOverlay');
+    const toggleLeftBtn = document.getElementById('toggleLeftPanel');
+    const toggleRightBtn = document.getElementById('toggleRightPanel');
+    
+    if (!leftPanel || !rightPanel || !toggleLeftBtn || !toggleRightBtn) return;
+
+    // Close panels when overlay is clicked
+    if (panelOverlay) {
+        panelOverlay.addEventListener('click', () => {
+            leftPanel.classList.remove('open');
+            rightPanel.classList.remove('open');
+            panelOverlay.classList.remove('active');
+        });
+    }
+
+    // Toggle left panel
+    toggleLeftBtn.addEventListener('click', () => {
+        const isOpen = leftPanel.classList.toggle('open');
+        panelOverlay?.classList.toggle('active', isOpen);
+    });
+
+    // Toggle right panel
+    toggleRightBtn.addEventListener('click', () => {
+        const isOpen = rightPanel.classList.toggle('open');
+        panelOverlay?.classList.toggle('active', isOpen);
+    });
+
+    // Close panels when clicking outside on different size changes
+    function handleResize() {
+        const isMobile = window.innerWidth <= 640;
+        if (!isMobile) {
+            leftPanel.classList.remove('open');
+            rightPanel.classList.remove('open');
+            panelOverlay?.classList.remove('active');
+        }
+        // Recompute fluid panel widths if in desktop mode
+        if (!isMobile) {
+            computeFluidPanelWidths();
+        }
+    }
+
+    window.addEventListener('resize', handleResize);
+    handleResize(); // Initial check
+}
+
+// ===== Fluid 3-Column Layout: Auto-fit panel widths for any 4:3 and wide screens =====
+function computeFluidPanelWidths() {
+    const root = document.documentElement;
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    const aspectRatio = w / h;
+    
+    // Min/max thresholds for panel widths
+    const minLeftWidth = 140;    // Absolute minimum left panel
+    const maxLeftWidth = 380;    // Maximum left panel width
+    const minRightWidth = 180;   // Absolute minimum right panel
+    const maxRightWidth = 450;   // Maximum right panel width
+    const minEditorWidth = 200;  // Minimum editor area
+    
+    let leftWidth = 320;
+    let rightWidth = 420;
+    
+    // Dynamic adjustment based on aspect ratio and window size
+    if (aspectRatio < 1.4) {
+        // Narrow/square aspect (e.g., 4:3 or worse)
+        const scale = Math.max(0.4, Math.min(1, (aspectRatio - 1) / 0.4));
+        leftWidth = minLeftWidth + (maxLeftWidth - minLeftWidth) * scale * 0.6;
+        rightWidth = minRightWidth + (maxRightWidth - minRightWidth) * scale * 0.65;
+    } else if (aspectRatio > 2) {
+        // Very wide (ultrawide)
+        leftWidth = Math.min(maxLeftWidth, 320 + (w - 1200) * 0.05);
+        rightWidth = Math.min(maxRightWidth, 420 + (w - 1200) * 0.05);
+    } else {
+        // Widescreen (16:9, etc) - use comfortable defaults with slight scaling
+        leftWidth = Math.min(maxLeftWidth, Math.max(minLeftWidth, 280 + (w - 1024) * 0.02));
+        rightWidth = Math.min(maxRightWidth, Math.max(minRightWidth, 360 + (w - 1024) * 0.025));
+    }
+    
+    // Ensure enough space for editor
+    const totalSidePanels = leftWidth + rightWidth;
+    if (totalSidePanels + minEditorWidth > w) {
+        const scale = (w - minEditorWidth) / totalSidePanels;
+        leftWidth *= scale;
+        rightWidth *= scale;
+    }
+    
+    // Apply computed widths to CSS variables
+    root.style.setProperty('--left-panel-width', Math.floor(leftWidth) + 'px');
+    root.style.setProperty('--right-panel-width', Math.floor(rightWidth) + 'px');
+    root.style.setProperty('--editor-min-width', Math.floor(minEditorWidth) + 'px');
+}
+
+// Initialize fluid layout on load and bind to resize
+window.addEventListener('load', () => {
+    const isMobile = window.innerWidth <= 640;
+    if (!isMobile) {
+        computeFluidPanelWidths();
+    }
+});
+
+window.addEventListener('resize', () => {
+    const isMobile = window.innerWidth <= 640;
+    if (!isMobile) {
+        // Debounce: only recompute every 100ms max
+        if (window.__fluidResizeDebounce) clearTimeout(window.__fluidResizeDebounce);
+        window.__fluidResizeDebounce = setTimeout(computeFluidPanelWidths, 100);
+    }
+});
+
+function initEditorLoadingOverlay() {
+    if (window.__levelEditorLoadingInit) return;
+    window.__levelEditorLoadingInit = true;
+
+    const overlay = document.getElementById('editorLoading');
+    const loadingText = document.getElementById('editorLoadingText');
+    if (!overlay) return;
+
+    let isDone = false;
+
+    const setText = (value) => {
+        if (loadingText) loadingText.textContent = value;
+    };
+
+    const hide = () => {
+        if (isDone) return;
+        isDone = true;
+        overlay.classList.add('hidden');
+        overlay.setAttribute('aria-busy', 'false');
+        setTimeout(() => {
+            if (overlay && overlay.parentNode) overlay.parentNode.removeChild(overlay);
+        }, 260);
+    };
+
+    setText('Preparazione interfaccia...');
+
+    window.addEventListener('level-editor-ready', () => {
+        setText('Quasi pronto...');
+        hide();
+    }, { once: true });
+
+    // Fallback: non bloccare mai l'interfaccia se l'evento non arriva.
+    setTimeout(() => {
+        if (!isDone) {
+            setText('Apertura editor...');
+            hide();
+        }
+    }, 8000);
+}
+
+// Initialize responsive design on page load
+document.addEventListener('DOMContentLoaded', () => {
+    initEditorLoadingOverlay();
+    setTimeout(initResponsiveDesign, 100);
+});
+
+// Also initialize if the script loads after DOM is ready
+if (document.readyState === 'interactive' || document.readyState === 'complete') {
+    initEditorLoadingOverlay();
+    setTimeout(initResponsiveDesign, 100);
+}

@@ -48,4 +48,23 @@
   "press_5_insert": "Premi '5' per inserire moneta",
   "topTen": "CLASSIFICA",
   "story": "Nei profondi labirinti sotterranei,\n il cacciatore di blocchi cerca gemme preziose\n e fugge dai massi inarrestabili.\n Riuscirai a sopravvivere e diventare il migliore?"
+  ,
+  "obj_dynamite": "Dinamite — proiettile: causa esplosioni e danni.",
+  "obj_heart": "Cuore — ripristina una vita.",
+  "obj_stone": "Masso — ostacolo rotolante pericoloso.",
+  "obj_player": "Giocatore — sei tu.",
+  "obj_dynamite_chest": "Cassa con dinamite — fornisce dinamite extra.",
+  "obj_door": "Porta — può richiedere una chiave per aprirsi.",
+  "obj_gem": "Gemma — raccoglila per aumentare il punteggio.",
+  "obj_cart": "Carrello / mucchio di pietre — ostacolo ambientale.",
+  "obj_key": "Chiave — apre porte.",
+  "obj_sand_pile": "Sabbia — rallenta il movimento.",
+  "obj_ghost": "Fantasma — nemico che può danneggiarti.",
+  "obj_pepita": "Pepita — piccolo oggetto bonus.",
+  "obj_wall": "Muro — terreno solido non attraversabile.",
+  "obj_wooden": "Asse di legno — consumabile usato per coprire le buche.",
+  "obj_hole1": "Buca — una voragine nel terreno; può essere coperta con un'asse.",
+  "obj_hole2": "Buca (variante) — comportamento analogo alla buca normale.",
+  "obj_explosion": "Esplosione — effetto visivo per detonazioni.",
+  "obj_bat": "Pipistrello — nemico volante (stai attento quando raccogli le gemme)."
 }

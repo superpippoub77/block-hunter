@@ -1,0 +1,715 @@
+{
+  "meta": {
+    "name": "Block Hunter Entity Mapping",
+    "version": "1.1.0",
+    "generatedAt": "2026-03-19",
+    "source": [
+      "game.js",
+      "data/module/constants.js"
+    ],
+    "notes": [
+      "Questo file ora e l'entrypoint principale dei mapping gameplay.",
+      "Gli effetti e i tile/wall sono stati spostati in file separati per ridurre accoppiamento e hardcode."
+    ]
+  },
+  "includes": {
+    "effects": "data/game-effects-mapping.json",
+    "tiles": "data/game-tiles-mapping.json"
+  },
+  "entities": {
+    "player": {
+      "category": "player",
+      "tokens": [
+        "player",
+        "player2"
+      ],
+      "scoring": {
+        "onHit": 0,
+        "onPicked": 0,
+        "onKilled": 0,
+        "onCollideWith": {
+          "bat_with_gem_stock": -1,
+          "spider": -20
+        }
+      },
+      "effects": {
+        "onHit": [
+          "blood_splatter"
+        ],
+        "onPicked": [],
+        "onLifeMinusOne": [
+          "lose_life"
+        ],
+        "special": [
+          "lose_life_and_return_world_start"
+        ]
+      },
+      "audio": {
+        "onMove": [
+          "step_sfx"
+        ],
+        "onHit": [],
+        "onPick": [],
+        "onTaken": []
+      },
+      "sprite": {
+        "animated": true,
+        "textures": [
+          "player_front",
+          "player_back",
+          "player_right",
+          "player_back_right"
+        ],
+        "animations": {
+          "idle": [],
+          "moveDown": [
+            "player_walk_down"
+          ],
+          "moveUp": [
+            "player_walk_up"
+          ],
+          "moveRight": [
+            "player_walk_right"
+          ],
+          "moveLeft": [
+            "player_walk_right (flipX=true)"
+          ],
+          "moveUpRight": [
+            "player_walk_up_right"
+          ],
+          "moveUpLeft": [
+            "player_walk_up_right (flipX=true)"
+          ]
+        }
+      }
+    },
+    "ghost": {
+      "category": "enemy",
+      "tokens": [
+        "ghost"
+      ],
+      "scoring": {
+        "onHitByDynamite": 0,
+        "onPicked": 0,
+        "onTouchPlayer": 0
+      },
+      "effects": {
+        "onHitPlayer": [
+          "lose_life"
+        ],
+        "onMove": [],
+        "onKilled": []
+      },
+      "audio": {
+        "onMove": [
+          "ghost_sfx"
+        ],
+        "onHit": [],
+        "onTakePlayer": []
+      },
+      "sprite": {
+        "animated": true,
+        "texture": "ghost",
+        "fallbackFrame": 10,
+        "animations": {
+          "idle": [
+            "ghost_float"
+          ],
+          "move": [
+            "ghost_float"
+          ]
+        }
+      }
+    },
+    "bat": {
+      "category": "enemy",
+      "tokens": [
+        "bat"
+      ],
+      "scoring": {
+        "onHitByDynamite": 12,
+        "onTouchPlayer": 0,
+        "onStealGemStock": -1
+      },
+      "effects": {
+        "onTouchPlayerWithGemStock": [
+          "steal_player_gem_stock",
+          "blood_splatter"
+        ],
+        "onTouchPlayerWithoutGemStock": [
+          "lose_life",
+          "blood_splatter"
+        ],
+        "onKilled": [
+          "explode_dynamite"
+        ]
+      },
+      "audio": {
+        "onMove": [
+          "bat_sfx"
+        ],
+        "onHit": [],
+        "onTakePlayer": []
+      },
+      "sprite": {
+        "animated": true,
+        "texture": "bat",
+        "animations": {
+          "idle": [
+            "bat_stop"
+          ],
+          "move": [
+            "bat_fly_start",
+            "bat_fly_loop",
+            "bat_fly_loop_rev"
+          ]
+        }
+      }
+    },
+    "spider": {
+      "category": "enemy",
+      "tokens": [
+        "spider"
+      ],
+      "scoring": {
+        "onHitByDynamite": 20,
+        "onTouchPlayer": -20
+      },
+      "effects": {
+        "onTouchPlayer": [
+          "blood_splatter",
+          "score_subtract",
+          "lose_life"
+        ],
+        "onKilled": [
+          "explode_dynamite"
+        ]
+      },
+      "audio": {
+        "onMove": [],
+        "onHit": [],
+        "onTakePlayer": []
+      },
+      "sprite": {
+        "animated": false,
+        "texture": "objects",
+        "frame": 10,
+        "animations": {
+          "idle": [],
+          "move": []
+        }
+      }
+    },
+    "snake": {
+      "category": "enemy",
+      "tokens": [
+        "snake",
+        "n"
+      ],
+      "scoring": {
+        "onHitByDynamite": 20,
+        "onTouchPlayer": 0
+      },
+      "effects": {
+        "onTouchPlayer": [
+          "blood_splatter",
+          "lose_life_and_return_world_start"
+        ],
+        "onKilled": [
+          "explode_dynamite",
+          "spawn_replacement_enemy"
+        ]
+      },
+      "audio": {
+        "onMove": [],
+        "onHit": [],
+        "onTakePlayer": []
+      },
+      "sprite": {
+        "animated": false,
+        "texture": "objects",
+        "frame": 10,
+        "animations": {
+          "idle": [],
+          "move": []
+        }
+      }
+    },
+    "gem": {
+      "category": "collectible",
+      "tokens": [
+        "gem",
+        "g"
+      ],
+      "scoring": {
+        "onPicked": 50,
+        "onHit": 0
+      },
+      "effects": {
+        "onPicked": [
+          "score_add",
+          "unlock_exit_on_gems"
+        ]
+      },
+      "audio": {
+        "onPick": [
+          "gem_sfx"
+        ],
+        "onHit": []
+      },
+      "sprite": {
+        "animated": false,
+        "texture": "objects",
+        "frame": 6,
+        "animations": {
+          "idle": [],
+          "move": []
+        }
+      }
+    },
+    "key": {
+      "category": "collectible",
+      "tokens": [
+        "key",
+        "k"
+      ],
+      "scoring": {
+        "onPicked": 5
+      },
+      "effects": {
+        "onPicked": [
+          "score_add"
+        ]
+      },
+      "audio": {
+        "onPick": [
+          "coin_sfx"
+        ]
+      },
+      "sprite": {
+        "animated": false,
+        "texture": "objects",
+        "frame": 8,
+        "animations": {
+          "idle": [],
+          "move": []
+        }
+      }
+    },
+    "dynamite_chest": {
+      "category": "collectible",
+      "tokens": [
+        "dynamite",
+        "b"
+      ],
+      "scoring": {
+        "onPicked": 0
+      },
+      "effects": {
+        "onPicked": [
+          "none"
+        ],
+        "result": [
+          "add_dynamite_count_plus_5"
+        ]
+      },
+      "audio": {
+        "onPick": []
+      },
+      "sprite": {
+        "animated": false,
+        "texture": "objects",
+        "frame": 4,
+        "animations": {
+          "idle": [],
+          "move": []
+        }
+      }
+    },
+    "dynamite_projectile": {
+      "category": "projectile",
+      "tokens": [
+        "dynamite_projectile"
+      ],
+      "scoring": {
+        "onHitRock": 10,
+        "onHitBoulder": 20,
+        "onHitBat": 12,
+        "onHitSpider": 20,
+        "onHitSnake": 20,
+        "onHitShard": 3
+      },
+      "effects": {
+        "onHit": [
+          "explode_dynamite"
+        ]
+      },
+      "audio": {
+        "onHit": [
+          "explosion_sfx"
+        ],
+        "onMove": []
+      },
+      "sprite": {
+        "animated": false,
+        "texture": "objects",
+        "frame": 0,
+        "animations": {
+          "idle": [],
+          "move": []
+        }
+      }
+    },
+    "heart": {
+      "category": "collectible",
+      "tokens": [
+        "heart",
+        "l"
+      ],
+      "scoring": {
+        "onPicked": 0
+      },
+      "effects": {
+        "onPicked": [
+          "add_life_plus_1"
+        ]
+      },
+      "audio": {
+        "onPick": []
+      },
+      "sprite": {
+        "animated": false,
+        "texture": "objects",
+        "frame": 1,
+        "animations": {
+          "idle": [],
+          "move": []
+        }
+      }
+    },
+    "pepita": {
+      "category": "collectible",
+      "tokens": [
+        "pepita",
+        "p"
+      ],
+      "scoring": {
+        "onPicked": 0
+      },
+      "effects": {
+        "onPicked": [
+          "add_life_plus_1"
+        ]
+      },
+      "audio": {
+        "onPick": []
+      },
+      "sprite": {
+        "animated": false,
+        "texture": "objects",
+        "frame": 11,
+        "animations": {
+          "idle": [],
+          "move": []
+        }
+      }
+    },
+    "helmet": {
+      "category": "collectible",
+      "tokens": [
+        "helmet"
+      ],
+      "scoring": {
+        "onPicked": 10
+      },
+      "effects": {
+        "onPicked": [
+          "activate_helmet"
+        ]
+      },
+      "audio": {
+        "onPick": []
+      },
+      "sprite": {
+        "animated": false,
+        "texture": "objects",
+        "frame": 3,
+        "animations": {
+          "idle": [],
+          "move": []
+        }
+      }
+    },
+    "wooden": {
+      "category": "collectible",
+      "tokens": [
+        "wooden"
+      ],
+      "scoring": {
+        "onPicked": 5
+      },
+      "effects": {
+        "onPicked": [
+          "add_wooden_plank_plus_1"
+        ]
+      },
+      "audio": {
+        "onPick": []
+      },
+      "sprite": {
+        "animated": false,
+        "texture": "objects",
+        "frame": 10,
+        "animations": {
+          "idle": [],
+          "move": []
+        }
+      }
+    },
+    "cart": {
+      "category": "collectible",
+      "tokens": [
+        "cart",
+        "c"
+      ],
+      "scoring": {
+        "onPicked": 0
+      },
+      "effects": {
+        "onPicked": [
+          "activate_cart_power"
+        ]
+      },
+      "audio": {
+        "onPick": []
+      },
+      "sprite": {
+        "animated": false,
+        "texture": "objects",
+        "frame": 7,
+        "animations": {
+          "idle": [],
+          "move": []
+        }
+      }
+    },
+    "skeleton": {
+      "category": "collectible",
+      "tokens": [
+        "skeleton",
+        "m"
+      ],
+      "scoring": {
+        "onPicked": 20
+      },
+      "effects": {
+        "onPicked": [
+          "activate_companion"
+        ]
+      },
+      "audio": {
+        "onPick": []
+      },
+      "sprite": {
+        "animated": false,
+        "texture": "objects",
+        "frame": 12,
+        "animations": {
+          "idle": [],
+          "move": []
+        }
+      }
+    },
+    "rock": {
+      "category": "hazard",
+      "tokens": [
+        "rock",
+        "stone"
+      ],
+      "scoring": {
+        "onDestroyedByExplosion": 10,
+        "onDestroyedByHelmet": 5,
+        "onTouchPlayer": 0
+      },
+      "effects": {
+        "onTouchPlayerWhenFalling": [
+          "lose_life"
+        ],
+        "onTouchPlayerWhenHelmetActive": [
+          "none"
+        ]
+      },
+      "audio": {
+        "onMove": [
+          "stone_sfx"
+        ],
+        "onHit": [
+          "explosion_sfx"
+        ]
+      },
+      "sprite": {
+        "animated": false,
+        "texture": "objects",
+        "frame": 2,
+        "animations": {
+          "idle": [],
+          "move": []
+        }
+      }
+    },
+    "boulder": {
+      "category": "hazard",
+      "tokens": [
+        "boulder"
+      ],
+      "scoring": {
+        "onDestroyed": 20,
+        "onTouchPlayer": 0
+      },
+      "effects": {
+        "onTouchPlayer": [
+          "lose_life"
+        ],
+        "onDestroyed": [
+          "spawn_stone_shards"
+        ]
+      },
+      "audio": {
+        "onMove": [
+          "rolling_sfx"
+        ],
+        "onHit": [
+          "explosion_sfx"
+        ]
+      },
+      "sprite": {
+        "animated": false,
+        "texture": "objects",
+        "frame": 2,
+        "animations": {
+          "idle": [],
+          "move": []
+        }
+      }
+    },
+    "shard": {
+      "category": "hazard",
+      "tokens": [
+        "shard"
+      ],
+      "scoring": {
+        "onDestroyedByDynamite": 3,
+        "onTouchPlayer": 0
+      },
+      "effects": {
+        "onTouchPlayer": [
+          "lose_life"
+        ]
+      },
+      "audio": {
+        "onMove": [],
+        "onHit": [
+          "explosion_sfx"
+        ]
+      },
+      "sprite": {
+        "animated": false,
+        "texture": "objects",
+        "frame": 2,
+        "animations": {
+          "idle": [],
+          "move": []
+        }
+      }
+    },
+    "door": {
+      "category": "interactive",
+      "tokens": [
+        "door",
+        "d"
+      ],
+      "scoring": {
+        "onPicked": 0,
+        "onHit": 0
+      },
+      "effects": {
+        "onInteract": [
+          "open_if_key_available"
+        ]
+      },
+      "audio": {
+        "onInteract": [
+          "select_sfx"
+        ]
+      },
+      "sprite": {
+        "animated": false,
+        "texture": "objects",
+        "frame": 5,
+        "animations": {
+          "idle": [],
+          "move": []
+        }
+      }
+    },
+    "rain": {
+      "category": "environment",
+      "tokens": [
+        "rain"
+      ],
+      "scoring": {
+        "onInteract": 0
+      },
+      "effects": {
+        "onStart": [
+          "none"
+        ]
+      },
+      "audio": {
+        "onMove": [
+          "rain_sfx"
+        ]
+      },
+      "sprite": {
+        "animated": true,
+        "texture": "particle_runtime",
+        "animations": {
+          "idle": [
+            "rain_drop_particle"
+          ],
+          "move": [
+            "rain_drop_particle"
+          ]
+        }
+      }
+    },
+    "explosion": {
+      "category": "fx",
+      "tokens": [
+        "explosion"
+      ],
+      "scoring": {
+        "onInteract": 0
+      },
+      "effects": {
+        "onStart": [
+          "none"
+        ]
+      },
+      "audio": {
+        "onStart": [
+          "explosion_sfx"
+        ]
+      },
+      "sprite": {
+        "animated": false,
+        "texture": "objects",
+        "frame": 15,
+        "animations": {
+          "idle": [],
+          "move": []
+        }
+      }
+    }
+  }
+}

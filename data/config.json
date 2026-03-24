@@ -1,12 +1,18 @@
 {
   "width": 800,
   "height": 600,
-  "tileSize": 64,
+  "tileSize": 32,
   "objectSize": 64,
   "playerSize": 64,
   "gridWidth": 25,
   "gridHeight": 18,
   "playerSpeed": 220,
+  "jump": {
+    "distanceTiles": 2,
+    "duration": 220,
+    "arcHeight": 26,
+    "cooldown": 450
+  },
   "ghostSpeed": 80,
   "batSpeed": 90,
   "boulderBaseSpeed": 60,
@@ -14,11 +20,35 @@
   "dynamiteSize": 40,
   "shardSpeed": 150,
   "dynamiteLifetime": 5000,
+  "enableImpactShake": true,
+  "sandSlowFactor": 0.5,
+  "sandSlowDuration": 10000,
+  "mudDuration": 3000,
   "shardLifetime": 2000,
   "doorCloseTime": 30000,
   "attractTimeout": 10000,
+  "attractOverlayAlpha": 0.35,
+  "parallaxBgFactor": 0.96,
+  "parallaxFgFactor": 0.8,
+  "parallaxBgAlpha": 1.0,
+  "parallaxFgAlpha": 0.8,
   "topTenTimeout": 10000,
+  "creditsScene": {
+    "lines": [
+      "Project: Block Hunter",
+      "Version: 1.0.0",
+      "",
+      "Lead developer: Filippo Morano",
+      "Gameplay & Tools: Filippo Morano",
+      "Graphics: Filippo Morano",
+      "Music & SFX: Studio Sound",
+      "",
+      "Website: https://filippomorano.com",
+      "Contact: devs@filippomorano.com"
+    ]
+  },
   "gemSpawnDelay": 1000,
+  "gemsOneByOneDefault": false,
   "gemsPerLevel": 10,
   "credits": 0,
   "language": "en",
@@ -26,55 +56,127 @@
   "currentLevel": 0,
   "score": 0,
   "lives": 5,
-  "dynamiteCount": 20,
+  "dynamiteCount": 40,
   "keysCount": 0,
   "disableStaticRocks": false,
-  "debugTileGrid": false,
+  "debugTileGrid": true,
   "bonusTestMode": {
-    "enabled": true,
+    "enabled": false,
     "bonusLevel": "bonus1",
     "returnLevel": 0
   },
-  "topScores": [
-    {
-      "name": "AAA",
-      "score": 5000
+  "controlPanel": {
+    "player1": {
+      "move": {
+        "left": "LEFT",
+        "right": "RIGHT",
+        "up": "UP",
+        "down": "DOWN"
+      },
+      "shoot": [
+        "X",
+        "SPACE"
+      ],
+      "action": [
+        "Z"
+      ],
+      "jump": [
+        "C"
+      ]
     },
-    {
-      "name": "BBB",
-      "score": 4000
-    },
-    {
-      "name": "CCC",
-      "score": 3000
-    },
-    {
-      "name": "DDD",
-      "score": 2000
-    },
-    {
-      "name": "EEE",
-      "score": 1000
-    },
-    {
-      "name": "FFF",
-      "score": 900
-    },
-    {
-      "name": "GGG",
-      "score": 800
-    },
-    {
-      "name": "HHH",
-      "score": 700
-    },
-    {
-      "name": "III",
-      "score": 600
-    },
-    {
-      "name": "JJJ",
-      "score": 500
+    "player2": {
+      "move": {
+        "left": "A",
+        "right": "D",
+        "up": "W",
+        "down": "S"
+      },
+      "shoot": [
+        "M",
+        "N",
+        "F"
+      ],
+      "action": [
+        "M",
+        "N"
+      ],
+      "jump": [
+        "H"
+      ]
     }
-  ]
+  },
+  "scaleMode": "FIT",
+  "mobileScaleMode": "ENVELOP",
+  "enableFullscreen": true,
+  "responsiveMode": true,
+  "freeplay": true,
+  "crt": {
+    "enabled": true,
+    "scanlineAlpha": 0.12,
+    "scanlineSpacing": 3,
+    "vignetteAlpha": 0.36,
+    "noiseEnabled": true,
+    "noiseIntensity": 0.06,
+    "flickerEnabled": true,
+    "flickerIntensity": 0.06,
+    "flickerSpeed": 80
+  },
+  "objectContactByType": {
+    "default": {
+      "contactType": "edge",
+      "radiusMultiplier": 0.45,
+      "radiusPixels": 29,
+      "proximityTiles": 0.9,
+      "proximityPixels": 58
+    },
+    "player": {
+      "contactType": "center",
+      "radiusMultiplier": 0.35,
+      "radiusPixels": 22,
+      "proximityTiles": 0.85,
+      "proximityPixels": 54
+    },
+    "item": {
+      "contactType": "center",
+      "radiusMultiplier": 0.45,
+      "radiusPixels": 29,
+      "proximityTiles": 0.9,
+      "proximityPixels": 58
+    },
+    "gem": {
+      "contactType": "center-front",
+      "radiusMultiplier": 0.62,
+      "radiusPixels": 40,
+      "proximityTiles": 0.9,
+      "proximityPixels": 58
+    },
+    "wall": {
+      "contactType": "center-front",
+      "radiusMultiplier": 0.9,
+      "radiusPixels": 20,
+      "proximityTiles": 0.75,
+      "proximityPixels": 48
+    },
+    "door": {
+      "contactType": "edge",
+      "radiusMultiplier": 0.7,
+      "radiusPixels": 45,
+      "proximityTiles": 0.9,
+      "proximityPixels": 58
+    },
+    "exit": {
+      "contactType": "center-front",
+      "radiusMultiplier": 0.62,
+      "radiusPixels": 40,
+      "proximityTiles": 0.9,
+      "proximityPixels": 58
+    },
+    "rock": {
+      "contactType": "edge",
+      "radiusMultiplier": 0.6,
+      "radiusPixels": 38,
+      "proximityTiles": 0.95,
+      "proximityPixels": 61
+    }
+  }
 }

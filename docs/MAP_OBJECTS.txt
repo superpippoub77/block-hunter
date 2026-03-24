@@ -14,16 +14,21 @@ TOKEN BASE
 
 - "w"
   Muro base (frame 0).
+- "w"
+  Muro base (prima cella della spritesheet).
 
-- "wXY"
-  Muro variante da spritesheet wall.png.
-  X = colonna base muro (0..6)
-  Y = rotazione (0..3)
+- "wRCC"
+  Muro variante da spritesheet `wall_completed.png` organizzata in 4 righe x 6 colonne (24 frame).
+  R = riga (0..3)
+  C = colonna (0..5)
+  R (ultima cifra) = rotazione (0..5):
       0 = 0°
-      1 = 90° orario
-      2 = 180°
-      3 = 270° orario
-  Esempio: "w23" => colonna 2 ruotata di 270°.
+      1 = +90°
+      2 = +180°
+      3 = +270°
+      4 = specchio orizzontale (flipX)
+      5 = specchio verticale (flipY)
+  Esempio: "w001" => riga 0 colonna 0 rotazione 1 (+90°).
 
 - "h"
   Buco tipo 1 (tile hole). Se il player ci passa, perde vita.

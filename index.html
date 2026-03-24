@@ -3,7 +3,7 @@
 
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>BlockHunter - Arcade Game</title>
     <style>
         /* Local font: place your font files in assets/fonts/
@@ -31,33 +31,153 @@
             box-sizing: border-box;
         }
 
+        :root {
+            --safe-top: env(safe-area-inset-top, 0px);
+            --safe-right: env(safe-area-inset-right, 0px);
+            --safe-bottom: env(safe-area-inset-bottom, 0px);
+            --safe-left: env(safe-area-inset-left, 0px);
+            --app-height: 100vh;
+        }
+
+        html, body {
+            height: 100%;
+            height: 100vh;
+            height: 100svh;
+            min-height: 100dvh;
+            margin: 0;
+            padding: 0;
+        }
+
         body {
             background: #000;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            min-height: 100vh;
             font-family: 'Courier New', monospace;
             overflow: hidden;
         }
 
+        /* Make the game container occupy the full viewport so Phaser can scale the
+           internal 800x600 canvas to fill available space while preserving aspect. */
         #game-container {
-            box-shadow: 0 0 40px rgba(255, 255, 0, 0.3);
-            border: 4px solid #333;
+            width: 100vw;
+            height: var(--app-height);
+            min-height: 100vh;
+            box-shadow: 0 0 40px rgba(255, 255, 0, 0.08);
+            border: 0; /* optional: remove border so the game visually fills the screen */
         }
 
         canvas {
             display: block;
+            width: auto;
+            height: auto;
+            max-width: 100%;
+            max-height: 100%;
+            margin: 0 auto;
             image-rendering: pixelated;
             image-rendering: crisp-edges;
         }
+
+        /* Touch-friendly fullscreen button adjustments (coarse pointers) */
+        @media (pointer: coarse) {
+            #fullscreenBtn {
+                right: 10px;
+                top: 10px;
+                padding: 12px 14px !important;
+                font-size: 20px !important;
+                border-radius: 8px !important;
+            }
+        }
     </style>
+    <style>
+        /* Touch controls layout - hidden by default on non-touch/desktop */
+        #touch-controls { position: fixed; left: var(--safe-left); right: var(--safe-right); bottom: calc(8px + var(--safe-bottom)); pointer-events: none; z-index: 9999; display: none; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+        #joystick { position: absolute; left: 16px; bottom: 12px; width: 120px; height: 120px; pointer-events: auto; }
+        #joystick-base { position: absolute; left: 0; top: 0; width: 100%; height: 100%; border-radius: 50%; background: rgba(10,20,40,0.48); border: 2px solid rgba(120,160,220,0.12); }
+        #joystick-thumb { position: absolute; left: 50%; top: 50%; width: 44px; height: 44px; margin-left: -22px; margin-top: -22px; border-radius: 50%; background: rgba(140,200,255,0.95); box-shadow: 0 6px 18px rgba(0,0,0,0.45); }
+        #touch-buttons { position: absolute; right: 16px; bottom: 18px; display: flex; flex-direction: column; gap: 14px; align-items: flex-end; pointer-events: none; }
+        #actionBtn, #jumpBtn { width: 86px; height: 86px; border-radius: 50%; color: #111; font-weight: bold; font-size: 24px; border: none; pointer-events: auto; box-shadow: 0 6px 18px rgba(0,0,0,0.45); touch-action: none; }
+        #actionBtn { background: rgba(255,150,80,0.92); }
+        #jumpBtn { background: rgba(120,220,255,0.92); }
+        .touch-control.pressed { transform: scale(0.96); filter: brightness(0.92); }
+        body.touch-device #touch-controls {
+            display: block;
+        }
+        body.touch-device #joystick { left: calc(14px + var(--safe-left)); }
+        body.touch-device #touch-buttons { right: calc(14px + var(--safe-right)); }
+        body.touch-device #joystick { width: 140px; height: 140px; }
+        body.touch-device #joystick-thumb { width: 56px; height: 56px; margin-left: -28px; margin-top: -28px; }
+        body.touch-device #touch-buttons { gap: 16px; }
+        body.touch-device #actionBtn, body.touch-device #jumpBtn { width: 100px; height: 100px; font-size: 28px; }
+        body.touch-device.portrait #joystick { width: 132px; height: 132px; }
+        body.touch-device.portrait #joystick-thumb { width: 52px; height: 52px; margin-left: -26px; margin-top: -26px; }
+        body.touch-device.portrait #actionBtn, body.touch-device.portrait #jumpBtn { width: 92px; height: 92px; font-size: 24px; }
+        @media (pointer: coarse) {
+            /* Show touch controls on coarse-pointer devices (touchscreens) */
+            #touch-controls { display: block; }
+            #joystick { width: 140px; height: 140px; }
+            #joystick-thumb { width: 56px; height: 56px; margin-left: -28px; margin-top: -28px; }
+            #touch-buttons { gap: 16px; }
+            #actionBtn, #jumpBtn { width: 100px; height: 100px; font-size: 28px; }
+        }
+    </style>
+    <style>
+        /* DOM HUD styling - hidden by default until game UI shows it */
+        #dom-hud {
+            position: fixed;
+            top: calc(8px + var(--safe-top));
+            left: calc(8px + var(--safe-left));
+            right: calc(8px + var(--safe-right));
+            display: none;
+            justify-content: space-between;
+            align-items: center;
+            pointer-events: none; /* allow clicks to pass through by default */
+            z-index: 9998;
+            font-family: 'Press Start 2P', monospace;
+            color: #e8f6ff;
+            text-shadow: 0 1px 0 rgba(0,0,0,0.6);
+        }
+        #dom-hud .dom-hud-item {
+            background: rgba(6,12,28,0.6);
+            padding: 8px 10px;
+            border-radius: 6px;
+            font-size: 14px;
+            pointer-events: auto; /* individual items can be interactive if needed */
+        }
+        /* Larger HUD items on touch devices */
+        body.touch-device #dom-hud .dom-hud-item { font-size: 18px; padding: 10px 12px; }
+        @media (pointer: coarse) {
+            #dom-hud .dom-hud-item { font-size: 18px; padding: 10px 12px; }
+        }
+    </style>
+    <link rel="manifest" href="/manifest.json">
+    <meta name="theme-color" content="#000000">
+    <link rel="icon" href="images/title.png" type="image/png">
 </head>
 
 <body>
     <div id="game-container"></div>
+    <!-- DOM HUD overlay for responsive/mobile UI (keeps HUD readable and touch-friendly) -->
+    <div id="dom-hud" aria-hidden="true">
+        <div id="dom-hud-left">
+            <div id="scoreDisplay" class="dom-hud-item">Score: 0</div>
+        </div>
+        <div id="dom-hud-center"></div>
+        <div id="dom-hud-right">
+            <div id="levelDisplay" class="dom-hud-item">Level: 1</div>
+        </div>
+    </div>
+    <!-- Touch controls (virtual joystick + action) -->
+    <div id="touch-controls" aria-hidden="false">
+        <div id="joystick" class="touch-control">
+            <div id="joystick-base"></div>
+            <div id="joystick-thumb"></div>
+        </div>
+        <div id="touch-buttons">
+            <button id="jumpBtn" class="touch-control" aria-label="Salto">J</button>
+            <button id="actionBtn" class="touch-control" aria-label="Azione">A</button>
+        </div>
+    </div>
     <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
     <script type="module" src="game.js"></script>
+        <script src="js/touch-controls.js"></script>
     <script>
         window.onload = async function () {
             // Carica il font prima di inizializzare il gioco

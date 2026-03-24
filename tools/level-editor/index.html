@@ -22,6 +22,7 @@
     .row{display:flex;gap:8px}
     .small{width:50%}
     footer{color:#888;font-size:12px;margin-top:12px}
+    .spike-credit{position:fixed;right:10px;bottom:6px;font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#888;opacity:0.95;pointer-events:none;z-index:9999}
   </style>
 </head>
 <body>
@@ -150,7 +151,7 @@
   // Preload game sprites for graphical preview
   const IMG = {
     tiles: { src: '../../images/tiles.png', img: new Image(), loaded: false, cols: 6, rows: 1 },
-    wall: { src: '../../images/wall.png', img: new Image(), loaded: false, cols: 7, rows: 1 },
+    wall: { src: '../../images/wall_completed.png', img: new Image(), loaded: false, cols: 6, rows: 4 },
     objects: { src: '../../images/obj_game.png', img: new Image(), loaded: false, cols: 4, rows: 4 }
   };
   let imagesToLoad = 3;
@@ -159,6 +160,18 @@
     v.img.onerror = ()=>{ v.loaded = false; imagesToLoad--; if(imagesToLoad<=0) draw(); };
     v.img.src = v.src;
   });
+
+  // Load editor config (tokenMap) from game's data/config.json if available
+  (async function loadEditorConfig(){
+    try {
+      const res = await fetch('../../data/config.json');
+      if (!res.ok) return;
+      const cfg = await res.json();
+      window.EDITOR_TOKEN_MAP = cfg.tokenMap || {};
+    } catch (e) {
+      window.EDITOR_TOKEN_MAP = window.EDITOR_TOKEN_MAP || {};
+    }
+  })();
 
   function makePalette(){
     paletteEl.innerHTML='';
@@ -320,8 +333,16 @@
         const rot = rotSel ? Number(rotSel.value||0) : 0;
         state.tiles[row][col] = `w${base}${rot}`;
       } else {
-        state.tiles[row][col] = sel;
-      }
+        // apply tokenMap if user selected a single-letter token that maps to a full token
+        let finalToken = sel;
+        try {
+          const map = (window.EDITOR_TOKEN_MAP && typeof window.EDITOR_TOKEN_MAP === 'object') ? window.EDITOR_TOKEN_MAP : null;
+          if (map && typeof sel === 'string' && sel.length === 1 && map[sel]) {
+            finalToken = String(map[sel]);
+          }
+        } catch (e) { /* ignore */ }
+        state.tiles[row][col] = finalToken;
+        }
     } else if (tool==='object'){
       state.objects.push({ type: state.selected, row, col, rot: state.rotation });
     }
@@ -575,5 +596,6 @@
   makePalette(); newLevel();
 })();
 </script>
+ <div class="spike-credit">by SpikeCode</div>
 </body>
 </html>

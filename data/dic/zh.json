@@ -26,4 +26,23 @@
   "insert_coin": "投入硬币",
   "coin_info": "1 玩家: {per} 硬币 — 2 玩家: {two} 硬币",
   "byline": "by SpikeCode"
+  ,
+  "obj_dynamite": "炸药 — 投射物：造成爆炸并造成伤害。",
+  "obj_heart": "心 — 恢复1次生命。",
+  "obj_stone": "巨石 — 会滚动的危险障碍。",
+  "obj_player": "玩家 — 也就是你。",
+  "obj_dynamite_chest": "炸药箱 — 提供额外炸药。",
+  "obj_door": "门 — 可能需要钥匙来打开。",
+  "obj_gem": "宝石 — 可收集以增加分数。",
+  "obj_cart": "推车 / 石堆 — 环境障碍。",
+  "obj_key": "钥匙 — 用于打开门。",
+  "obj_sand_pile": "沙堆 — 减慢移动速度。",
+  "obj_ghost": "幽灵 — 会伤害玩家的敌人。",
+  "obj_pepita": "金块 — 小型奖励可收集物。",
+  "obj_wall": "墙 — 坚固无法穿越。",
+  "obj_wooden": "木板 — 可消耗道具，用于覆盖洞穴。",
+  "obj_hole1": "洞穴 — 地面的裂隙；可用木板覆盖。",
+  "obj_hole2": "洞穴（变体）— 与普通洞穴行为相同。",
+  "obj_explosion": "爆炸 — 爆炸的视觉效果。",
+  "obj_bat": "蝙蝠 — 会飞的敌人（收集宝石时注意）。"
 }
