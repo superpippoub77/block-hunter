@@ -72,7 +72,12 @@ export async function inizialization(deps) {
         const baseScaleMode = String(configStore.scaleMode || 'FIT').toUpperCase();
         // FIT keeps the full frame visible and avoids crop/stretch on mobile orientation changes.
         const mobileScaleMode = String(configStore.mobileScaleMode || 'FIT').toUpperCase();
-        const requestedScaleMode = isTouchDevice ? mobileScaleMode : baseScaleMode;
+        // In responsive mode prefer a real viewport (RESIZE) so gameplay extends with the device window.
+        // Keep an explicit override (`responsiveScaleMode`) for fallback tuning.
+        const responsiveScaleMode = String(configStore.responsiveScaleMode || 'RESIZE').toUpperCase();
+        const requestedScaleMode = configStore.responsiveMode
+            ? responsiveScaleMode
+            : (isTouchDevice ? mobileScaleMode : baseScaleMode);
         let phaserScaleMode = Phaser.Scale.FIT;
         if (requestedScaleMode === 'ENVELOP' || requestedScaleMode === 'ENVELOPE') phaserScaleMode = Phaser.Scale.ENVELOP;
         else if (requestedScaleMode === 'NONE') phaserScaleMode = Phaser.Scale.NONE;
@@ -81,13 +86,8 @@ export async function inizialization(deps) {
         const gameWidth = Number(configStore.width) || 800;
         const gameHeight = Number(configStore.height) || 600;
         let effectiveScaleMode = phaserScaleMode;
-        if (configStore.responsiveMode && effectiveScaleMode === Phaser.Scale.RESIZE) {
-            logger.warn('BOOT', 'responsiveMode + RESIZE can break fixed-coordinate scenes; using FIT.');
-            effectiveScaleMode = Phaser.Scale.FIT;
-        }
         if (configStore.responsiveMode && effectiveScaleMode === Phaser.Scale.ENVELOP) {
-            logger.warn('BOOT', 'responsiveMode + ENVELOP can crop UI on narrow viewports; using FIT.');
-            effectiveScaleMode = Phaser.Scale.FIT;
+            logger.warn('BOOT', 'responsiveMode + ENVELOP can crop UI on narrow viewports; prefer RESIZE or FIT.');
         }
 
         const config = {
