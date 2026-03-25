@@ -464,8 +464,7 @@ Se vuoi migliorare, ecco qualche idea:
 
 Licenza
 
-Questo repository è privato/di sviluppo. Aggiungi qui la licenza desiderata (es. MIT) se intendi pubblicarlo.
+...
 
----
-
-Se vuoi, aggiungo anche un'immagine di preview (se fornisci un file) o un badge di stato. Ho lasciato istruzioni compatte su come eseguire in locale; vuoi che aggiunga comandi di build o script NPM per servire il progetto automaticamente?
+Demo:
+https://www.filippomorano.com/projects/block-hunter/
