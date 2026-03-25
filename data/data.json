@@ -155,6 +155,18 @@
       "exists": true
     },
     {
+      "key": "spider",
+      "path": "assets/images/common/spider.png",
+      "inPreload": true,
+      "exists": true
+    },
+    {
+      "key": "snake",
+      "path": "assets/images/common/snake.png",
+      "inPreload": true,
+      "exists": true
+    },
+    {
       "key": "player_front",
       "path": "assets/images/common/player_front_10.png",
       "inPreload": true,

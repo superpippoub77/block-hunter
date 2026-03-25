@@ -196,6 +196,24 @@ class GameScene extends Phaser.Scene {
                 repeat: -1
             });
         }
+        if (!this.anims.exists('spider_float') && this.textures.exists('spider')) {
+            this.anims.create({
+                key: 'spider_float',
+                frames: this.anims.generateFrameNumbers('spider', { start: 0, end: 9 }),
+                frameRate: 10,
+                yoyo: true,
+                repeat: -1
+            });
+        }
+        if (!this.anims.exists('snake_float') && this.textures.exists('snake')) {
+            this.anims.create({
+                key: 'snake_float',
+                frames: this.anims.generateFrameNumbers('snake', { start: 0, end: 9 }),
+                frameRate: 10,
+                yoyo: true,
+                repeat: -1
+            });
+        }
 
         // Note: miner sprites are not animated here (no dedicated walk animations)
 
@@ -8384,10 +8402,15 @@ class GameScene extends Phaser.Scene {
     spawnMapSpider(worldX, worldY) {
         if (!this.spiders) return;
 
-        const spider = this.spiders.create(worldX, worldY, 'objects', OBJECT_FRAMES.spider || 0);
+        const spiderTextureKey = this.textures.exists('spider') ? 'spider' : 'objects';
+        const spiderFrame = spiderTextureKey === 'spider' ? 0 : (OBJECT_FRAMES.spider || 0);
+        const spider = this.spiders.create(worldX, worldY, spiderTextureKey, spiderFrame);
         const spiderScaleFactor = CONFIG.objectSize / OBJECT_NATIVE_SIZE;
         spider.setScale(spiderScaleFactor);
         spider.setData('baseScale', spiderScaleFactor);
+        if (spiderTextureKey === 'spider' && this.anims.exists('spider_float')) {
+            spider.play('spider_float');
+        }
 
         if (spider.body) {
             spider.body.setSize(Math.floor(spider.displayWidth || spider.width), Math.floor(spider.displayHeight || spider.height));
@@ -8408,8 +8431,54 @@ class GameScene extends Phaser.Scene {
             if (len > 0) {
                 const speed = this.getSpiderSpeedForLevel();
                 spider.setVelocity((dx / len) * speed * 0.6, (dy / len) * speed * 0.6);
+                this.applyEnemyDirectionalFacing(spider);
             }
         }
+    }
+
+    applyEnemyDirectionalFacing(enemy) {
+        if (!enemy || !enemy.active) return;
+        const vx = enemy.body?.velocity?.x || 0;
+        const vy = enemy.body?.velocity?.y || 0;
+        const deadzone = 1.5;
+        if (Math.abs(vx) <= deadzone && Math.abs(vy) <= deadzone) return;
+
+        // Prevent jitter on diagonal movement: switch to vertical only when it clearly dominates.
+        const verticalDominance = 1.22;
+        const absVx = Math.abs(vx);
+        const absVy = Math.abs(vy);
+        const currentFacing = enemy.getData('facingDir') || 'right';
+        const lastHorizontalFacing = enemy.getData('lastHorizontalFacing') || (currentFacing === 'left' ? 'left' : 'right');
+
+        if (absVy >= absVx * verticalDominance) {
+            const nextFacing = vy < 0 ? 'up' : 'down';
+            enemy.setData('facingDir', nextFacing);
+            enemy.setFlipX(lastHorizontalFacing === 'left');
+            enemy.setAngle(0);
+            return;
+        }
+
+        if (absVx >= absVy * verticalDominance) {
+            const nextFacing = vx < 0 ? 'left' : 'right';
+            enemy.setData('facingDir', nextFacing);
+            enemy.setData('lastHorizontalFacing', nextFacing);
+            enemy.setAngle(0);
+            enemy.setFlipX(nextFacing === 'left');
+            return;
+        }
+
+        // Ambiguous diagonal band: keep previous facing for visual stability.
+        if (currentFacing === 'up') {
+            enemy.setFlipX(lastHorizontalFacing === 'left');
+            enemy.setAngle(0);
+        } else if (currentFacing === 'down') {
+            enemy.setFlipX(lastHorizontalFacing === 'left');
+            enemy.setAngle(0);
+        } else {
+            enemy.setAngle(0);
+            enemy.setFlipX(currentFacing === 'left');
+        }
+        return;
     }
 
     updateSpiders() {
@@ -8418,6 +8487,13 @@ class GameScene extends Phaser.Scene {
 
         spiders.forEach((spider) => {
             if (!spider || !spider.active) return;
+
+            if (spider.texture?.key === 'spider' && this.anims.exists('spider_float')) {
+                if (!(spider.anims && spider.anims.isPlaying)) {
+                    spider.play('spider_float', true);
+                }
+            }
+            this.applyEnemyDirectionalFacing(spider);
 
             const speed = Number(spider.getData('speed')) || this.getSpiderSpeedForLevel();
             const now = this.time.now;
@@ -8437,6 +8513,7 @@ class GameScene extends Phaser.Scene {
                 // Cambia direzione casuale
                 const angle = Phaser.Math.FloatBetween(0, Math.PI * 2);
                 spider.setVelocity(Math.cos(angle) * speed * 0.5, Math.sin(angle) * speed * 0.5);
+                this.applyEnemyDirectionalFacing(spider);
                 spider.setData('changeDirectionCooldown', now + 1000);
                 return;
             }
@@ -8472,6 +8549,7 @@ class GameScene extends Phaser.Scene {
                         // Se il tile di destinazione è valido, muoviti verso il player
                         if (!nextTile || (nextTile.type !== 'hole' && nextTile.type !== 'hole2' && nextTile.type !== 'water' && nextTile.type !== 'sand' && nextTile.type !== 'wall')) {
                             spider.setVelocity(newVx * speed, newVy * speed);
+                            this.applyEnemyDirectionalFacing(spider);
                             return;
                         }
 
@@ -8496,6 +8574,7 @@ class GameScene extends Phaser.Scene {
                             // Scegli il candidato con priorità più alta
                             const best = candidates.reduce((a, b) => a.priority > b.priority ? a : b);
                             spider.setVelocity(best.vx * speed, best.vy * speed);
+                            this.applyEnemyDirectionalFacing(spider);
                             return;
                         }
                     }
@@ -8518,10 +8597,12 @@ class GameScene extends Phaser.Scene {
                     if (validDirections.length > 0) {
                         const dir = Phaser.Utils.Array.GetRandom(validDirections);
                         spider.setVelocity(dir.x * speed * 0.7, dir.y * speed * 0.7);
+                        this.applyEnemyDirectionalFacing(spider);
                     } else {
                         // Se completamente circondato, muoviti in una direzione casuale
                         const angle = Phaser.Math.FloatBetween(0, Math.PI * 2);
                         spider.setVelocity(Math.cos(angle) * speed * 0.3, Math.sin(angle) * speed * 0.3);
+                        this.applyEnemyDirectionalFacing(spider);
                     }
                 }
             }
@@ -8593,13 +8674,18 @@ class GameScene extends Phaser.Scene {
 
     spawnMapSnake(worldX, worldY) {
         if (!this.snakes) return;
-        const snake = this.snakes.create(worldX, worldY, 'objects', OBJECT_FRAMES.snake || OBJECT_FRAMES.spider || 0);
+        const snakeTextureKey = this.textures.exists('snake') ? 'snake' : 'objects';
+        const snakeFrame = snakeTextureKey === 'snake' ? 0 : (OBJECT_FRAMES.snake || OBJECT_FRAMES.spider || 0);
+        const snake = this.snakes.create(worldX, worldY, snakeTextureKey, snakeFrame);
         const snakeScaleFactor = CONFIG.objectSize / OBJECT_NATIVE_SIZE;
         snake.setScale(snakeScaleFactor);
         snake.setData('baseScale', snakeScaleFactor);
         snake.setData('speed', this.getSnakeSpeedForLevel());
         snake.setData('lastBiteAt', 0);
         snake.setData('nextDirectionChangeAt', 0);
+        if (snakeTextureKey === 'snake' && this.anims.exists('snake_float')) {
+            snake.play('snake_float');
+        }
 
         if (snake.body) {
             snake.body.setSize(Math.floor(snake.displayWidth || snake.width), Math.floor(snake.displayHeight || snake.height));
@@ -8641,9 +8727,7 @@ class GameScene extends Phaser.Scene {
         const mult = 0.68;
         snake.setVelocity(picked.x * speed * mult, picked.y * speed * mult);
         snake.setData('nextDirectionChangeAt', now + Phaser.Math.Between(450, 1200));
-
-        if (picked.x < 0) snake.setFlipX(true);
-        else if (picked.x > 0) snake.setFlipX(false);
+        this.applyEnemyDirectionalFacing(snake);
     }
 
     updateSnakes() {
@@ -8653,6 +8737,13 @@ class GameScene extends Phaser.Scene {
 
         snakes.forEach((snake) => {
             if (!snake || !snake.active) return;
+
+            if (snake.texture?.key === 'snake' && this.anims.exists('snake_float')) {
+                if (!(snake.anims && snake.anims.isPlaying)) {
+                    snake.play('snake_float', true);
+                }
+            }
+            this.applyEnemyDirectionalFacing(snake);
 
             const tile = this.getTileAt(snake.x, snake.y);
             if (this.isSnakeBlockedTile(tile)) {
