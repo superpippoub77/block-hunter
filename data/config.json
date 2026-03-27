@@ -3,6 +3,7 @@
   "height": 600,
   "tileSize": 32,
   "objectSize": 64,
+  "wallSize": 32,
   "playerSize": 64,
   "gridWidth": 25,
   "gridHeight": 18,

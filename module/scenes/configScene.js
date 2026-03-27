@@ -149,6 +149,14 @@ class ConfigScene extends Phaser.Scene {
         const playerMinus = this.add.text(220, y, '◄', { fontSize: '14px', fill: '#ffffff', fontFamily: GAME_FONT }).setInteractive().setOrigin(0.5);
         const playerPlus = this.add.text(260, y, '►', { fontSize: '14px', fill: '#ffffff', fontFamily: GAME_FONT }).setInteractive().setOrigin(0.5);
 
+        // Wall size control
+        y += 22;
+        if (!Number.isFinite(Number(CONFIG.wallSize)) || Number(CONFIG.wallSize) <= 0) CONFIG.wallSize = CONFIG.tileSize || 32;
+        this.add.text(30, y, 'Wall size:', { fontSize: '12px', fill: '#ffffff', fontFamily: GAME_FONT });
+        this.wallSizeText = this.add.text(160, y, String(CONFIG.wallSize), { fontSize: '12px', fill: '#ffff00', fontFamily: GAME_FONT }).setOrigin(0, 0.5);
+        const wallMinus = this.add.text(220, y, '◄', { fontSize: '14px', fill: '#ffffff', fontFamily: GAME_FONT }).setInteractive().setOrigin(0.5);
+        const wallPlus = this.add.text(260, y, '►', { fontSize: '14px', fill: '#ffffff', fontFamily: GAME_FONT }).setInteractive().setOrigin(0.5);
+
         y += 22;
 
         // Apply / Reset buttons
@@ -193,6 +201,17 @@ class ConfigScene extends Phaser.Scene {
             this.updatePreviewSizes();
         });
 
+        wallMinus.on('pointerdown', () => {
+            CONFIG.wallSize = Math.max(8, (Number(CONFIG.wallSize) || CONFIG.tileSize) - 4);
+            this.wallSizeText.setText(String(CONFIG.wallSize));
+            this.updatePreviewSizes();
+        });
+        wallPlus.on('pointerdown', () => {
+            CONFIG.wallSize = Math.min(512, (Number(CONFIG.wallSize) || CONFIG.tileSize) + 4);
+            this.wallSizeText.setText(String(CONFIG.wallSize));
+            this.updatePreviewSizes();
+        });
+
         applyBtn.on('pointerdown', () => {
             try {
                 localStorage.setItem('blockHunterConfig', JSON.stringify({
@@ -215,6 +234,7 @@ class ConfigScene extends Phaser.Scene {
             this.tileSizeText.setText(String(CONFIG.tileSize));
             this.objectSizeText.setText(String(CONFIG.objectSize));
             this.playerSizeText.setText(String(CONFIG.playerSize));
+            if (this.wallSizeText) this.wallSizeText.setText(String(CONFIG.wallSize ?? CONFIG.tileSize));
             try { localStorage.removeItem('blockHunterConfig'); } catch (e) { }
             this.updatePreviewSizes();
             this.refreshAllConfigRows();
@@ -495,6 +515,7 @@ class ConfigScene extends Phaser.Scene {
             if (this.tileSizeText) this.tileSizeText.setText(String(CONFIG.tileSize));
             if (this.objectSizeText) this.objectSizeText.setText(String(CONFIG.objectSize));
             if (this.playerSizeText) this.playerSizeText.setText(String(CONFIG.playerSize));
+            if (this.wallSizeText) this.wallSizeText.setText(String(CONFIG.wallSize ?? CONFIG.tileSize));
         };
 
         this._onResponsiveResize = (gameSize) => {

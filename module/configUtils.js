@@ -10,6 +10,7 @@ export function mergeLocalConfig(config, objectNativeSize, logger) {
             }
             if (parsed.tileSize) config.tileSize = parsed.tileSize;
             if (parsed.objectSize) config.objectSize = parsed.objectSize;
+            if (parsed.wallSize) config.wallSize = parsed.wallSize;
             if (parsed.playerSize) config.playerSize = parsed.playerSize;
             if (parsed.helmetRadiusTiles) config.helmetRadiusTiles = parsed.helmetRadiusTiles;
             // Backwards compatibility: support old 'objectScale' saved values

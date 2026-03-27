@@ -1334,6 +1334,15 @@ function applyObjectsEffectsWizard(objectsEffects) {
     });
 }
 
+// Zone type definitions – each maps to an invisible in-game effect/token
+const ZONE_TYPE_DEFS = [
+    { id: 'wall',  label: 'Muro',   color: 0xff2222, hex: '#ff2222', alpha: 0.38, stroke: 0xff5555 },
+    { id: 'hole',  label: 'Buca',   color: 0x3355ff, hex: '#3355ff', alpha: 0.38, stroke: 0x6688ff },
+    { id: 'sand',  label: 'Sabbia', color: 0xddaa11, hex: '#ddaa11', alpha: 0.38, stroke: 0xffcc44 },
+    { id: 'mud',   label: 'Fango',  color: 0x995533, hex: '#995533', alpha: 0.38, stroke: 0xbb7744 },
+    { id: 'water', label: 'Acqua',  color: 0x1199cc, hex: '#1199cc', alpha: 0.38, stroke: 0x44bbff },
+];
+
 class LevelEditorScene extends Phaser.Scene {
     constructor() {
         super('LevelEditorScene');
@@ -1354,6 +1363,14 @@ class LevelEditorScene extends Phaser.Scene {
         this.paletteItems = [];
         this.lastBrushToken = 'w0000';
         this._dragNoTile = false; // true when user holds '.' while dragging to mark invisible
+        // Multi-type zone system: Map<zoneId, Set<"col,row">> for tile-level, Map<zoneId, Set<"gsc,gsr">> for sub-cell
+        this.zoneCells = new Map(ZONE_TYPE_DEFS.map(d => [d.id, new Set()]));
+        this.zoneSubCells = new Map(ZONE_TYPE_DEFS.map(d => [d.id, new Set()]));
+        this.activeZoneType = 'wall'; // currently selected zone type id
+        this.zoneToolActive = false;  // when true, clicks/drag paint/erase zone cells
+        this._zonePaintMode = 'paint'; // 'paint' | 'erase'
+        this._zoneIsDragging = false;
+        this.subCellSize = 0; // sub-cell game-pixel size (0 = disabled); e.g. 16 → 4×4 sub-cells per 64px tile
     }
 
     preload() {
@@ -1383,6 +1400,7 @@ class LevelEditorScene extends Phaser.Scene {
         this.gridLayer = this.add.container(0, 0);
         this.paletteLayer = this.add.container(0, 0);
         this.selectionLayer = this.add.container(0, 0);
+        this.zoneLayer = this.add.container(0, 0);
 
         this.resetGrid(this.cols, this.rows);
         // initialize tile size slider (if present in DOM)
@@ -1397,6 +1415,7 @@ class LevelEditorScene extends Phaser.Scene {
                         tileValue && (tileValue.textContent = `${tileSlider.value} px`);
                         const v = Number(tileSlider.value) || 64;
                         this.setTileBaseSize(v);
+                        try { this._updateSubCellLabel(); } catch (e) {}
                         // If auto-grid-from-bg is enabled, recompute cols/rows based on the
                         // background image natural size and the new tile size. Otherwise
                         // update background without auto-grid.
@@ -1412,6 +1431,19 @@ class LevelEditorScene extends Phaser.Scene {
                 });
             }
         } catch (e) { }
+
+        // initialize sub-cell size slider
+        try {
+            const subCellSlider = el('subCellSizeSlider');
+            if (subCellSlider) {
+                subCellSlider.value = String(this.subCellSize || 0);
+                this._updateSubCellLabel();
+                subCellSlider.addEventListener('input', () => {
+                    try { this.setSubCellSize(Number(subCellSlider.value) || 0); } catch (e) {}
+                });
+            }
+        } catch (e) {}
+
         this.createPalette();
         this.setupInputHandlers();
         this.setupScrollbars();
@@ -1801,8 +1833,28 @@ class LevelEditorScene extends Phaser.Scene {
         this.gridOffsetX = Math.max(padding, Math.floor((Math.max(64, totalW - (this.paletteArea?.width || 360) - padding * 3) - gridW) / 2) + padding);
         this.gridOffsetY = Math.max(padding, Math.floor((totalH - gridH) / 2));
         try { this.updateEditorBackgroundImage(); } catch (e) {}
+        this._updateSubCellLabel();
         this.renderGrid();
         try { this.updateScrollbars(); } catch (e) { }
+    }
+
+    setSubCellSize(size) {
+        this.subCellSize = Math.max(0, Math.floor(Number(size) || 0));
+        this._updateSubCellLabel();
+        this.renderGrid();
+    }
+
+    _updateSubCellLabel() {
+        const valEl = el('subCellSizeValue');
+        if (!valEl) return;
+        const s = this.subCellSize;
+        const baseTile = this.baseCellSize || 64;
+        if (s > 0 && s < baseTile && Math.floor(baseTile / s) > 1) {
+            const N = Math.floor(baseTile / s);
+            valEl.textContent = `${s}px \u2192 ${N}\u00d7${N} / tile`;
+        } else {
+            valEl.textContent = 'off';
+        }
     }
 
     setupScrollbars() {
@@ -1883,6 +1935,36 @@ class LevelEditorScene extends Phaser.Scene {
             const cell = this.getGridCellFromPointer(pointer.worldX, pointer.worldY);
             if (!cell) return;
 
+            // Zone tool mode: click or drag to paint/erase zone cells
+            if (this.zoneToolActive) {
+                const ztype = this.activeZoneType || 'wall';
+                const sub = this.getSubCellFromPointer(pointer.worldX, pointer.worldY);
+                if (sub) {
+                    const bag = this.zoneSubCells.get(ztype) || (this.zoneSubCells.set(ztype, new Set()), this.zoneSubCells.get(ztype));
+                    const key = `${sub.gsc},${sub.gsr}`;
+                    if (bag.has(key)) {
+                        this._zonePaintMode = 'erase';
+                        bag.delete(key);
+                    } else {
+                        this._zonePaintMode = 'paint';
+                        bag.add(key);
+                    }
+                } else {
+                    const bag = this.zoneCells.get(ztype) || (this.zoneCells.set(ztype, new Set()), this.zoneCells.get(ztype));
+                    const key = `${cell.col},${cell.row}`;
+                    if (bag.has(key)) {
+                        this._zonePaintMode = 'erase';
+                        bag.delete(key);
+                    } else {
+                        this._zonePaintMode = 'paint';
+                        bag.add(key);
+                    }
+                }
+                this._zoneIsDragging = true;
+                this.renderGrid();
+                return;
+            }
+
             this.selectedCell = cell;
             try {
                 const rawParts = String(this.cells[cell.row]?.[cell.col]?.base || '').split('/').map((s) => s.trim()).filter(Boolean);
@@ -1899,6 +1981,34 @@ class LevelEditorScene extends Phaser.Scene {
             }
             this.renderGrid();
         });
+
+        this.input.on('pointermove', (pointer) => {
+            if (!this._zoneIsDragging || !this.zoneToolActive) return;
+            if (!pointer.isDown) { this._zoneIsDragging = false; return; }
+            const ztype = this.activeZoneType || 'wall';
+            const sub = this.getSubCellFromPointer(pointer.worldX, pointer.worldY);
+            if (sub) {
+                const bag = this.zoneSubCells.get(ztype) || (this.zoneSubCells.set(ztype, new Set()), this.zoneSubCells.get(ztype));
+                const key = `${sub.gsc},${sub.gsr}`;
+                if (this._zonePaintMode === 'erase') {
+                    if (bag.has(key)) { bag.delete(key); this.renderGrid(); }
+                } else {
+                    if (!bag.has(key)) { bag.add(key); this.renderGrid(); }
+                }
+            } else {
+                const cell = this.getGridCellFromPointer(pointer.worldX, pointer.worldY);
+                if (!cell) return;
+                const bag = this.zoneCells.get(ztype) || (this.zoneCells.set(ztype, new Set()), this.zoneCells.get(ztype));
+                const key = `${cell.col},${cell.row}`;
+                if (this._zonePaintMode === 'erase') {
+                    if (bag.has(key)) { bag.delete(key); this.renderGrid(); }
+                } else {
+                    if (!bag.has(key)) { bag.add(key); this.renderGrid(); }
+                }
+            }
+        });
+
+        this.input.on('pointerup', () => { this._zoneIsDragging = false; });
 
         this.input.on('wheel', (pointer, _gameObjects, _deltaX, deltaY) => {
             const cell = this.getGridCellFromPointer(pointer.worldX, pointer.worldY);
@@ -2113,6 +2223,25 @@ class LevelEditorScene extends Phaser.Scene {
         const row = Math.floor(localY / this.cellSize);
         if (col < 0 || col >= this.cols || row < 0 || row >= this.rows) return null;
         return { col, row };
+    }
+
+    // Returns the sub-cell under the pointer when sub-grid is active (N > 1).
+    // Result: { gsc, gsr, N } where gsc/gsr are global sub-cell indices.
+    // Returns null when sub-grid is off or pointer is outside the grid.
+    getSubCellFromPointer(worldX, worldY) {
+        const _s = this.subCellSize;
+        const _b = this.baseCellSize || 64;
+        if (!_s || _s <= 0) return null;
+        const N = Math.floor(_b / _s);
+        if (N <= 1) return null;
+        const localX = worldX - this.gridOffsetX;
+        const localY = worldY - this.gridOffsetY;
+        if (localX < 0 || localY < 0) return null;
+        const subPx = this.cellSize / N;
+        const gsc = Math.floor(localX / subPx);
+        const gsr = Math.floor(localY / subPx);
+        if (gsc < 0 || gsr < 0 || gsc >= this.cols * N || gsr >= this.rows * N) return null;
+        return { gsc, gsr, N };
     }
 
     placeToken(col, row, token, opts = {}) {
@@ -2410,6 +2539,7 @@ class LevelEditorScene extends Phaser.Scene {
         if (!this.gridLayer || !this.selectionLayer) return;
         this.gridLayer.removeAll(true);
         this.selectionLayer.removeAll(true);
+        if (this.zoneLayer) this.zoneLayer.removeAll(true);
 
         for (let row = 0; row < this.rows; row++) {
             for (let col = 0; col < this.cols; col++) {
@@ -2483,6 +2613,69 @@ class LevelEditorScene extends Phaser.Scene {
                 this.editorBgImage.setPosition(this.gridOffsetX + borderW / 2, this.gridOffsetY + borderH / 2);
             }
         } catch (e) { /* ignore background reposition errors */ }
+        // draw zone overlays (all types, each with its own color)
+        if (this.zoneLayer) {
+            const _bscNz = Math.floor((this.baseCellSize || 64) / Math.max(1, this.subCellSize || 1));
+            const _subActive = _bscNz > 1 && this.subCellSize > 0;
+            const _subPxZ = _subActive ? (this.cellSize / _bscNz) : 0;
+            ZONE_TYPE_DEFS.forEach((def) => {
+                const cells = this.zoneCells.get(def.id);
+                if (cells && cells.size > 0) {
+                    cells.forEach((key) => {
+                        const [zcol, zrow] = key.split(',').map(Number);
+                        if (zcol < 0 || zrow < 0 || zcol >= this.cols || zrow >= this.rows) return;
+                        const zcx = this.gridOffsetX + zcol * this.cellSize + this.cellSize / 2;
+                        const zcy = this.gridOffsetY + zrow * this.cellSize + this.cellSize / 2;
+                        const zr = this.add.rectangle(zcx, zcy, this.cellSize, this.cellSize, def.color, def.alpha)
+                            .setStrokeStyle(1, def.stroke, 0.9);
+                        this.zoneLayer.add(zr);
+                    });
+                }
+                const subs = this.zoneSubCells.get(def.id);
+                if (subs && subs.size > 0 && _subActive) {
+                    subs.forEach((key) => {
+                        const [gsc, gsr] = key.split(',').map(Number);
+                        if (gsc < 0 || gsr < 0 || gsc >= this.cols * _bscNz || gsr >= this.rows * _bscNz) return;
+                        const bx = this.gridOffsetX + gsc * _subPxZ + _subPxZ / 2;
+                        const by = this.gridOffsetY + gsr * _subPxZ + _subPxZ / 2;
+                        const zr = this.add.rectangle(bx, by, _subPxZ, _subPxZ, def.color, 0.55)
+                            .setStrokeStyle(0.5, def.stroke, 0.9);
+                        this.zoneLayer.add(zr);
+                    });
+                }
+            });
+        }
+
+        // Sub-cell grid overlay
+        const _subSz = this.subCellSize;
+        const _baseTile = this.baseCellSize || 64;
+        if (_subSz > 0 && _subSz < _baseTile) {
+            const _N = Math.floor(_baseTile / _subSz);
+            if (_N > 1) {
+                const _subPx = this.cellSize / _N;
+                const _gW = this.cols * this.cellSize;
+                const _gH = this.rows * this.cellSize;
+                const _sg = this.add.graphics();
+                _sg.lineStyle(0.5, 0x6699bb, 0.25);
+                for (let _c = 0; _c < this.cols; _c++) {
+                    for (let _si = 1; _si < _N; _si++) {
+                        const _lx = this.gridOffsetX + _c * this.cellSize + _si * _subPx;
+                        _sg.moveTo(_lx, this.gridOffsetY);
+                        _sg.lineTo(_lx, this.gridOffsetY + _gH);
+                    }
+                }
+                for (let _r = 0; _r < this.rows; _r++) {
+                    for (let _si = 1; _si < _N; _si++) {
+                        const _ly = this.gridOffsetY + _r * this.cellSize + _si * _subPx;
+                        _sg.moveTo(this.gridOffsetX, _ly);
+                        _sg.lineTo(this.gridOffsetX + _gW, _ly);
+                    }
+                }
+                _sg.strokePath();
+                this.gridLayer.add(_sg);
+            }
+        }
+
         const border = this.add.rectangle(
             this.gridOffsetX + borderW / 2,
             this.gridOffsetY + borderH / 2,
@@ -2530,6 +2723,50 @@ class LevelEditorScene extends Phaser.Scene {
         const tiles = Array.isArray(mapObj.tiles) ? mapObj.tiles : [];
         const rows = clamp(Number(mapObj.rows) || tiles.length || 12, 4, 40);
         const cols = clamp(Number(mapObj.cols) || tiles[0]?.length || 12, 4, 40);
+        // Restore multi-type zones
+        this.zoneCells = new Map(ZONE_TYPE_DEFS.map(d => [d.id, new Set()]));
+        this.zoneSubCells = new Map(ZONE_TYPE_DEFS.map(d => [d.id, new Set()]));
+        const rawZonesMap = mapObj.zones ?? levelData.zones ?? {};
+        ZONE_TYPE_DEFS.forEach((def) => {
+            const arr = rawZonesMap[def.id];
+            if (Array.isArray(arr)) {
+                arr.forEach((z) => {
+                    if (Array.isArray(z) && z.length >= 2 && Number.isFinite(z[0]) && Number.isFinite(z[1])) {
+                        this.zoneCells.get(def.id).add(`${Math.round(z[0])},${Math.round(z[1])}`);
+                    }
+                });
+            }
+        });
+        // Backward compat: old blockedZones → wall
+        const rawLegacyZones = mapObj.blockedZones ?? levelData.blockedZones;
+        if (Array.isArray(rawLegacyZones)) {
+            rawLegacyZones.forEach((z) => {
+                if (Array.isArray(z) && z.length >= 2 && Number.isFinite(z[0]) && Number.isFinite(z[1])) {
+                    this.zoneCells.get('wall').add(`${Math.round(z[0])},${Math.round(z[1])}`);
+                }
+            });
+        }
+        // Sub-cell variants
+        const rawZoneSubsMap = mapObj.zoneSubs ?? levelData.zoneSubs ?? {};
+        ZONE_TYPE_DEFS.forEach((def) => {
+            const arr = rawZoneSubsMap[def.id];
+            if (Array.isArray(arr)) {
+                arr.forEach((z) => {
+                    if (Array.isArray(z) && z.length >= 2 && Number.isFinite(z[0]) && Number.isFinite(z[1])) {
+                        this.zoneSubCells.get(def.id).add(`${Math.round(z[0])},${Math.round(z[1])}`);
+                    }
+                });
+            }
+        });
+        // Backward compat: old blockedSubCells → wall
+        const rawLegacySubs = mapObj.blockedSubCells ?? levelData.blockedSubCells;
+        if (Array.isArray(rawLegacySubs)) {
+            rawLegacySubs.forEach((z) => {
+                if (Array.isArray(z) && z.length >= 2 && Number.isFinite(z[0]) && Number.isFinite(z[1])) {
+                    this.zoneSubCells.get('wall').add(`${Math.round(z[0])},${Math.round(z[1])}`);
+                }
+            });
+        }
         this.resetGrid(cols, rows);
 
         for (let y = 0; y < this.rows; y++) {
@@ -2899,6 +3136,49 @@ function drawMiniMapPreview(scene) {
     ctx.lineWidth = 1.5;
     ctx.strokeRect(offX + 0.5, offY + 0.5, mapW - 1, mapH - 1);
 
+    // draw zone overlays on minimap (all types)
+    if (scene && scene.zoneCells) {
+        const _mmNz = Math.floor((scene.baseCellSize || 64) / Math.max(1, scene.subCellSize || 1));
+        const _mmSubActive = _mmNz > 1 && scene.subCellSize > 0;
+        const _mmSubCell = _mmSubActive ? (cell / _mmNz) : 0;
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(offX, offY, mapW, mapH);
+        ctx.clip();
+        ZONE_TYPE_DEFS.forEach((def) => {
+            const hexFill = def.hex + '66'; // ~40% opacity
+            const hexStroke = def.hex + 'bb';
+            const cells = scene.zoneCells.get(def.id);
+            if (cells && cells.size > 0) {
+                ctx.fillStyle = hexFill;
+                ctx.strokeStyle = hexStroke;
+                ctx.lineWidth = 0.5;
+                cells.forEach((key) => {
+                    const [zcol, zrow] = key.split(',').map(Number);
+                    if (zcol >= 0 && zrow >= 0 && zcol < cols && zrow < rows) {
+                        ctx.fillRect(offX + zcol * cell, offY + zrow * cell, cell, cell);
+                        ctx.strokeRect(offX + zcol * cell, offY + zrow * cell, cell, cell);
+                    }
+                });
+            }
+            if (_mmSubActive) {
+                const subs = scene.zoneSubCells.get(def.id);
+                if (subs && subs.size > 0) {
+                    ctx.fillStyle = hexFill;
+                    ctx.strokeStyle = hexStroke;
+                    ctx.lineWidth = 0.3;
+                    subs.forEach((key) => {
+                        const [gsc, gsr] = key.split(',').map(Number);
+                        ctx.fillRect(offX + gsc * _mmSubCell, offY + gsr * _mmSubCell, _mmSubCell, _mmSubCell);
+                        ctx.strokeRect(offX + gsc * _mmSubCell, offY + gsr * _mmSubCell, _mmSubCell, _mmSubCell);
+                    });
+                }
+            }
+        });
+        ctx.restore();
+    }
+
+
     // draw foreground layers over the map (from DOM or fallback)
     const showFg = !!el('showForeground')?.checked;
     const domFg = readForegroundLayersFromDOM();
@@ -2985,13 +3265,59 @@ function readLevelFromForm() {
 
     const objectsEffects = buildObjectsEffectsFromWizard();
 
+    // Collect multi-type zone data from scene
+    const _zonesObj = (() => {
+        try {
+            if (!scene || !scene.zoneCells) return {};
+            const obj = {};
+            ZONE_TYPE_DEFS.forEach((def) => {
+                const bag = scene.zoneCells.get(def.id);
+                if (bag && bag.size > 0) {
+                    obj[def.id] = Array.from(bag).map((k) => { const [c, r] = k.split(',').map(Number); return [c, r]; });
+                }
+            });
+            return obj;
+        } catch (e) { return {}; }
+    })();
+    const _zoneSubsObj = (() => {
+        try {
+            if (!scene || !scene.zoneSubCells) return {};
+            const obj = {};
+            ZONE_TYPE_DEFS.forEach((def) => {
+                const bag = scene.zoneSubCells.get(def.id);
+                if (bag && bag.size > 0) {
+                    obj[def.id] = Array.from(bag).map((k) => { const [c, r] = k.split(',').map(Number); return [c, r]; });
+                }
+            });
+            return obj;
+        } catch (e) { return {}; }
+    })();
+    const subCellN = (() => {
+        try {
+            if (scene && scene.subCellSize > 0) {
+                const N = Math.floor((scene.baseCellSize || 64) / scene.subCellSize);
+                return N > 1 ? N : undefined;
+            }
+        } catch (e) {}
+        return undefined;
+    })();
+    const _hasZones = Object.keys(_zonesObj).length > 0;
+    const _hasZoneSubs = Object.keys(_zoneSubsObj).length > 0;
+    // Backward compat: also emit blockedZones (wall) so old game versions still work
+    const _legacyBlockedZones = _zonesObj.wall && _zonesObj.wall.length > 0 ? _zonesObj.wall : undefined;
+    const _legacyBlockedSubCells = _zoneSubsObj.wall && _zoneSubsObj.wall.length > 0 ? _zoneSubsObj.wall : undefined;
+
     const level = {
         id: String(el('levelId')?.value ?? '1.0').trim() || '1.0',
         map: {
             cols,
             rows,
             timer: parseNumber(el('mapTimer')?.value, 120),
-            tiles: scene ? scene.toTilesMatrix() : []
+            tiles: scene ? scene.toTilesMatrix() : [],
+            ...(_hasZones ? { zones: _zonesObj } : {}),
+            ...(_hasZoneSubs ? { zoneSubs: _zoneSubsObj, subCellN } : {}),
+            ...(_legacyBlockedZones ? { blockedZones: _legacyBlockedZones } : {}),
+            ...(_legacyBlockedSubCells ? { blockedSubCells: _legacyBlockedSubCells } : {})
         },
         playerStart: {
             row: clamp(Math.floor(parseNumber(el('playerRow')?.value, 1)), 0, Math.max(0, rows - 1)),
@@ -3257,7 +3583,8 @@ function applyLevelToForm(levelData) {
         'scoreRules', 'light', 'effects', 'ghost', 'bat', 'ghostSpeed', 'batSpeed',
         'spider', 'spiderSpeed', 'snake', 'snakeSpeed', 'batFlightsBeforeRest', 'batRestSeconds', 'batRestIntervalSeconds',
         'background', 'foreground', 'backgroundEnabled', 'foregroundEnabled', 'rain', 'fog', 'music',
-        'gemsOneByOne', 'requiredGems', 'gemsRequired', 'playerStart2', 'timer', 'jumpEnabled'
+        'gemsOneByOne', 'requiredGems', 'gemsRequired', 'playerStart2', 'timer', 'jumpEnabled',
+        'blockedZones'
     ]);
     const extra = {};
     Object.keys(data).forEach((key) => {
@@ -5167,6 +5494,64 @@ function bindUI() {
             const scene = getScene();
             scene?.updateEditorBackgroundImage?.();
             drawMiniMapPreview(scene);
+        });
+    }
+
+    // Zone tool buttons
+    const toggleZoneBtn = el('toggleZoneTool');
+    if (toggleZoneBtn) {
+        toggleZoneBtn.addEventListener('click', () => {
+            const scene = getScene();
+            if (!scene) return;
+            scene.zoneToolActive = !scene.zoneToolActive;
+            toggleZoneBtn.textContent = scene.zoneToolActive ? '\uD83D\uDEAB Zone: ON' : '\uD83D\uDEAB Zone: OFF';
+            toggleZoneBtn.style.background = scene.zoneToolActive ? '#5a1505' : '#2a1a1a';
+            toggleZoneBtn.style.color = scene.zoneToolActive ? '#ffcccc' : '#ff8888';
+            toggleZoneBtn.style.boxShadow = scene.zoneToolActive ? '0 0 6px #ff4444' : '';
+        });
+    }
+
+    // Zone type selector buttons
+    const _updateZoneTypeBtns = (activeType) => {
+        const btns = document.querySelectorAll('.zone-type-btn');
+        btns.forEach((btn) => {
+            const isActive = btn.dataset.zone === activeType;
+            btn.style.opacity = isActive ? '1' : '0.45';
+            btn.style.boxShadow = isActive ? `0 0 7px ${btn.style.borderColor}` : '';
+            btn.style.transform = isActive ? 'scale(1.06)' : '';
+        });
+    };
+    document.querySelectorAll('.zone-type-btn').forEach((btn) => {
+        btn.addEventListener('click', () => {
+            const scene = getScene();
+            const ztype = btn.dataset.zone || 'wall';
+            if (scene) scene.activeZoneType = ztype;
+            _updateZoneTypeBtns(ztype);
+        });
+    });
+    _updateZoneTypeBtns('wall'); // highlight default
+    const clearZonesBtn = el('clearAllZones');
+    if (clearZonesBtn) {
+        clearZonesBtn.addEventListener('click', () => {
+            const scene = getScene();
+            if (!scene) return;
+            scene.zoneCells.forEach((s) => s.clear());
+            scene.zoneSubCells.forEach((s) => s.clear());
+            scene.renderGrid();
+            setStatus('Zone di blocco cancellate.');
+        });
+    }
+
+    const clearActiveZonesBtn = el('clearActiveZones');
+    if (clearActiveZonesBtn) {
+        clearActiveZonesBtn.addEventListener('click', () => {
+            const scene = getScene();
+            if (!scene) return;
+            const ztype = scene.activeZoneType || 'wall';
+            scene.zoneCells.get(ztype)?.clear();
+            scene.zoneSubCells.get(ztype)?.clear();
+            scene.renderGrid();
+            setStatus(`Zone tipo "${ztype}" cancellate.`);
         });
     }
 

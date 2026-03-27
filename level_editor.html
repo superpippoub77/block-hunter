@@ -1135,6 +1135,16 @@
                             </div>
                         </div>
                     </div>
+                    <div class="grid3" style="margin-top:6px;">
+                        <div>
+                            <label for="subCellSizeSlider">Sub-griglia (0=off)</label>
+                            <input id="subCellSizeSlider" type="range" min="0" max="32" step="1" value="0">
+                        </div>
+                        <div>
+                            <label>&nbsp;</label>
+                            <div id="subCellSizeValue" class="tiny" style="color:#9bb8d0; margin-top:6px;">off</div>
+                        </div>
+                    </div>
                 <div class="btn-row" style="margin-top:8px;">
                     <button id="applyGridBtn" type="button">Applica Griglia</button>
                     <button id="clearGridBtn" type="button">Svuota</button>
@@ -1177,6 +1187,22 @@
                 <label style="margin-top:6px; display:block;"><input id="showForeground" type="checkbox"
                         style="width:auto; margin-right:6px;" checked>Mostra foreground nella preview e nella
                     mappa</label>
+                <div style="margin-top:10px; padding:8px 6px 6px; border-top:1px solid #3a2222; background:#1a0a0a; border-radius:4px;">
+                    <div style="font-weight:600; font-size:10px; color:#ff8888; margin-bottom:3px; text-transform:uppercase; letter-spacing:1px;">&#128683; Zone Invisibili</div>
+                    <div class="tiny" style="margin-bottom:6px;">Seleziona un tipo, attiva il tool e disegna sulla mappa. Ogni colore corrisponde a un effetto invisibile applicato al player.</div>
+                    <div style="display:flex; gap:4px; flex-wrap:wrap; margin-bottom:6px;" id="zoneTypeBtns">
+                        <button class="zone-type-btn" data-zone="wall"  style="background:#3a0a0a; border:2px solid #ff2222; color:#ffaaaa; padding:2px 9px; font-size:9px; border-radius:3px; cursor:pointer;">&#9632; Muro</button>
+                        <button class="zone-type-btn" data-zone="hole"  style="background:#0a0a3a; border:2px solid #3355ff; color:#aabbff; padding:2px 9px; font-size:9px; border-radius:3px; cursor:pointer;">&#9632; Buca</button>
+                        <button class="zone-type-btn" data-zone="sand"  style="background:#2a1e00; border:2px solid #ddaa11; color:#ffe07a; padding:2px 9px; font-size:9px; border-radius:3px; cursor:pointer;">&#9632; Sabbia</button>
+                        <button class="zone-type-btn" data-zone="mud"   style="background:#1e0e00; border:2px solid #995533; color:#cc9966; padding:2px 9px; font-size:9px; border-radius:3px; cursor:pointer;">&#9632; Fango</button>
+                        <button class="zone-type-btn" data-zone="water" style="background:#00111e; border:2px solid #1199cc; color:#77ccff; padding:2px 9px; font-size:9px; border-radius:3px; cursor:pointer;">&#9632; Acqua</button>
+                    </div>
+                    <div style="display:flex; gap:6px; flex-wrap:wrap; align-items:center;">
+                        <button id="toggleZoneTool" type="button" style="background:#2a1a1a; border:1px solid #884444; color:#ff8888; padding:3px 10px; font-size:10px;">&#128683; Zone: OFF</button>
+                        <button id="clearActiveZones" type="button" style="background:#1a1010; border:1px solid #553333; color:#bb6666; padding:3px 9px; font-size:10px;">Cancella Tipo</button>
+                        <button id="clearAllZones" type="button" style="background:#1a1010; border:1px solid #663333; color:#cc6666; padding:3px 9px; font-size:10px;">Cancella Tutte</button>
+                    </div>
+                </div>
             </div>
 
             <div class="section">

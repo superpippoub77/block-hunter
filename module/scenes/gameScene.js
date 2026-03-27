@@ -595,6 +595,92 @@ class GameScene extends Phaser.Scene {
 
         this.createTilemap();
 
+        // Apply multi-type invisible zones defined in level JSON
+        try {
+            const zonesMap = this.levelData?.map?.zones ?? {};
+            const zoneSubs = this.levelData?.map?.zoneSubs ?? {};
+            const scN = Number(this.levelData?.map?.subCellN ?? 0);
+            const ts = CONFIG.tileSize || 32;
+            const ox = this.mapOffsetX || 0;
+            const oy = this.mapOffsetY || 0;
+
+            // Helper: inject tile type override for effect zones (hole/sand/mud/water)
+            const _injectTileType = (col, row, type) => {
+                try {
+                    if (this.tiles && this.tiles[row] && this.tiles[row][col]) {
+                        this.tiles[row][col].type = type;
+                    }
+                } catch (e) {}
+            };
+
+            // Helper: create static wall body
+            const _makeWallBody = (wx, wy, w, h) => {
+                try {
+                    const s = this.add.rectangle(wx, wy, w, h, 0x000000, 0).setOrigin(0.5, 0.5);
+                    this.physics.add.existing(s, true);
+                    if (s.body) { s.body.setSize(w, h); s.body.setOffset(0, 0); }
+                    this.walls.add(s);
+                } catch (e) {}
+            };
+
+            // Backward compat: old blockedZones → wall
+            const legacyWall = this.levelData?.map?.blockedZones ?? this.levelData?.blockedZones;
+            if (Array.isArray(legacyWall)) {
+                legacyWall.forEach((z) => {
+                    if (!Array.isArray(z) || !Number.isFinite(z[0]) || !Number.isFinite(z[1])) return;
+                    _makeWallBody(Math.round(ox + z[0] * ts + ts / 2), Math.round(oy + z[1] * ts + ts / 2), ts, ts);
+                });
+            }
+            // Backward compat: old blockedSubCells → wall
+            if (scN > 1) {
+                const legacySubWall = this.levelData?.map?.blockedSubCells ?? this.levelData?.blockedSubCells;
+                if (Array.isArray(legacySubWall)) {
+                    const subSz = ts / scN;
+                    legacySubWall.forEach((z) => {
+                        if (!Array.isArray(z) || !Number.isFinite(z[0]) || !Number.isFinite(z[1])) return;
+                        _makeWallBody(Math.round(ox + z[0] * subSz + subSz / 2), Math.round(oy + z[1] * subSz + subSz / 2), subSz, subSz);
+                    });
+                }
+            }
+
+            // New zones format: process each zone type
+            const _zoneTypes = ['wall', 'hole', 'sand', 'mud', 'water'];
+            _zoneTypes.forEach((ztype) => {
+                // Tile-level zones
+                const arr = zonesMap[ztype];
+                if (Array.isArray(arr)) {
+                    arr.forEach((z) => {
+                        if (!Array.isArray(z) || !Number.isFinite(z[0]) || !Number.isFinite(z[1])) return;
+                        const col = Math.round(z[0]);
+                        const row = Math.round(z[1]);
+                        if (ztype === 'wall') {
+                            _makeWallBody(Math.round(ox + col * ts + ts / 2), Math.round(oy + row * ts + ts / 2), ts, ts);
+                        } else {
+                            _injectTileType(col, row, ztype);
+                        }
+                    });
+                }
+                // Sub-cell zones
+                if (scN > 1) {
+                    const subArr = zoneSubs[ztype];
+                    if (Array.isArray(subArr)) {
+                        const subSz = ts / scN;
+                        subArr.forEach((z) => {
+                            if (!Array.isArray(z) || !Number.isFinite(z[0]) || !Number.isFinite(z[1])) return;
+                            const gsc = Math.round(z[0]);
+                            const gsr = Math.round(z[1]);
+                            if (ztype === 'wall') {
+                                _makeWallBody(Math.round(ox + gsc * subSz + subSz / 2), Math.round(oy + gsr * subSz + subSz / 2), subSz, subSz);
+                            } else {
+                                // Inject into parent tile cell for effect types
+                                _injectTileType(Math.floor(gsc / scN), Math.floor(gsr / scN), ztype);
+                            }
+                        });
+                    }
+                }
+            });
+        } catch (e) { /* ignore zone errors */ }
+
         // restore any previously placed planks for this level (persisted in localStorage)
         try {
             if (!Array.isArray(GAME_STATE.placedPlanks)) {
@@ -1550,9 +1636,11 @@ class GameScene extends Phaser.Scene {
                     const tx = Math.round(offsetX + x * CONFIG.tileSize + CONFIG.tileSize / 2);
                     const ty = Math.round(offsetY + y * CONFIG.tileSize + CONFIG.tileSize / 2);
                     tileSprite = this.add.sprite(tx, ty, tileTexture, frameIndex);
-                    // Force tile to display exactly as a square cell of CONFIG.tileSize
-                    // (avoids gaps when native tile frame height differs from width)
-                    tileSprite.setDisplaySize(CONFIG.tileSize, CONFIG.tileSize);
+                    // Force tile to display exactly as a square cell; walls use wallSize if set
+                    const _dispSize = (normalizedTileType === 'wall')
+                        ? (Number(CONFIG.wallSize) || CONFIG.tileSize)
+                        : CONFIG.tileSize;
+                    tileSprite.setDisplaySize(_dispSize, _dispSize);
                     try { tileSprite.setData && tileSprite.setData('type', normalizedTileType); } catch (e) { }
                     try { this.applyTokenEffects(tileSprite, cellEffects, tx, ty, cellEffectOptions); } catch (e) { }
 
@@ -6096,7 +6184,7 @@ class GameScene extends Phaser.Scene {
         const revealWallMaxFrame = getTextureMaxNumericFrame(this, 'wall_tiles', WALL_TILE_COLS);
             const clampedRevealWallFrame = Phaser.Math.Clamp(Number(revealCell.wallFrame) || 0, 0, revealWallMaxFrame);
             const wallSprite = this.add.sprite(worldX, worldY, 'wall_tiles', clampedRevealWallFrame);
-            wallSprite.setDisplaySize(CONFIG.tileSize, CONFIG.tileSize);
+            wallSprite.setDisplaySize(Number(CONFIG.wallSize) || CONFIG.tileSize, Number(CONFIG.wallSize) || CONFIG.tileSize);
             if ((revealCell.wallRotation !== undefined && revealCell.wallRotation !== null) || revealCell.wallFlip) {
                 const rr = Number(revealCell.wallRotation) || 0;
                 const flip = String(revealCell.wallFlip ?? '0').toLowerCase();
