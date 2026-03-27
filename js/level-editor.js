@@ -152,7 +152,9 @@ const DEFAULT_LEVEL = {
     batRestSeconds: 2,
     batRestIntervalSeconds: 0,
     backgroundEnabled: true,
-    foregroundEnabled: true
+    foregroundEnabled: true,
+    jumpEnabled: true,
+    requiredGems: 0
 };
 
 function el(id) {
@@ -1633,9 +1635,12 @@ class LevelEditorScene extends Phaser.Scene {
                     for (let iy = 0; iy < countY; iy++) {
                         for (let ix = 0; ix < countX; ix++) {
                             const img = this.add.image(0, 0, textureKey).setDepth(-500 - idx);
-                            const x = this.gridOffsetX + offsetX + (stepX * ix) + gridW / 2;
-                            const y = this.gridOffsetY + offsetY + (stepY * iy) + gridH / 2;
-                            img.setDisplaySize(gridW, gridH);
+                            const _tileSize = Number(el('tileSizeSlider')?.value) || 64;
+                            const dispW = (layer.width > 0) ? Math.round(layer.width * this.cellSize / _tileSize) : gridW;
+                            const dispH = (layer.height > 0) ? Math.round(layer.height * this.cellSize / _tileSize) : gridH;
+                            const x = this.gridOffsetX + offsetX + (stepX * ix) + dispW / 2;
+                            const y = this.gridOffsetY + offsetY + (stepY * iy) + dispH / 2;
+                            img.setDisplaySize(dispW, dispH);
                             img.setPosition(x, y);
                             img.setAlpha(clamp(alpha, 0, 1));
                             this.editorBgImages.push(img);
@@ -1682,9 +1687,12 @@ class LevelEditorScene extends Phaser.Scene {
             for (let iy = 0; iy < countY; iy++) {
                 for (let ix = 0; ix < countX; ix++) {
                     const img = this.add.image(0, 0, textureKey).setDepth(500 + idx);
-                    const x = this.gridOffsetX + offsetX + (stepX * ix) + gridW / 2;
-                    const y = this.gridOffsetY + offsetY + (stepY * iy) + gridH / 2;
-                    img.setDisplaySize(gridW, gridH);
+                    const _tileSize = Number(el('tileSizeSlider')?.value) || 64;
+                    const dispW = (layer.width > 0) ? Math.round(layer.width * this.cellSize / _tileSize) : gridW;
+                    const dispH = (layer.height > 0) ? Math.round(layer.height * this.cellSize / _tileSize) : gridH;
+                    const x = this.gridOffsetX + offsetX + (stepX * ix) + dispW / 2;
+                    const y = this.gridOffsetY + offsetY + (stepY * iy) + dispH / 2;
+                    img.setDisplaySize(dispW, dispH);
                     img.setPosition(x, y);
                     img.setAlpha(clamp(alpha, 0, 1));
                     this.editorFgImages.push(img);
@@ -2725,6 +2733,7 @@ function drawMiniMapPreview(scene) {
     const mapH = cell * rows;
     const offX = Math.floor((width - mapW) / 2);
     const offY = Math.floor((height - mapH) / 2);
+    const tileSize = Number(el('tileSizeSlider')?.value) || 64;
 
     // draw layered background images (support multiple bg layers from DOM or select)
     const showBg = !!el('showBackground')?.checked;
@@ -2785,7 +2794,9 @@ function drawMiniMapPreview(scene) {
                 for (let ix = 0; ix < countX; ix++) {
                     const dx = offX + offsetX + stepX * ix;
                     const dy = offY + offsetY + stepY * iy;
-                    ctx.drawImage(img, dx, dy, mapW, mapH);
+                    const imgW = (layer.width > 0) ? Math.round(layer.width * cell / tileSize) : mapW;
+                    const imgH = (layer.height > 0) ? Math.round(layer.height * cell / tileSize) : mapH;
+                    ctx.drawImage(img, dx, dy, imgW, imgH);
                 }
             }
             ctx.restore();
@@ -2934,7 +2945,9 @@ function drawMiniMapPreview(scene) {
                     for (let ix = 0; ix < countX; ix++) {
                         const dx = offX + offsetX + stepX * ix;
                         const dy = offY + offsetY + stepY * iy;
-                        ctx.drawImage(entry.img, dx, dy, mapW, mapH);
+                        const imgW = (ly.width > 0) ? Math.round(ly.width * cell / tileSize) : mapW;
+                        const imgH = (ly.height > 0) ? Math.round(ly.height * cell / tileSize) : mapH;
+                        ctx.drawImage(entry.img, dx, dy, imgW, imgH);
                     }
                 }
                 ctx.restore();
@@ -3046,7 +3059,9 @@ function readLevelFromForm() {
         snakeSpeed: parseNumber(el('snakeSpeed')?.value, 95),
         batFlightsBeforeRest: parseNumber(el('batFlightsBeforeRest')?.value, 4),
         batRestSeconds: parseNumber(el('batRestSeconds')?.value, 2),
-        batRestIntervalSeconds: parseNumber(el('batRestIntervalSeconds')?.value, 0)
+        batRestIntervalSeconds: parseNumber(el('batRestIntervalSeconds')?.value, 0),
+        jumpEnabled: el('jumpEnabled') ? !!el('jumpEnabled').checked : true,
+        requiredGems: parseNumber(el('requiredGems')?.value, 0)
     };
 
     // tokenMap (optional mapping of shorthand tokens)
@@ -3153,6 +3168,8 @@ function applyLevelToForm(levelData) {
     try { if (el('batSpeedRange')) el('batSpeedRange').value = el('batSpeed').value; } catch (e) {}
     try { if (el('spiderSpeedRange')) el('spiderSpeedRange').value = el('spiderSpeed').value; } catch (e) {}
     try { if (el('snakeSpeedRange')) el('snakeSpeedRange').value = el('snakeSpeed').value; } catch (e) {}
+    try { if (el('jumpEnabled')) el('jumpEnabled').checked = (data.jumpEnabled !== undefined ? !!data.jumpEnabled : (mapData.jumpEnabled !== undefined ? !!mapData.jumpEnabled : true)); } catch (e) {}
+    try { if (el('requiredGems')) el('requiredGems').value = data.requiredGems ?? data.gemsRequired ?? mapData.requiredGems ?? 0; } catch (e) {}
     el('objectiveLabel').value = data.objectiveLabel ?? DEFAULT_LEVEL.objectiveLabel;
     el('lightMode').value = resolvedLight;
     el('escapeRoute').value = String(!!data.escapeRoute);
@@ -3240,7 +3257,7 @@ function applyLevelToForm(levelData) {
         'scoreRules', 'light', 'effects', 'ghost', 'bat', 'ghostSpeed', 'batSpeed',
         'spider', 'spiderSpeed', 'snake', 'snakeSpeed', 'batFlightsBeforeRest', 'batRestSeconds', 'batRestIntervalSeconds',
         'background', 'foreground', 'backgroundEnabled', 'foregroundEnabled', 'rain', 'fog', 'music',
-        'gemsOneByOne', 'requiredGems', 'gemsRequired', 'playerStart2', 'timer'
+        'gemsOneByOne', 'requiredGems', 'gemsRequired', 'playerStart2', 'timer', 'jumpEnabled'
     ]);
     const extra = {};
     Object.keys(data).forEach((key) => {
@@ -3297,11 +3314,15 @@ function readBackgroundLayersFromDOM() {
         const alpha = parseNumber(it.querySelector('.bg-alpha')?.value, 1.0);
         const offsetX = parseNumber(it.querySelector('.bg-offset-x')?.value, 0);
         const offsetY = parseNumber(it.querySelector('.bg-offset-y')?.value, 0);
+        const rawW = it.querySelector('.bg-width')?.value;
+        const rawH = it.querySelector('.bg-height')?.value;
+        const layerWidth = (rawW !== undefined && rawW !== '' && Number(rawW) > 0) ? Number(rawW) : undefined;
+        const layerHeight = (rawH !== undefined && rawH !== '' && Number(rawH) > 0) ? Number(rawH) : undefined;
         const repeatX = parseRepeatValue(it.querySelector('.bg-repeat-x')?.value, 1);
         const repeatY = parseRepeatValue(it.querySelector('.bg-repeat-y')?.value, 1);
         const stepX = parseNumber(it.querySelector('.bg-step-x')?.value, 0);
         const stepY = parseNumber(it.querySelector('.bg-step-y')?.value, 0);
-        layers.push({
+        const layerObj = {
             src,
             enabled,
             parallaxBgFactor: factor,
@@ -3312,7 +3333,10 @@ function readBackgroundLayersFromDOM() {
             repeatY,
             repeatStepX: stepX,
             repeatStepY: stepY
-        });
+        };
+        if (layerWidth !== undefined) layerObj.width = layerWidth;
+        if (layerHeight !== undefined) layerObj.height = layerHeight;
+        layers.push(layerObj);
     });
     return layers;
 }
@@ -3338,11 +3362,15 @@ function readForegroundLayersFromDOM() {
         const alpha = parseNumber(it.querySelector('.fg-alpha')?.value, 1.0);
         const offsetX = parseNumber(it.querySelector('.fg-offset-x')?.value, 0);
         const offsetY = parseNumber(it.querySelector('.fg-offset-y')?.value, 0);
+        const rawW = it.querySelector('.fg-width')?.value;
+        const rawH = it.querySelector('.fg-height')?.value;
+        const layerWidth = (rawW !== undefined && rawW !== '' && Number(rawW) > 0) ? Number(rawW) : undefined;
+        const layerHeight = (rawH !== undefined && rawH !== '' && Number(rawH) > 0) ? Number(rawH) : undefined;
         const repeatX = parseRepeatValue(it.querySelector('.fg-repeat-x')?.value, 1);
         const repeatY = parseRepeatValue(it.querySelector('.fg-repeat-y')?.value, 1);
         const stepX = parseNumber(it.querySelector('.fg-step-x')?.value, 0);
         const stepY = parseNumber(it.querySelector('.fg-step-y')?.value, 0);
-        layers.push({
+        const layerObj = {
             src,
             enabled,
             parallaxFgFactor: factor,
@@ -3353,7 +3381,10 @@ function readForegroundLayersFromDOM() {
             repeatY,
             repeatStepX: stepX,
             repeatStepY: stepY
-        });
+        };
+        if (layerWidth !== undefined) layerObj.width = layerWidth;
+        if (layerHeight !== undefined) layerObj.height = layerHeight;
+        layers.push(layerObj);
     });
     return layers;
 }
@@ -3372,11 +3403,13 @@ function applyBackgroundLayersToDOM(bg) {
         const alpha = layer?.parallaxBgAlpha ?? 1.0;
         const offsetX = layer?.offsetX ?? layer?.left ?? layer?.x ?? layer?.positionX ?? 0;
         const offsetY = layer?.offsetY ?? layer?.top ?? layer?.y ?? layer?.positionY ?? 0;
+        const width = layer?.width ?? layer?.w ?? layer?.displayWidth ?? layer?.layerWidth ?? undefined;
+        const height = layer?.height ?? layer?.h ?? layer?.displayHeight ?? layer?.layerHeight ?? undefined;
         const repeatX = layer?.repeatX ?? layer?.replicaX ?? layer?.repeatCountX ?? layer?.replicaCountX ?? 1;
         const repeatY = layer?.repeatY ?? layer?.replicaY ?? layer?.repeatCountY ?? layer?.replicaCountY ?? 1;
         const stepX = layer?.repeatStepX ?? layer?.replicaStepX ?? layer?.repeatOffsetX ?? layer?.replicaOffsetX ?? 0;
         const stepY = layer?.repeatStepY ?? layer?.replicaStepY ?? layer?.repeatOffsetY ?? layer?.replicaOffsetY ?? 0;
-        const elRow = createBgLayerElement({ src, enabled, factor, alpha, offsetX, offsetY, repeatX, repeatY, stepX, stepY, idx });
+        const elRow = createBgLayerElement({ src, enabled, factor, alpha, offsetX, offsetY, width, height, repeatX, repeatY, stepX, stepY, idx });
         container.appendChild(elRow);
     });
     // If no radio is selected, default to the first background layer
@@ -3403,11 +3436,13 @@ function applyForegroundLayersToDOM(fg) {
         const alpha = layer?.parallaxFgAlpha ?? 1.0;
         const offsetX = layer?.offsetX ?? layer?.left ?? layer?.x ?? layer?.positionX ?? 0;
         const offsetY = layer?.offsetY ?? layer?.top ?? layer?.y ?? layer?.positionY ?? 0;
+        const width = layer?.width ?? layer?.w ?? layer?.displayWidth ?? layer?.layerWidth ?? undefined;
+        const height = layer?.height ?? layer?.h ?? layer?.displayHeight ?? layer?.layerHeight ?? undefined;
         const repeatX = layer?.repeatX ?? layer?.replicaX ?? layer?.repeatCountX ?? layer?.replicaCountX ?? 1;
         const repeatY = layer?.repeatY ?? layer?.replicaY ?? layer?.repeatCountY ?? layer?.replicaCountY ?? 1;
         const stepX = layer?.repeatStepX ?? layer?.replicaStepX ?? layer?.repeatOffsetX ?? layer?.replicaOffsetX ?? 0;
         const stepY = layer?.repeatStepY ?? layer?.replicaStepY ?? layer?.repeatOffsetY ?? layer?.replicaOffsetY ?? 0;
-        container.appendChild(createFgLayerElement({ src, enabled, factor, alpha, offsetX, offsetY, repeatX, repeatY, stepX, stepY, idx }));
+        container.appendChild(createFgLayerElement({ src, enabled, factor, alpha, offsetX, offsetY, width, height, repeatX, repeatY, stepX, stepY, idx }));
     });
 }
 
@@ -3418,6 +3453,8 @@ function createBgLayerElement(cfg = {}) {
     const enabled = cfg.enabled !== false;
     const offsetX = cfg.offsetX ?? 0;
     const offsetY = cfg.offsetY ?? 0;
+    const layerWidth = cfg.width ?? cfg.layerWidth ?? '';
+    const layerHeight = cfg.height ?? cfg.layerHeight ?? '';
     const repeatX = cfg.repeatX ?? 1;
     const repeatY = cfg.repeatY ?? 1;
     const stepX = cfg.stepX ?? 0;
@@ -3527,8 +3564,16 @@ function createBgLayerElement(cfg = {}) {
     rowMid.style.gridTemplateColumns = 'repeat(4, 1fr)';
     rowMid.style.gap = '6px';
 
-    const ox = document.createElement('input'); ox.className = 'bg-offset-x'; ox.type = 'number'; ox.step = '1'; ox.value = String(offsetX); ox.title = 'offsetX'; ox.placeholder = 'offX';
-    const oy = document.createElement('input'); oy.className = 'bg-offset-y'; oy.type = 'number'; oy.step = '1'; oy.value = String(offsetY); oy.title = 'offsetY'; oy.placeholder = 'offY';
+    const ox = document.createElement('input'); ox.className = 'bg-offset-x'; ox.type = 'number'; ox.step = '1'; ox.value = String(offsetX); ox.title = 'offsetX (left)'; ox.placeholder = 'left/offX';
+    const oy = document.createElement('input'); oy.className = 'bg-offset-y'; oy.type = 'number'; oy.step = '1'; oy.value = String(offsetY); oy.title = 'offsetY (top)'; oy.placeholder = 'top/offY';
+
+    const rowSize = document.createElement('div');
+    rowSize.style.display = 'grid';
+    rowSize.style.gridTemplateColumns = 'repeat(4, 1fr)';
+    rowSize.style.gap = '6px';
+    const bw = document.createElement('input'); bw.className = 'bg-width'; bw.type = 'number'; bw.step = '1'; bw.min = '0'; bw.value = layerWidth !== '' ? String(layerWidth) : ''; bw.title = 'width (0=auto)'; bw.placeholder = 'width';
+    const bh = document.createElement('input'); bh.className = 'bg-height'; bh.type = 'number'; bh.step = '1'; bh.min = '0'; bh.value = layerHeight !== '' ? String(layerHeight) : ''; bh.title = 'height (0=auto)'; bh.placeholder = 'height';
+    const lblWH = document.createElement('div'); lblWH.style.gridColumn = 'span 2'; lblWH.style.fontSize = '8px'; lblWH.style.color = '#9fb8df'; lblWH.style.alignSelf = 'center'; lblWH.textContent = 'width / height (px, 0=auto)';
 
     const rowBottom = document.createElement('div');
     rowBottom.style.display = 'grid';
@@ -3550,6 +3595,10 @@ function createBgLayerElement(cfg = {}) {
     rowMid.appendChild(ox);
     rowMid.appendChild(oy);
 
+    rowSize.appendChild(bw);
+    rowSize.appendChild(bh);
+    rowSize.appendChild(lblWH);
+
     rowBottom.appendChild(rx);
     rowBottom.appendChild(ry);
     rowBottom.appendChild(sx);
@@ -3557,6 +3606,7 @@ function createBgLayerElement(cfg = {}) {
 
     wrapper.appendChild(rowTop);
     wrapper.appendChild(rowMid);
+    wrapper.appendChild(rowSize);
     wrapper.appendChild(rowBottom);
 
     wrapper.addEventListener('dragstart', (ev) => {
@@ -3585,6 +3635,8 @@ function createFgLayerElement(cfg = {}) {
     const enabled = cfg.enabled !== false;
     const offsetX = cfg.offsetX ?? 0;
     const offsetY = cfg.offsetY ?? 0;
+    const layerWidth = cfg.width ?? cfg.layerWidth ?? '';
+    const layerHeight = cfg.height ?? cfg.layerHeight ?? '';
     const repeatX = cfg.repeatX ?? 1;
     const repeatY = cfg.repeatY ?? 1;
     const stepX = cfg.stepX ?? 0;
@@ -3680,8 +3732,16 @@ function createFgLayerElement(cfg = {}) {
     rowMid.style.gridTemplateColumns = 'repeat(4, 1fr)';
     rowMid.style.gap = '6px';
 
-    const ox = document.createElement('input'); ox.className = 'fg-offset-x'; ox.type = 'number'; ox.step = '1'; ox.value = String(offsetX); ox.title = 'offsetX'; ox.placeholder = 'offX';
-    const oy = document.createElement('input'); oy.className = 'fg-offset-y'; oy.type = 'number'; oy.step = '1'; oy.value = String(offsetY); oy.title = 'offsetY'; oy.placeholder = 'offY';
+    const ox = document.createElement('input'); ox.className = 'fg-offset-x'; ox.type = 'number'; ox.step = '1'; ox.value = String(offsetX); ox.title = 'offsetX (left)'; ox.placeholder = 'left/offX';
+    const oy = document.createElement('input'); oy.className = 'fg-offset-y'; oy.type = 'number'; oy.step = '1'; oy.value = String(offsetY); oy.title = 'offsetY (top)'; oy.placeholder = 'top/offY';
+
+    const rowSize = document.createElement('div');
+    rowSize.style.display = 'grid';
+    rowSize.style.gridTemplateColumns = 'repeat(4, 1fr)';
+    rowSize.style.gap = '6px';
+    const fw = document.createElement('input'); fw.className = 'fg-width'; fw.type = 'number'; fw.step = '1'; fw.min = '0'; fw.value = layerWidth !== '' ? String(layerWidth) : ''; fw.title = 'width (0=auto)'; fw.placeholder = 'width';
+    const fh = document.createElement('input'); fh.className = 'fg-height'; fh.type = 'number'; fh.step = '1'; fh.min = '0'; fh.value = layerHeight !== '' ? String(layerHeight) : ''; fh.title = 'height (0=auto)'; fh.placeholder = 'height';
+    const flblWH = document.createElement('div'); flblWH.style.gridColumn = 'span 2'; flblWH.style.fontSize = '8px'; flblWH.style.color = '#9fb8df'; flblWH.style.alignSelf = 'center'; flblWH.textContent = 'width / height (px, 0=auto)';
 
     const rowBottom = document.createElement('div');
     rowBottom.style.display = 'grid';
@@ -3702,6 +3762,10 @@ function createFgLayerElement(cfg = {}) {
     rowMid.appendChild(ox);
     rowMid.appendChild(oy);
 
+    rowSize.appendChild(fw);
+    rowSize.appendChild(fh);
+    rowSize.appendChild(flblWH);
+
     rowBottom.appendChild(rx);
     rowBottom.appendChild(ry);
     rowBottom.appendChild(sx);
@@ -3709,6 +3773,7 @@ function createFgLayerElement(cfg = {}) {
 
     wrapper.appendChild(rowTop);
     wrapper.appendChild(rowMid);
+    wrapper.appendChild(rowSize);
     wrapper.appendChild(rowBottom);
 
     wrapper.addEventListener('dragstart', (ev) => {
@@ -3740,7 +3805,7 @@ function ensureBgHeader() {
     header.style.marginBottom = '6px';
     header.style.color = '#9fb8df';
     header.style.fontSize = '8px';
-    header.textContent = 'BG: [enabled][active][image] | [factor,alpha,offX,offY] | [repX,repY,stepX,stepY]';
+    header.textContent = 'BG: [enabled][active][image] | [factor,alpha,left/offX,top/offY] | [width,height] | [repX,repY,stepX,stepY]';
     container.appendChild(header);
 }
 
@@ -3754,7 +3819,7 @@ function ensureFgHeader() {
     header.style.marginBottom = '6px';
     header.style.color = '#9fb8df';
     header.style.fontSize = '8px';
-    header.textContent = 'FG: [enabled][image] | [factor,alpha,offX,offY] | [repX,repY,stepX,stepY]';
+    header.textContent = 'FG: [enabled][image] | [factor,alpha,left/offX,top/offY] | [width,height] | [repX,repY,stepX,stepY]';
     container.appendChild(header);
 }
 

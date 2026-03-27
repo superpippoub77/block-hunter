@@ -1118,6 +1118,10 @@
                         <label for="mapTimer">Timer</label>
                         <input id="mapTimer" type="number" min="10" value="120">
                     </div>
+                    <div>
+                        <label for="requiredGems">Gems richieste (0=config)</label>
+                        <input id="requiredGems" type="number" min="0" value="0">
+                    </div>
                 </div>
                     <div class="grid3" style="margin-top:8px;">
                         <div>
@@ -1191,7 +1195,7 @@
                     <div style="margin-top:8px;">
                         <label style="display:block; font-size:9px; color:#b6caef; margin-bottom:4px;">Background layers
                             (aggiungi/rimuovi)</label>
-                        <div class="tiny" style="margin-bottom:6px;">Ogni layer supporta: attivo/non attivo, parallax, alpha, offset X/Y, repliche X/Y e step X/Y. Usa <strong>*</strong> in repliche per copertura automatica.</div>
+                        <div class="tiny" style="margin-bottom:6px;">Ogni layer supporta: attivo/non attivo, parallax, alpha, offset X/Y (=left/top), <strong>width/height</strong> (0=auto), repliche X/Y e step X/Y. Usa <strong>*</strong> in repliche per copertura automatica.</div>
                         <div style="display:flex; gap:6px; margin-bottom:6px;">
                             <button id="bgEnableAllBtn" type="button">Attiva tutti BG</button>
                             <button id="bgDisableAllBtn" type="button">Disattiva tutti BG</button>
@@ -1238,6 +1242,11 @@
                 <div style="margin-top:8px; display:flex; align-items:center; gap:8px;">
                     <label style="display:flex; align-items:center; gap:8px;">
                         <input id="gemsOneByOne" type="checkbox" style="width:auto; margin-right:6px;">Mostra le gemme una alla volta
+                    </label>
+                </div>
+                <div style="margin-top:6px; display:flex; align-items:center; gap:8px;">
+                    <label style="display:flex; align-items:center; gap:8px;">
+                        <input id="jumpEnabled" type="checkbox" style="width:auto; margin-right:6px;" checked>Salto abilitato (jumpEnabled)
                     </label>
                 </div>
             </div>
