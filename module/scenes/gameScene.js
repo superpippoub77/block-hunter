@@ -733,12 +733,20 @@ class GameScene extends Phaser.Scene {
             return Math.max(1, Math.floor(n));
         };
 
-        const resolveLayerSize = (entry, defaultW, defaultH) => {
+        const resolveLayerSize = (entry, defaultW, defaultH, natW = 0, natH = 0) => {
             const e = (entry && typeof entry === 'object') ? entry : {};
             const rawW = Number(e.width ?? e.w ?? e.displayWidth ?? e.layerWidth);
             const rawH = Number(e.height ?? e.h ?? e.displayHeight ?? e.layerHeight);
             const hasW = Number.isFinite(rawW) && rawW > 0;
             const hasH = Number.isFinite(rawH) && rawH > 0;
+
+            // Proportional: if only one dimension is set, derive the other from the natural aspect ratio
+            if (hasW && !hasH && natW > 0 && natH > 0) {
+                return { layerW: rawW, layerH: Math.round(rawW * natH / natW), fixedSize: true };
+            }
+            if (hasH && !hasW && natW > 0 && natH > 0) {
+                return { layerW: Math.round(rawH * natW / natH), layerH: rawH, fixedSize: true };
+            }
 
             return {
                 layerW: hasW ? rawW : defaultW,
@@ -856,11 +864,13 @@ class GameScene extends Phaser.Scene {
                     ? Number(entry.parallaxBgAlpha)
                     : (typeof CONFIG.parallaxBgAlpha === 'number' ? Number(CONFIG.parallaxBgAlpha) : 1);
 
-                const layerSize = resolveLayerSize(entry, bgWidth, bgHeight);
-                const placement = resolveLayerPlacement(entry, layerSize.layerW, layerSize.layerH, CONFIG.width, CONFIG.height);
-
                 const createBgImage = (textureKey) => {
                     try {
+                        const frame = this.textures.getFrame(textureKey, 0);
+                        const natW = frame?.realWidth ?? frame?.width ?? 0;
+                        const natH = frame?.realHeight ?? frame?.height ?? 0;
+                        const layerSize = resolveLayerSize(entry, bgWidth, bgHeight, natW, natH);
+                        const placement = resolveLayerPlacement(entry, layerSize.layerW, layerSize.layerH, CONFIG.width, CONFIG.height);
                         for (let iy = 0; iy < placement.countY; iy++) {
                             for (let ix = 0; ix < placement.countX; ix++) {
                                 const img = this.add.image(worldX, worldY, textureKey);
@@ -922,7 +932,10 @@ class GameScene extends Phaser.Scene {
             const createForegroundWithKey = (fgKey, entry, idx) => {
                 try {
                     if (!this.textures.exists(fgKey)) return;
-                    const layerSize = resolveLayerSize(entry, fgWidth, fgHeight);
+                    const frame = this.textures.getFrame(fgKey, 0);
+                    const natW = frame?.realWidth ?? frame?.width ?? 0;
+                    const natH = frame?.realHeight ?? frame?.height ?? 0;
+                    const layerSize = resolveLayerSize(entry, fgWidth, fgHeight, natW, natH);
                     const placement = resolveLayerPlacement(entry, layerSize.layerW, layerSize.layerH, CONFIG.width, CONFIG.height);
 
                     const fgAlpha = (entry && typeof entry === 'object' && typeof entry.parallaxFgAlpha === 'number')

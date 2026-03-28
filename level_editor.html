@@ -1119,8 +1119,11 @@
                         <input id="mapTimer" type="number" min="10" value="120">
                     </div>
                     <div>
-                        <label for="requiredGems">Gems richieste (0=config)</label>
-                        <input id="requiredGems" type="number" min="0" value="0">
+                        <label for="requiredGems">Gems richieste (0=tutte)</label>
+                        <div style="display:flex; align-items:center; gap:6px;">
+                            <input id="requiredGems" type="number" min="0" value="0" style="flex:1; min-width:0;">
+                            <span id="gemsInMapCount" title="Gemme presenti nella mappa" style="font-size:9px; color:#8ee89f; white-space:nowrap;">/ 0</span>
+                        </div>
                     </div>
                 </div>
                     <div class="grid3" style="margin-top:8px;">

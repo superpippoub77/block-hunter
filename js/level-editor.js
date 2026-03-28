@@ -1668,8 +1668,23 @@ class LevelEditorScene extends Phaser.Scene {
                         for (let ix = 0; ix < countX; ix++) {
                             const img = this.add.image(0, 0, textureKey).setDepth(-500 - idx);
                             const _tileSize = Number(el('tileSizeSlider')?.value) || 64;
-                            const dispW = (layer.width > 0) ? Math.round(layer.width * this.cellSize / _tileSize) : gridW;
-                            const dispH = (layer.height > 0) ? Math.round(layer.height * this.cellSize / _tileSize) : gridH;
+                            const _frame = this.textures.getFrame(textureKey, 0);
+                            const _natW = _frame?.realWidth ?? _frame?.width ?? 0;
+                            const _natH = _frame?.realHeight ?? _frame?.height ?? 0;
+                            let dispW, dispH;
+                            if (layer.width > 0 && layer.height > 0) {
+                                dispW = Math.round(layer.width * this.cellSize / _tileSize);
+                                dispH = Math.round(layer.height * this.cellSize / _tileSize);
+                            } else if (layer.width > 0 && _natW > 0 && _natH > 0) {
+                                dispW = Math.round(layer.width * this.cellSize / _tileSize);
+                                dispH = Math.round(dispW * _natH / _natW);
+                            } else if (layer.height > 0 && _natW > 0 && _natH > 0) {
+                                dispH = Math.round(layer.height * this.cellSize / _tileSize);
+                                dispW = Math.round(dispH * _natW / _natH);
+                            } else {
+                                dispW = gridW;
+                                dispH = gridH;
+                            }
                             const x = this.gridOffsetX + offsetX + (stepX * ix) + dispW / 2;
                             const y = this.gridOffsetY + offsetY + (stepY * iy) + dispH / 2;
                             img.setDisplaySize(dispW, dispH);
@@ -1720,8 +1735,23 @@ class LevelEditorScene extends Phaser.Scene {
                 for (let ix = 0; ix < countX; ix++) {
                     const img = this.add.image(0, 0, textureKey).setDepth(500 + idx);
                     const _tileSize = Number(el('tileSizeSlider')?.value) || 64;
-                    const dispW = (layer.width > 0) ? Math.round(layer.width * this.cellSize / _tileSize) : gridW;
-                    const dispH = (layer.height > 0) ? Math.round(layer.height * this.cellSize / _tileSize) : gridH;
+                    const _frame = this.textures.getFrame(textureKey, 0);
+                    const _natW = _frame?.realWidth ?? _frame?.width ?? 0;
+                    const _natH = _frame?.realHeight ?? _frame?.height ?? 0;
+                    let dispW, dispH;
+                    if (layer.width > 0 && layer.height > 0) {
+                        dispW = Math.round(layer.width * this.cellSize / _tileSize);
+                        dispH = Math.round(layer.height * this.cellSize / _tileSize);
+                    } else if (layer.width > 0 && _natW > 0 && _natH > 0) {
+                        dispW = Math.round(layer.width * this.cellSize / _tileSize);
+                        dispH = Math.round(dispW * _natH / _natW);
+                    } else if (layer.height > 0 && _natW > 0 && _natH > 0) {
+                        dispH = Math.round(layer.height * this.cellSize / _tileSize);
+                        dispW = Math.round(dispH * _natW / _natH);
+                    } else {
+                        dispW = gridW;
+                        dispH = gridH;
+                    }
                     const x = this.gridOffsetX + offsetX + (stepX * ix) + dispW / 2;
                     const y = this.gridOffsetY + offsetY + (stepY * iy) + dispH / 2;
                     img.setDisplaySize(dispW, dispH);
@@ -1740,8 +1770,8 @@ class LevelEditorScene extends Phaser.Scene {
         const prevRows = Number(this.rows) || 0;
         const prevCols = Number(this.cols) || 0;
 
-        this.cols = clamp(Math.floor(cols), 4, 40);
-        this.rows = clamp(Math.floor(rows), 4, 40);
+        this.cols = clamp(Math.floor(cols), 4, 120);
+        this.rows = clamp(Math.floor(rows), 4, 120);
 
         // Compute available area from actual canvas size. Reserve a palette column on the right.
         const totalW = Math.max(200, Math.floor(this.scale.width || this.sys.game.config.width || 1000));
@@ -2084,10 +2114,14 @@ class LevelEditorScene extends Phaser.Scene {
         });
 
         this.input.keyboard.on('keydown-DELETE', () => {
+            const active = document.activeElement;
+            if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.tagName === 'SELECT')) return;
             this.clearSelectedCell();
         });
 
         this.input.keyboard.on('keydown-BACKSPACE', (event) => {
+            const active = document.activeElement;
+            if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.tagName === 'SELECT')) return;
             event?.preventDefault?.();
             this.clearSelectedCell();
         });
@@ -2721,8 +2755,8 @@ class LevelEditorScene extends Phaser.Scene {
         if (!levelData || typeof levelData !== 'object') return;
         const mapObj = levelData.map || {};
         const tiles = Array.isArray(mapObj.tiles) ? mapObj.tiles : [];
-        const rows = clamp(Number(mapObj.rows) || tiles.length || 12, 4, 40);
-        const cols = clamp(Number(mapObj.cols) || tiles[0]?.length || 12, 4, 40);
+        const rows = clamp(Number(mapObj.rows) || tiles.length || 12, 4, 120);
+        const cols = clamp(Number(mapObj.cols) || tiles[0]?.length || 12, 4, 120);
         // Restore multi-type zones
         this.zoneCells = new Map(ZONE_TYPE_DEFS.map(d => [d.id, new Set()]));
         this.zoneSubCells = new Map(ZONE_TYPE_DEFS.map(d => [d.id, new Set()]));
@@ -2950,8 +2984,16 @@ function drawMiniMapToken(scene, ctx, token, x, y, size, opts = {}) {
     }
 }
 
+function updateGemsInMapCount(scene) {
+    const span = el('gemsInMapCount');
+    if (!span) return;
+    const count = scene ? countTokenInScene(scene, 'g') : 0;
+    span.textContent = `/ ${count}`;
+}
+
 function drawMiniMapPreview(scene) {
     if (!scene) return;
+    updateGemsInMapCount(scene);
     const canvas = el('miniMapPreview');
     if (!canvas) return;
 
@@ -3507,7 +3549,9 @@ function applyLevelToForm(levelData) {
     // background/foreground toggles
     if (el('showBackground')) el('showBackground').checked = data.backgroundEnabled !== undefined ? !!data.backgroundEnabled : true;
     if (el('showForeground')) el('showForeground').checked = data.foregroundEnabled !== undefined ? !!data.foregroundEnabled : true;
-    if (el('autoGridFromBg')) el('autoGridFromBg').checked = true;
+    // Do NOT force autoGridFromBg=true: loading a JSON with explicit cols/rows must not be
+    // overridden by the background-image auto-size logic (which fires inside updateEditorBackgroundImage).
+    if (el('autoGridFromBg')) el('autoGridFromBg').checked = false;
     if (el('rainEnabled')) el('rainEnabled').checked = !!resolvedRain.enabled;
     if (el('rainIntensity')) el('rainIntensity').value = resolvedRain.intensity ?? 1;
     if (el('rainFrequency')) el('rainFrequency').value = resolvedRain.frequency ?? 180;
@@ -3612,7 +3656,8 @@ function importLevelFromText(text, filename) {
         applyLevelToForm(parsed);
         const scene = getScene();
         scene?.loadFromJson(parsed);
-        scene?.updateEditorBackgroundImage?.();
+        // skipAutoGrid=true: the JSON has explicit cols/rows that must not be overridden by bg dimensions
+        scene?.updateEditorBackgroundImage?.(true);
         setStatus(`Import completato: ${filename || 'clipboard/file'}`);
     } catch (error) {
         setStatus(`Errore import: ${error.message}`, true);
@@ -3643,8 +3688,8 @@ function readBackgroundLayersFromDOM() {
         const offsetY = parseNumber(it.querySelector('.bg-offset-y')?.value, 0);
         const rawW = it.querySelector('.bg-width')?.value;
         const rawH = it.querySelector('.bg-height')?.value;
-        const layerWidth = (rawW !== undefined && rawW !== '' && Number(rawW) > 0) ? Number(rawW) : undefined;
-        const layerHeight = (rawH !== undefined && rawH !== '' && Number(rawH) > 0) ? Number(rawH) : undefined;
+        const layerWidth = (rawW !== undefined && rawW !== '') ? Math.max(0, parseNumber(rawW, 0)) : 0;
+        const layerHeight = (rawH !== undefined && rawH !== '') ? Math.max(0, parseNumber(rawH, 0)) : 0;
         const repeatX = parseRepeatValue(it.querySelector('.bg-repeat-x')?.value, 1);
         const repeatY = parseRepeatValue(it.querySelector('.bg-repeat-y')?.value, 1);
         const stepX = parseNumber(it.querySelector('.bg-step-x')?.value, 0);
@@ -3656,13 +3701,15 @@ function readBackgroundLayersFromDOM() {
             parallaxBgAlpha: alpha,
             offsetX,
             offsetY,
+            left: offsetX,
+            top: offsetY,
+            width: layerWidth,
+            height: layerHeight,
             repeatX,
             repeatY,
             repeatStepX: stepX,
             repeatStepY: stepY
         };
-        if (layerWidth !== undefined) layerObj.width = layerWidth;
-        if (layerHeight !== undefined) layerObj.height = layerHeight;
         layers.push(layerObj);
     });
     return layers;
@@ -3691,8 +3738,8 @@ function readForegroundLayersFromDOM() {
         const offsetY = parseNumber(it.querySelector('.fg-offset-y')?.value, 0);
         const rawW = it.querySelector('.fg-width')?.value;
         const rawH = it.querySelector('.fg-height')?.value;
-        const layerWidth = (rawW !== undefined && rawW !== '' && Number(rawW) > 0) ? Number(rawW) : undefined;
-        const layerHeight = (rawH !== undefined && rawH !== '' && Number(rawH) > 0) ? Number(rawH) : undefined;
+        const layerWidth = (rawW !== undefined && rawW !== '') ? Math.max(0, parseNumber(rawW, 0)) : 0;
+        const layerHeight = (rawH !== undefined && rawH !== '') ? Math.max(0, parseNumber(rawH, 0)) : 0;
         const repeatX = parseRepeatValue(it.querySelector('.fg-repeat-x')?.value, 1);
         const repeatY = parseRepeatValue(it.querySelector('.fg-repeat-y')?.value, 1);
         const stepX = parseNumber(it.querySelector('.fg-step-x')?.value, 0);
@@ -3704,13 +3751,15 @@ function readForegroundLayersFromDOM() {
             parallaxFgAlpha: alpha,
             offsetX,
             offsetY,
+            left: offsetX,
+            top: offsetY,
+            width: layerWidth,
+            height: layerHeight,
             repeatX,
             repeatY,
             repeatStepX: stepX,
             repeatStepY: stepY
         };
-        if (layerWidth !== undefined) layerObj.width = layerWidth;
-        if (layerHeight !== undefined) layerObj.height = layerHeight;
         layers.push(layerObj);
     });
     return layers;
@@ -3901,6 +3950,23 @@ function createBgLayerElement(cfg = {}) {
     const bw = document.createElement('input'); bw.className = 'bg-width'; bw.type = 'number'; bw.step = '1'; bw.min = '0'; bw.value = layerWidth !== '' ? String(layerWidth) : ''; bw.title = 'width (0=auto)'; bw.placeholder = 'width';
     const bh = document.createElement('input'); bh.className = 'bg-height'; bh.type = 'number'; bh.step = '1'; bh.min = '0'; bh.value = layerHeight !== '' ? String(layerHeight) : ''; bh.title = 'height (0=auto)'; bh.placeholder = 'height';
     const lblWH = document.createElement('div'); lblWH.style.gridColumn = 'span 2'; lblWH.style.fontSize = '8px'; lblWH.style.color = '#9fb8df'; lblWH.style.alignSelf = 'center'; lblWH.textContent = 'width / height (px, 0=auto)';
+    // Proportional auto-fill: set only one dimension, the other is auto-computed from the image aspect ratio
+    const _getBgSrc = () => {
+        if (inp instanceof HTMLSelectElement) { const v = String(inp.value || '').trim(); return v ? `${BG_ASSETS_DIR}/${v}` : ''; }
+        return normalizeLayerSrc(inp.value, 'bg');
+    };
+    const _syncBgProp = (changedW) => {
+        const w = parseNumber(bw.value, 0); const h = parseNumber(bh.value, 0);
+        if (changedW ? !(w > 0 && h === 0) : !(h > 0 && w === 0)) return;
+        const s = _getBgSrc(); if (!s) return;
+        loadImageElement(s).then((im) => {
+            if (!(im.naturalWidth > 0 && im.naturalHeight > 0)) return;
+            if (changedW) bh.value = String(Math.round(w * im.naturalHeight / im.naturalWidth));
+            else bw.value = String(Math.round(h * im.naturalWidth / im.naturalHeight));
+        }).catch(() => {});
+    };
+    bw.addEventListener('change', () => _syncBgProp(true));
+    bh.addEventListener('change', () => _syncBgProp(false));
 
     const rowBottom = document.createElement('div');
     rowBottom.style.display = 'grid';
@@ -4069,6 +4135,23 @@ function createFgLayerElement(cfg = {}) {
     const fw = document.createElement('input'); fw.className = 'fg-width'; fw.type = 'number'; fw.step = '1'; fw.min = '0'; fw.value = layerWidth !== '' ? String(layerWidth) : ''; fw.title = 'width (0=auto)'; fw.placeholder = 'width';
     const fh = document.createElement('input'); fh.className = 'fg-height'; fh.type = 'number'; fh.step = '1'; fh.min = '0'; fh.value = layerHeight !== '' ? String(layerHeight) : ''; fh.title = 'height (0=auto)'; fh.placeholder = 'height';
     const flblWH = document.createElement('div'); flblWH.style.gridColumn = 'span 2'; flblWH.style.fontSize = '8px'; flblWH.style.color = '#9fb8df'; flblWH.style.alignSelf = 'center'; flblWH.textContent = 'width / height (px, 0=auto)';
+    // Proportional auto-fill: set only one dimension, the other is auto-computed from the image aspect ratio
+    const _getFgSrc = () => {
+        if (inp instanceof HTMLSelectElement) { const v = String(inp.value || '').trim(); return v ? `${FG_ASSETS_DIR}/${v}` : ''; }
+        return normalizeLayerSrc(inp.value, 'fg');
+    };
+    const _syncFgProp = (changedW) => {
+        const w = parseNumber(fw.value, 0); const h = parseNumber(fh.value, 0);
+        if (changedW ? !(w > 0 && h === 0) : !(h > 0 && w === 0)) return;
+        const s = _getFgSrc(); if (!s) return;
+        loadImageElement(s).then((im) => {
+            if (!(im.naturalWidth > 0 && im.naturalHeight > 0)) return;
+            if (changedW) fh.value = String(Math.round(w * im.naturalHeight / im.naturalWidth));
+            else fw.value = String(Math.round(h * im.naturalWidth / im.naturalHeight));
+        }).catch(() => {});
+    };
+    fw.addEventListener('change', () => _syncFgProp(true));
+    fh.addEventListener('change', () => _syncFgProp(false));
 
     const rowBottom = document.createElement('div');
     rowBottom.style.display = 'grid';
@@ -5219,6 +5302,8 @@ function bindUI() {
             applyLevelToForm(parsed);
             const scene = getScene();
             scene?.loadFromJson(parsed);
+            // skipAutoGrid=true: preserve explicit cols/rows from the JSON
+            scene?.updateEditorBackgroundImage?.(true);
             setStatus('Livello caricato da localStorage.');
         } catch (error) {
             setStatus(`Errore caricamento: ${error.message}`, true);
