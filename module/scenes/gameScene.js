@@ -113,7 +113,7 @@ class GameScene extends Phaser.Scene {
             this.anims.create({
                 key: 'player_front_idle',
                 frames: this.anims.generateFrameNumbers('player_front', { start: frontIdleStart, end: frontIdleEnd }),
-                frameRate: 3,
+                frameRate: 6, // aumentato da 3 a 6
                 repeat: -1
             });
         }
@@ -121,7 +121,7 @@ class GameScene extends Phaser.Scene {
             this.anims.create({
                 key: 'player_side_idle',
                 frames: this.anims.generateFrameNumbers(sideIdleTexture, { start: sideIdleStart, end: sideIdleEnd }),
-                frameRate: 3,
+                frameRate: 6, // aumentato da 3 a 6
                 repeat: -1
             });
         }
@@ -129,7 +129,7 @@ class GameScene extends Phaser.Scene {
             this.anims.create({
                 key: 'player_back_idle',
                 frames: this.anims.generateFrameNumbers(backIdleTexture, { start: backIdleStart, end: backIdleEnd }),
-                frameRate: 3,
+                frameRate: 6, // aumentato da 3 a 6
                 repeat: -1
             });
         }
@@ -139,7 +139,7 @@ class GameScene extends Phaser.Scene {
             this.anims.create({
                 key: 'player_front_walk',
                 frames: this.anims.generateFrameNumbers('player_front', { start: frontWalkStart, end: frontWalkEnd }),
-                frameRate: 10,
+                frameRate: 20, // aumentato da 10 a 20
                 repeat: -1
             });
         }
@@ -147,7 +147,7 @@ class GameScene extends Phaser.Scene {
             this.anims.create({
                 key: 'player_back_walk',
                 frames: this.anims.generateFrameNumbers(backWalkTexture, { start: backWalkStart, end: backWalkEnd }),
-                frameRate: 10,
+                frameRate: 20, // aumentato da 10 a 20
                 repeat: -1
             });
         }
@@ -155,7 +155,7 @@ class GameScene extends Phaser.Scene {
             this.anims.create({
                 key: 'player_right_walk',
                 frames: this.anims.generateFrameNumbers(sideWalkTexture, { start: sideWalkStart, end: sideWalkEnd }),
-                frameRate: 10,
+                frameRate: 20, // aumentato da 10 a 20
                 repeat: -1
             });
         }
