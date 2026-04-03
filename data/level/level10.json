@@ -3932,6 +3932,24 @@
     }
   ],
   "foreground": [
+      ],
+      "events": [
+        {
+          "type": "gems_half",
+          "message": "Hai raccolto metà delle gemme!",
+          "style": "info"
+        },
+        {
+          "type": "plank_collected",
+          "message": "Hai preso un'asse!",
+          "style": "success"
+        },
+        {
+          "type": "warning",
+          "message": "Attenzione!",
+          "style": "warning"
+        }
+  
     {
       "src": "assets/images/foreground/_uccelli.png",
       "enabled": true,

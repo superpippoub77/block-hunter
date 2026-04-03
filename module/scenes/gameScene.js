@@ -52,6 +52,32 @@ const {
     createLanguageCarousel
 } = deps;
 class GameScene extends Phaser.Scene {
+        // Mostra un messaggio a tutto schermo e lo rimuove dopo alcuni secondi
+        showFullScreenMessage(msg, style = 'info', duration = 2200) {
+            if (this._fullScreenMsg) {
+                this._fullScreenMsg.destroy();
+                this._fullScreenMsg = null;
+            }
+            const w = this.scale.width || CONFIG.width;
+            const h = this.scale.height || CONFIG.height;
+            const color = style === 'warning' ? '#ff4444' : style === 'success' ? '#44ff44' : '#ffffff';
+            const bgColor = style === 'warning' ? 0x660000 : style === 'success' ? 0x006600 : 0x000000;
+            const bg = this.add.rectangle(w/2, h/2, w, 120, bgColor, 0.7).setDepth(9999);
+            const text = this.add.text(w/2, h/2, msg, {
+                fontFamily: GAME_FONT || 'PressStart2P',
+                fontSize: '32px',
+                color,
+                align: 'center',
+                stroke: '#000',
+                strokeThickness: 6,
+                padding: { left: 20, right: 20, top: 10, bottom: 10 },
+                wordWrap: { width: w - 80 }
+            }).setOrigin(0.5).setDepth(10000);
+            this._fullScreenMsg = this.add.container(0, 0, [bg, text]);
+            this.time.delayedCall(duration, () => {
+                if (this._fullScreenMsg) { this._fullScreenMsg.destroy(); this._fullScreenMsg = null; }
+            });
+        }
     constructor() {
         super('GameScene');
     }
@@ -71,6 +97,37 @@ class GameScene extends Phaser.Scene {
     }
 
     initializeGame() {
+                // --- Eventi custom da JSON livello ---
+                this.levelEvents = Array.isArray(this.levelData?.events) ? this.levelData.events.slice() : [];
+                this._eventFired = {};
+
+                // Regole predefinite: puoi aggiungerne altre nel JSON
+                const eventRuleCheckers = {
+                    'gems_half': () => {
+                        const total = this.initialGems || this.requiredGems || 0;
+                        const collected = this.levelStats?.gemsCollected || 0;
+                        return total > 0 && collected >= Math.ceil(total/2) && !this._eventFired['gems_half'];
+                    },
+                    'plank_collected': () => {
+                        return this._eventFired['plank_collected_trigger'] && !this._eventFired['plank_collected'];
+                    },
+                    'warning': () => {
+                        return this._eventFired['warning_trigger'] && !this._eventFired['warning'];
+                    }
+                };
+
+                // Hook: chiama questa funzione ogni volta che vuoi controllare e mostrare eventi
+                this.checkAndShowLevelEvents = () => {
+                    if (!this.levelEvents) return;
+                    for (const ev of this.levelEvents) {
+                        if (this._eventFired[ev.type]) continue;
+                        const checker = eventRuleCheckers[ev.type];
+                        if (checker && checker()) {
+                            this.showFullScreenMessage(ev.message, ev.style);
+                            this._eventFired[ev.type] = true;
+                        }
+                    }
+                };
         this.isLevelTransitioning = false;
         this.levelStartScore = Number(GAME_STATE.score) || 0;
         this.levelStats = {
@@ -113,7 +170,7 @@ class GameScene extends Phaser.Scene {
             this.anims.create({
                 key: 'player_front_idle',
                 frames: this.anims.generateFrameNumbers('player_front', { start: frontIdleStart, end: frontIdleEnd }),
-                frameRate: 6, // aumentato da 3 a 6
+                frameRate: 3, // aumentato da 3 a 6
                 repeat: -1
             });
         }
@@ -121,7 +178,7 @@ class GameScene extends Phaser.Scene {
             this.anims.create({
                 key: 'player_side_idle',
                 frames: this.anims.generateFrameNumbers(sideIdleTexture, { start: sideIdleStart, end: sideIdleEnd }),
-                frameRate: 6, // aumentato da 3 a 6
+                frameRate: 3, // aumentato da 3 a 6
                 repeat: -1
             });
         }
@@ -129,7 +186,7 @@ class GameScene extends Phaser.Scene {
             this.anims.create({
                 key: 'player_back_idle',
                 frames: this.anims.generateFrameNumbers(backIdleTexture, { start: backIdleStart, end: backIdleEnd }),
-                frameRate: 6, // aumentato da 3 a 6
+                frameRate: 3, // aumentato da 3 a 6
                 repeat: -1
             });
         }
@@ -1034,6 +1091,26 @@ class GameScene extends Phaser.Scene {
         this.initialGems = Number(this.gemsRemaining) || 0;
         // Flag set when exit(s) are unlocked/visible and can be used to complete the level
         this.exitUnlocked = false;
+
+        // Controllo eventi all'avvio (es. warning immediati)
+        this.checkAndShowLevelEvents && this.checkAndShowLevelEvents();
+    // Da chiamare ogni volta che cambia il conteggio delle gemme
+    onGemCollected() {
+        this.levelStats.gemsCollected = (this.levelStats.gemsCollected || 0) + 1;
+        this.checkAndShowLevelEvents && this.checkAndShowLevelEvents();
+    }
+
+    // Da chiamare quando viene raccolta un'asse
+    onPlankCollected() {
+        this._eventFired['plank_collected_trigger'] = true;
+        this.checkAndShowLevelEvents && this.checkAndShowLevelEvents();
+    }
+
+    // Da chiamare per warning custom
+    triggerWarning() {
+        this._eventFired['warning_trigger'] = true;
+        this.checkAndShowLevelEvents && this.checkAndShowLevelEvents();
+    }
 
         // Spawn static rocks only when not disabled globally and not disabled by level JSON
         try {
