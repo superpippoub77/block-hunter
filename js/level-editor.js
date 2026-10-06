@@ -191,6 +191,16 @@ function parseRepeatValue(value, fallback = 1) {
 let GAME_TILE_SIZE = 32;
 let GAME_VIEW_WIDTH = 800;
 let GAME_VIEW_HEIGHT = 600;
+// Radius of the player's physics circle (GameScene.createPlayer → objectContactByType.player)
+let GAME_PLAYER_RADIUS = 22;
+
+function resolvePlayerRadius(cfg) {
+    const spec = cfg?.objectContactByType?.player;
+    if (spec && Number(spec.radiusPixels) > 0) return Number(spec.radiusPixels);
+    const size = Number(cfg?.playerSize) || Number(cfg?.objectSize) || 64;
+    const mult = (spec && Number(spec.radiusMultiplier) > 0) ? Number(spec.radiusMultiplier) : 0.35;
+    return Math.floor(size * mult);
+}
 
 function applySavedGameConfig() {
     try {
@@ -208,6 +218,7 @@ const gameConfigReady = fetch(CONFIG_JSON_PATH, { cache: 'no-store' })
         if (cfg && Number(cfg.tileSize) > 0) GAME_TILE_SIZE = Number(cfg.tileSize);
         if (cfg && Number(cfg.width) > 0) GAME_VIEW_WIDTH = Number(cfg.width);
         if (cfg && Number(cfg.height) > 0) GAME_VIEW_HEIGHT = Number(cfg.height);
+        if (cfg) GAME_PLAYER_RADIUS = resolvePlayerRadius(cfg);
     })
     .catch(() => { /* keep defaults */ })
     .then(() => applySavedGameConfig());
@@ -354,7 +365,7 @@ function refreshAutoTileSensitivityLabels() {
     if (liquidTarget) liquidTarget.textContent = String(liquid);
 }
 
-function classifyAutoTileFromPixel(r, g, b, a, structureBias = false, settings = { wallSensitivity: 50, liquidSensitivity: 50 }) {
+function classifyAutoTileFromPixel(r, g, b, a, structureBias = false, settings = { wallSensitivity: 50, liquidSensitivity: 50 }, floor = null) {
     if (a < 20) return null;
 
     const max = Math.max(r, g, b);
@@ -373,10 +384,14 @@ function classifyAutoTileFromPixel(r, g, b, a, structureBias = false, settings =
     const mudGreenMin = 40 - (liquidAdj * 10);
     const mudSatMin = 0.14 - (liquidAdj * 0.05);
 
-    const looksWater = (b > g + waterBlueVsGreen) && (b > r + waterBlueVsRed) && (b >= waterBlueMin);
+    // The dominant colour of the map is the walkable floor: liquids must clearly differ from it
+    const floorDist = floor ? Math.hypot(r - floor.r, g - floor.g, b - floor.b) : Infinity;
+    const liquidAllowed = floorDist > (46 - liquidAdj * 22);
+
+    const looksWater = liquidAllowed && (b > g + waterBlueVsGreen) && (b > r + waterBlueVsRed) && (b >= waterBlueMin);
     if (looksWater) return 'water';
 
-    const looksMud = (r > g) && (g >= b) && ((r - b) > mudDeltaMin) && r >= mudRedMin && g >= mudGreenMin && b <= 130 && sat >= mudSatMin;
+    const looksMud = liquidAllowed && (r > g) && (g >= b) && ((r - b) > mudDeltaMin) && r >= mudRedMin && g >= mudGreenMin && b <= 130 && sat >= mudSatMin;
     if (looksMud) return 'mud';
 
     const darkRock = lum <= (50 + wallAdj * 22);
@@ -486,50 +501,90 @@ function addObjectTokenToCell(cell, token) {
     return true;
 }
 
-function buildPathMap(scene, startRow, startCol) {
-    const keyOf = (r, c) => `${r},${c}`;
-    const inBounds = (r, c) => r >= 0 && c >= 0 && r < scene.rows && c < scene.cols;
-    const dirs = [[1,0],[-1,0],[0,1],[0,-1]];
+// Reachability with the real player body: the player is a circle of GAME_PLAYER_RADIUS px (44 px wide
+// with the default config) while tiles are GAME_TILE_SIZE px (32), so 1-tile corridors are not walkable.
+// Positions are sampled every half tile; a position is free when the circle touches no blocking cell
+// and stays inside the world. A cell is reachable when the player can get its centre within half a tile.
+function buildPlayerReachability(scene, startRow, startCol) {
+    const ts = GAME_TILE_SIZE;
+    const half = ts / 2;
+    const R = Math.max(1, GAME_PLAYER_RADIUS) - 0.5;
+    const rows = scene.rows, cols = scene.cols;
+    const W = cols * ts, H = rows * ts;
+
+    const zoneBlocked = new Set();
+    ['wall', 'hole'].forEach((z) => {
+        const bag = scene.zoneCells?.get?.(z);
+        if (bag) bag.forEach((k) => zoneBlocked.add(k)); // "col,row"
+    });
+    const blocked = Array.from({ length: rows }, (_, r) => Array.from({ length: cols }, (_, c) =>
+        isBlockedForPath(scene.cells[r]?.[c]) || zoneBlocked.has(`${c},${r}`)));
+
+    const nX = cols * 2 + 1, nY = rows * 2 + 1; // position index i -> i * half px
+    const posFree = (ix, iy) => {
+        const px = ix * half, py = iy * half;
+        if (px - R < 0 || py - R < 0 || px + R > W || py + R > H) return false;
+        const c0 = Math.max(0, Math.floor((px - R) / ts)), c1 = Math.min(cols - 1, Math.floor((px + R) / ts));
+        const r0 = Math.max(0, Math.floor((py - R) / ts)), r1 = Math.min(rows - 1, Math.floor((py + R) / ts));
+        for (let r = r0; r <= r1; r++) {
+            for (let c = c0; c <= c1; c++) {
+                if (!blocked[r][c]) continue;
+                const nx = Math.max(c * ts, Math.min(px, (c + 1) * ts));
+                const ny = Math.max(r * ts, Math.min(py, (r + 1) * ts));
+                if ((px - nx) ** 2 + (py - ny) ** 2 < R * R) return false;
+            }
+        }
+        return true;
+    };
+
+    // start: the cell centre, or the nearest free position inside the start cell
+    const sx = startCol * 2 + 1, sy = startRow * 2 + 1;
+    let start = null;
+    for (const [dx, dy] of [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]]) {
+        if (posFree(sx + dx, sy + dy)) { start = [sx + dx, sy + dy]; break; }
+    }
 
     const dist = new Map();
-    const queue = [];
-    if (!inBounds(startRow, startCol)) return { dist, neighborsByKey: new Map() };
-    if (isBlockedForPath(scene.cells[startRow]?.[startCol])) return { dist, neighborsByKey: new Map() };
-
-    const startKey = keyOf(startRow, startCol);
-    dist.set(startKey, 0);
-    queue.push([startRow, startCol]);
-
-    while (queue.length) {
-        const [r, c] = queue.shift();
-        const d = dist.get(keyOf(r, c)) ?? 0;
-        for (const [dr, dc] of dirs) {
-            const nr = r + dr;
-            const nc = c + dc;
-            if (!inBounds(nr, nc)) continue;
-            const nCell = scene.cells[nr]?.[nc];
-            if (!nCell || isBlockedForPath(nCell)) continue;
-            const nk = keyOf(nr, nc);
-            if (dist.has(nk)) continue;
-            dist.set(nk, d + 1);
-            queue.push([nr, nc]);
-        }
-    }
-
     const neighborsByKey = new Map();
-    for (const key of dist.keys()) {
-        const [r, c] = key.split(',').map((v) => Number(v));
-        const neighbors = [];
-        for (const [dr, dc] of dirs) {
-            const nr = r + dr;
-            const nc = c + dc;
-            if (!inBounds(nr, nc)) continue;
-            if (dist.has(keyOf(nr, nc))) neighbors.push([nr, nc]);
+    if (!start) return { dist, neighborsByKey, startFits: false };
+
+    const seen = new Int32Array(nX * nY).fill(-1);
+    const queue = [start];
+    seen[start[1] * nX + start[0]] = 0;
+    for (let qi = 0; qi < queue.length; qi++) {
+        const [x, y] = queue[qi];
+        const d = seen[y * nX + x];
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+            const nx = x + dx, ny = y + dy;
+            if (nx < 0 || ny < 0 || nx >= nX || ny >= nY) continue;
+            if (seen[ny * nX + nx] !== -1 || !posFree(nx, ny)) continue;
+            seen[ny * nX + nx] = d + 1;
+            queue.push([nx, ny]);
         }
-        neighborsByKey.set(key, neighbors);
     }
 
-    return { dist, neighborsByKey };
+    for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+            if (blocked[r][c]) continue;
+            let best = -1;
+            for (let iy = r * 2; iy <= r * 2 + 2; iy++) {
+                for (let ix = c * 2; ix <= c * 2 + 2; ix++) {
+                    const d = seen[iy * nX + ix];
+                    if (d >= 0 && (best < 0 || d < best)) best = d;
+                }
+            }
+            if (best >= 0) dist.set(`${r},${c}`, Math.round(best / 2));
+        }
+    }
+    for (const key of dist.keys()) {
+        const [r, c] = key.split(',').map(Number);
+        const nb = [];
+        for (const [dr, dc] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+            if (dist.has(`${r + dr},${c + dc}`)) nb.push([r + dr, c + dc]);
+        }
+        neighborsByKey.set(key, nb);
+    }
+    return { dist, neighborsByKey, startFits: true };
 }
 
 function pickDistributedCells(candidates, count, minDist) {
@@ -573,7 +628,11 @@ async function autoPopulatePathSpawns() {
     const startRow = clamp(parseNumber(el('playerRow')?.value, 1), 0, Math.max(0, scene.rows - 1));
     const startCol = clamp(parseNumber(el('playerCol')?.value, 1), 0, Math.max(0, scene.cols - 1));
 
-    const { dist, neighborsByKey } = buildPathMap(scene, startRow, startCol);
+    const { dist, neighborsByKey, startFits } = buildPlayerReachability(scene, startRow, startCol);
+    if (!startFits) {
+        setStatus(`Il player (largo ${GAME_PLAYER_RADIUS * 2} px) non entra nella cella di partenza ${startRow},${startCol}: spostalo in una zona più aperta.`, true);
+        return;
+    }
     if (!dist.size) {
         setStatus('Percorso non calcolabile: verifica posizione player e tile bloccanti.', true);
         return;
@@ -629,7 +688,18 @@ async function autoPopulatePathSpawns() {
         }
     }
 
-    const gemsPicked = pickDistributedCells(walkable, gemCount, 4);
+    // In the game "A/B" means "A covers B" (B appears only when A is destroyed): spawning on a
+    // terrain cell such as mud would hide the object, so spawns only go on empty floor cells.
+    const spawnable = walkable.filter((c) => {
+        const bases = getCellTokenBases(scene.cells[c.row]?.[c.col]).filter((b) => b && b !== '-');
+        return bases.length === 0;
+    });
+    if (!spawnable.length) {
+        setStatus('Nessuna cella libera per gli spawn: tutte le celle raggiungibili hanno già terreno o oggetti.', true);
+        return;
+    }
+
+    const gemsPicked = pickDistributedCells(spawnable, gemCount, 4);
     let addedGems = 0;
     gemsPicked.forEach((c) => {
         const cell = scene.cells[c.row]?.[c.col];
@@ -646,7 +716,7 @@ async function autoPopulatePathSpawns() {
         const requested = enemyCounts[enemy] || 0;
         if (!requested) continue;
 
-        const candidates = chooseEnemyCandidates(walkable, neighborsByKey, enemy)
+        const candidates = chooseEnemyCandidates(spawnable, neighborsByKey, enemy)
             .filter((c) => !occupied.has(`${c.row},${c.col}`))
             .filter((c) => c.dist >= 4);
 
@@ -677,7 +747,7 @@ async function autoPopulatePathSpawns() {
 
     scene.renderGrid();
     drawMiniMapPreview(scene);
-    setStatus(`Auto spawn completato. Aggiunti Gemme:${addedGems} Ghost:${addedEnemies.ghost} Bat:${addedEnemies.bat} Snake:${addedEnemies.snake} Spider:${addedEnemies.spider}. Totali Gemme:${totalGems} Ghost:${totalEnemies.ghost} Bat:${totalEnemies.bat} Snake:${totalEnemies.snake} Spider:${totalEnemies.spider}.`);
+    setStatus(`Auto spawn completato su ${dist.size} celle raggiungibili dal player (largo ${GAME_PLAYER_RADIUS * 2} px). Aggiunti Gemme:${addedGems} Ghost:${addedEnemies.ghost} Bat:${addedEnemies.bat} Snake:${addedEnemies.snake} Spider:${addedEnemies.spider}. Totali Gemme:${totalGems} Ghost:${totalEnemies.ghost} Bat:${totalEnemies.bat} Snake:${totalEnemies.snake} Spider:${totalEnemies.spider}.`);
 }
 
 async function autoPopulateTilesFromLayers() {
@@ -701,6 +771,7 @@ async function autoPopulateTilesFromLayers() {
     if (bgLayers[0]) {
         sources.push({
             type: 'bg',
+            layer: bgLayers[0],
             src: resolveLayerToImagePath(bgLayers[0].src, 'bg'),
             alpha: clamp(parseNumber(bgLayers[0].parallaxBgAlpha, 1), 0, 1),
             rawSrc: String(bgLayers[0].src || '')
@@ -709,6 +780,7 @@ async function autoPopulateTilesFromLayers() {
     if (fgLayers[0]) {
         sources.push({
             type: 'fg',
+            layer: fgLayers[0],
             src: resolveLayerToImagePath(fgLayers[0].src, 'fg'),
             alpha: clamp(parseNumber(fgLayers[0].parallaxFgAlpha, 1), 0, 1),
             rawSrc: String(fgLayers[0].src || '')
@@ -721,9 +793,11 @@ async function autoPopulateTilesFromLayers() {
         return;
     }
 
+    // Draw the layers as the game does (size, offset, repeats), SAMPLE px per cell, then average each cell
+    const SAMPLE = 8;
     const canvas = document.createElement('canvas');
-    canvas.width = cols;
-    canvas.height = rows;
+    canvas.width = cols * SAMPLE;
+    canvas.height = rows * SAMPLE;
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
     if (!ctx) {
         setStatus('Canvas di analisi non disponibile.', true);
@@ -735,7 +809,15 @@ async function autoPopulateTilesFromLayers() {
         try {
             const img = await loadImageElement(layer.src);
             ctx.globalAlpha = layer.alpha;
-            ctx.drawImage(img, 0, 0, cols, rows);
+            const lay = computeGameLayerLayout(layer.layer || {}, cols, rows, img.naturalWidth, img.naturalHeight);
+            const scale = SAMPLE / GAME_TILE_SIZE;
+            for (let iy = 0; iy < lay.countY; iy++) {
+                for (let ix = 0; ix < lay.countX; ix++) {
+                    ctx.drawImage(img,
+                        (lay.offsetX + lay.stepX * ix) * scale, (lay.offsetY + lay.stepY * iy) * scale,
+                        lay.layerW * scale, lay.layerH * scale);
+                }
+            }
             loadedCount++;
         } catch (_e) {
             // Continue with other layers.
@@ -752,20 +834,46 @@ async function autoPopulateTilesFromLayers() {
     const structureBias = /(rock|stone|staccion|palo|pole|house|home|miner_house|column|wall|brick)/i.test(joinedSrc);
     const settings = getAutoTileSensitivitySettings();
 
-    const pixelData = ctx.getImageData(0, 0, cols, rows).data;
+    const raw = ctx.getImageData(0, 0, cols * SAMPLE, rows * SAMPLE).data;
+    const cellColor = (x, y) => {
+        let r = 0, g = 0, b = 0, a = 0;
+        for (let sy = 0; sy < SAMPLE; sy++) {
+            const rowStart = ((y * SAMPLE + sy) * cols * SAMPLE + x * SAMPLE) * 4;
+            for (let sx = 0; sx < SAMPLE; sx++) {
+                const i = rowStart + sx * 4;
+                r += raw[i]; g += raw[i + 1]; b += raw[i + 2]; a += raw[i + 3];
+            }
+        }
+        const n = SAMPLE * SAMPLE;
+        return { r: r / n, g: g / n, b: b / n, a: a / n };
+    };
+    const colors = [];
+    for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++) colors.push(cellColor(x, y));
+
+    // Dominant colour (most frequent 32-level bucket) = walkable floor
+    const buckets = new Map();
+    colors.forEach((c) => {
+        if (c.a < 20) return;
+        const key = `${c.r >> 5},${c.g >> 5},${c.b >> 5}`;
+        const bk = buckets.get(key) || { n: 0, r: 0, g: 0, b: 0 };
+        bk.n++; bk.r += c.r; bk.g += c.g; bk.b += c.b;
+        buckets.set(key, bk);
+    });
+    let floor = null;
+    for (const bk of buckets.values()) {
+        if (!floor || bk.n > floor.n) floor = bk;
+    }
+    if (floor) floor = { n: floor.n, r: floor.r / floor.n, g: floor.g / floor.n, b: floor.b / floor.n };
+
     let placedWalls = 0;
     let placedWater = 0;
     let placedMud = 0;
 
     for (let y = 0; y < rows; y++) {
         for (let x = 0; x < cols; x++) {
-            const idx = (y * cols + x) * 4;
-            const r = pixelData[idx];
-            const g = pixelData[idx + 1];
-            const b = pixelData[idx + 2];
-            const a = pixelData[idx + 3];
+            const { r, g, b, a } = colors[y * cols + x];
 
-            const detected = classifyAutoTileFromPixel(r, g, b, a, structureBias, settings);
+            const detected = classifyAutoTileFromPixel(r, g, b, a, structureBias, settings, floor);
             if (!detected) continue;
 
             const cell = scene.cells[y]?.[x];
@@ -848,7 +956,7 @@ let MAPPINGS_EDITOR_STATE = {
 function setConfigStatus(message, isError = false) {
     const target = el('configStatusText');
     if (!target) return;
-    target.style.color = isError ? '#ff8f9a' : '#8ee89f';
+    target.style.color = isError ? '#e5604d' : '#59b97c';
     target.textContent = message;
 }
 
@@ -1809,7 +1917,8 @@ class LevelEditorScene extends Phaser.Scene {
         const totalH = Math.max(100, Math.floor(this.scale.height || this.sys.game.config.height || 700));
 
         // Candidate palette width: clamp between 180 and 440 or 28% of width
-        const paletteWidth = Math.floor(Math.min(440, Math.max(180, totalW * 0.28)));
+        const hasDomPalette = typeof document !== 'undefined' && !!document.getElementById('domPalette-tiles');
+        const paletteWidth = hasDomPalette ? 0 : Math.floor(Math.min(440, Math.max(180, totalW * 0.28)));
         const padding = 18;
         const availW = Math.max(64, totalW - paletteWidth - padding * 3);
         const availH = Math.max(64, totalH - padding * 2);
@@ -1870,7 +1979,7 @@ class LevelEditorScene extends Phaser.Scene {
         const totalW = Math.max(200, Math.floor(this.scale.width || this.sys.game.config.width || 1000));
         const totalH = Math.max(100, Math.floor(this.scale.height || this.sys.game.config.height || 700));
         const padding = 18;
-        this.gridOffsetX = Math.max(padding, Math.floor((Math.max(64, totalW - (this.paletteArea?.width || 360) - padding * 3) - gridW) / 2) + padding);
+        this.gridOffsetX = Math.max(padding, Math.floor((Math.max(64, totalW - (this.paletteArea?.width ?? 360) - padding * 3) - gridW) / 2) + padding);
         this.gridOffsetY = Math.max(padding, Math.floor((totalH - gridH) / 2));
         // update background image and re-render
         // Zoom should not trigger auto-grid recomputation, otherwise cells may be reset.
@@ -1891,7 +2000,7 @@ class LevelEditorScene extends Phaser.Scene {
         const padding = 18;
         const gridW = this.cellSize * this.cols;
         const gridH = this.cellSize * this.rows;
-        this.gridOffsetX = Math.max(padding, Math.floor((Math.max(64, totalW - (this.paletteArea?.width || 360) - padding * 3) - gridW) / 2) + padding);
+        this.gridOffsetX = Math.max(padding, Math.floor((Math.max(64, totalW - (this.paletteArea?.width ?? 360) - padding * 3) - gridW) / 2) + padding);
         this.gridOffsetY = Math.max(padding, Math.floor((totalH - gridH) / 2));
         try { this.updateEditorBackgroundImage(); } catch (e) {}
         this._updateSubCellLabel();
@@ -2185,7 +2294,7 @@ class LevelEditorScene extends Phaser.Scene {
             const x = startX + col * spacingX;
             const y = startY + row * spacingY;
 
-            const box = this.add.rectangle(0, 0, 116, 48, 0x102449, 0.95).setStrokeStyle(1, 0x2b4f86, 1);
+            const box = this.add.rectangle(0, 0, 116, 48, 0x28292c, 0.95).setStrokeStyle(1, 0x3a3b3e, 1);
             const iconContainer = this.add.container(-38, 0);
             this.addTokenVisual(iconContainer, item.token, 0, 0, 24);
             const label = this.add.text(-17, -8, `${item.token}`, {
@@ -2425,8 +2534,8 @@ class LevelEditorScene extends Phaser.Scene {
 
         const bgW = cols * (iconSize + padding) + padding;
         const bgH = rows * (iconSize + padding) + padding;
-        const bg = this.add.rectangle(0, 0, bgW, bgH, 0x061025, 0.95).setOrigin(0);
-        bg.setStrokeStyle(2, 0x2b4f86, 1);
+        const bg = this.add.rectangle(0, 0, bgW, bgH, 0x1f2123, 0.97).setOrigin(0);
+        bg.setStrokeStyle(2, 0x3a3b3e, 1);
         picker.add(bg);
 
         for (let r = 0; r < rows; r++) {
@@ -2435,7 +2544,7 @@ class LevelEditorScene extends Phaser.Scene {
                 const py = padding + r * (iconSize + padding);
                 const token = `w${r}${c}00`;
                 const cellBox = this.add.container(px + iconSize / 2, py + iconSize / 2);
-                const box = this.add.rectangle(0, 0, iconSize, iconSize, 0x102449, 0.95).setStrokeStyle(1, 0x2b4f86, 1);
+                const box = this.add.rectangle(0, 0, iconSize, iconSize, 0x28292c, 0.95).setStrokeStyle(1, 0x3a3b3e, 1);
                 cellBox.add(box);
                 // draw variant visual (no rotation)
                 this.addTokenVisual(cellBox, token, 0, 0, iconSize - 8);
@@ -2546,7 +2655,7 @@ class LevelEditorScene extends Phaser.Scene {
         const scale = size / 64;
 
         if (info.kind === 'empty') {
-            const marker = this.add.rectangle(x, y, size * 0.8, size * 0.8, 0x20345a, 0.25).setStrokeStyle(1, 0x486aa2, 0.8);
+            const marker = this.add.rectangle(x, y, size * 0.8, size * 0.8, 0x28292c, 0.25).setStrokeStyle(1, 0x46474b, 0.8);
             container.add(marker);
             return;
         }
@@ -2625,7 +2734,7 @@ class LevelEditorScene extends Phaser.Scene {
                     bgAlpha = 1;
                 }
                 const bg = this.add.rectangle(cx, cy, this.cellSize, this.cellSize, bgColor, bgAlpha)
-                    .setStrokeStyle(1, 0x304f83, 0.35);
+                    .setStrokeStyle(1, 0x5a5b5f, 0.45);
                 this.gridLayer.add(bg);
 
                 const cell = this.cells[row][col];
@@ -2748,14 +2857,14 @@ class LevelEditorScene extends Phaser.Scene {
             borderH,
             0x000000,
             0
-        ).setStrokeStyle(2, 0x8fd8ff, 0.9);
+        ).setStrokeStyle(2, 0xc9973f, 0.9);
         this.selectionLayer.add(border);
 
         if (this.selectedCell) {
             const sx = this.gridOffsetX + this.selectedCell.col * this.cellSize + this.cellSize / 2;
             const sy = this.gridOffsetY + this.selectedCell.row * this.cellSize + this.cellSize / 2;
-            const s = this.add.rectangle(sx, sy, this.cellSize, this.cellSize, 0x4db6ff, 0.12)
-                .setStrokeStyle(2, 0xffdd77, 1);
+            const s = this.add.rectangle(sx, sy, this.cellSize, this.cellSize, 0xc9973f, 0.16)
+                .setStrokeStyle(2, 0xdba84e, 1);
             this.selectionLayer.add(s);
         }
 
@@ -2868,7 +2977,7 @@ class LevelEditorScene extends Phaser.Scene {
 const phaserConfig = {
     type: Phaser.AUTO,
     parent: 'editor-game',
-    backgroundColor: '#091022',
+    backgroundColor: '#17181a',
     scale: {
         mode: Phaser.Scale.RESIZE
     },
@@ -2881,6 +2990,9 @@ function getScene() {
     return window.__levelEditorScene || null;
 }
 
+// Used by js/editor-layout.js (topbar status, menus, shortcuts)
+window.LevelEditorAPI = { getScene, readLevelFromForm, importLevelFromText, setStatus, gameTileSize: () => GAME_TILE_SIZE };
+
 // Once the real game tile size is known, redraw bg/fg previews so they match the game.
 gameConfigReady.then(() => {
     const scene = getScene();
@@ -2892,7 +3004,7 @@ gameConfigReady.then(() => {
 function setStatus(message, isError = false) {
     const target = el('statusText');
     if (!target) return;
-    target.style.color = isError ? '#ff8f9a' : '#8ee89f';
+    target.style.color = isError ? '#e5604d' : '#59b97c';
     target.textContent = message;
 }
 
@@ -3667,8 +3779,11 @@ function exportJsonToFile(levelData) {
     const a = document.createElement('a');
     a.href = url;
     a.download = `${fileNameBase}.json`;
+    document.body.appendChild(a);
     a.click();
-    URL.revokeObjectURL(url);
+    a.remove();
+    // Revoking synchronously can cancel the download in Chrome: give it time to start
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
 }
 
 function importLevelFromText(text, filename) {
@@ -4312,21 +4427,21 @@ function bindLayerDnD(container, itemSelector) {
 function setAssetsStatus(message, isError = false) {
     const target = el('assetsStatusText');
     if (!target) return;
-    target.style.color = isError ? '#ff8f9a' : '#8ee89f';
+    target.style.color = isError ? '#e5604d' : '#59b97c';
     target.textContent = message;
 }
 
 function setDictionaryStatus(message, isError = false) {
     const target = el('dictionaryStatusText');
     if (!target) return;
-    target.style.color = isError ? '#ff8f9a' : '#8ee89f';
+    target.style.color = isError ? '#e5604d' : '#59b97c';
     target.textContent = message;
 }
 
 function setMappingsStatus(message, isError = false) {
     const target = el('mappingsStatusText');
     if (!target) return;
-    target.style.color = isError ? '#ff8f9a' : '#8ee89f';
+    target.style.color = isError ? '#e5604d' : '#59b97c';
     target.textContent = message;
 }
 
@@ -5611,9 +5726,9 @@ function bindUI() {
             if (!scene) return;
             scene.zoneToolActive = !scene.zoneToolActive;
             toggleZoneBtn.textContent = scene.zoneToolActive ? '\uD83D\uDEAB Zone: ON' : '\uD83D\uDEAB Zone: OFF';
-            toggleZoneBtn.style.background = scene.zoneToolActive ? '#5a1505' : '#2a1a1a';
-            toggleZoneBtn.style.color = scene.zoneToolActive ? '#ffcccc' : '#ff8888';
-            toggleZoneBtn.style.boxShadow = scene.zoneToolActive ? '0 0 6px #ff4444' : '';
+            toggleZoneBtn.classList.toggle('on', scene.zoneToolActive);
+            toggleZoneBtn.setAttribute('aria-pressed', String(scene.zoneToolActive));
+            document.dispatchEvent(new CustomEvent('leveleditor:zonetool', { detail: { active: scene.zoneToolActive } }));
         });
     }
 
@@ -5622,9 +5737,8 @@ function bindUI() {
         const btns = document.querySelectorAll('.zone-type-btn');
         btns.forEach((btn) => {
             const isActive = btn.dataset.zone === activeType;
-            btn.style.opacity = isActive ? '1' : '0.45';
-            btn.style.boxShadow = isActive ? `0 0 7px ${btn.style.borderColor}` : '';
-            btn.style.transform = isActive ? 'scale(1.06)' : '';
+            btn.classList.toggle('on', isActive);
+            btn.setAttribute('aria-pressed', String(isActive));
         });
     };
     document.querySelectorAll('.zone-type-btn').forEach((btn) => {
@@ -5809,6 +5923,8 @@ function setupRightAccordion() {
     if (typeof document === 'undefined') return;
     const panel = document.querySelector('.panel');
     if (!panel) return;
+    // Tabbed panel (Spike layout): sections are always open, the tabs do the grouping
+    if (document.getElementById('panelTabs')) return;
     const sections = Array.from(panel.querySelectorAll('.section'));
     sections.forEach((sec, idx) => {
         const h2 = sec.querySelector('h2');

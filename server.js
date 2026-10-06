@@ -497,6 +497,10 @@ function handleMappingsApi(req, res, urlObj) {
 
 const server = http.createServer((req, res) => {
   const urlObj = new URL(req.url || "/", `http://${req.headers.host || "localhost"}`);
+  // The editor calls API endpoints with a trailing slash (api/assets/), like the PHP backend
+  if (urlObj.pathname.startsWith("/api/") && urlObj.pathname.length > 5 && urlObj.pathname.endsWith("/")) {
+    urlObj.pathname = urlObj.pathname.replace(/\/+$/, "");
+  }
 
   if (urlObj.pathname === "/api/assets") {
     handleAssetsApi(req, res, urlObj);

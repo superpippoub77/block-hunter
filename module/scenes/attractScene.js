@@ -334,6 +334,8 @@ class AttractScene extends Phaser.Scene {
 
         // Carica le traduzioni prima di mostrare la UI
         loadTranslations(GAME_STATE.language, () => {
+            // The scene may have been left while the dictionary was loading
+            if (!this.sys || !this.sys.isActive()) return;
             // Story toggle event solo dopo che le traduzioni sono pronte
             this.storyToggleEvent = this.time.addEvent({
                 delay: 5000,
@@ -513,6 +515,7 @@ class AttractScene extends Phaser.Scene {
 
         // Carica il nuovo dizionario e aggiorna la UI solo dopo il caricamento
         loadTranslations(GAME_STATE.language, () => {
+            if (!this.sys || !this.sys.isActive()) return;
             this.updateUI();
         });
         this.resetTimeout();
