@@ -24,8 +24,9 @@ export async function inizialization(deps) {
         instrumentSceneMethods(blockHunterSceneClasses);
         logger.info('BOOT', 'Tracing scene methods attivato.', `level=${logger.getLevel()}`);
 
+        let kit = null;
         if (typeof loadKit === 'function') {
-            try { await loadKit(); } catch (e) { logger.warn('BOOT', 'Kit non configurato', e); }
+            try { kit = await loadKit(); } catch (e) { logger.warn('BOOT', 'Kit non configurato', e); }
         }
 
         const mappings = await loadGameplayMappings();
@@ -112,7 +113,19 @@ export async function inizialization(deps) {
                     debug: false
                 }
             },
-            scene: [preloadScene, attractScene, topTenScene, creditsScene, configScene, levelSelectScene, gameScene, bonusScene, gameOverScene]
+            scene: (() => {
+                // Screens designed in the screen editor (game.manifest.json "screens") replace the
+                // coded scene with the same key, or are added as new scenes.
+                const base = [
+                    ['PreloadScene', preloadScene], ['AttractScene', attractScene], ['TopTenScene', topTenScene],
+                    ['CreditsScene', creditsScene], ['ConfigScene', configScene], ['LevelSelectScene', levelSelectScene],
+                    ['GameScene', gameScene], ['BonusScene', bonusScene], ['GameOverScene', gameOverScene]
+                ];
+                const screens = (kit && kit.screenScenes) || {};
+                const list = base.map(([key, cls]) => screens[key] || cls);
+                Object.entries(screens).forEach(([key, cls]) => { if (!base.some(([k]) => k === key)) list.push(cls); });
+                return list;
+            })()
         };
 
         const stateKeys = [

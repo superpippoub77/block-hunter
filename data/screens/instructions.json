@@ -1,0 +1,146 @@
+{
+  "id": "instructions",
+  "name": "Istruzioni",
+  "width": 800,
+  "height": 600,
+  "duration": 9000,
+  "loop": false,
+  "timeout": {
+    "after": 9000,
+    "event": "timeout"
+  },
+  "events": {
+    "timeout": "TopTenScene",
+    "start": "LevelSelectScene",
+    "exit": "AttractScene",
+    "config": "ConfigScene"
+  },
+  "background": {
+    "image": "bg",
+    "fit": "cover",
+    "color": "#000000",
+    "overlay": 0.6
+  },
+  "items": [
+    {
+      "id": "title",
+      "name": "Titolo",
+      "type": "text",
+      "text": "COME SI GIOCA",
+      "x": 400,
+      "y": 70,
+      "fontSize": 34,
+      "color": "#00ffff",
+      "strokeThickness": 6,
+      "in": 0,
+      "effects": [
+        {
+          "name": "slideIn",
+          "at": 0,
+          "duration": 600,
+          "params": {
+            "from": "top"
+          }
+        }
+      ]
+    },
+    {
+      "id": "rules",
+      "name": "Comandi",
+      "type": "text",
+      "textKey": "instructions",
+      "text": "FRECCE - MOVIMENTO",
+      "x": 400,
+      "y": 200,
+      "fontSize": 20,
+      "color": "#ffffff",
+      "in": 400,
+      "effects": [
+        {
+          "name": "typewriter",
+          "at": 0,
+          "duration": 1600
+        }
+      ]
+    },
+    {
+      "id": "player",
+      "name": "Esploratore",
+      "type": "image",
+      "key": "explorer",
+      "x": 120,
+      "y": 430,
+      "scale": 0.3,
+      "in": 1600,
+      "effects": [
+        {
+          "name": "slideIn",
+          "at": 0,
+          "duration": 900,
+          "params": {
+            "from": "left"
+          }
+        },
+        {
+          "name": "float",
+          "at": 900,
+          "params": {
+            "period": 1800,
+            "amount": 6
+          }
+        }
+      ]
+    },
+    {
+      "id": "story",
+      "name": "Storia",
+      "type": "text",
+      "textKey": "story",
+      "text": "",
+      "x": 470,
+      "y": 420,
+      "fontSize": 14,
+      "color": "#ffee99",
+      "wrap": 500,
+      "in": 2200,
+      "effects": [
+        {
+          "name": "fadeIn",
+          "at": 0,
+          "duration": 900
+        }
+      ]
+    },
+    {
+      "id": "coins",
+      "name": "Gettoni",
+      "type": "widget",
+      "widget": "coins",
+      "x": 400,
+      "y": 540,
+      "in": 0,
+      "props": {
+        "showPlayers": false
+      },
+      "effects": [
+        {
+          "name": "blink",
+          "at": 0,
+          "params": {
+            "period": 1400,
+            "min": 0.45
+          }
+        }
+      ]
+    },
+    {
+      "id": "controls",
+      "name": "Comandi",
+      "type": "widget",
+      "widget": "arcadeControls",
+      "x": 120,
+      "y": 60,
+      "in": 0
+    }
+  ]
+}

@@ -1,0 +1,236 @@
+{
+  "id": "attract",
+  "name": "Attract mode",
+  "width": 800,
+  "height": 600,
+  "duration": 10000,
+  "loop": false,
+  "timeout": {
+    "after": 10000,
+    "event": "idle"
+  },
+  "events": {
+    "start": "LevelSelectScene",
+    "idle": "TopTenScene",
+    "config": "ConfigScene"
+  },
+  "background": {
+    "image": "bg",
+    "fit": "cover",
+    "color": "#000000",
+    "overlay": 0.35
+  },
+  "music": {
+    "key": "intro_bgm",
+    "volume": 0.35
+  },
+  "language": "it",
+  "items": [
+    {
+      "id": "title",
+      "name": "Titolo",
+      "type": "image",
+      "key": "title",
+      "x": 400,
+      "y": 150,
+      "scale": 0.9,
+      "in": 0,
+      "out": 6050,
+      "effects": [
+        {
+          "name": "dropBounce",
+          "at": 0,
+          "duration": 800
+        },
+        {
+          "name": "vibrate",
+          "at": 800,
+          "duration": 3000,
+          "params": {
+            "period": 140,
+            "amount": 6
+          }
+        },
+        {
+          "name": "wobble",
+          "at": 800,
+          "duration": 3000,
+          "params": {
+            "period": 280,
+            "degrees": 2
+          }
+        },
+        {
+          "name": "blink",
+          "at": 800,
+          "duration": 3000,
+          "params": {
+            "period": 1800,
+            "min": 0.6
+          }
+        }
+      ]
+    },
+    {
+      "id": "explorer",
+      "name": "Esploratore",
+      "type": "image",
+      "key": "explorer",
+      "x": 400,
+      "y": 432,
+      "in": 3800,
+      "out": 6050,
+      "depth": 20,
+      "effects": [
+        {
+          "name": "slideIn",
+          "at": 0,
+          "duration": 2000,
+          "params": {
+            "from": "left",
+            "ease": "sineInOut"
+          }
+        },
+        {
+          "name": "fadeOut",
+          "at": 2000,
+          "duration": 250
+        }
+      ]
+    },
+    {
+      "id": "explosion",
+      "name": "Titolo che esplode",
+      "type": "image",
+      "key": "title_explosion",
+      "x": 400,
+      "y": 150,
+      "in": 6050,
+      "out": 6650,
+      "depth": 21,
+      "effects": [
+        {
+          "name": "fadeIn",
+          "at": 0,
+          "duration": 180
+        },
+        {
+          "name": "flyUp",
+          "at": 180,
+          "duration": 420
+        },
+        {
+          "name": "shake",
+          "at": 0,
+          "params": {
+            "duration": 250,
+            "intensity": 0.01
+          }
+        }
+      ]
+    },
+    {
+      "id": "title2",
+      "name": "Titolo (ritorno)",
+      "type": "image",
+      "key": "title",
+      "x": 400,
+      "y": 150,
+      "scale": 0.9,
+      "in": 6650,
+      "effects": [
+        {
+          "name": "dropBounce",
+          "at": 0,
+          "duration": 800
+        }
+      ]
+    },
+    {
+      "id": "instructions",
+      "name": "Istruzioni e storia",
+      "type": "widget",
+      "widget": "textCycle",
+      "x": 400,
+      "y": 282,
+      "in": 0,
+      "props": {
+        "texts": "@instructions\n@story",
+        "period": 5000,
+        "fontSize": 16,
+        "wrap": 680
+      },
+      "effects": [
+        {
+          "name": "dropBounce",
+          "at": 0,
+          "duration": 800
+        },
+        {
+          "name": "wobble",
+          "at": 800,
+          "params": {
+            "period": 2000,
+            "degrees": 1
+          }
+        }
+      ]
+    },
+    {
+      "id": "coins",
+      "name": "Gettoni",
+      "type": "widget",
+      "widget": "coins",
+      "x": 400,
+      "y": 520,
+      "in": 0,
+      "props": {
+        "fontSize": 24
+      },
+      "effects": [
+        {
+          "name": "blink",
+          "at": 0,
+          "params": {
+            "period": 1400,
+            "min": 0.45
+          }
+        }
+      ]
+    },
+    {
+      "id": "language",
+      "name": "Lingua",
+      "type": "widget",
+      "widget": "language",
+      "x": 400,
+      "y": 570,
+      "in": 0
+    },
+    {
+      "id": "controls",
+      "name": "Comandi",
+      "type": "widget",
+      "widget": "arcadeControls",
+      "x": 120,
+      "y": 60,
+      "in": 0,
+      "props": {
+        "configKey": "T",
+        "configEvent": "config"
+      }
+    },
+    {
+      "id": "credit",
+      "name": "Firma",
+      "type": "text",
+      "text": "by SpikeCode",
+      "x": 735,
+      "y": 590,
+      "fontSize": 12,
+      "color": "#cfdff8",
+      "strokeThickness": 3,
+      "in": 0
+    }
+  ]
+}

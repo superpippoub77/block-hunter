@@ -495,6 +495,87 @@ function handleMappingsApi(req, res, urlObj) {
   sendJson(res, 405, { ok: false, error: "method not allowed" });
 }
 
+// Screens designed in the screen editor: data/screens/<id>.json (backup in bck/ on save)
+function handleScreensApi(req, res, urlObj) {
+  const dir = path.join(ROOT_DIR, "data", "screens");
+  const id = String(urlObj.searchParams.get("id") || "").trim();
+  if (id && !/^[a-z0-9_-]+$/i.test(id)) {
+    sendJson(res, 400, { ok: false, error: "invalid screen id" });
+    return;
+  }
+  if (req.method === "GET") {
+    if (!id) {
+      fs.readdir(dir, (err, files) => {
+        const items = (files || []).filter((f) => f.endsWith(".json")).map((f) => f.replace(/\.json$/, "")).sort();
+        sendJson(res, 200, { ok: true, items });
+      });
+      return;
+    }
+    fs.readFile(path.join(dir, `${id}.json`), "utf8", (err, content) => {
+      if (err) { sendJson(res, 404, { ok: false, error: "screen not found" }); return; }
+      try { sendJson(res, 200, { ok: true, id, data: JSON.parse(content) }); }
+      catch (_e) { sendJson(res, 500, { ok: false, error: "invalid screen json" }); }
+    });
+    return;
+  }
+  if (req.method === "POST") {
+    if (!id) { sendJson(res, 400, { ok: false, error: "missing id" }); return; }
+    parseJsonBody(req, (err, body) => {
+      const data = body && body.data;
+      if (err || !data || typeof data !== "object" || Array.isArray(data)) {
+        sendJson(res, 400, { ok: false, error: "screen data must be an object" });
+        return;
+      }
+      try { fs.mkdirSync(dir, { recursive: true }); } catch (_) {}
+      const file = path.join(dir, `${id}.json`);
+      const backup = createBackupPath(`screen-${id}`);
+      fs.readFile(file, "utf8", (_e, current) => {
+        const write = () => fs.writeFile(file, `${JSON.stringify(data, null, 2)}\n`, "utf8", (wErr) => {
+          if (wErr) { sendJson(res, 500, { ok: false, error: wErr.message }); return; }
+          sendJson(res, 200, { ok: true, file: `data/screens/${id}.json` });
+        });
+        if (current == null) { write(); return; }
+        fs.writeFile(backup.backupFilePath, current, "utf8", () => write());
+      });
+    });
+    return;
+  }
+  sendJson(res, 405, { ok: false, error: "method not allowed" });
+}
+
+// Game manifest (game.manifest.json): blocks, screens and scene flow
+function handleManifestApi(req, res) {
+  const file = path.join(ROOT_DIR, "game.manifest.json");
+  if (req.method === "GET") {
+    fs.readFile(file, "utf8", (err, content) => {
+      if (err) { sendJson(res, 404, { ok: false, error: "manifest not found" }); return; }
+      try { sendJson(res, 200, { ok: true, data: JSON.parse(content) }); }
+      catch (_e) { sendJson(res, 500, { ok: false, error: "invalid manifest json" }); }
+    });
+    return;
+  }
+  if (req.method === "POST") {
+    parseJsonBody(req, (err, body) => {
+      const data = body && body.data;
+      if (err || !data || typeof data !== "object" || Array.isArray(data)) {
+        sendJson(res, 400, { ok: false, error: "manifest must be an object" });
+        return;
+      }
+      const backup = createBackupPath("manifest");
+      fs.readFile(file, "utf8", (_e, current) => {
+        fs.writeFile(backup.backupFilePath, current || "{}", "utf8", () => {
+          fs.writeFile(file, `${JSON.stringify(data, null, 2)}\n`, "utf8", (wErr) => {
+            if (wErr) { sendJson(res, 500, { ok: false, error: wErr.message }); return; }
+            sendJson(res, 200, { ok: true });
+          });
+        });
+      });
+    });
+    return;
+  }
+  sendJson(res, 405, { ok: false, error: "method not allowed" });
+}
+
 const server = http.createServer((req, res) => {
   const urlObj = new URL(req.url || "/", `http://${req.headers.host || "localhost"}`);
   // The editor calls API endpoints with a trailing slash (api/assets/), like the PHP backend
@@ -514,6 +595,16 @@ const server = http.createServer((req, res) => {
 
   if (urlObj.pathname === "/api/dictionaries") {
     handleDictionariesApi(req, res, urlObj);
+    return;
+  }
+
+  if (urlObj.pathname === "/api/screens") {
+    handleScreensApi(req, res, urlObj);
+    return;
+  }
+
+  if (urlObj.pathname === "/api/manifest") {
+    handleManifestApi(req, res);
     return;
   }
 

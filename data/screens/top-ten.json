@@ -1,0 +1,23 @@
+{
+  "id": "top-ten",
+  "name": "Top ten",
+  "width": 800,
+  "height": 600,
+  "duration": 10000,
+  "loop": false,
+  "timeout": { "after": 10000, "event": "timeout" },
+  "events": { "timeout": "CreditsScene", "start": "LevelSelectScene", "exit": "AttractScene" },
+  "background": { "image": "bg", "fit": "cover", "color": "#000000", "overlay": 0.55 },
+  "items": [
+    { "id": "title", "name": "Titolo", "type": "text", "textKey": "topTen", "text": "TOP TEN", "x": 400, "y": 78, "fontSize": 40, "color": "#ffd84a", "strokeThickness": 6, "in": 0,
+      "effects": [ { "name": "zoomIn", "at": 0, "duration": 500 }, { "name": "pulse", "at": 500, "params": { "period": 1600, "amount": 0.04 } } ] },
+    { "id": "table", "name": "Classifica", "type": "widget", "widget": "topTen", "x": 400, "y": 300, "in": 300,
+      "props": { "rows": 10, "fontSize": 18, "rowHeight": 30, "width": 560 },
+      "effects": [ { "name": "fadeIn", "at": 0, "duration": 600 } ] },
+    { "id": "coins", "name": "Gettoni", "type": "widget", "widget": "coins", "x": 400, "y": 520, "in": 0,
+      "effects": [ { "name": "blink", "at": 0, "params": { "period": 1400, "min": 0.45 } } ] },
+    { "id": "language", "name": "Lingua", "type": "widget", "widget": "language", "x": 400, "y": 570, "in": 0 },
+    { "id": "controls", "name": "Comandi", "type": "widget", "widget": "arcadeControls", "x": 120, "y": 60, "in": 0,
+      "props": { "configKey": "", "anyKeyEvent": "exit" } }
+  ]
+}

@@ -17,6 +17,7 @@ import { createCreditsManager, isFreeplayEnabled as isFreeplayEnabledBase, hasSt
 import { configureKit, kitFlow, kitGame } from './kit/core/flow.js';
 import { createNameEntry, isHighScore, insertTopScore, saveTopScores } from './kit/blocks/score-entry/index.js';
 import { loadManifest, checkBlocks } from './kit/core/blocks.js';
+import { createScreenScene } from './kit/blocks/screen/index.js';
 import { loadTranslations as loadTranslationsBase } from './kit/core/i18n.js';
 import { applyMappingFrameOverrides as applyMappingFrameOverridesBase, loadGameplayMappings as loadGameplayMappingsBase } from './module/mappingUtils.js';
 import {
@@ -173,10 +174,15 @@ const inizialization = () => inizializationBase({
         // game.manifest.json: game identity, blocks used and scene flow (see kit/README.md)
         const manifest = await loadManifest('game.manifest.json');
         configureKit(manifest);
+        const screenScenes = {};
         if (manifest) {
             const report = await checkBlocks(manifest, sceneDeps, LOGGER);
-            try { window.SPIKE_KIT = { manifest, blocks: report }; } catch (e) { }
+            Object.entries(manifest.screens || {}).forEach(([key, sc]) => {
+                screenScenes[key] = createScreenScene(sceneDeps, { key, id: sc.id, src: sc.src });
+            });
+            try { window.SPIKE_KIT = { manifest, blocks: report, screens: Object.keys(screenScenes) }; } catch (e) { }
         }
+        return { manifest, screenScenes };
     },
     logger: LOGGER
 });
