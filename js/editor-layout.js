@@ -36,6 +36,7 @@ const LAYOUT_ICONS = {
   save: SC_ICON("M4 3h11l3 3v13H4z M7 3v5h7V3 M7 19v-6h8v6"),
   json: SC_ICON("M8 4c-2 0-2 1.5-2 3s-1 3-2.5 4c1.5 1 2.5 2 2.5 4s0 3 2 3 M14 4c2 0 2 1.5 2 3s1 3 2.5 4c-1.5 1-2.5 2-2.5 4s0 3-2 3"),
   play: SC_ICON("M6 4l12 7-12 7z"),
+  layers: SC_ICON("M11 3l8 4-8 4-8-4z M3 11l8 4 8-4 M3 15l8 4 8-4"),
   panel: SC_ICON("M3 4h16v14H3z M13 4v14")
 };
 
@@ -67,6 +68,7 @@ const LAYOUT = {
     [{ type: "button", id: "btnReady", text: "● Livello vuoto", title: "Stato del livello · clic per esportare il file JSON (Ctrl+S)", onClick: () => clickEl("#exportBtn") }],
     "spacer",
     [
+      { type: "button", id: "btnPlayTest", cls: "play", text: "▶ Prova livello", title: "Gioca subito il livello che stai creando (F5)", onClick: () => api()?.playTestLevel?.() },
       { type: "button", id: "btnOpenTop", text: "⇪ Apri", title: "Importa un livello JSON (Ctrl+O)", onClick: () => clickEl("#importTopBtn") },
       { type: "button", id: "btnHelpTop", text: "?", title: "Guida e scorciatoie (F1)", onClick: () => EditorLayout.showHelp() }
     ]
@@ -83,7 +85,8 @@ const LAYOUT = {
         { icon: "💾", label: "Salva nel browser", onClick: () => clickEl("#saveLocalBtn") },
         { icon: "📂", label: "Carica dal browser", onClick: () => clickEl("#loadLocalBtn") },
         { separator: true },
-        { icon: "▶", label: "Apri il gioco", onClick: () => window.open("index.html", "_blank", "noopener") }
+        { icon: "▶", label: "Prova il livello nel gioco", shortcut: "F5", onClick: () => api()?.playTestLevel?.() },
+        { icon: "🎮", label: "Apri il gioco", onClick: () => window.open("index.html", "_blank", "noopener") }
       ]
     },
     {
@@ -95,6 +98,7 @@ const LAYOUT = {
         { icon: "↯", label: "Auto spawn da percorso", onClick: () => EditorLayout.runInPanel("map", "#autoPopulatePathSpawnsBtn") },
         { separator: true },
         { icon: "🚫", label: "Strumento zone", shortcut: "2", onClick: () => EditorLayout.setMode("zones") },
+        { icon: "🖼", label: "Sposta e trasforma layer", shortcut: "3", onClick: () => EditorLayout.setMode("layers") },
         { icon: "✕", label: "Cancella zone del tipo attivo", onClick: () => clickEl("#clearActiveZones") },
         { icon: "✕", label: "Cancella tutte le zone", onClick: () => EditorLayout.confirmClick("Cancellare tutte le zone?", "#clearAllZones") }
       ]
@@ -137,6 +141,9 @@ const LAYOUT = {
     { id: "railZones", icon: "zones", label: "Strumento zone", key: "2", title: "Disegna zone invisibili", pressed: false, onClick: () => EditorLayout.setMode(EditorLayout.mode === "zones" ? "paint" : "zones") },
     { id: "railZonesClear", icon: "zonesClear", label: "Cancella zone", title: "Cancella le zone del tipo attivo", onClick: () => clickEl("#clearActiveZones") },
 
+    { section: "Layer" },
+    { id: "railLayers", icon: "layers", label: "Sposta layer", key: "3", title: "Sposta, ridimensiona, ruota e specchia background e foreground", pressed: false, onClick: () => EditorLayout.setMode(EditorLayout.mode === "layers" ? "paint" : "layers") },
+
     { section: "Vista" },
     { id: "railZoomIn", icon: "zoomIn", label: "Ingrandisci", key: "+", title: "Ingrandisci la mappa", onClick: () => EditorLayout.zoomBy(0.25) },
     { id: "railZoomOut", icon: "zoomOut", label: "Riduci", key: "−", title: "Riduci la mappa", onClick: () => EditorLayout.zoomBy(-0.25) },
@@ -146,12 +153,12 @@ const LAYOUT = {
     { id: "railImport", icon: "open", label: "Importa JSON", key: "Ctrl+O", title: "Importa un livello JSON", onClick: () => clickEl("#importTopBtn") },
     { id: "railExport", icon: "json", label: "Esporta JSON", key: "Ctrl+S", title: "Scarica il livello come file JSON", onClick: () => clickEl("#exportBtn") },
     { id: "railSaveLocal", icon: "save", label: "Salva nel browser", title: "Salva il livello nel browser (localStorage)", onClick: () => clickEl("#saveLocalBtn") },
-    { id: "railPlay", icon: "play", label: "Apri il gioco", title: "Apri il gioco in una nuova scheda", onClick: () => window.open("index.html", "_blank", "noopener") },
+    { id: "railPlay", icon: "play", label: "Prova livello", key: "F5", title: "Gioca subito il livello che stai creando", onClick: () => api()?.playTestLevel?.() },
     { id: "railPanel", icon: "panel", label: "Pannello", key: "]", title: "Mostra/nascondi il pannello delle impostazioni", onClick: () => EditorLayout.toggleSide("right") }
   ],
 
   // Nomi delle modalità (barra schede e status bar)
-  modes: { paint: "Disegna", zones: "Zone invisibili" }
+  modes: { paint: "Disegna", zones: "Zone invisibili", layers: "Layer (background e foreground)" }
 };
 
 const EditorLayout = {
@@ -182,7 +189,8 @@ const EditorLayout = {
     const obs = (el, fn, opts) => el && new MutationObserver(fn).observe(el, opts);
     obs($q("#selectedCellInfo"), () => this.syncCell(), { childList: true, characterData: true, subtree: true });
     obs($q("#statusText"), () => this.flashStatus(), { childList: true, characterData: true, subtree: true });
-    document.addEventListener("leveleditor:zonetool", (e) => this.syncMode(e.detail?.active ? "zones" : "paint"));
+    document.addEventListener("leveleditor:zonetool", (e) => this.syncMode(e.detail?.active ? "zones" : (scene()?.layerToolActive ? "layers" : "paint")));
+    document.addEventListener("leveleditor:layertool", (e) => this.syncMode(e.detail?.active ? "layers" : (scene()?.zoneToolActive ? "zones" : "paint")));
     this.syncCell();
     this.tick();
     setInterval(() => this.tick(), 700);
@@ -387,9 +395,12 @@ const EditorLayout = {
   setMode(mode) {
     const s = scene();
     const wantZones = mode === "zones";
+    const wantLayers = mode === "layers";
+    if (s && !!s.layerToolActive !== wantLayers) api()?.setLayerTool?.(wantLayers);
     if (s && !!s.zoneToolActive !== wantZones) clickEl("#toggleZoneTool");
-    else this.syncMode(mode);
+    this.syncMode(mode);
     if (wantZones) this.showPanelTab("map");
+    if (wantLayers) this.showPanelTab("level");
   },
 
   syncMode(mode) {
@@ -400,6 +411,7 @@ const EditorLayout = {
       t.setAttribute("aria-pressed", String(on));
     });
     $q("#railZones")?.setAttribute("aria-pressed", String(mode === "zones"));
+    $q("#railLayers")?.setAttribute("aria-pressed", String(mode === "layers"));
     const m = $q("#statusMode");
     if (m) m.textContent = LAYOUT.modes[mode];
   },
@@ -496,7 +508,8 @@ const EditorLayout = {
     if (g) g.textContent = `${s.cols}×${s.rows} celle`;
     const z = $q("#zoomLabel");
     if (z) z.textContent = `${Math.round((Number(s.zoom) || 1) * 100)}%`;
-    if (!!s.zoneToolActive !== (this.mode === "zones")) this.syncMode(s.zoneToolActive ? "zones" : "paint");
+    const live = s.layerToolActive ? "layers" : (s.zoneToolActive ? "zones" : "paint");
+    if (live !== this.mode) this.syncMode(live);
   },
 
   // ---------------------------- pannelli laterali (come SpikeCut)
@@ -595,6 +608,7 @@ const EditorLayout = {
         if ($q(".modal-overlay.open")) { this.closeModal(); return; }
       }
       if (e.key === "F1") { e.preventDefault(); this.showHelp(); return; }
+      if (e.key === "F5" && !e.ctrlKey && !e.metaKey) { e.preventDefault(); api()?.playTestLevel?.(); return; }
       const mod = e.ctrlKey || e.metaKey;
       if (mod && !e.altKey && e.key.toLowerCase() === "s") { e.preventDefault(); clickEl("#exportBtn"); return; }
       if (mod && !e.altKey && e.key.toLowerCase() === "o") { e.preventDefault(); clickEl("#importTopBtn"); return; }
@@ -605,6 +619,7 @@ const EditorLayout = {
       const map = {
         "1": () => this.setMode("paint"),
         "2": () => this.setMode("zones"),
+        "3": () => this.setMode("layers"),
         "[": () => this.toggleSide("left"),
         "]": () => this.toggleSide("right"),
         "+": () => this.zoomBy(0.25),
@@ -639,11 +654,12 @@ const EditorLayout = {
   showHelp() {
     const mod = isMac ? "⌘" : "Ctrl";
     const keys = [
-      ["1 · 2", "Disegna · Zone invisibili"], ["Clic / trascina", "Piazza l'elemento scelto nella palette"],
+      ["1 · 2 · 3", "Disegna · Zone invisibili · Layer"],
+      ["Layer: trascina", "Sposta il background/foreground selezionato"], ["Layer: maniglie", "Angoli = ridimensiona (Shift libero) · lati = allarga · tonda = ruota (Shift 15°)"], ["Clic / trascina", "Piazza l'elemento scelto nella palette"],
       [". + trascina", "Piazza l'elemento invisibile (noTile)"], ["← →", "Ruota la tile selezionata"],
       ["H · V", "Specchia la tile selezionata"], ["W", "Varianti del muro"], ["Canc", "Svuota la cella selezionata"],
       ["+ · − · 0", "Zoom · scala di gioco 1:1"], ["[  ]", "Mostra/nascondi strumenti e pannello"],
-      [`${mod}+S`, "Esporta il file JSON"], [`${mod}+O`, "Importa un livello JSON"], ["F1", "Questa guida"], ["Esc", "Chiudi menu e finestre"]
+      ["F5", "Prova il livello nel gioco"], [`${mod}+S`, "Esporta il file JSON"], [`${mod}+O`, "Importa un livello JSON"], ["F1", "Questa guida"], ["Esc", "Chiudi menu e finestre"]
     ];
     this.modal("Guida e scorciatoie", `
       <p>Imposta la griglia nella scheda <b>Mappa</b>, aggiungi background e foreground nella scheda

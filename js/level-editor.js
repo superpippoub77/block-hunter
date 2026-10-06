@@ -225,6 +225,16 @@ const gameConfigReady = fetch(CONFIG_JSON_PATH, { cache: 'no-store' })
 
 // Mirrors GameScene resolveLayerSize/resolveLayerPlacement: returns the layout of a bg/fg layer
 // in game pixels, relative to the map origin.
+// Same transform as GameScene placeLayerImage: (x, y, w, h) is the unrotated box
+function placeEditorLayerImage(img, x, y, w, h, layer) {
+    const tf = layerTransformFromJson(layer);
+    img.setOrigin(0.5, 0.5);
+    img.setDisplaySize(w, h);
+    img.setPosition(x + w / 2, y + h / 2);
+    img.setAngle(tf.rotation);
+    img.setFlip(tf.flipX, tf.flipY);
+}
+
 function computeGameLayerLayout(layer, cols, rows, natW = 0, natH = 0) {
     const worldW = cols * GAME_TILE_SIZE;
     const worldH = rows * GAME_TILE_SIZE;
@@ -813,9 +823,9 @@ async function autoPopulateTilesFromLayers() {
             const scale = SAMPLE / GAME_TILE_SIZE;
             for (let iy = 0; iy < lay.countY; iy++) {
                 for (let ix = 0; ix < lay.countX; ix++) {
-                    ctx.drawImage(img,
+                    drawLayerInstance(ctx, img,
                         (lay.offsetX + lay.stepX * ix) * scale, (lay.offsetY + lay.stepY * iy) * scale,
-                        lay.layerW * scale, lay.layerH * scale);
+                        lay.layerW * scale, lay.layerH * scale, layerTransformFromJson(layer.layer));
                 }
             }
             loadedCount++;
@@ -1839,12 +1849,9 @@ class LevelEditorScene extends Phaser.Scene {
                     for (let iy = 0; iy < lay.countY; iy++) {
                         for (let ix = 0; ix < lay.countX; ix++) {
                             const img = this.add.image(0, 0, textureKey).setDepth(-500 - idx);
-                            img.setOrigin(0, 0);
-                            img.setDisplaySize(dispW, dispH);
-                            img.setPosition(
-                                this.gridOffsetX + (lay.offsetX + lay.stepX * ix) * scale,
-                                this.gridOffsetY + (lay.offsetY + lay.stepY * iy) * scale
-                            );
+                            placeEditorLayerImage(img, this.gridOffsetX + (lay.offsetX + lay.stepX * ix) * scale,
+                                this.gridOffsetY + (lay.offsetY + lay.stepY * iy) * scale, dispW, dispH, layer);
+                            img.__bhLayer = { type: 'bg', index: idx, ix, iy, row: layer.__row || null };
                             img.setAlpha(clamp(alpha, 0, 1));
                             this.editorBgImages.push(img);
                         }
@@ -1889,12 +1896,9 @@ class LevelEditorScene extends Phaser.Scene {
             for (let iy = 0; iy < lay.countY; iy++) {
                 for (let ix = 0; ix < lay.countX; ix++) {
                     const img = this.add.image(0, 0, textureKey).setDepth(500 + idx);
-                    img.setOrigin(0, 0);
-                    img.setDisplaySize(dispW, dispH);
-                    img.setPosition(
-                        this.gridOffsetX + (lay.offsetX + lay.stepX * ix) * scale,
-                        this.gridOffsetY + (lay.offsetY + lay.stepY * iy) * scale
-                    );
+                    placeEditorLayerImage(img, this.gridOffsetX + (lay.offsetX + lay.stepX * ix) * scale,
+                        this.gridOffsetY + (lay.offsetY + lay.stepY * iy) * scale, dispW, dispH, layer);
+                    img.__bhLayer = { type: 'fg', index: idx, ix, iy, row: layer.__row || null };
                     img.setAlpha(clamp(alpha, 0, 1));
                     this.editorFgImages.push(img);
                 }
@@ -2101,7 +2105,9 @@ class LevelEditorScene extends Phaser.Scene {
     }
 
     setupInputHandlers() {
+        installLayerTool(this);
         this.input.on('pointerdown', (pointer) => {
+            if (this.layerToolActive) return;
             const cell = this.getGridCellFromPointer(pointer.worldX, pointer.worldY);
             if (!cell) return;
 
@@ -2189,22 +2195,26 @@ class LevelEditorScene extends Phaser.Scene {
         });
 
         this.input.keyboard.on('keydown-LEFT', () => {
+            if (this.layerToolActive) return;
             this.rotateSelectedCell(-1);
             this.renderGrid();
         });
 
         this.input.keyboard.on('keydown-RIGHT', () => {
+            if (this.layerToolActive) return;
             this.rotateSelectedCell(1);
             this.renderGrid();
         });
 
         // Mirror: 'H' = horizontal flip (flipX), 'V' = vertical flip (flipY)
         this.input.keyboard.on('keydown-H', () => {
+            if (this.layerToolActive) return;
             this.mirrorSelectedCell('h');
             this.renderGrid();
         });
 
         this.input.keyboard.on('keydown-V', () => {
+            if (this.layerToolActive) return;
             this.mirrorSelectedCell('v');
             this.renderGrid();
         });
@@ -2250,16 +2260,19 @@ class LevelEditorScene extends Phaser.Scene {
 
         // Open wall variant picker with 'W' (was 'V' before; 'V' now flips vertical)
         this.input.keyboard.on('keydown-W', () => {
+            if (this.layerToolActive) return;
             this.toggleWallVariantPicker();
         });
 
         this.input.keyboard.on('keydown-DELETE', () => {
+            if (this.layerToolActive) return;
             const active = document.activeElement;
             if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.tagName === 'SELECT')) return;
             this.clearSelectedCell();
         });
 
         this.input.keyboard.on('keydown-BACKSPACE', (event) => {
+            if (this.layerToolActive) return;
             const active = document.activeElement;
             if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.tagName === 'SELECT')) return;
             event?.preventDefault?.();
@@ -2991,7 +3004,25 @@ function getScene() {
 }
 
 // Used by js/editor-layout.js (topbar status, menus, shortcuts)
-window.LevelEditorAPI = { getScene, readLevelFromForm, importLevelFromText, setStatus, gameTileSize: () => GAME_TILE_SIZE };
+// "▶ Prova livello": the game reads this level from localStorage (index.html?testLevel=1)
+function playTestLevel() {
+    let level;
+    try { level = readLevelFromForm(); } catch (e) { setStatus(`Livello non valido: ${e.message}`, true); return; }
+    try {
+        localStorage.setItem('blockHunterTestLevel', JSON.stringify(level));
+    } catch (e) { setStatus(`Impossibile preparare la prova: ${e.message}`, true); return; }
+    const win = window.open('index.html?testLevel=1', 'blockHunterTest');
+    if (!win) { setStatus('Il browser ha bloccato la nuova scheda: consenti i popup per provare il livello.', true); return; }
+    try { win.focus(); } catch (e) { }
+    setStatus('Livello aperto nel gioco (scheda "Prova livello"). Modifica e premi di nuovo ▶ per riprovarlo.');
+}
+
+window.LevelEditorAPI = {
+    getScene, readLevelFromForm, importLevelFromText, setStatus, playTestLevel,
+    gameTileSize: () => GAME_TILE_SIZE,
+    setLayerTool: (on) => getScene()?.layerTool?.setActive(on),
+    refreshLayerPalette: () => buildLayerPalette()
+};
 
 // Once the real game tile size is known, redraw bg/fg previews so they match the game.
 gameConfigReady.then(() => {
@@ -3216,7 +3247,7 @@ function drawMiniMapPreview(scene) {
                 for (let ix = 0; ix < lay.countX; ix++) {
                     const dx = offX + (lay.offsetX + lay.stepX * ix) * scale;
                     const dy = offY + (lay.offsetY + lay.stepY * iy) * scale;
-                    ctx.drawImage(img, dx, dy, lay.layerW * scale, lay.layerH * scale);
+                    drawLayerInstance(ctx, img, dx, dy, lay.layerW * scale, lay.layerH * scale, layerTransformFromJson(layer));
                 }
             }
             ctx.restore();
@@ -3402,7 +3433,7 @@ function drawMiniMapPreview(scene) {
                     for (let ix = 0; ix < lay.countX; ix++) {
                         const dx = offX + (lay.offsetX + lay.stepX * ix) * scale;
                         const dy = offY + (lay.offsetY + lay.stepY * iy) * scale;
-                        ctx.drawImage(entry.img, dx, dy, lay.layerW * scale, lay.layerH * scale);
+                        drawLayerInstance(ctx, entry.img, dx, dy, lay.layerW * scale, lay.layerH * scale, layerTransformFromJson(ly));
                     }
                 }
                 ctx.restore();
@@ -3844,8 +3875,10 @@ function readBackgroundLayersFromDOM() {
             repeatX,
             repeatY,
             repeatStepX: stepX,
-            repeatStepY: stepY
+            repeatStepY: stepY,
+            ...readLayerTransform(it, it.classList.contains('fg-layer') ? 'fg' : 'bg')
         };
+        Object.defineProperty(layerObj, '__row', { value: it, enumerable: false });
         layers.push(layerObj);
     });
     return layers;
@@ -3894,8 +3927,10 @@ function readForegroundLayersFromDOM() {
             repeatX,
             repeatY,
             repeatStepX: stepX,
-            repeatStepY: stepY
+            repeatStepY: stepY,
+            ...readLayerTransform(it, it.classList.contains('fg-layer') ? 'fg' : 'bg')
         };
+        Object.defineProperty(layerObj, '__row', { value: it, enumerable: false });
         layers.push(layerObj);
     });
     return layers;
@@ -3921,7 +3956,7 @@ function applyBackgroundLayersToDOM(bg) {
         const repeatY = layer?.repeatY ?? layer?.replicaY ?? layer?.repeatCountY ?? layer?.replicaCountY ?? 1;
         const stepX = layer?.repeatStepX ?? layer?.replicaStepX ?? layer?.repeatOffsetX ?? layer?.replicaOffsetX ?? 0;
         const stepY = layer?.repeatStepY ?? layer?.replicaStepY ?? layer?.repeatOffsetY ?? layer?.replicaOffsetY ?? 0;
-        const elRow = createBgLayerElement({ src, enabled, factor, alpha, offsetX, offsetY, width, height, repeatX, repeatY, stepX, stepY, idx });
+        const elRow = createBgLayerElement({ src, enabled, factor, alpha, offsetX, offsetY, width, height, repeatX, repeatY, stepX, stepY, idx, ...layerTransformFromJson(layer) });
         container.appendChild(elRow);
     });
     // If no radio is selected, default to the first background layer
@@ -3954,8 +3989,66 @@ function applyForegroundLayersToDOM(fg) {
         const repeatY = layer?.repeatY ?? layer?.replicaY ?? layer?.repeatCountY ?? layer?.replicaCountY ?? 1;
         const stepX = layer?.repeatStepX ?? layer?.replicaStepX ?? layer?.repeatOffsetX ?? layer?.replicaOffsetX ?? 0;
         const stepY = layer?.repeatStepY ?? layer?.replicaStepY ?? layer?.repeatOffsetY ?? layer?.replicaOffsetY ?? 0;
-        container.appendChild(createFgLayerElement({ src, enabled, factor, alpha, offsetX, offsetY, width, height, repeatX, repeatY, stepX, stepY, idx }));
+        container.appendChild(createFgLayerElement({ src, enabled, factor, alpha, offsetX, offsetY, width, height, repeatX, repeatY, stepX, stepY, idx, ...layerTransformFromJson(layer) }));
     });
+}
+
+// Rotation (degrees, around the image centre) and mirroring of a bg/fg layer.
+// Stored in the level JSON as rotation / flipX / flipY; GameScene applies the same transform.
+function readLayerTransform(row, prefix) {
+    const out = {};
+    const rot = parseNumber(row.querySelector(`.${prefix}-rotation`)?.value, 0);
+    if (rot) out.rotation = ((rot % 360) + 360) % 360;
+    if (row.querySelector(`.${prefix}-flip-x`)?.checked) out.flipX = true;
+    if (row.querySelector(`.${prefix}-flip-y`)?.checked) out.flipY = true;
+    return out;
+}
+
+function layerTransformFromJson(layer) {
+    return {
+        rotation: parseNumber(layer?.rotation ?? layer?.angle, 0),
+        flipX: layer?.flipX === true,
+        flipY: layer?.flipY === true
+    };
+}
+
+function appendLayerTransformRow(wrapper, prefix, cfg = {}) {
+    const row = document.createElement('div');
+    row.className = 'layer-transform-row';
+    row.style.display = 'grid';
+    row.style.gridTemplateColumns = '1fr auto auto';
+    row.style.gap = '6px';
+    row.style.alignItems = 'center';
+
+    const rot = document.createElement('input');
+    rot.type = 'number'; rot.step = '1'; rot.className = `${prefix}-rotation`;
+    rot.value = String(parseNumber(cfg.rotation, 0)); rot.title = 'Rotazione in gradi (attorno al centro)'; rot.placeholder = 'rotazione°';
+    const mk = (cls, label, checked, title) => {
+        const lab = document.createElement('label');
+        lab.style.display = 'flex'; lab.style.alignItems = 'center'; lab.style.gap = '4px'; lab.style.margin = '0'; lab.title = title;
+        const c = document.createElement('input'); c.type = 'checkbox'; c.className = cls; c.checked = !!checked;
+        lab.appendChild(c); lab.appendChild(document.createTextNode(label));
+        return lab;
+    };
+    row.appendChild(rot);
+    row.appendChild(mk(`${prefix}-flip-x`, '↔', cfg.flipX, 'Specchia orizzontalmente'));
+    row.appendChild(mk(`${prefix}-flip-y`, '↕', cfg.flipY, 'Specchia verticalmente'));
+    const refresh = () => { try { refreshLayerPreviews(); } catch (e) { } };
+    rot.addEventListener('change', refresh);
+    row.querySelectorAll('input[type=checkbox]').forEach((c) => c.addEventListener('change', refresh));
+    wrapper.appendChild(row);
+}
+
+// Draws one layer instance on a 2D canvas: (x, y, w, h) is the unrotated box, like GameScene.
+function drawLayerInstance(ctx, img, x, y, w, h, tf = {}) {
+    const rot = parseNumber(tf.rotation, 0);
+    if (!rot && !tf.flipX && !tf.flipY) { ctx.drawImage(img, x, y, w, h); return; }
+    ctx.save();
+    ctx.translate(x + w / 2, y + h / 2);
+    if (rot) ctx.rotate(rot * Math.PI / 180);
+    ctx.scale(tf.flipX ? -1 : 1, tf.flipY ? -1 : 1);
+    ctx.drawImage(img, -w / 2, -h / 2, w, h);
+    ctx.restore();
 }
 
 function createBgLayerElement(cfg = {}) {
@@ -4154,6 +4247,7 @@ function createBgLayerElement(cfg = {}) {
         wrapper.classList.remove('dragging');
     });
 
+    appendLayerTransformRow(wrapper, wrapper.className === 'fg-layer' ? 'fg' : 'bg', cfg);
     return wrapper;
 }
 
@@ -4338,6 +4432,7 @@ function createFgLayerElement(cfg = {}) {
         wrapper.classList.remove('dragging');
     });
 
+    appendLayerTransformRow(wrapper, wrapper.className === 'fg-layer' ? 'fg' : 'bg', cfg);
     return wrapper;
 }
 
@@ -6659,3 +6754,398 @@ if (document.readyState === 'interactive' || document.readyState === 'complete')
     initEditorLoadingOverlay();
     setTimeout(initResponsiveDesign, 100);
 }
+
+
+// =====================================================================================
+// LAYER TOOL — background/foreground direct manipulation on the map
+//   click = select · drag = move · corner handles = resize (Shift = free aspect)
+//   edge handles = stretch one side · top handle = rotate (Shift = 15° steps)
+//   floating bar: mirror ↔ ↕, rotate ±15°, opacity, fit to map, original size,
+//   bring forward/back, delete. Values are written to the layer row in the panel
+//   (offsetX/Y, width/height, rotation, flipX/Y, alpha), so export, undo by editing
+//   the fields and the game all use the same data.
+// =====================================================================================
+function layerRowPrefix(row) {
+    return row?.classList?.contains('fg-layer') ? 'fg' : 'bg';
+}
+
+function setRowValue(row, cls, value) {
+    const input = row?.querySelector(`.${cls}`);
+    if (!input) return;
+    if (input.type === 'checkbox') input.checked = !!value;
+    else input.value = String(value);
+}
+
+function installLayerTool(scene) {
+    if (scene.layerTool) return;
+    const HANDLE = 7;
+    const ROT_OFFSET = 26;
+    const gfx = scene.add.graphics().setDepth(5000);
+    const tool = {
+        active: false,
+        selectedRow: null,
+        drag: null,
+        bar: null
+    };
+    scene.layerTool = tool;
+    scene.layerToolActive = false;
+
+    const scale = () => scene.cellSize / GAME_TILE_SIZE;
+    const layerImages = () => [...(scene.editorFgImages || []), ...(scene.editorBgImages || [])]
+        .filter((img) => img && img.active && img.__bhLayer);
+    // the first instance (no repeat offset) is the one that carries the handles
+    const masterImage = (row) => layerImages().find((img) => img.__bhLayer.row === row && img.__bhLayer.ix === 0 && img.__bhLayer.iy === 0)
+        || layerImages().find((img) => img.__bhLayer.row === row);
+
+    const boxOf = (img) => ({ cx: img.x, cy: img.y, w: img.displayWidth, h: img.displayHeight, a: Phaser.Math.DegToRad(img.angle || 0) });
+    const toWorld = (b, lx, ly) => ({
+        x: b.cx + lx * Math.cos(b.a) - ly * Math.sin(b.a),
+        y: b.cy + lx * Math.sin(b.a) + ly * Math.cos(b.a)
+    });
+    const toLocal = (b, x, y) => {
+        const dx = x - b.cx, dy = y - b.cy;
+        return { x: dx * Math.cos(-b.a) - dy * Math.sin(-b.a), y: dx * Math.sin(-b.a) + dy * Math.cos(-b.a) };
+    };
+    const handles = (b) => {
+        const list = [];
+        for (const sy of [-1, 0, 1]) {
+            for (const sx of [-1, 0, 1]) {
+                if (!sx && !sy) continue;
+                list.push({ sx, sy, ...toWorld(b, sx * b.w / 2, sy * b.h / 2) });
+            }
+        }
+        list.push({ rotate: true, ...toWorld(b, 0, -b.h / 2 - ROT_OFFSET) });
+        return list;
+    };
+
+    const draw = () => {
+        gfx.clear();
+        if (!tool.active || !tool.selectedRow) return;
+        const img = masterImage(tool.selectedRow);
+        if (!img) return;
+        const b = boxOf(img);
+        const c = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([sx, sy]) => toWorld(b, sx * b.w / 2, sy * b.h / 2));
+        gfx.lineStyle(2, 0xc9973f, 1);
+        gfx.strokePoints([...c, c[0]], false);
+        const top = toWorld(b, 0, -b.h / 2);
+        const rot = toWorld(b, 0, -b.h / 2 - ROT_OFFSET);
+        gfx.lineBetween(top.x, top.y, rot.x, rot.y);
+        handles(b).forEach((h) => {
+            gfx.fillStyle(h.rotate ? 0xc9973f : 0xe9e6df, 1);
+            if (h.rotate) gfx.fillCircle(h.x, h.y, HANDLE);
+            else gfx.fillRect(h.x - HANDLE / 2 - 1, h.y - HANDLE / 2 - 1, HANDLE + 2, HANDLE + 2);
+            gfx.lineStyle(1, 0x17181a, 1);
+            if (!h.rotate) gfx.strokeRect(h.x - HANDLE / 2 - 1, h.y - HANDLE / 2 - 1, HANDLE + 2, HANDLE + 2);
+        });
+        // other instances of a repeated layer: thin outline
+        gfx.lineStyle(1, 0xc9973f, 0.45);
+        layerImages().filter((i) => i.__bhLayer.row === tool.selectedRow && i !== img).forEach((i) => {
+            const bb = boxOf(i);
+            const cc = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([sx, sy]) => toWorld(bb, sx * bb.w / 2, sy * bb.h / 2));
+            gfx.strokePoints([...cc, cc[0]], false);
+        });
+    };
+    tool.draw = draw;
+
+    // ---- read / write the layer row (game pixels) ----
+    const readRow = (row) => {
+        const p = layerRowPrefix(row);
+        const num = (cls, d = 0) => parseNumber(row.querySelector(`.${p}-${cls}`)?.value, d);
+        return {
+            offsetX: num('offset-x'), offsetY: num('offset-y'), width: num('width'), height: num('height'),
+            rotation: num('rotation'), alpha: num('alpha', 1),
+            flipX: !!row.querySelector(`.${p}-flip-x`)?.checked, flipY: !!row.querySelector(`.${p}-flip-y`)?.checked
+        };
+    };
+    const writeRow = (row, vals) => {
+        const p = layerRowPrefix(row);
+        const map = { offsetX: 'offset-x', offsetY: 'offset-y', width: 'width', height: 'height', rotation: 'rotation', alpha: 'alpha', flipX: 'flip-x', flipY: 'flip-y' };
+        Object.entries(vals).forEach(([k, v]) => {
+            if (!(k in map)) return;
+            // pixels are integers in the level JSON; opacity keeps two decimals
+            const val = (typeof v !== 'number') ? v : (k === 'alpha' ? Math.round(v * 100) / 100 : Math.round(v));
+            setRowValue(row, `${p}-${map[k]}`, val);
+        });
+        refreshLayerPreviews();
+        draw();
+        syncBar();
+    };
+    tool.readRow = readRow;
+    tool.writeRow = writeRow;
+
+    // current game-pixel box of the selected layer, from its master image
+    const gameBox = (img) => {
+        const k = scale();
+        const w = img.displayWidth / k, h = img.displayHeight / k;
+        const cx = (img.x - scene.gridOffsetX) / k, cy = (img.y - scene.gridOffsetY) / k;
+        return { cx, cy, w, h };
+    };
+    const writeBox = (row, cx, cy, w, h) => writeRow(row, { offsetX: cx - w / 2, offsetY: cy - h / 2, width: w, height: h });
+
+    // ---- selection ----
+    tool.select = (row) => {
+        tool.selectedRow = row || null;
+        document.querySelectorAll('.bg-layer.layer-selected, .fg-layer.layer-selected').forEach((r) => r.classList.remove('layer-selected'));
+        if (row) {
+            row.classList.add('layer-selected');
+            try { window.EditorLayout?.showPanelTab('level'); } catch (e) { }
+            try { row.scrollIntoView({ block: 'nearest' }); } catch (e) { }
+        }
+        draw();
+        syncBar();
+    };
+
+    tool.setActive = (on) => {
+        tool.active = !!on;
+        scene.layerToolActive = tool.active;
+        if (tool.active && scene.zoneToolActive) el('toggleZoneTool')?.click();
+        if (!tool.active) tool.select(null);
+        try { scene.input.setDefaultCursor(tool.active ? 'default' : ''); } catch (e) { }
+        draw();
+        syncBar();
+        document.dispatchEvent(new CustomEvent('leveleditor:layertool', { detail: { active: tool.active } }));
+        if (tool.active) setStatus('Layer: clicca un background o foreground per selezionarlo, trascinalo per spostarlo, usa le maniglie per ridimensionarlo e ruotarlo.');
+    };
+
+    const pickImage = (x, y) => {
+        // foreground first (drawn on top), highest depth first
+        const imgs = layerImages().sort((a, b) => b.depth - a.depth);
+        return imgs.find((img) => {
+            const b = boxOf(img);
+            const l = toLocal(b, x, y);
+            return Math.abs(l.x) <= b.w / 2 && Math.abs(l.y) <= b.h / 2;
+        }) || null;
+    };
+
+    scene.input.on('pointerdown', (pointer) => {
+        if (!tool.active) return;
+        const x = pointer.worldX, y = pointer.worldY;
+        const sel = tool.selectedRow ? masterImage(tool.selectedRow) : null;
+        if (sel) {
+            const b = boxOf(sel);
+            const hit = handles(b).find((h) => Math.hypot(h.x - x, h.y - y) <= HANDLE + 3);
+            if (hit) {
+                tool.drag = { kind: hit.rotate ? 'rotate' : 'resize', sx: hit.sx, sy: hit.sy, start: { x, y }, box: b, game: gameBox(sel), vals: readRow(tool.selectedRow) };
+                return;
+            }
+        }
+        const img = pickImage(x, y);
+        if (!img) { tool.select(null); return; }
+        if (img.__bhLayer.row !== tool.selectedRow) tool.select(img.__bhLayer.row);
+        const master = masterImage(tool.selectedRow);
+        tool.drag = { kind: 'move', start: { x, y }, vals: readRow(tool.selectedRow), box: master ? boxOf(master) : null };
+    });
+
+    scene.input.on('pointermove', (pointer) => {
+        const d = tool.drag;
+        if (!tool.active || !d || !pointer.isDown) return;
+        const row = tool.selectedRow;
+        if (!row) return;
+        const x = pointer.worldX, y = pointer.worldY;
+        const k = scale();
+        const shift = !!pointer.event?.shiftKey;
+        if (d.kind === 'move') {
+            writeRow(row, { offsetX: d.vals.offsetX + (x - d.start.x) / k, offsetY: d.vals.offsetY + (y - d.start.y) / k });
+        } else if (d.kind === 'rotate') {
+            let deg = Phaser.Math.RadToDeg(Math.atan2(y - d.box.cy, x - d.box.cx)) + 90;
+            deg = shift ? Math.round(deg / 15) * 15 : Math.round(deg);
+            writeRow(row, { rotation: ((deg % 360) + 360) % 360 });
+        } else if (d.kind === 'resize') {
+            const local = toLocal({ ...d.box, cx: 0, cy: 0 }, x - d.start.x, y - d.start.y); // delta in the layer's own axes
+            let w = d.game.w, h = d.game.h;
+            if (d.sx) w = Math.max(4, d.game.w + d.sx * local.x / k);
+            if (d.sy) h = Math.max(4, d.game.h + d.sy * local.y / k);
+            if (d.sx && d.sy && !shift) {
+                const f = Math.max(w / d.game.w, h / d.game.h);
+                w = d.game.w * f; h = d.game.h * f;
+            }
+            // keep the opposite side fixed: move the centre by half the growth, along the layer's axes
+            const gx = (d.sx || 0) * (w - d.game.w) / 2, gy = (d.sy || 0) * (h - d.game.h) / 2;
+            const shiftW = toWorld({ ...d.box, cx: 0, cy: 0 }, gx, gy);
+            writeBox(row, d.game.cx + shiftW.x, d.game.cy + shiftW.y, w, h);
+        }
+    });
+
+    const endDrag = () => { if (tool.drag) { tool.drag = null; drawMiniMapPreview(scene); } };
+    scene.input.on('pointerup', endDrag);
+    scene.input.on('pointerupoutside', endDrag);
+
+    // keep handles in sync with redraws (zoom, scroll, panel edits)
+    const origUpdate = scene.updateEditorBackgroundImage.bind(scene);
+    scene.updateEditorBackgroundImage = (...args) => { const r = origUpdate(...args); draw(); return r; };
+
+    // ---- floating bar ----
+    const bar = document.createElement('div');
+    bar.className = 'layer-bar';
+    bar.hidden = true;
+    bar.innerHTML = `
+        <span class="lb-name"></span>
+        <button type="button" data-act="flipX" title="Specchia orizzontalmente">↔</button>
+        <button type="button" data-act="flipY" title="Specchia verticalmente">↕</button>
+        <button type="button" data-act="rotL" title="Ruota di −15°">⟲</button>
+        <span class="lb-rot"></span>
+        <button type="button" data-act="rotR" title="Ruota di +15°">⟳</button>
+        <label title="Opacità">◐ <input type="range" min="0" max="1" step="0.05" data-act="alpha"></label>
+        <button type="button" data-act="fit" title="Adatta alla mappa">⤢</button>
+        <button type="button" data-act="natural" title="Dimensione originale dell'immagine">1:1</button>
+        <button type="button" data-act="up" title="Porta indietro (disegnato prima)">▲</button>
+        <button type="button" data-act="down" title="Porta avanti (disegnato dopo)">▼</button>
+        <button type="button" data-act="delete" title="Elimina il layer">✕</button>`;
+    el('editor-game')?.appendChild(bar);
+    tool.bar = bar;
+
+    function syncBar() {
+        const row = tool.selectedRow;
+        bar.hidden = !(tool.active && row && row.isConnected);
+        if (bar.hidden) return;
+        const v = readRow(row);
+        const p = layerRowPrefix(row);
+        const sel = row.querySelector(`.${p}-src`);
+        const name = sel ? String(sel.value || '') : '';
+        bar.querySelector('.lb-name').textContent = `${p === 'fg' ? 'Foreground' : 'Background'} · ${name.split('/').pop()}`;
+        bar.querySelector('.lb-rot').textContent = `${Math.round(v.rotation)}°`;
+        const a = bar.querySelector('[data-act=alpha]');
+        if (document.activeElement !== a) a.value = String(v.alpha);
+        bar.querySelector('[data-act=flipX]').classList.toggle('on', v.flipX);
+        bar.querySelector('[data-act=flipY]').classList.toggle('on', v.flipY);
+    }
+    tool.syncBar = syncBar;
+
+    const naturalSize = (row) => new Promise((resolve) => {
+        const p = layerRowPrefix(row);
+        const sel = row.querySelector(`.${p}-src`);
+        const v = String(sel?.value || '').trim();
+        if (!v) return resolve(null);
+        const src = sel.tagName === 'SELECT' ? `${p === 'fg' ? FG_ASSETS_DIR : BG_ASSETS_DIR}/${v}` : normalizeLayerSrc(v, p);
+        loadImageElement(src).then((im) => resolve({ w: im.naturalWidth, h: im.naturalHeight })).catch(() => resolve(null));
+    });
+
+    bar.addEventListener('input', (e) => {
+        if (e.target.dataset.act === 'alpha' && tool.selectedRow) writeRow(tool.selectedRow, { alpha: parseNumber(e.target.value, 1) });
+    });
+    bar.addEventListener('click', async (e) => {
+        const act = e.target.closest('[data-act]')?.dataset.act;
+        const row = tool.selectedRow;
+        if (!act || !row || act === 'alpha') return;
+        const v = readRow(row);
+        const img = masterImage(row);
+        const g = img ? gameBox(img) : null;
+        if (act === 'flipX') writeRow(row, { flipX: !v.flipX });
+        else if (act === 'flipY') writeRow(row, { flipY: !v.flipY });
+        else if (act === 'rotL') writeRow(row, { rotation: ((v.rotation - 15) % 360 + 360) % 360 });
+        else if (act === 'rotR') writeRow(row, { rotation: (v.rotation + 15) % 360 });
+        else if (act === 'fit') writeRow(row, { offsetX: 0, offsetY: 0, width: scene.cols * GAME_TILE_SIZE, height: scene.rows * GAME_TILE_SIZE, rotation: 0 });
+        else if (act === 'natural') {
+            const n = await naturalSize(row);
+            if (n && g) writeBox(row, g.cx, g.cy, n.w, n.h);
+        } else if (act === 'up' || act === 'down') {
+            row.querySelector(act === 'up' ? '.layer-move-up' : '.layer-move-down')?.click();
+            draw();
+        } else if (act === 'delete') {
+            if (!window.confirm('Eliminare questo layer?')) return;
+            row.remove();
+            tool.select(null);
+            refreshLayerPreviews();
+        }
+    });
+}
+
+// ---- palette: background / foreground images, draggable onto the map ----
+function buildLayerPalette() {
+    const groups = [
+        { type: 'bg', select: 'bgImageSelect', target: 'domPalette-backgrounds', dir: BG_ASSETS_DIR },
+        { type: 'fg', select: 'fgImageSelect', target: 'domPalette-foregrounds', dir: FG_ASSETS_DIR }
+    ];
+    groups.forEach((g) => {
+        const box = el(g.target);
+        const sel = el(g.select);
+        if (!box || !sel) return;
+        const files = Array.from(sel.options).map((o) => o.value).filter(Boolean);
+        if (box.dataset.files === files.join('|')) return;
+        box.dataset.files = files.join('|');
+        box.innerHTML = '';
+        files.forEach((file) => {
+            const item = document.createElement('div');
+            item.className = 'palette-item layer-item';
+            item.draggable = true;
+            item.title = `Trascina sulla mappa per aggiungere un ${g.type === 'fg' ? 'foreground' : 'background'}`;
+            const im = document.createElement('img');
+            im.src = `${g.dir}/${file}`;
+            im.alt = '';
+            im.loading = 'lazy';
+            const label = document.createElement('span');
+            label.textContent = file.replace(/\.[a-z0-9]+$/i, '');
+            item.appendChild(im);
+            item.appendChild(label);
+            item.addEventListener('dragstart', (ev) => {
+                ev.dataTransfer.setData('application/x-bh-layer', JSON.stringify({ type: g.type, file }));
+                ev.dataTransfer.setData('text/plain', '');
+                ev.dataTransfer.effectAllowed = 'copy';
+            });
+            box.appendChild(item);
+        });
+    });
+}
+
+async function addLayerAtCanvasPoint(type, file, canvasX, canvasY) {
+    const scene = getScene();
+    if (!scene) return;
+    const dir = type === 'fg' ? FG_ASSETS_DIR : BG_ASSETS_DIR;
+    let natW = 0, natH = 0;
+    try { const im = await loadImageElement(`${dir}/${file}`); natW = im.naturalWidth; natH = im.naturalHeight; } catch (e) { }
+    if (!natW || !natH) { setStatus(`Immagine non caricabile: ${file}`, true); return; }
+    const k = scene.cellSize / GAME_TILE_SIZE;
+    const gx = (canvasX - scene.gridOffsetX) / k;
+    const gy = (canvasY - scene.gridOffsetY) / k;
+    // large images start at most half the map wide/high (aspect kept) so all handles are reachable
+    const fit = Math.min(1, (scene.cols * GAME_TILE_SIZE * 0.5) / natW, (scene.rows * GAME_TILE_SIZE * 0.5) / natH);
+    const w = Math.max(8, Math.round(natW * fit)), h = Math.max(8, Math.round(natH * fit));
+    const cfg = {
+        src: `${dir}/${file}`, enabled: true, factor: 1.0, alpha: 1.0,
+        offsetX: Math.round(gx - w / 2), offsetY: Math.round(gy - h / 2),
+        width: w, height: h, repeatX: 1, repeatY: 1, stepX: 0, stepY: 0
+    };
+    const container = el(type === 'fg' ? 'fgLayersContainer' : 'bgLayersContainer');
+    if (!container) return;
+    try { (type === 'fg' ? ensureFgHeader : ensureBgHeader)(); } catch (e) { }
+    const row = (type === 'fg' ? createFgLayerElement : createBgLayerElement)(cfg);
+    container.appendChild(row);
+    refreshLayerPreviews();
+    window.EditorLayout?.setMode?.('layers');
+    scene.layerTool?.setActive(true);
+    // wait for the texture to load before selecting (the handles follow the image)
+    setTimeout(() => scene.layerTool?.select(row), 350);
+    setStatus(`${type === 'fg' ? 'Foreground' : 'Background'} aggiunto: ${file}. Trascinalo o usa le maniglie per sistemarlo.`);
+}
+
+function setupLayerDrop() {
+    const target = el('editor-game');
+    if (!target || target.dataset.layerDrop === '1') return;
+    target.dataset.layerDrop = '1';
+    // capture phase: handled before the token drop handler
+    target.addEventListener('drop', (ev) => {
+        const raw = ev.dataTransfer?.getData('application/x-bh-layer');
+        if (!raw) return;
+        ev.preventDefault();
+        ev.stopImmediatePropagation();
+        target.classList.remove('over');
+        let info = null;
+        try { info = JSON.parse(raw); } catch (e) { return; }
+        const rect = target.getBoundingClientRect();
+        addLayerAtCanvasPoint(info.type, info.file, ev.clientX - rect.left, ev.clientY - rect.top);
+    }, true);
+    target.addEventListener('dragenter', (ev) => {
+        if ([...(ev.dataTransfer?.types || [])].includes('application/x-bh-layer')) target.classList.add('over');
+    });
+    target.addEventListener('dragleave', (ev) => { if (ev.target === target) target.classList.remove('over'); });
+}
+
+window.addEventListener('load', () => {
+    setupLayerDrop();
+    buildLayerPalette();
+    // the image lists arrive from the API after load: rebuild when they change
+    ['bgImageSelect', 'fgImageSelect'].forEach((id) => {
+        const sel = el(id);
+        if (sel) new MutationObserver(() => buildLayerPalette()).observe(sel, { childList: true });
+    });
+});

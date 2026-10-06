@@ -876,12 +876,27 @@ class GameScene extends Phaser.Scene {
             };
         };
 
-        const placeLayerImage = (img, baseX, baseY, layerW, layerH, placement, ix, iy, fixedSize = false) => {
+        // Optional per-layer transform: rotation (degrees, around the centre) and flipX / flipY
+        const resolveLayerTransform = (entry) => {
+            const e = (entry && typeof entry === 'object') ? entry : {};
+            return { rotation: parseNumeric(e.rotation ?? e.angle, 0), flipX: e.flipX === true, flipY: e.flipY === true };
+        };
+
+        // (x, y, w, h) is the unrotated box; the image is centred in it so rotation pivots on its centre
+        const setLayerBox = (img, x, y, w, h, tf) => {
+            try { img.setOrigin(0.5, 0.5); } catch (e) { }
+            img.setDisplaySize(w, h);
+            img.setPosition(x + w / 2, y + h / 2);
+            if (tf) {
+                try { img.setAngle(tf.rotation || 0); } catch (e) { }
+                try { img.setFlip(!!tf.flipX, !!tf.flipY); } catch (e) { }
+            }
+        };
+
+        const placeLayerImage = (img, baseX, baseY, layerW, layerH, placement, ix, iy, fixedSize = false, transform = null) => {
             const x = baseX + placement.offsetX + placement.stepX * ix;
             const y = baseY + placement.offsetY + placement.stepY * iy;
-            try { img.setOrigin(0, 0); } catch (e) { }
-            img.setDisplaySize(layerW, layerH);
-            img.setPosition(x, y);
+            setLayerBox(img, x, y, layerW, layerH, transform);
             img.__bhLayerMeta = {
                 baseX,
                 baseY,
@@ -903,9 +918,7 @@ class GameScene extends Phaser.Scene {
             if (m.fixedSize) return;
             const x = m.baseX + m.offsetX + m.stepX * m.ix;
             const y = m.baseY + m.offsetY + m.stepY * m.iy;
-            try { img.setOrigin(0, 0); } catch (e) { }
-            img.setDisplaySize(w, h);
-            img.setPosition(x, y);
+            setLayerBox(img, x, y, w, h, null);
             m.layerW = w;
             m.layerH = h;
         };
@@ -947,7 +960,7 @@ class GameScene extends Phaser.Scene {
                         for (let iy = 0; iy < placement.countY; iy++) {
                             for (let ix = 0; ix < placement.countX; ix++) {
                                 const img = this.add.image(worldX, worldY, textureKey);
-                                placeLayerImage(img, worldX, worldY, layerSize.layerW, layerSize.layerH, placement, ix, iy, layerSize.fixedSize);
+                                placeLayerImage(img, worldX, worldY, layerSize.layerW, layerSize.layerH, placement, ix, iy, layerSize.fixedSize, resolveLayerTransform(entry));
                                 try { img.setDepth(-1000 - idx); } catch (e) { }
                                 try { img.setScrollFactor(parallaxFactor); } catch (e) { }
                                 try { img.setAlpha(Phaser.Math.Clamp(alphaVal, 0, 1)); } catch (e) { }
@@ -1022,7 +1035,7 @@ class GameScene extends Phaser.Scene {
                     for (let iy = 0; iy < placement.countY; iy++) {
                         for (let ix = 0; ix < placement.countX; ix++) {
                             const img = this.add.image(worldX, worldY, fgKey);
-                            placeLayerImage(img, worldX, worldY, layerSize.layerW, layerSize.layerH, placement, ix, iy, layerSize.fixedSize);
+                            placeLayerImage(img, worldX, worldY, layerSize.layerW, layerSize.layerH, placement, ix, iy, layerSize.fixedSize, resolveLayerTransform(entry));
                             try { img.setDepth(3000 + idx); } catch (e) { }
                             try { img.setAlpha(Phaser.Math.Clamp(fgAlpha, 0, 1)); } catch (e) { }
                             img.setScrollFactor(parallaxFactor);

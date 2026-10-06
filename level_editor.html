@@ -39,6 +39,7 @@
     <div class="tabs-container" id="modeTabs" role="tablist" aria-label="Modalità">
         <button class="tab active" type="button" data-mode="paint" aria-pressed="true" title="Disegna tile e oggetti sulla mappa (1)">✏ Disegna</button>
         <button class="tab" type="button" data-mode="zones" aria-pressed="false" title="Disegna zone invisibili: muro, buca, sabbia, fango, acqua (2)">🚫 Zone</button>
+        <button class="tab" type="button" data-mode="layers" aria-pressed="false" title="Sposta, ridimensiona, ruota e specchia background e foreground sulla mappa (3)">🖼 Layer</button>
     </div>
 </nav>
 
@@ -59,7 +60,15 @@
                 <h3 data-group="walls">Walls</h3>
                 <div class="content" id="domPalette-walls"></div>
             </div>
-            <p class="palette-hint">Trascina un elemento sulla mappa, oppure cliccalo e poi clicca le celle. Tieni premuto "." mentre trascini per piazzarlo invisibile.</p>
+            <div class="accordion">
+                <h3 data-group="backgrounds">Background</h3>
+                <div class="content" id="domPalette-backgrounds"></div>
+            </div>
+            <div class="accordion">
+                <h3 data-group="foregrounds">Foreground</h3>
+                <div class="content" id="domPalette-foregrounds"></div>
+            </div>
+            <p class="palette-hint">Trascina un elemento sulla mappa, oppure cliccalo e poi clicca le celle. Tieni premuto "." mentre trascini per piazzarlo invisibile. Background e foreground trascinati sulla mappa diventano layer da spostare, ridimensionare, ruotare e specchiare (modalità Layer).</p>
         </div>
     </div>
     <div class="sc-resizer" id="railResizer" title="Trascina per ridimensionare · doppio clic per nascondere"></div>

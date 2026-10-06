@@ -129,8 +129,15 @@ class PreloadScene extends Phaser.Scene {
         try {
             if (window && window.sessionStorage) sessionStorage.clear();
         } catch (e) { }
+        // ...but keep what belongs to the level editor (same origin): its saved level, the level
+        // under test ("▶ Prova livello") and its interface preferences.
         try {
-            if (window && window.localStorage) localStorage.clear();
+            if (window && window.localStorage) {
+                const keep = (k) => k === 'blockHunterLevelEditorState' || k === 'blockHunterTestLevel' || /^bh-/.test(k);
+                const keys = [];
+                for (let i = 0; i < localStorage.length; i++) keys.push(localStorage.key(i));
+                keys.forEach((k) => { if (k && !keep(k)) localStorage.removeItem(k); });
+            }
         } catch (e) { }
 
         const metrics = this.getPreloadMetrics();
@@ -386,6 +393,27 @@ class PreloadScene extends Phaser.Scene {
                 this.scene.start('ConfigScene');
                 return;
             }
+
+            // Level test from the editor ("▶ Prova livello" in level_editor.html opens index.html?testLevel=1):
+            // the level saved by the editor is played in the first slot, in this tab only.
+            try {
+                const qs = new URLSearchParams(window.location.search || '');
+                if (qs.has('testLevel')) {
+                    const raw = localStorage.getItem('blockHunterTestLevel');
+                    const data = raw ? JSON.parse(raw) : null;
+                    if (data && typeof data === 'object') {
+                        const slot = 0;
+                        const key = getLevelFileName(slot);
+                        if (this.cache.json.exists(key)) this.cache.json.remove(key);
+                        this.cache.json.add(key, data);
+                        resetGameStateForNewRun(1);
+                        GAME_STATE.currentLevel = slot;
+                        GAME_STATE.testLevel = true;
+                        this.scene.start('GameScene');
+                        return;
+                    }
+                }
+            } catch (e) { LOGGER?.warn?.('PreloadScene', 'Test livello non avviato', e); }
 
             const bonusTestMode = CONFIG.bonusTestMode || {};
             if (bonusTestMode.enabled === true) {
