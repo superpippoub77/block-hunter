@@ -36,6 +36,7 @@ const LAYOUT_ICONS = {
   save: SC_ICON("M4 3h11l3 3v13H4z M7 3v5h7V3 M7 19v-6h8v6"),
   json: SC_ICON("M8 4c-2 0-2 1.5-2 3s-1 3-2.5 4c1.5 1 2.5 2 2.5 4s0 3 2 3 M14 4c2 0 2 1.5 2 3s1 3 2.5 4c-1.5 1-2.5 2-2.5 4s0 3-2 3"),
   play: SC_ICON("M6 4l12 7-12 7z"),
+  screens: SC_ICON("M3 5h16v11H3z M8 19h6 M11 16v3 M9 8.5l4 2.5-4 2.5z"),
   layers: SC_ICON("M11 3l8 4-8 4-8-4z M3 11l8 4 8-4 M3 15l8 4 8-4"),
   panel: SC_ICON("M3 4h16v14H3z M13 4v14")
 };
@@ -86,7 +87,9 @@ const LAYOUT = {
         { icon: "📂", label: "Carica dal browser", onClick: () => clickEl("#loadLocalBtn") },
         { separator: true },
         { icon: "▶", label: "Prova il livello nel gioco", shortcut: "F5", onClick: () => api()?.playTestLevel?.() },
-        { icon: "🎮", label: "Apri il gioco", onClick: () => window.open("index.html", "_blank", "noopener") }
+        { icon: "🎮", label: "Apri il gioco", onClick: () => window.open("index.html", "_blank", "noopener") },
+        { separator: true },
+        { icon: "🎬", label: "Editor delle schermate (attract, top ten…)", onClick: () => { window.location.href = "screen_editor.html"; } }
       ]
     },
     {
@@ -154,6 +157,7 @@ const LAYOUT = {
     { id: "railExport", icon: "json", label: "Esporta JSON", key: "Ctrl+S", title: "Scarica il livello come file JSON", onClick: () => clickEl("#exportBtn") },
     { id: "railSaveLocal", icon: "save", label: "Salva nel browser", title: "Salva il livello nel browser (localStorage)", onClick: () => clickEl("#saveLocalBtn") },
     { id: "railPlay", icon: "play", label: "Prova livello", key: "F5", title: "Gioca subito il livello che stai creando", onClick: () => api()?.playTestLevel?.() },
+    { id: "railScreens", icon: "screens", label: "Schermate", title: "Editor delle schermate: attract, istruzioni, top ten, selezione livello", onClick: () => { window.location.href = "screen_editor.html"; } },
     { id: "railPanel", icon: "panel", label: "Pannello", key: "]", title: "Mostra/nascondi il pannello delle impostazioni", onClick: () => EditorLayout.toggleSide("right") }
   ],
 

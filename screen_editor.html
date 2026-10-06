@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="it">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SpikeCode · Schermate</title>
+    <meta name="description" content="Editor visuale delle schermate (attract, istruzioni, top ten, selezione livello): sfondo, testi, immagini, widget, effetti e timeline.">
+    <meta name="theme-color" content="#1f2123">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&family=Silkscreen&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/editor-spike.css">
+    <link rel="stylesheet" href="css/screen-editor.css">
+</head>
+
+<body class="sc-theme">
+<!--
+  Editor visuale delle schermate SpikeCode, stessa struttura di SpikeCut / Fucina Sprite / SpikeCoach:
+    [topbar]        ☰ · marchio · nome schermata · stato · … · Prova nel gioco · ? · File ▾ Inserisci ▾ Modifica ▾ ⋯
+    [barra schede]  una scheda per ogni schermata (data/screens/*.json) · + Nuova
+    [rail]          strumenti di inserimento · elementi · immagini
+    [anteprima]     la schermata disegnata dallo stesso motore del gioco (kit/blocks/screen)
+    [timeline]      quando compare e sparisce ogni elemento, effetti trascinabili
+    [pannello]      Elemento · Effetti · Schermata · JSON
+  Tutto è costruito da js/screen-editor.js.
+-->
+<div id="editorLoading" class="editor-loading" aria-live="polite" aria-busy="true">
+    <div class="editor-loading-card">
+        <div class="editor-loading-title">SpikeCode · Schermate</div>
+        <div class="editor-loading-bar"><div class="editor-loading-fill"></div></div>
+        <div id="editorLoadingText" class="editor-loading-text">Caricamento immagini e suoni del gioco...</div>
+    </div>
+</div>
+
+<header id="menu" class="menu-bar">
+    <div class="topbar-left" id="topbarLeft"></div>
+</header>
+
+<nav id="tabBar">
+    <div class="tabs-container" id="screenTabs" role="tablist" aria-label="Schermate"></div>
+</nav>
+
+<div id="container">
+    <div id="sidebar" class="left-panel">
+        <div id="rail"></div>
+        <div class="palette-wrap">
+            <div class="rail-title">Elementi</div>
+            <div id="itemList" class="item-list"></div>
+            <div class="rail-title">Immagini</div>
+            <div id="imagePalette" class="image-palette"></div>
+            <p class="palette-hint">Trascina un'immagine sulla schermata per aggiungerla.</p>
+        </div>
+    </div>
+    <div class="sc-resizer" id="railResizer" title="Trascina per ridimensionare · doppio clic per nascondere"></div>
+
+    <main class="main-content screen-main" id="mainContent">
+        <div class="bar">
+            <div class="cur"><h3 id="curName">Schermata</h3></div>
+            <span class="cellinfo" id="selInfo"></span>
+            <span class="spacer"></span>
+            <div class="grp">
+                <label class="bar-lang" title="Lingua dell'anteprima">🌐
+                    <select id="previewLang">
+                        <option value="it">it</option><option value="en">en</option><option value="fr">fr</option><option value="de">de</option>
+                        <option value="es">es</option><option value="us">us</option><option value="ja">ja</option><option value="zh">zh</option>
+                    </select>
+                </label>
+            </div>
+        </div>
+        <div id="screenStage"><div id="screenCanvas"></div></div>
+        <section id="timeline" aria-label="Timeline">
+            <div class="tl-toolbar">
+                <button class="iconbtn" type="button" id="tlStart" title="Torna all'inizio (Home)">⏮</button>
+                <button class="iconbtn tl-play" type="button" id="tlPlay" title="Riproduci / pausa (Spazio)">▶</button>
+                <span class="pagelabel tl-time" id="tlTime">0.00 s</span>
+                <span class="spacer"></span>
+                <label class="tl-zoom" title="Zoom della timeline">⇔ <input type="range" id="tlZoom" min="20" max="240" value="70"></label>
+            </div>
+            <div class="tl-body" id="tlBody">
+                <div class="tl-ruler-row"><div class="tl-label tl-corner">Elemento</div><div class="tl-ruler" id="tlRuler"></div></div>
+                <div class="tl-rows" id="tlRows"></div>
+                <div class="tl-playhead" id="tlPlayhead"></div>
+            </div>
+        </section>
+    </main>
+
+    <div class="sc-resizer" id="panelResizer" title="Trascina per ridimensionare · doppio clic per nascondere"></div>
+    <aside id="rightSidebar" class="sc-panel panel">
+        <div class="tabs" id="panelTabs"></div>
+        <section class="tabpage" data-tab="item" data-label="Elemento"><div id="itemPanel"></div></section>
+        <section class="tabpage" data-tab="effects" data-label="Effetti"><div id="effectsPanel"></div></section>
+        <section class="tabpage" data-tab="screen" data-label="Schermata"><div id="screenPanel"></div></section>
+        <section class="tabpage" data-tab="json" data-label="JSON">
+            <div class="section">
+                <h2>JSON della schermata</h2>
+                <textarea id="jsonArea" spellcheck="false" class="json-area"></textarea>
+                <div class="btn-row"><button type="button" id="jsonApply">Applica</button><button type="button" id="jsonRefresh">Ricarica</button></div>
+            </div>
+        </section>
+    </aside>
+</div>
+
+<footer id="status"></footer>
+<div id="toast" role="status"></div>
+<input type="file" id="importFile" accept="application/json,.json" hidden>
+
+<script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
+<script type="module" src="js/screen-editor.js"></script>
+</body>
+
+</html>

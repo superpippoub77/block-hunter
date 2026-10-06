@@ -415,6 +415,17 @@ class PreloadScene extends Phaser.Scene {
                 }
             } catch (e) { LOGGER?.warn?.('PreloadScene', 'Test livello non avviato', e); }
 
+            // Screen test from the screen editor ("▶ Prova nel gioco" opens index.html?scene=<SceneKey>)
+            try {
+                const qs = new URLSearchParams(window.location.search || '');
+                const target = qs.get('scene');
+                if (target && this.scene.get(target)) {
+                    resetGameStateForNewRun(1);
+                    this.scene.start(target);
+                    return;
+                }
+            } catch (e) { LOGGER?.warn?.('PreloadScene', 'Scena di prova non avviata', e); }
+
             const bonusTestMode = CONFIG.bonusTestMode || {};
             if (bonusTestMode.enabled === true) {
                 const bonusLevelName = bonusTestMode.bonusLevel || 'bonus1';
