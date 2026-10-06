@@ -13,6 +13,11 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          # kit/ (SpikeCode engine) can be a submodule pointing to the private spike-game-kit repo:
+          # add a KIT_TOKEN secret (token with read access to it); without one the default token is used
+          submodules: recursive
+          token: ${{ secrets.KIT_TOKEN || github.token }}
 
       - name: FTP Deploy
         uses: SamKirkland/FTP-Deploy-Action@v4.3.0

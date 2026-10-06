@@ -95,8 +95,8 @@ immagini, livelli, nemici e testi; il codice proprio va in `game/` e si collega 
 ## Aggiornare il motore in un gioco
 
 Oggi: si copia la cartella `kit/` (e, se cambiati, editor, `server.js`, `api/`, `tools/build/`)
-dal gioco più aggiornato. Quando `kit/` diventerà un repository a sé:
-`git submodule add <url> kit` nei giochi e `git submodule update --remote kit` per aggiornarlo.
+dal gioco più aggiornato. Per farne un repository a sé c'è `tools/kit-repo/kit-to-submodule.sh`
+(passi in `kit/README.md`); poi nei giochi `git submodule update --remote kit` lo aggiorna.
 
 Versione del motore: `ENGINE_VERSION` in `kit/engine/index.js` (in console: `window.SPIKE_KIT.engine`).
 

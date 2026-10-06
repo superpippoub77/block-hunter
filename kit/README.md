@@ -116,19 +116,22 @@ fatto diversamente:
 Il kit è pensato per vivere nel repo `spike-game-kit` ed essere incluso in ogni gioco come
 git submodule nella cartella `kit/`:
 
-```bash
-# una volta: crea il repo del kit con la storia della cartella kit/
-git subtree split --prefix=kit -b spike-game-kit
-# pubblica il branch nel nuovo repo (vuoto) superpippoub77/spike-game-kit
-git push git@github.com:superpippoub77/spike-game-kit.git spike-game-kit:main
+Tutto è già pronto in uno script (testato):
 
-# in ogni gioco
-git rm -r kit && git commit -m "kit diventa un submodule"
-git submodule add https://github.com/superpippoub77/spike-game-kit kit
-```
+1. su GitHub crea il repository **vuoto** `superpippoub77/spike-game-kit` (privato, senza README);
+2. dalla cartella del gioco, con tutto committato:
+   ```bash
+   bash tools/kit-repo/kit-to-submodule.sh      # (facoltativo: URL del repo come argomento)
+   git push
+   ```
+   Lo script pubblica `kit/` con tutta la sua storia nel nuovo repo, toglie la copia dal gioco e
+   la ricollega come submodule.
+3. per il deploy (`.github/workflows/deploy.yml`, già pronto con `submodules: recursive`): nel
+   repo del gioco aggiungi il secret **`KIT_TOKEN`**, un token GitHub con accesso in lettura a
+   `spike-game-kit` (serve perché il repo del kit è privato).
 
-Nel workflow di deploy aggiungi `submodules: true` al passo `actions/checkout`, così la
-cartella `kit/` viene pubblicata insieme al gioco.
+Dopo: `git clone --recursive` per clonare un gioco, `git submodule update --remote kit` per
+portare in un gioco l'ultima versione del motore.
 
 ## Aggiungere un blocco
 

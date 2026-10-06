@@ -60,7 +60,7 @@ function copy(rel) {
         fs.readdirSync(from).forEach((e) => copy(path.join(rel, e)));
         return;
     }
-    if (SKIP_FILE(path.basename(from))) return;
+    if (SKIP_FILE(path.basename(from)) || path.basename(from) === '.git') return; // .git file of a submodule
     fs.mkdirSync(path.dirname(to), { recursive: true });
     fs.copyFileSync(from, to);
     files++;
