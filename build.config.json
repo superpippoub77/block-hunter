@@ -1,0 +1,47 @@
+{
+  "appId": "com.spikecode.blockhunter",
+  "name": "Block Hunter",
+  "productName": "BlockHunter",
+  "version": "1.0.0",
+  "description": "Block Hunter - arcade game by SpikeCode",
+  "author": "SpikeCode",
+  "icon": "assets/icons/icon-512.png",
+  "iconIco": "assets/icons/icon.ico",
+  "window": {
+    "width": 1280,
+    "height": 960,
+    "fullscreenKey": "F11"
+  },
+  "releaseConfig": {
+    "debugTileGrid": false
+  },
+  "include": [
+    "index.html",
+    "game.js",
+    "game.manifest.json",
+    "manifest.json",
+    "sw.js",
+    "vendor",
+    "module",
+    "kit",
+    "data",
+    "assets",
+    "js/touch-controls.js"
+  ],
+  "exclude": [
+    "*.pdn",
+    "*.psd",
+    "*.sfd",
+    "*.xcf",
+    "*.kra",
+    "*_old",
+    "*_old2",
+    "*.png_old",
+    "*.mp3_old",
+    "*.mp3_old2",
+    "*.ttf_old",
+    "*.json_old",
+    "*.json_old2",
+    "README.md"
+  ]
+}

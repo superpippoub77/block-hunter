@@ -576,6 +576,79 @@ function handleManifestApi(req, res) {
   sendJson(res, 405, { ok: false, error: "method not allowed" });
 }
 
+// Packages for web / Windows / Linux / Android (tools/build/build.js), run as background jobs
+const buildJobs = new Map();
+function handleBuildApi(req, res, urlObj) {
+  const buildDir = path.join(ROOT_DIR, "tools", "build");
+  const hasSdk = !!((process.env.ANDROID_HOME || process.env.ANDROID_SDK_ROOT) && fs.existsSync(process.env.ANDROID_HOME || process.env.ANDROID_SDK_ROOT));
+  if (req.method === "GET") {
+    const id = urlObj.searchParams.get("job");
+    if (id) {
+      const job = buildJobs.get(id);
+      if (!job) { sendJson(res, 404, { ok: false, error: "job not found" }); return; }
+      sendJson(res, 200, { ok: true, job: { id, target: job.target, status: job.status, files: job.files, log: job.log.slice(-40) } });
+      return;
+    }
+    let files = [];
+    try { files = fs.readdirSync(path.join(ROOT_DIR, "dist")).filter((f) => !f.startsWith(".")).map((f) => `dist/${f}`); } catch (_) {}
+    sendJson(res, 200, {
+      ok: true, server: "node",
+      targets: { web: true, windows: true, linux: true, android: true },
+      androidSdk: hasSdk,
+      files
+    });
+    return;
+  }
+  if (req.method === "POST") {
+    const target = String(urlObj.searchParams.get("target") || "").toLowerCase();
+    if (!["web", "windows", "linux", "android", "all"].includes(target)) { sendJson(res, 400, { ok: false, error: "invalid target" }); return; }
+    const running = [...buildJobs.values()].find((j) => j.status === "running");
+    if (running) { sendJson(res, 409, { ok: false, error: `è già in corso un pacchetto (${running.target})` }); return; }
+    const id = `${Date.now().toString(36)}-${target}`;
+    const job = { target, status: "running", log: [], files: [] };
+    buildJobs.set(id, job);
+    const push = (chunk) => String(chunk).split(/\r?\n/).filter(Boolean).forEach((line) => {
+      const m = line.match(/^BUILD_RESULT (.*)$/);
+      if (m) { try { job.files = JSON.parse(m[1]); } catch (_) {} return; }
+      job.log.push(line);
+      if (job.log.length > 400) job.log.shift();
+    });
+    const run = () => {
+      const child = spawn(process.execPath, [path.join(buildDir, "build.js"), target], { cwd: ROOT_DIR });
+      child.stdout.on("data", push);
+      child.stderr.on("data", push);
+      child.on("close", (code) => { job.status = code === 0 ? "done" : "error"; });
+    };
+    if (!fs.existsSync(path.join(buildDir, "node_modules"))) {
+      push("Prima volta: installo gli strumenti di impacchettamento (npm install)…");
+      const npm = spawn(process.platform === "win32" ? "npm.cmd" : "npm", ["install", "--no-audit", "--no-fund"], { cwd: buildDir, shell: process.platform === "win32" });
+      npm.stdout.on("data", push);
+      npm.stderr.on("data", push);
+      npm.on("close", (code) => { if (code === 0) run(); else { push("npm install non riuscito"); job.status = "error"; } });
+    } else {
+      run();
+    }
+    sendJson(res, 200, { ok: true, job: id });
+    return;
+  }
+  sendJson(res, 405, { ok: false, error: "method not allowed" });
+}
+
+// Downloads of the packages in dist/ (streamed: they are large)
+function handleDistDownload(req, res, urlObj) {
+  const name = path.basename(decodeURIComponent(urlObj.pathname));
+  const file = path.join(ROOT_DIR, "dist", name);
+  fs.stat(file, (err, st) => {
+    if (err || !st.isFile()) { res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" }); res.end("404 Not Found"); return; }
+    res.writeHead(200, {
+      "Content-Type": "application/octet-stream",
+      "Content-Length": st.size,
+      "Content-Disposition": `attachment; filename="${name}"`
+    });
+    fs.createReadStream(file).pipe(res);
+  });
+}
+
 const server = http.createServer((req, res) => {
   const urlObj = new URL(req.url || "/", `http://${req.headers.host || "localhost"}`);
   // The editor calls API endpoints with a trailing slash (api/assets/), like the PHP backend
@@ -595,6 +668,16 @@ const server = http.createServer((req, res) => {
 
   if (urlObj.pathname === "/api/dictionaries") {
     handleDictionariesApi(req, res, urlObj);
+    return;
+  }
+
+  if (urlObj.pathname === "/api/build") {
+    handleBuildApi(req, res, urlObj);
+    return;
+  }
+
+  if (urlObj.pathname.startsWith("/dist/")) {
+    handleDistDownload(req, res, urlObj);
     return;
   }
 

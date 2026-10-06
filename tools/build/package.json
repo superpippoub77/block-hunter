@@ -1,0 +1,18 @@
+{
+  "name": "spikecode-packager",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Crea i pacchetti del gioco: web/PWA, Windows, Linux, Android (vedi README.md)",
+  "scripts": {
+    "web": "node build.js web",
+    "windows": "node build.js windows",
+    "linux": "node build.js linux",
+    "android": "node build.js android",
+    "all": "node build.js all"
+  },
+  "dependencies": {
+    "@electron/packager": "^18.3.6",
+    "adm-zip": "^0.5.16",
+    "tar": "^7.4.3"
+  }
+}

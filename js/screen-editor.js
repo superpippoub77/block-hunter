@@ -921,7 +921,8 @@ const ICONS = {
     play: ICON('M6 4l12 7-12 7z'),
     save: ICON('M4 3h11l3 3v13H4z M7 3v5h7V3 M7 19v-6h8v6'),
     level: ICON('M3 3h16v16H3z M3 8.3h16 M3 13.7h16 M8.3 3v16 M13.7 3v16'),
-    undo: ICON('M8 7L4 11l4 4 M4 11h10a4 4 0 0 1 0 8h-3')
+    undo: ICON('M8 7L4 11l4 4 M4 11h10a4 4 0 0 1 0 8h-3'),
+    pkg: ICON('M11 2l8 4.5v9L11 20l-8-4.5v-9z M3 6.5l8 4.5 8-4.5 M11 11v9')
 };
 const WIDGET_ICONS = { coins: '¢', arcadeControls: '⌨', language: '⚑', topTen: '★', menu: '☰', textCycle: '↻' };
 
@@ -947,6 +948,7 @@ function buildShell() {
             ['⇪', 'Importa JSON…', '', () => $('#importFile').click()],
             null,
             ['▶', 'Prova nel gioco', '', playInGame],
+            ['📦', 'Crea pacchetto per… (web, Windows, Linux, Android)', '', () => window.SpikePackager?.open()],
             ['▦', 'Editor dei livelli', '', () => { window.location.href = 'level_editor.html'; }]
         ] },
         { label: 'Inserisci ▾', items: [
@@ -1007,6 +1009,7 @@ function buildShell() {
     tool('railPlay', ICONS.play, 'Riproduci', 'Riproduci la timeline', togglePlay, 'Spazio');
     tool('railSave', ICONS.save, 'Salva', 'Salva la schermata', saveScreen, 'Ctrl+S');
     tool('railUndo', ICONS.undo, 'Annulla', 'Annulla l\'ultima modifica', undo, 'Ctrl+Z');
+    tool('railPackage', ICONS.pkg, 'Crea pacchetto', 'Crea il gioco per web, Windows, Linux, Android', () => window.SpikePackager?.open());
     tool('railLevels', ICONS.level, 'Editor livelli', 'Passa all\'editor dei livelli', () => { window.location.href = 'level_editor.html'; });
     const exp = store.get('se-rail-expanded');
     setRail(exp === null ? true : exp === '1');

@@ -147,9 +147,11 @@
             #dom-hud .dom-hud-item { font-size: 18px; padding: 10px 12px; }
         }
     </style>
-    <link rel="manifest" href="/manifest.json">
+    <link rel="manifest" href="manifest.json">
+    <link rel="icon" href="assets/icons/icon-192.png">
+    <link rel="apple-touch-icon" href="assets/icons/icon-192.png">
+    <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="theme-color" content="#000000">
-    <link rel="icon" href="images/title.png" type="image/png">
 </head>
 
 <body>
@@ -175,7 +177,13 @@
             <button id="actionBtn" class="touch-control" aria-label="Azione">A</button>
         </div>
     </div>
-    <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
+    <script src="vendor/phaser.min.js"></script>
+    <script>
+        // Installable and playable offline (PWA); not inside the desktop/mobile app shells
+        if ('serviceWorker' in navigator && location.protocol === 'https:' && !window.SPIKE_NATIVE) {
+            window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => { }));
+        }
+    </script>
     <script type="module" src="game.js"></script>
         <script src="js/touch-controls.js"></script>
     <script>

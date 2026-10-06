@@ -31,6 +31,8 @@ jobs:
             **/.vscode/**
             **/node_modules/**
             **/tools/**
+            dist/**
+            bck/**
             README*
             package.json
             server.js
