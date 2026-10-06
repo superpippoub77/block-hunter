@@ -9,7 +9,7 @@ import { createTopTenScene } from './kit/blocks/top-ten/index.js';
 import { createCreditsScene } from './kit/blocks/credits/index.js';
 import { createConfigScene } from './kit/blocks/config/index.js';
 import { createLevelSelectScene } from './kit/blocks/level-select/index.js';
-import { createGameScene } from './module/scenes/gameScene.js';
+import { createGameScene } from './kit/gameplay/gameScene.js';
 import { createBonusScene } from './module/scenes/bonusScene.js';
 import { createGameOverScene } from './kit/blocks/game-over/index.js';
 import { createLanguageCarousel } from './kit/blocks/language/index.js';

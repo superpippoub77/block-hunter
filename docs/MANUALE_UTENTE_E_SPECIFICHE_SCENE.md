@@ -267,7 +267,7 @@ Punti modifica rapida:
 
 ## 3.7 GameScene (core gameplay)
 
-File: `module/scenes/gameScene.js`
+File: `kit/gameplay/gameScene.js (+ kit/gameplay/scene/*.js)`
 
 Scopo:
 - gameplay completo: mappa, player, nemici, oggetti, HUD, timer, progressione
@@ -455,7 +455,7 @@ File: `module/preloadUtils.js`
 
 Esempio: cambiare solo il timer HUD in GameScene.
 
-1. Apri `module/scenes/gameScene.js`.
+1. Apri `kit/gameplay/gameScene.js (+ kit/gameplay/scene/*.js)`.
 2. Cerca `setupLevelTimer()` e `updateTimerBar()`.
 3. Cerca `createUI()` per label/timer icone.
 4. Applica modifica solo in quei metodi.
@@ -790,7 +790,7 @@ Nebbia:
 
 ## 8. Reference rapido file per tipo modifica
 
-- gameplay core: `module/scenes/gameScene.js`
+- gameplay core: `kit/gameplay/gameScene.js (+ kit/gameplay/scene/*.js)`
 - scene menu: `module/scenes/attractScene.js`, `module/scenes/topTenScene.js`, `module/scenes/creditsScene.js`
 - preload asset: `module/scenes/preloadScene.js`, `module/preloadUtils.js`
 - selezione difficolta: `module/scenes/levelSelectScene.js`
