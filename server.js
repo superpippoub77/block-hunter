@@ -543,6 +543,123 @@ function handleScreensApi(req, res, urlObj) {
   sendJson(res, 405, { ok: false, error: "method not allowed" });
 }
 
+// Game levels (data/level/<id>.json) with versions for the level editor:
+//   GET  /api/levels                         -> list of levels
+//   GET  /api/levels?id=level10              -> level json
+//   GET  /api/levels?id=level10&versions=1   -> versions (newest first)
+//   GET  /api/levels?id=level10&version=V    -> one version
+//   POST /api/levels?id=level10 {data, note} -> saves the level; every save is kept as a version
+//        in data/level-versions/<id>/ (the first save also keeps the original file)
+const LEVEL_ID_RE = /^[a-z0-9_-]+$/i;
+const LEVEL_VERSION_RE = /^\d{8}-\d{6}-\d{3}$/;
+function levelVersionStamp(date = new Date()) {
+  const p = (n, l = 2) => String(n).padStart(l, "0");
+  return `${date.getFullYear()}${p(date.getMonth() + 1)}${p(date.getDate())}-${p(date.getHours())}${p(date.getMinutes())}${p(date.getSeconds())}-${p(date.getMilliseconds(), 3)}`;
+}
+function levelSummary(data) {
+  const tiles = data && data.map && Array.isArray(data.map.tiles) ? data.map.tiles : [];
+  return {
+    levelId: data && data.id != null ? String(data.id) : "",
+    cols: Number(data && data.map && data.map.cols) || (tiles[0] ? tiles[0].length : 0),
+    rows: Number(data && data.map && data.map.rows) || tiles.length
+  };
+}
+function writeLevelVersion(id, data, note, cb) {
+  const dir = path.join(ROOT_DIR, "data", "level-versions", id);
+  try { fs.mkdirSync(dir, { recursive: true }); } catch (_) {}
+  let stamp = levelVersionStamp();
+  while (fs.existsSync(path.join(dir, `${stamp}.json`))) stamp = levelVersionStamp(new Date(Date.now() + 1));
+  const payload = { version: stamp, savedAt: new Date().toISOString(), note: String(note || "").slice(0, 200), data };
+  fs.writeFile(path.join(dir, `${stamp}.json`), `${JSON.stringify(payload, null, 2)}\n`, "utf8", (err) => cb(err, stamp));
+}
+function handleLevelsApi(req, res, urlObj) {
+  const levelDir = path.join(ROOT_DIR, "data", "level");
+  const id = String(urlObj.searchParams.get("id") || "").trim();
+  if (id && !LEVEL_ID_RE.test(id)) { sendJson(res, 400, { ok: false, error: "invalid level id" }); return; }
+  const versionsDir = id ? path.join(ROOT_DIR, "data", "level-versions", id) : null;
+  if (req.method === "GET") {
+    if (!id) {
+      fs.readdir(levelDir, (err, files) => {
+        const items = (files || []).filter((f) => f.endsWith(".json")).sort().map((f) => {
+          const levelIdName = f.replace(/\.json$/, "");
+          let summary = {};
+          let modified = null;
+          try {
+            const full = path.join(levelDir, f);
+            modified = fs.statSync(full).mtime.toISOString();
+            summary = levelSummary(JSON.parse(fs.readFileSync(full, "utf8")));
+          } catch (_) { summary = { invalid: true }; }
+          let versions = 0;
+          try { versions = fs.readdirSync(path.join(ROOT_DIR, "data", "level-versions", levelIdName)).filter((v) => v.endsWith(".json")).length; } catch (_) {}
+          return { id: levelIdName, file: `data/level/${f}`, modified, versions, ...summary };
+        });
+        sendJson(res, 200, { ok: true, items });
+      });
+      return;
+    }
+    if (urlObj.searchParams.get("versions")) {
+      fs.readdir(versionsDir, (err, files) => {
+        const items = (files || []).filter((f) => LEVEL_VERSION_RE.test(f.replace(/\.json$/, ""))).sort().reverse().map((f) => {
+          try {
+            const v = JSON.parse(fs.readFileSync(path.join(versionsDir, f), "utf8"));
+            return { version: v.version, savedAt: v.savedAt, note: v.note || "", ...levelSummary(v.data) };
+          } catch (_) { return { version: f.replace(/\.json$/, ""), invalid: true }; }
+        });
+        sendJson(res, 200, { ok: true, id, items });
+      });
+      return;
+    }
+    const version = String(urlObj.searchParams.get("version") || "").trim();
+    if (version) {
+      if (!LEVEL_VERSION_RE.test(version)) { sendJson(res, 400, { ok: false, error: "invalid version" }); return; }
+      fs.readFile(path.join(versionsDir, `${version}.json`), "utf8", (err, content) => {
+        if (err) { sendJson(res, 404, { ok: false, error: "version not found" }); return; }
+        try { const v = JSON.parse(content); sendJson(res, 200, { ok: true, id, version, note: v.note || "", savedAt: v.savedAt, data: v.data }); }
+        catch (_e) { sendJson(res, 500, { ok: false, error: "invalid version json" }); }
+      });
+      return;
+    }
+    fs.readFile(path.join(levelDir, `${id}.json`), "utf8", (err, content) => {
+      if (err) { sendJson(res, 404, { ok: false, error: "level not found" }); return; }
+      try { sendJson(res, 200, { ok: true, id, data: JSON.parse(content) }); }
+      catch (_e) { sendJson(res, 500, { ok: false, error: "invalid level json" }); }
+    });
+    return;
+  }
+  if (req.method === "POST") {
+    if (!id) { sendJson(res, 400, { ok: false, error: "missing id" }); return; }
+    parseJsonBody(req, (err, body) => {
+      const data = body && body.data;
+      if (err || !data || typeof data !== "object" || Array.isArray(data) || !data.map) {
+        sendJson(res, 400, { ok: false, error: "level data must be an object with a map" });
+        return;
+      }
+      const file = path.join(levelDir, `${id}.json`);
+      const hasVersions = (() => { try { return fs.readdirSync(versionsDir).some((f) => f.endsWith(".json")); } catch (_) { return false; } })();
+      const saveNew = () => {
+        fs.writeFile(file, `${JSON.stringify(data, null, 2)}\n`, "utf8", (wErr) => {
+          if (wErr) { sendJson(res, 500, { ok: false, error: wErr.message }); return; }
+          writeLevelVersion(id, data, body.note || "Salvataggio", (vErr, version) => {
+            if (vErr) { sendJson(res, 500, { ok: false, error: vErr.message }); return; }
+            sendJson(res, 200, { ok: true, id, file: `data/level/${id}.json`, version });
+          });
+        });
+      };
+      fs.readFile(file, "utf8", (_e, current) => {
+        // first save of an existing level: keep the original as a version, so it can always come back
+        if (current != null && !hasVersions) {
+          let original = null;
+          try { original = JSON.parse(current); } catch (_) { original = null; }
+          if (original) { writeLevelVersion(id, original, "Originale (prima del primo salvataggio dall'editor)", () => saveNew()); return; }
+        }
+        saveNew();
+      });
+    });
+    return;
+  }
+  sendJson(res, 405, { ok: false, error: "method not allowed" });
+}
+
 // Game manifest (game.manifest.json): blocks, screens and scene flow
 function handleManifestApi(req, res) {
   const file = path.join(ROOT_DIR, "game.manifest.json");
@@ -678,6 +795,11 @@ const server = http.createServer((req, res) => {
 
   if (urlObj.pathname.startsWith("/dist/")) {
     handleDistDownload(req, res, urlObj);
+    return;
+  }
+
+  if (urlObj.pathname === "/api/levels") {
+    handleLevelsApi(req, res, urlObj);
     return;
   }
 

@@ -42,6 +42,7 @@
     "*.ttf_old",
     "*.json_old",
     "*.json_old2",
-    "README.md"
+    "README.md",
+    "level-versions"
   ]
 }

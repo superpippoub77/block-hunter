@@ -38,6 +38,7 @@ const LAYOUT_ICONS = {
   play: SC_ICON("M6 4l12 7-12 7z"),
   package: SC_ICON("M11 2l8 4.5v9L11 20l-8-4.5v-9z M3 6.5l8 4.5 8-4.5 M11 11v9 M7 4.3l8 4.4"),
   screens: SC_ICON("M3 5h16v11H3z M8 19h6 M11 16v3 M9 8.5l4 2.5-4 2.5z"),
+  history: SC_ICON("M4 11a7 7 0 1 0 2-5 M4 3v3.5h3.5 M11 7v4l3 2"),
   select: SC_ICON("M5 3l11 7-5 1.2 3 5.8-2.2 1.1-3-5.9L5 16z"),
   layers: SC_ICON("M11 3l8 4-8 4-8-4z M3 11l8 4 8-4 M3 15l8 4 8-4"),
   panel: SC_ICON("M3 4h16v14H3z M13 4v14")
@@ -68,11 +69,13 @@ const LAYOUT = {
     [{ type: "button", id: "btnSidebar", cls: "sidebar-btn", html: LAYOUT_ICONS.menu, title: "Comprimi o espandi la barra degli strumenti", onClick: () => EditorLayout.toggleRailExpanded() }],
     [{ type: "brand", html: `<span class="brand-mark">▦</span><span class="brand-name">Block<b>Hunter</b> <span class="brand-sub">Editor</span></span>` }],
     [{ type: "input", id: "topLevelId", value: "", title: "ID del livello (es. 1.0): è anche il nome del file esportato" }],
+    [{ type: "button", id: "gameLevelBadge", cls: "game-level-badge", text: "", title: "Livello del gioco aperto · clic = versioni", onClick: () => window.LevelVersions?.versionsDialog() }],
     [{ type: "button", id: "btnReady", text: "● Livello vuoto", title: "Stato del livello · clic per esportare il file JSON (Ctrl+S)", onClick: () => clickEl("#exportBtn") }],
     "spacer",
     [
       { type: "button", id: "btnPlayTest", cls: "play", text: "▶ Prova livello", title: "Gioca subito il livello che stai creando (F5)", onClick: () => api()?.playTestLevel?.() },
-      { type: "button", id: "btnOpenTop", text: "⇪ Apri", title: "Importa un livello JSON (Ctrl+O)", onClick: () => clickEl("#importTopBtn") },
+      { type: "button", id: "btnOpenTop", text: "⇪ Apri", title: "Apri un livello del gioco (data/level) o importa un file JSON (Ctrl+O)", onClick: () => window.LevelVersions?.openDialog() },
+      { type: "button", id: "btnSaveGame", text: "💾 Salva", title: "Salva il livello nel gioco con una nuova versione (Ctrl+Shift+S)", onClick: () => window.LevelVersions?.saveDialog() },
       { type: "button", id: "btnHelpTop", text: "?", title: "Guida e scorciatoie (F1)", onClick: () => EditorLayout.showHelp() }
     ]
   ],
@@ -81,7 +84,11 @@ const LAYOUT = {
   menus: [
     {
       label: "File ▾", pill: true, items: [
-        { icon: "⇪", label: "Importa livello JSON…", shortcut: "Ctrl+O", onClick: () => clickEl("#importTopBtn") },
+        { icon: "🎮", label: "Apri livello del gioco…", shortcut: "Ctrl+O", onClick: () => window.LevelVersions?.openDialog() },
+        { icon: "💾", label: "Salva nel gioco (nuova versione)", shortcut: "Ctrl+Shift+S", onClick: () => window.LevelVersions?.saveDialog() },
+        { icon: "🕘", label: "Versioni del livello…", onClick: () => window.LevelVersions?.versionsDialog() },
+        { separator: true },
+        { icon: "⇪", label: "Importa livello JSON…", onClick: () => clickEl("#importTopBtn") },
         { icon: "⬇", label: "Esporta file JSON", shortcut: "Ctrl+S", onClick: () => clickEl("#exportBtn") },
         { icon: "⧉", label: "Copia JSON negli appunti", onClick: () => clickEl("#copyJsonBtn") },
         { separator: true },
@@ -160,7 +167,10 @@ const LAYOUT = {
     { id: "railZoomGame", icon: "oneToOne", label: "Scala di gioco", key: "0", title: "1 cella = 1 tile del gioco", onClick: () => EditorLayout.zoomGame() },
 
     { section: "File" },
-    { id: "railImport", icon: "open", label: "Importa JSON", key: "Ctrl+O", title: "Importa un livello JSON", onClick: () => clickEl("#importTopBtn") },
+    { id: "railOpenGame", icon: "open", label: "Livelli del gioco", key: "Ctrl+O", title: "Apri un livello del gioco (data/level) e le sue versioni", onClick: () => window.LevelVersions?.openDialog() },
+    { id: "railSaveGame", icon: "save", label: "Salva nel gioco", key: "Ctrl+⇧+S", title: "Salva nel gioco: ogni salvataggio è una versione a cui tornare", onClick: () => window.LevelVersions?.saveDialog() },
+    { id: "railVersions", icon: "history", label: "Versioni", title: "Cronologia del livello: apri o ripristina una versione", onClick: () => window.LevelVersions?.versionsDialog() },
+    { id: "railImport", icon: "json", label: "Importa JSON", title: "Importa un livello da un file JSON", onClick: () => clickEl("#importTopBtn") },
     { id: "railExport", icon: "json", label: "Esporta JSON", key: "Ctrl+S", title: "Scarica il livello come file JSON", onClick: () => clickEl("#exportBtn") },
     { id: "railSaveLocal", icon: "save", label: "Salva nel browser", title: "Salva il livello nel browser (localStorage)", onClick: () => clickEl("#saveLocalBtn") },
     { id: "railPlay", icon: "play", label: "Prova livello", key: "F5", title: "Gioca subito il livello che stai creando", onClick: () => api()?.playTestLevel?.() },
@@ -633,8 +643,9 @@ const EditorLayout = {
       if (e.key === "F1") { e.preventDefault(); this.showHelp(); return; }
       if (e.key === "F5" && !e.ctrlKey && !e.metaKey) { e.preventDefault(); api()?.playTestLevel?.(); return; }
       const mod = e.ctrlKey || e.metaKey;
+      if (mod && !e.altKey && e.shiftKey && e.key.toLowerCase() === "s") { e.preventDefault(); window.LevelVersions?.saveDialog(); return; }
       if (mod && !e.altKey && e.key.toLowerCase() === "s") { e.preventDefault(); clickEl("#exportBtn"); return; }
-      if (mod && !e.altKey && e.key.toLowerCase() === "o") { e.preventDefault(); clickEl("#importTopBtn"); return; }
+      if (mod && !e.altKey && e.key.toLowerCase() === "o") { e.preventDefault(); window.LevelVersions?.openDialog(); return; }
       const t = e.target || {};
       if (t.matches?.("input,select,textarea") || t.isContentEditable) return;
       if (mod || e.altKey) return;
@@ -657,7 +668,7 @@ const EditorLayout = {
   },
 
   // ------------------------------------------- finestre (come .modal-box)
-  modal(title, html) {
+  modal(title, html, opts = {}) {
     let ov = $q(".modal-overlay");
     if (!ov) {
       ov = document.createElement("div");
@@ -667,6 +678,7 @@ const EditorLayout = {
       ov.querySelector(".modal-head button").addEventListener("click", () => this.closeModal());
       document.body.appendChild(ov);
     }
+    ov.querySelector(".modal-box").classList.toggle("modal-wide", !!opts.wide);
     ov.querySelector("h3").textContent = title;
     ov.querySelector(".modal-body").innerHTML = html;
     ov.classList.add("open");
@@ -679,6 +691,7 @@ const EditorLayout = {
     const mod = isMac ? "⌘" : "Ctrl";
     const keys = [
       ["1 · 2 · 3 · 4", "Disegna · Zone invisibili · Layer · Seleziona oggetti"],
+      [`${mod}+O`, "Apri un livello del gioco"], [`${mod}+⇧+S`, "Salva nel gioco (ogni salvataggio è una versione)"],
       ["Seleziona: clic", "Sceglie l'oggetto (clic di nuovo = oggetto sotto, se la cella ne ha due)"],
       ["Q E / ← →", "Ruota l'oggetto selezionato di 90°"], ["H · V", "Specchia orizzontale · verticale"],
       ["PagSu · PagGiù", "Ingrandisci · rimpicciolisci l'oggetto"], ["Canc", "Elimina solo l'oggetto selezionato"],
