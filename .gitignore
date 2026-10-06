@@ -6,3 +6,4 @@ tools/
 Thumbs.db
 dist/
 tools/build/node_modules/
+bck/

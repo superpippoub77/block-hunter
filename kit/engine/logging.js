@@ -1,3 +1,5 @@
+import { kitGame } from '../core/flow.js';
+
 export const LOG_LEVELS = Object.freeze({
     TRACE: 10,
     DEBUG: 20,
@@ -30,7 +32,7 @@ export function readInitialLogLevel() {
     } catch (e) { /* ignore */ }
 
     try {
-        const fromStorage = localStorage.getItem('blockHunterLogLevel');
+        const fromStorage = localStorage.getItem(kitGame.storageKey('LogLevel'));
         if (fromStorage) return normalizeLogLevel(fromStorage);
     } catch (e) { /* ignore */ }
 
@@ -80,7 +82,7 @@ export function createLogger() {
         },
         setLevel(nextLevel) {
             activeLevel = normalizeLogLevel(nextLevel);
-            try { localStorage.setItem('blockHunterLogLevel', LOG_LEVEL_NAMES[activeLevel]); } catch (e) { /* ignore */ }
+            try { localStorage.setItem(kitGame.storageKey('LogLevel'), LOG_LEVEL_NAMES[activeLevel]); } catch (e) { /* ignore */ }
             write(LOG_LEVELS.INFO, 'LOGGER', `Log level impostato a ${LOG_LEVEL_NAMES[activeLevel]}`);
         },
         trace(scope, message, ...meta) {

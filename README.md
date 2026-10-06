@@ -2,6 +2,11 @@
 
 Block Hunter è un piccolo gioco arcade in HTML5/Canvas ispirato ai classici cabinati: muovi il personaggio, raccogli gemme e sopravvivi alle ondate di massi.
 
+È costruito sul **motore SpikeCode** (cartella `kit/`), separato dal gioco e riutilizzabile per
+altri giochi con la stessa logica: `game.js` dichiara solo ciò che è di Block Hunter, il codice
+proprio del gioco è in `game/`, i contenuti in `data/` e `assets/`. Guida del motore e creazione
+di un nuovo gioco: [`kit/ENGINE.md`](kit/ENGINE.md).
+
 Caratteristiche principali
 
 - Grafica pixel-art con renderer programmatico e supporto a sprite-sheet 4×4 (`images/sprite.png`).

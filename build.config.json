@@ -22,7 +22,7 @@
     "manifest.json",
     "sw.js",
     "vendor",
-    "module",
+    "game",
     "kit",
     "data",
     "assets",

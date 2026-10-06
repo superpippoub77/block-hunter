@@ -48,10 +48,10 @@ Nota: il gioco usa asset locali (immagini/audio/json). Evita apertura diretta fi
 File: `game.js`
 
 Responsabilita principali:
-- importa tutte le scene da `module/scenes/*.js`
-- costruisce `sceneDeps`
-- crea classi scena con `createXScene(sceneDeps)`
-- espone `window.inizialization`
+- importa tutte le scene da `kit/engine/index.js` (motore SpikeCode) e `game/scenes/*.js` (scene proprie del gioco)
+- chiama `startSpikeGame({...})` con identità, sprite, regole dei livelli e scene proprie
+- il motore costruisce i servizi (`services`), crea le scene con `createXScene(services)`
+  ed espone `window.inizialization` (guida completa: `kit/ENGINE.md`)
 
 Chiamata principale:
 ```js
@@ -60,7 +60,7 @@ window.inizialization = inizialization;
 
 ### 2.2 Bootstrap Phaser
 
-File: `module/bootstrap.js`
+File: `kit/engine/bootstrap.js`
 
 Funzione:
 ```js
@@ -96,7 +96,7 @@ Ogni scena riceve `sceneDeps` con:
 
 ## 3.1 PreloadScene
 
-File: `module/scenes/preloadScene.js`
+File: `kit/engine/preloadScene.js`
 
 Scopo:
 - mostra loading
@@ -124,7 +124,7 @@ this.applyPreloadLayout(this.scale.width, this.scale.height);
 
 ## 3.2 AttractScene
 
-File: `module/scenes/attractScene.js`
+File: `kit/blocks/attract/index.js`
 
 Scopo:
 - schermata iniziale con titolo
@@ -157,7 +157,7 @@ Punti modifica rapida:
 
 ## 3.3 TopTenScene
 
-File: `module/scenes/topTenScene.js`
+File: `kit/blocks/top-ten/index.js`
 
 Scopo:
 - mostra classifica top score
@@ -184,7 +184,7 @@ Punti modifica rapida:
 
 ## 3.4 CreditsScene
 
-File: `module/scenes/creditsScene.js`
+File: `kit/blocks/credits/index.js`
 
 Scopo:
 - mostra credits progetto
@@ -212,7 +212,7 @@ Punti modifica rapida:
 
 ## 3.5 ConfigScene
 
-File: `module/scenes/configScene.js`
+File: `kit/blocks/config/index.js`
 
 Scopo:
 - editor runtime dei parametri di gioco
@@ -240,7 +240,7 @@ Punti modifica rapida:
 
 ## 3.6 LevelSelectScene
 
-File: `module/scenes/levelSelectScene.js`
+File: `kit/blocks/level-select/index.js`
 
 Scopo:
 - scelta difficolta prima della partita
@@ -320,7 +320,7 @@ Punti modifica rapida:
 
 ## 3.8 BonusScene
 
-File: `module/scenes/bonusScene.js`
+File: `game/scenes/bonusScene.js`
 
 Scopo:
 - minigioco bonus separato
@@ -345,7 +345,7 @@ Parametri `init(data)` tipici:
 
 ## 3.9 GameOverScene
 
-File: `module/scenes/gameOverScene.js`
+File: `kit/blocks/game-over/index.js`
 
 Scopo:
 - game over
@@ -373,7 +373,7 @@ Flusso top score:
 
 ## 4.1 createCreditsManager
 
-File: `module/creditsManager.js`
+File: `kit/core/coins.js`
 
 Firma:
 ```js
@@ -405,7 +405,7 @@ this.creditManager = createCreditsManager(this, {
 
 ## 4.2 createLanguageCarousel
 
-File: `module/languageCarousel.js`
+File: `kit/blocks/language/index.js`
 
 Firma:
 ```js
@@ -430,7 +430,7 @@ Return:
 
 ## 4.3 State utils
 
-File: `module/stateUtils.js`
+File: `kit/engine/state.js`
 
 Funzioni:
 - `isFreeplayEnabled(config)`
@@ -441,11 +441,11 @@ Funzioni:
 
 ## 4.4 Config and preload utils
 
-File: `module/configUtils.js`
+File: `kit/engine/config.js`
 - `mergeLocalConfig(config, objectNativeSize, logger)`
 - `loadTranslations(lang, translations, logger, callback)`
 
-File: `module/preloadUtils.js`
+File: `kit/engine/preload.js`
 - `queueLegacyPreloadAssets(scene, logger, preloadSpritesheetConfigs)`
 - `queueAssetsFromManifest(scene, manifest, logger, preloadSpritesheetConfigs)`
 
@@ -791,12 +791,12 @@ Nebbia:
 ## 8. Reference rapido file per tipo modifica
 
 - gameplay core: `kit/gameplay/gameScene.js (+ kit/gameplay/scene/*.js)`
-- scene menu: `module/scenes/attractScene.js`, `module/scenes/topTenScene.js`, `module/scenes/creditsScene.js`
-- preload asset: `module/scenes/preloadScene.js`, `module/preloadUtils.js`
-- selezione difficolta: `module/scenes/levelSelectScene.js`
-- config runtime: `module/scenes/configScene.js`
-- game over/top score: `module/scenes/gameOverScene.js`
-- bootstrap/scaling: `module/bootstrap.js`
+- scene menu: `kit/blocks/attract/index.js`, `kit/blocks/top-ten/index.js`, `kit/blocks/credits/index.js`
+- preload asset: `kit/engine/preloadScene.js`, `kit/engine/preload.js`
+- selezione difficolta: `kit/blocks/level-select/index.js`
+- config runtime: `kit/blocks/config/index.js`
+- game over/top score: `kit/blocks/game-over/index.js`
+- bootstrap/scaling: `kit/engine/bootstrap.js`
 - wiring globale: `game.js`
 - dati livelli: `data/level/*.json`
 - traduzioni: `data/dic/*.json`

@@ -721,3 +721,17 @@ const EditorLayout = {
 
 window.EditorLayout = EditorLayout;
 EditorLayout.build();
+
+// The editor belongs to the SpikeCode engine: the name shown is the game's (game.manifest.json)
+fetch("game.manifest.json", { cache: "no-store" })
+  .then((r) => (r.ok ? r.json() : null))
+  .then((m) => {
+    const title = m?.game?.title;
+    if (!title) return;
+    const name = $q("#topbarLeft .brand-name");
+    const words = String(title).trim().split(/\s+/);
+    const esc = (t) => String(t).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+    if (name) name.innerHTML = `${esc(words[0])}${words.length > 1 ? `<b>${esc(words.slice(1).join(" "))}</b>` : ""} <span class="brand-sub">Editor</span>`;
+    document.title = `${title} · Level Editor`;
+  })
+  .catch(() => { });

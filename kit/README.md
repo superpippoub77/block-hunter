@@ -4,8 +4,14 @@ Blocchi riutilizzabili per giochi arcade Phaser 3 (SpikeCode). Ogni blocco è un
 autonoma che si copia, si aggiorna e si condivide tra giochi diversi: Block Hunter è il primo
 gioco che li usa.
 
+> Il kit è anche il **motore SpikeCode** completo (`kit/engine/`, `kit/gameplay/`): un gioco si
+> avvia con `startSpikeGame({...})` e un gioco nuovo si crea con `tools/new-game/new-game.js`.
+> Guida: [`ENGINE.md`](ENGINE.md).
+
 ```
 kit/
+  engine/                avvio del gioco: startSpikeGame, preload, config, log, livelli, mapping
+  gameplay/              la partita (mappa, player, nemici, oggetti, entità da dati)
   core/                  servizi comuni, senza nulla di specifico di un gioco
     flow.js              flusso tra le scene e identità del gioco (dal manifest)
     blocks.js            lettura del manifest e controllo dei blocchi all'avvio
@@ -71,8 +77,8 @@ Ogni gioco ha un `game.manifest.json` nella sua cartella principale:
 
 ## Servizi
 
-I servizi sono un unico oggetto passato a ogni factory (in Block Hunter è `sceneDeps` in
-`game.js`). Quelli usati dai blocchi del kit:
+I servizi sono un unico oggetto passato a ogni factory (lo crea `startSpikeGame` in
+`kit/engine/index.js`; un gioco ne aggiunge altri con l'opzione `services`). Quelli usati dai blocchi del kit:
 
 | Servizio | Cosa fa |
 |---|---|
@@ -91,6 +97,10 @@ I servizi sono un unico oggetto passato a ogni factory (in Block Hunter è `scen
 Per i dettagli di ciascun blocco vale il suo `block.json`.
 
 ## Usare il kit in un altro gioco
+
+Il modo più semplice è `node tools/new-game/new-game.js ../nuovo-gioco --title "Nuovo gioco"`
+(vedi `ENGINE.md`): tutto il motore è già collegato. Per usare solo alcuni blocchi in un gioco
+fatto diversamente:
 
 1. Aggiungi il kit al gioco (vedi sotto) e crea il suo `game.manifest.json`.
 2. In `game.js` importa le factory dei blocchi che ti servono, per esempio

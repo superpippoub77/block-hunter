@@ -1,7 +1,9 @@
+import { kitGame } from '../core/flow.js';
+
 export function mergeLocalConfig(config, objectNativeSize, logger) {
     logger.trace('mergeLocalConfig', 'Tentativo merge config locale');
     try {
-        const saved = localStorage.getItem('blockHunterConfig');
+        const saved = localStorage.getItem(kitGame.storageKey('Config'));
         if (saved) {
             const parsed = JSON.parse(saved);
             if (parsed && parsed.__fullConfig === true && parsed.values && typeof parsed.values === 'object') {

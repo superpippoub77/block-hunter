@@ -66,7 +66,8 @@ const {
     addSpikeCredit,
     createCreditsManager,
     createLanguageCarousel,
-    kitFlow
+    kitFlow,
+    kitGame
 } = deps;
 class GameScene extends Phaser.Scene {
         // Mostra un messaggio a tutto schermo e lo rimuove dopo alcuni secondi
@@ -777,7 +778,7 @@ class GameScene extends Phaser.Scene {
         // restore any previously placed planks for this level (persisted in localStorage)
         try {
             if (!Array.isArray(GAME_STATE.placedPlanks)) {
-                const saved = localStorage.getItem('blockHunterPlacedPlanks');
+                const saved = localStorage.getItem(kitGame.storageKey('PlacedPlanks'));
                 GAME_STATE.placedPlanks = saved ? JSON.parse(saved) : [];
             }
             this.restorePlacedPlanks && this.restorePlacedPlanks();

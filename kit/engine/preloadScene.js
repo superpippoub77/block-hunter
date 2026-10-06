@@ -49,7 +49,8 @@ const {
     parseExitTargetLevel,
     addSpikeCredit,
     createCreditsManager,
-    createLanguageCarousel
+    createLanguageCarousel,
+    kitGame
 } = deps;
 class PreloadScene extends Phaser.Scene {
     constructor() {
@@ -133,7 +134,7 @@ class PreloadScene extends Phaser.Scene {
         // under test ("▶ Prova livello") and its interface preferences.
         try {
             if (window && window.localStorage) {
-                const keep = (k) => k === 'blockHunterLevelEditorState' || k === 'blockHunterTestLevel' || /^bh-/.test(k);
+                const keep = (k) => k === kitGame.storageKey('LevelEditorState') || k === kitGame.storageKey('TestLevel') || /^bh-/.test(k);
                 const keys = [];
                 for (let i = 0; i < localStorage.length; i++) keys.push(localStorage.key(i));
                 keys.forEach((k) => { if (k && !keep(k)) localStorage.removeItem(k); });
@@ -383,9 +384,9 @@ class PreloadScene extends Phaser.Scene {
                 startupConfigRequested = Boolean(keyT && keyT.isDown);
             } catch (e) { }
             try {
-                if (window && window.BH_STARTUP_CONFIG === true) {
+                if (window && window.SPIKE_STARTUP_CONFIG === true) {
                     startupConfigRequested = true;
-                    window.BH_STARTUP_CONFIG = false;
+                    window.SPIKE_STARTUP_CONFIG = false;
                 }
             } catch (e) { }
 
@@ -399,7 +400,7 @@ class PreloadScene extends Phaser.Scene {
             try {
                 const qs = new URLSearchParams(window.location.search || '');
                 if (qs.has('testLevel')) {
-                    const raw = localStorage.getItem('blockHunterTestLevel');
+                    const raw = localStorage.getItem(kitGame.storageKey('TestLevel'));
                     const data = raw ? JSON.parse(raw) : null;
                     if (data && typeof data === 'object') {
                         const slot = 0;

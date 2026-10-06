@@ -23,7 +23,18 @@ const OBJECT_FRAMES = {
     helmet: 3
 };
 
-const STORAGE_KEY = 'blockHunterLevelEditorState';
+// Game identity from game.manifest.json: browser keys are namespaced per game
+// (storagePrefix "blockHunter" → blockHunterLevelEditorState, blockHunterTestLevel…)
+let STORAGE_PREFIX = 'blockHunter';
+const gameManifestReady = fetch('game.manifest.json', { cache: 'no-store' })
+    .then((resp) => (resp.ok ? resp.json() : null))
+    .then((manifest) => {
+        if (manifest?.game?.storagePrefix) STORAGE_PREFIX = String(manifest.game.storagePrefix);
+        try { window.SPIKE_GAME_MANIFEST = manifest; } catch (e) { }
+        return manifest;
+    })
+    .catch(() => null);
+const storageKey = (name) => `${STORAGE_PREFIX}${name}`;
 const WALL_TOKEN_REGEX = /^w(\d)(\d)(\d)([hv0])$/i;
 const COMMON_ASSETS_DIR = 'assets/images/common';
 const BG_ASSETS_DIR = 'assets/images/background';
@@ -204,7 +215,7 @@ function resolvePlayerRadius(cfg) {
 
 function applySavedGameConfig() {
     try {
-        const saved = JSON.parse(localStorage.getItem('blockHunterConfig') || 'null');
+        const saved = JSON.parse(localStorage.getItem(storageKey('Config')) || 'null');
         const values = (saved && saved.__fullConfig === true && saved.values) ? saved.values : saved;
         if (values && Number(values.tileSize) > 0) GAME_TILE_SIZE = Number(values.tileSize);
         if (values && Number(values.width) > 0) GAME_VIEW_WIDTH = Number(values.width);
@@ -221,6 +232,7 @@ const gameConfigReady = fetch(CONFIG_JSON_PATH, { cache: 'no-store' })
         if (cfg) GAME_PLAYER_RADIUS = resolvePlayerRadius(cfg);
     })
     .catch(() => { /* keep defaults */ })
+    .then(() => gameManifestReady)
     .then(() => applySavedGameConfig());
 
 // Data-driven entities (data/game-entities-mapping.json entries with a "behaviour"): the
@@ -3118,7 +3130,7 @@ const phaserConfig = {
 };
 
 // boot after the data entities are known (their icons are loaded in preload)
-editorEntitiesReady.then(() => new Phaser.Game(phaserConfig));
+Promise.all([editorEntitiesReady, gameManifestReady]).then(() => new Phaser.Game(phaserConfig));
 
 function getScene() {
     return window.__levelEditorScene || null;
@@ -3130,9 +3142,9 @@ function playTestLevel() {
     let level;
     try { level = readLevelFromForm(); } catch (e) { setStatus(`Livello non valido: ${e.message}`, true); return; }
     try {
-        localStorage.setItem('blockHunterTestLevel', JSON.stringify(level));
+        localStorage.setItem(storageKey('TestLevel'), JSON.stringify(level));
     } catch (e) { setStatus(`Impossibile preparare la prova: ${e.message}`, true); return; }
-    const win = window.open('index.html?testLevel=1', 'blockHunterTest');
+    const win = window.open('index.html?testLevel=1', storageKey('Test'));
     if (!win) { setStatus('Il browser ha bloccato la nuova scheda: consenti i popup per provare il livello.', true); return; }
     try { win.focus(); } catch (e) { }
     setStatus('Livello aperto nel gioco (scheda "Prova livello"). Modifica e premi di nuovo ▶ per riprovarlo.');
@@ -5657,7 +5669,7 @@ function bindUI() {
     saveLocalBtn?.addEventListener('click', () => {
         try {
             const level = readLevelFromForm();
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(level));
+            localStorage.setItem(storageKey('LevelEditorState'), JSON.stringify(level));
             setStatus('Livello salvato in localStorage.');
         } catch (error) {
             setStatus(`Errore salvataggio: ${error.message}`, true);
@@ -5666,7 +5678,7 @@ function bindUI() {
 
     loadLocalBtn?.addEventListener('click', () => {
         try {
-            const raw = localStorage.getItem(STORAGE_KEY);
+            const raw = localStorage.getItem(storageKey('LevelEditorState'));
             if (!raw) {
                 setStatus('Nessun livello salvato trovato.', true);
                 return;

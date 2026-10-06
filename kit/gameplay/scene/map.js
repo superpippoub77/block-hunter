@@ -53,7 +53,8 @@ const {
     addSpikeCredit,
     createCreditsManager,
     createLanguageCarousel,
-    kitFlow
+    kitFlow,
+    kitGame
 } = deps;
 
 return class MapMixin {
@@ -90,7 +91,7 @@ return class MapMixin {
         const offsetX = 0;
         const offsetY = 0;
 
-        // Tile frames are defined centrally in data/module/constants.js (TILE_FRAMES)
+        // Tile frames are defined by the game (game/constants.js, TILE_FRAMES)
 
         const resolveTokenMap = (val) => {
             try {
@@ -1441,7 +1442,7 @@ return class MapMixin {
                             try {
                                 GAME_STATE.placedPlanks = GAME_STATE.placedPlanks || [];
                                 GAME_STATE.placedPlanks.push({ level: Number(GAME_STATE.currentLevel) || 0, gridX: gx, gridY: gy });
-                                localStorage.setItem('blockHunterPlacedPlanks', JSON.stringify(GAME_STATE.placedPlanks));
+                                localStorage.setItem(kitGame.storageKey('PlacedPlanks'), JSON.stringify(GAME_STATE.placedPlanks));
                             } catch (e) { }
 
                             if (this.sound) this.sound.play('select_sfx', { volume: 0.4 });

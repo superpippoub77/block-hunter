@@ -4,16 +4,8 @@ export async function inizialization(deps) {
         configStore,
         gameState,
         objectNativeSize,
-        preloadScene,
-        attractScene,
-        topTenScene,
-        creditsScene,
-        configScene,
-        levelSelectScene,
-        gameScene,
-        bonusScene,
-        gameOverScene,
-        blockHunterSceneClasses,
+        scenes,
+        sceneClasses,
         instrumentSceneMethods,
         loadGameplayMappings,
         loadKit,
@@ -21,7 +13,7 @@ export async function inizialization(deps) {
     } = deps;
 
     try {
-        instrumentSceneMethods(blockHunterSceneClasses);
+        instrumentSceneMethods(sceneClasses);
         logger.info('BOOT', 'Tracing scene methods attivato.', `level=${logger.getLevel()}`);
 
         let kit = null;
@@ -116,11 +108,7 @@ export async function inizialization(deps) {
             scene: (() => {
                 // Screens designed in the screen editor (game.manifest.json "screens") replace the
                 // coded scene with the same key, or are added as new scenes.
-                const base = [
-                    ['PreloadScene', preloadScene], ['AttractScene', attractScene], ['TopTenScene', topTenScene],
-                    ['CreditsScene', creditsScene], ['ConfigScene', configScene], ['LevelSelectScene', levelSelectScene],
-                    ['GameScene', gameScene], ['BonusScene', bonusScene], ['GameOverScene', gameOverScene]
-                ];
+                const base = scenes; // [[key, SceneClass], ...] in start order
                 const screens = (kit && kit.screenScenes) || {};
                 const list = base.map(([key, cls]) => screens[key] || cls);
                 Object.entries(screens).forEach(([key, cls]) => { if (!base.some(([k]) => k === key)) list.push(cls); });
@@ -268,7 +256,7 @@ export async function inizialization(deps) {
     } catch (err) {
         logger.error('BOOT', 'Errore durante inizializzazione gioco', err);
         console.error('Errore caricamento config.json:', err);
-        alert('Impossibile caricare la configurazione del gioco.');
+        alert('Impossibile caricare la configurazione del gioco (data/config.json).');
         return false;
     }
 }
