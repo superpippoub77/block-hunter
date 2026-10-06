@@ -78,6 +78,20 @@ class GameScene extends Phaser.Scene {
                 if (this._fullScreenMsg) { this._fullScreenMsg.destroy(); this._fullScreenMsg = null; }
             });
         }
+    // Da chiamare quando viene raccolta un'asse
+    onPlankCollected() {
+        if (!this._eventFired) this._eventFired = {};
+        this._eventFired['plank_collected_trigger'] = true;
+        this.checkAndShowLevelEvents && this.checkAndShowLevelEvents();
+    }
+
+    // Da chiamare per warning custom
+    triggerWarning() {
+        if (!this._eventFired) this._eventFired = {};
+        this._eventFired['warning_trigger'] = true;
+        this.checkAndShowLevelEvents && this.checkAndShowLevelEvents();
+    }
+
     constructor() {
         super('GameScene');
     }
@@ -97,37 +111,38 @@ class GameScene extends Phaser.Scene {
     }
 
     initializeGame() {
-                // --- Eventi custom da JSON livello ---
-                this.levelEvents = Array.isArray(this.levelData?.events) ? this.levelData.events.slice() : [];
-                this._eventFired = {};
+        // --- Eventi custom da JSON livello ---
+        // levelEvents is filled once this.levelData is loaded (see below)
+        this.levelEvents = [];
+        this._eventFired = {};
 
-                // Regole predefinite: puoi aggiungerne altre nel JSON
-                const eventRuleCheckers = {
-                    'gems_half': () => {
-                        const total = this.initialGems || this.requiredGems || 0;
-                        const collected = this.levelStats?.gemsCollected || 0;
-                        return total > 0 && collected >= Math.ceil(total/2) && !this._eventFired['gems_half'];
-                    },
-                    'plank_collected': () => {
-                        return this._eventFired['plank_collected_trigger'] && !this._eventFired['plank_collected'];
-                    },
-                    'warning': () => {
-                        return this._eventFired['warning_trigger'] && !this._eventFired['warning'];
-                    }
-                };
+        // Regole predefinite: puoi aggiungerne altre nel JSON
+        const eventRuleCheckers = {
+            'gems_half': () => {
+                const total = this.initialGems || this.requiredGems || 0;
+                const collected = this.levelStats?.gemsCollected || 0;
+                return total > 0 && collected >= Math.ceil(total/2) && !this._eventFired['gems_half'];
+            },
+            'plank_collected': () => {
+                return this._eventFired['plank_collected_trigger'] && !this._eventFired['plank_collected'];
+            },
+            'warning': () => {
+                return this._eventFired['warning_trigger'] && !this._eventFired['warning'];
+            }
+        };
 
-                // Hook: chiama questa funzione ogni volta che vuoi controllare e mostrare eventi
-                this.checkAndShowLevelEvents = () => {
-                    if (!this.levelEvents) return;
-                    for (const ev of this.levelEvents) {
-                        if (this._eventFired[ev.type]) continue;
-                        const checker = eventRuleCheckers[ev.type];
-                        if (checker && checker()) {
-                            this.showFullScreenMessage(ev.message, ev.style);
-                            this._eventFired[ev.type] = true;
-                        }
-                    }
-                };
+        // Hook: chiama questa funzione ogni volta che vuoi controllare e mostrare eventi
+        this.checkAndShowLevelEvents = () => {
+            if (!this.levelEvents) return;
+            for (const ev of this.levelEvents) {
+                if (this._eventFired[ev.type]) continue;
+                const checker = eventRuleCheckers[ev.type];
+                if (checker && checker()) {
+                    this.showFullScreenMessage(ev.message, ev.style);
+                    this._eventFired[ev.type] = true;
+                }
+            }
+        };
         this.isLevelTransitioning = false;
         this.levelStartScore = Number(GAME_STATE.score) || 0;
         this.levelStats = {
@@ -363,6 +378,7 @@ class GameScene extends Phaser.Scene {
         // Get level data from JSON
         const levelFileName = getLevelFileName(GAME_STATE.currentLevel);
         this.levelData = this.cache.json.get(levelFileName);
+        this.levelEvents = Array.isArray(this.levelData?.events) ? this.levelData.events.slice() : [];
 
         // Get level config (rules for boulders, etc.)
         this.levelConfig = LEVEL_CONFIG.levels[GAME_STATE.currentLevel];
@@ -1094,24 +1110,6 @@ class GameScene extends Phaser.Scene {
 
         // Controllo eventi all'avvio (es. warning immediati)
         this.checkAndShowLevelEvents && this.checkAndShowLevelEvents();
-    // Da chiamare ogni volta che cambia il conteggio delle gemme
-    onGemCollected() {
-        this.levelStats.gemsCollected = (this.levelStats.gemsCollected || 0) + 1;
-        this.checkAndShowLevelEvents && this.checkAndShowLevelEvents();
-    }
-
-    // Da chiamare quando viene raccolta un'asse
-    onPlankCollected() {
-        this._eventFired['plank_collected_trigger'] = true;
-        this.checkAndShowLevelEvents && this.checkAndShowLevelEvents();
-    }
-
-    // Da chiamare per warning custom
-    triggerWarning() {
-        this._eventFired['warning_trigger'] = true;
-        this.checkAndShowLevelEvents && this.checkAndShowLevelEvents();
-    }
-
         // Spawn static rocks only when not disabled globally and not disabled by level JSON
         try {
             const disabledGlobally = (CONFIG.disableStaticRocks === true);
@@ -6829,6 +6827,7 @@ class GameScene extends Phaser.Scene {
         if (this.levelStats) {
             this.levelStats.gemsCollected = (Number(this.levelStats.gemsCollected) || 0) + 1;
         }
+        this.checkAndShowLevelEvents && this.checkAndShowLevelEvents();
 
         this.gemsRemaining--;
 
@@ -6930,6 +6929,7 @@ class GameScene extends Phaser.Scene {
             if (this.levelStats) {
                 this.levelStats.woodenCollected = (Number(this.levelStats.woodenCollected) || 0) + 1;
             }
+            this.onPlankCollected();
         }
 
         item.destroy();

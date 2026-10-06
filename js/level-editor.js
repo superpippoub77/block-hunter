@@ -184,6 +184,71 @@ function parseRepeatValue(value, fallback = 1) {
     return Math.max(1, Math.floor(parsed));
 }
 
+// Real in-game tile size (px). Background/foreground width/height/offset/step values in the
+// level JSON are game pixels, so editor previews must scale them by cellSize / GAME_TILE_SIZE
+// (not by the editor-only "Tile size" slider). Loaded from data/config.json and overridden by
+// the player's saved config, exactly like the game does (module/configUtils.js).
+let GAME_TILE_SIZE = 32;
+let GAME_VIEW_WIDTH = 800;
+let GAME_VIEW_HEIGHT = 600;
+
+function applySavedGameConfig() {
+    try {
+        const saved = JSON.parse(localStorage.getItem('blockHunterConfig') || 'null');
+        const values = (saved && saved.__fullConfig === true && saved.values) ? saved.values : saved;
+        if (values && Number(values.tileSize) > 0) GAME_TILE_SIZE = Number(values.tileSize);
+        if (values && Number(values.width) > 0) GAME_VIEW_WIDTH = Number(values.width);
+        if (values && Number(values.height) > 0) GAME_VIEW_HEIGHT = Number(values.height);
+    } catch (e) { /* ignore */ }
+}
+
+const gameConfigReady = fetch(CONFIG_JSON_PATH, { cache: 'no-store' })
+    .then((resp) => (resp.ok ? resp.json() : null))
+    .then((cfg) => {
+        if (cfg && Number(cfg.tileSize) > 0) GAME_TILE_SIZE = Number(cfg.tileSize);
+        if (cfg && Number(cfg.width) > 0) GAME_VIEW_WIDTH = Number(cfg.width);
+        if (cfg && Number(cfg.height) > 0) GAME_VIEW_HEIGHT = Number(cfg.height);
+    })
+    .catch(() => { /* keep defaults */ })
+    .then(() => applySavedGameConfig());
+
+// Mirrors GameScene resolveLayerSize/resolveLayerPlacement: returns the layout of a bg/fg layer
+// in game pixels, relative to the map origin.
+function computeGameLayerLayout(layer, cols, rows, natW = 0, natH = 0) {
+    const worldW = cols * GAME_TILE_SIZE;
+    const worldH = rows * GAME_TILE_SIZE;
+    const defaultW = Math.max(worldW, GAME_VIEW_WIDTH);
+    const defaultH = Math.max(worldH, GAME_VIEW_HEIGHT);
+
+    const rawW = Number(layer.width ?? layer.w ?? layer.displayWidth ?? layer.layerWidth);
+    const rawH = Number(layer.height ?? layer.h ?? layer.displayHeight ?? layer.layerHeight);
+    const hasW = Number.isFinite(rawW) && rawW > 0;
+    const hasH = Number.isFinite(rawH) && rawH > 0;
+    let layerW = hasW ? rawW : defaultW;
+    let layerH = hasH ? rawH : defaultH;
+    if (hasW && !hasH && natW > 0 && natH > 0) layerH = Math.round(rawW * natH / natW);
+    if (hasH && !hasW && natW > 0 && natH > 0) layerW = Math.round(rawH * natW / natH);
+
+    const offsetX = parseNumber(layer.offsetX ?? layer.left ?? layer.x ?? layer.positionX, 0);
+    const offsetY = parseNumber(layer.offsetY ?? layer.top ?? layer.y ?? layer.positionY, 0);
+    const rawStepX = parseNumber(layer.repeatStepX ?? layer.replicaStepX ?? layer.repeatOffsetX ?? layer.replicaOffsetX, layerW);
+    const rawStepY = parseNumber(layer.repeatStepY ?? layer.replicaStepY ?? layer.repeatOffsetY ?? layer.replicaOffsetY, layerH);
+    const stepX = Math.abs(rawStepX) > 0 ? rawStepX : layerW;
+    const stepY = Math.abs(rawStepY) > 0 ? rawStepY : layerH;
+
+    const repeatX = parseRepeatValue(layer.repeatX ?? layer.replicaX ?? layer.repeatCountX ?? layer.replicaCountX ?? 1, 1);
+    const repeatY = parseRepeatValue(layer.repeatY ?? layer.replicaY ?? layer.repeatCountY ?? layer.replicaCountY ?? 1, 1);
+    const infiniteCount = (stepAbs, span) => Math.max(1, Math.ceil(span / Math.max(1, stepAbs)) + 2);
+    const countX = (repeatX === '*')
+        ? infiniteCount(Math.abs(stepX), Math.max(worldW, GAME_VIEW_WIDTH) + Math.abs(offsetX) + Math.abs(stepX))
+        : repeatX;
+    const countY = (repeatY === '*')
+        ? infiniteCount(Math.abs(stepY), Math.max(worldH, GAME_VIEW_HEIGHT) + Math.abs(offsetY) + Math.abs(stepY))
+        : repeatY;
+
+    return { layerW, layerH, offsetX, offsetY, stepX, stepY, countX, countY };
+}
+
 function buildApiUrl(path) {
     const clean = String(path ?? '').replace(/^\/+|\/+$/g, '');
     return `${API_BASE_PATH}/${clean}/`;
@@ -1655,40 +1720,23 @@ class LevelEditorScene extends Phaser.Scene {
                     if (!textureKey) return;
 
                     const alpha = parseNumber(layer.parallaxBgAlpha, 1);
-                    const offsetX = parseNumber(layer.offsetX ?? layer.left ?? layer.x ?? layer.positionX, 0);
-                    const offsetY = parseNumber(layer.offsetY ?? layer.top ?? layer.y ?? layer.positionY, 0);
+                    const frame = this.textures.getFrame(textureKey, 0);
+                    const natW = frame?.realWidth ?? frame?.width ?? 0;
+                    const natH = frame?.realHeight ?? frame?.height ?? 0;
+                    const lay = computeGameLayerLayout(layer, this.cols, this.rows, natW, natH);
+                    const scale = this.cellSize / GAME_TILE_SIZE;
+                    const dispW = lay.layerW * scale;
+                    const dispH = lay.layerH * scale;
 
-                    const stepX = parseNumber(layer.repeatStepX ?? layer.replicaStepX ?? layer.repeatOffsetX ?? layer.replicaOffsetX, gridW) || gridW;
-                    const stepY = parseNumber(layer.repeatStepY ?? layer.replicaStepY ?? layer.repeatOffsetY ?? layer.replicaOffsetY, gridH) || gridH;
-
-                    const countX = buildRepeatCount(layer.repeatX ?? layer.replicaX ?? layer.repeatCountX ?? layer.replicaCountX ?? 1, gridW + Math.abs(offsetX), stepX);
-                    const countY = buildRepeatCount(layer.repeatY ?? layer.replicaY ?? layer.repeatCountY ?? layer.replicaCountY ?? 1, gridH + Math.abs(offsetY), stepY);
-
-                    for (let iy = 0; iy < countY; iy++) {
-                        for (let ix = 0; ix < countX; ix++) {
+                    for (let iy = 0; iy < lay.countY; iy++) {
+                        for (let ix = 0; ix < lay.countX; ix++) {
                             const img = this.add.image(0, 0, textureKey).setDepth(-500 - idx);
-                            const _tileSize = Number(el('tileSizeSlider')?.value) || 64;
-                            const _frame = this.textures.getFrame(textureKey, 0);
-                            const _natW = _frame?.realWidth ?? _frame?.width ?? 0;
-                            const _natH = _frame?.realHeight ?? _frame?.height ?? 0;
-                            let dispW, dispH;
-                            if (layer.width > 0 && layer.height > 0) {
-                                dispW = Math.round(layer.width * this.cellSize / _tileSize);
-                                dispH = Math.round(layer.height * this.cellSize / _tileSize);
-                            } else if (layer.width > 0 && _natW > 0 && _natH > 0) {
-                                dispW = Math.round(layer.width * this.cellSize / _tileSize);
-                                dispH = Math.round(dispW * _natH / _natW);
-                            } else if (layer.height > 0 && _natW > 0 && _natH > 0) {
-                                dispH = Math.round(layer.height * this.cellSize / _tileSize);
-                                dispW = Math.round(dispH * _natW / _natH);
-                            } else {
-                                dispW = gridW;
-                                dispH = gridH;
-                            }
-                            const x = this.gridOffsetX + offsetX + (stepX * ix) + dispW / 2;
-                            const y = this.gridOffsetY + offsetY + (stepY * iy) + dispH / 2;
+                            img.setOrigin(0, 0);
                             img.setDisplaySize(dispW, dispH);
-                            img.setPosition(x, y);
+                            img.setPosition(
+                                this.gridOffsetX + (lay.offsetX + lay.stepX * ix) * scale,
+                                this.gridOffsetY + (lay.offsetY + lay.stepY * iy) * scale
+                            );
                             img.setAlpha(clamp(alpha, 0, 1));
                             this.editorBgImages.push(img);
                         }
@@ -1722,40 +1770,23 @@ class LevelEditorScene extends Phaser.Scene {
             if (!textureKey) return;
 
             const alpha = parseNumber(layer.parallaxFgAlpha, 1);
-            const offsetX = parseNumber(layer.offsetX ?? layer.left ?? layer.x ?? layer.positionX, 0);
-            const offsetY = parseNumber(layer.offsetY ?? layer.top ?? layer.y ?? layer.positionY, 0);
+            const frame = this.textures.getFrame(textureKey, 0);
+            const natW = frame?.realWidth ?? frame?.width ?? 0;
+            const natH = frame?.realHeight ?? frame?.height ?? 0;
+            const lay = computeGameLayerLayout(layer, this.cols, this.rows, natW, natH);
+            const scale = this.cellSize / GAME_TILE_SIZE;
+            const dispW = lay.layerW * scale;
+            const dispH = lay.layerH * scale;
 
-            const stepX = parseNumber(layer.repeatStepX ?? layer.replicaStepX ?? layer.repeatOffsetX ?? layer.replicaOffsetX, gridW) || gridW;
-            const stepY = parseNumber(layer.repeatStepY ?? layer.replicaStepY ?? layer.repeatOffsetY ?? layer.replicaOffsetY, gridH) || gridH;
-
-            const countX = buildRepeatCount(layer.repeatX ?? layer.replicaX ?? layer.repeatCountX ?? layer.replicaCountX ?? 1, gridW + Math.abs(offsetX), stepX);
-            const countY = buildRepeatCount(layer.repeatY ?? layer.replicaY ?? layer.repeatCountY ?? layer.replicaCountY ?? 1, gridH + Math.abs(offsetY), stepY);
-
-            for (let iy = 0; iy < countY; iy++) {
-                for (let ix = 0; ix < countX; ix++) {
+            for (let iy = 0; iy < lay.countY; iy++) {
+                for (let ix = 0; ix < lay.countX; ix++) {
                     const img = this.add.image(0, 0, textureKey).setDepth(500 + idx);
-                    const _tileSize = Number(el('tileSizeSlider')?.value) || 64;
-                    const _frame = this.textures.getFrame(textureKey, 0);
-                    const _natW = _frame?.realWidth ?? _frame?.width ?? 0;
-                    const _natH = _frame?.realHeight ?? _frame?.height ?? 0;
-                    let dispW, dispH;
-                    if (layer.width > 0 && layer.height > 0) {
-                        dispW = Math.round(layer.width * this.cellSize / _tileSize);
-                        dispH = Math.round(layer.height * this.cellSize / _tileSize);
-                    } else if (layer.width > 0 && _natW > 0 && _natH > 0) {
-                        dispW = Math.round(layer.width * this.cellSize / _tileSize);
-                        dispH = Math.round(dispW * _natH / _natW);
-                    } else if (layer.height > 0 && _natW > 0 && _natH > 0) {
-                        dispH = Math.round(layer.height * this.cellSize / _tileSize);
-                        dispW = Math.round(dispH * _natW / _natH);
-                    } else {
-                        dispW = gridW;
-                        dispH = gridH;
-                    }
-                    const x = this.gridOffsetX + offsetX + (stepX * ix) + dispW / 2;
-                    const y = this.gridOffsetY + offsetY + (stepY * iy) + dispH / 2;
+                    img.setOrigin(0, 0);
                     img.setDisplaySize(dispW, dispH);
-                    img.setPosition(x, y);
+                    img.setPosition(
+                        this.gridOffsetX + (lay.offsetX + lay.stepX * ix) * scale,
+                        this.gridOffsetY + (lay.offsetY + lay.stepY * iy) * scale
+                    );
                     img.setAlpha(clamp(alpha, 0, 1));
                     this.editorFgImages.push(img);
                 }
@@ -2850,6 +2881,14 @@ function getScene() {
     return window.__levelEditorScene || null;
 }
 
+// Once the real game tile size is known, redraw bg/fg previews so they match the game.
+gameConfigReady.then(() => {
+    const scene = getScene();
+    if (!scene) return;
+    try { scene.updateEditorBackgroundImage(true); } catch (e) { /* ignore */ }
+    try { drawMiniMapPreview(scene); } catch (e) { /* ignore */ }
+});
+
 function setStatus(message, isError = false) {
     const target = el('statusText');
     if (!target) return;
@@ -3012,8 +3051,6 @@ function drawMiniMapPreview(scene) {
     const mapH = cell * rows;
     const offX = Math.floor((width - mapW) / 2);
     const offY = Math.floor((height - mapH) / 2);
-    const tileSize = Number(el('tileSizeSlider')?.value) || 64;
-
     // draw layered background images (support multiple bg layers from DOM or select)
     const showBg = !!el('showBackground')?.checked;
     // try layers from DOM editor first
@@ -3054,14 +3091,8 @@ function drawMiniMapPreview(scene) {
         if (!entry.loaded) return false;
         const img = entry.img;
         const alpha = Number.isFinite(layer.parallaxBgAlpha) ? layer.parallaxBgAlpha : 1.0;
-        const offsetX = parseNumber(layer.offsetX ?? layer.left ?? layer.x ?? layer.positionX, 0);
-        const offsetY = parseNumber(layer.offsetY ?? layer.top ?? layer.y ?? layer.positionY, 0);
-        const stepX = parseNumber(layer.repeatStepX ?? layer.replicaStepX ?? layer.repeatOffsetX ?? layer.replicaOffsetX, mapW) || mapW;
-        const stepY = parseNumber(layer.repeatStepY ?? layer.replicaStepY ?? layer.repeatOffsetY ?? layer.replicaOffsetY, mapH) || mapH;
-        const repeatX = parseRepeatValue(layer.repeatX ?? layer.replicaX ?? layer.repeatCountX ?? layer.replicaCountX ?? 1, 1);
-        const repeatY = parseRepeatValue(layer.repeatY ?? layer.replicaY ?? layer.repeatCountY ?? layer.replicaCountY ?? 1, 1);
-        const countX = (repeatX === '*') ? Math.max(1, Math.ceil((mapW + Math.abs(offsetX)) / Math.max(1, Math.abs(stepX))) + 2) : repeatX;
-        const countY = (repeatY === '*') ? Math.max(1, Math.ceil((mapH + Math.abs(offsetY)) / Math.max(1, Math.abs(stepY))) + 2) : repeatY;
+        const lay = computeGameLayerLayout(layer, cols, rows, img.naturalWidth, img.naturalHeight);
+        const scale = cell / GAME_TILE_SIZE;
         try {
             ctx.save();
             // clip to map rectangle so image stays inside blue mini-map
@@ -3069,13 +3100,11 @@ function drawMiniMapPreview(scene) {
             ctx.rect(offX, offY, mapW, mapH);
             ctx.clip();
             ctx.globalAlpha = alpha;
-            for (let iy = 0; iy < countY; iy++) {
-                for (let ix = 0; ix < countX; ix++) {
-                    const dx = offX + offsetX + stepX * ix;
-                    const dy = offY + offsetY + stepY * iy;
-                    const imgW = (layer.width > 0) ? Math.round(layer.width * cell / tileSize) : mapW;
-                    const imgH = (layer.height > 0) ? Math.round(layer.height * cell / tileSize) : mapH;
-                    ctx.drawImage(img, dx, dy, imgW, imgH);
+            for (let iy = 0; iy < lay.countY; iy++) {
+                for (let ix = 0; ix < lay.countX; ix++) {
+                    const dx = offX + (lay.offsetX + lay.stepX * ix) * scale;
+                    const dy = offY + (lay.offsetY + lay.stepY * iy) * scale;
+                    ctx.drawImage(img, dx, dy, lay.layerW * scale, lay.layerH * scale);
                 }
             }
             ctx.restore();
@@ -3248,14 +3277,8 @@ function drawMiniMapPreview(scene) {
             }
             const entry = cache[src];
             if (!entry.loaded) return;
-            const offsetX = parseNumber(ly.offsetX ?? ly.left ?? ly.x ?? ly.positionX, 0);
-            const offsetY = parseNumber(ly.offsetY ?? ly.top ?? ly.y ?? ly.positionY, 0);
-            const stepX = parseNumber(ly.repeatStepX ?? ly.replicaStepX ?? ly.repeatOffsetX ?? ly.replicaOffsetX, mapW) || mapW;
-            const stepY = parseNumber(ly.repeatStepY ?? ly.replicaStepY ?? ly.repeatOffsetY ?? ly.replicaOffsetY, mapH) || mapH;
-            const repeatX = parseRepeatValue(ly.repeatX ?? ly.replicaX ?? ly.repeatCountX ?? ly.replicaCountX ?? 1, 1);
-            const repeatY = parseRepeatValue(ly.repeatY ?? ly.replicaY ?? ly.repeatCountY ?? ly.replicaCountY ?? 1, 1);
-            const countX = (repeatX === '*') ? Math.max(1, Math.ceil((mapW + Math.abs(offsetX)) / Math.max(1, Math.abs(stepX))) + 2) : repeatX;
-            const countY = (repeatY === '*') ? Math.max(1, Math.ceil((mapH + Math.abs(offsetY)) / Math.max(1, Math.abs(stepY))) + 2) : repeatY;
+            const lay = computeGameLayerLayout(ly, cols, rows, entry.img.naturalWidth, entry.img.naturalHeight);
+            const scale = cell / GAME_TILE_SIZE;
             try {
                 ctx.save();
                 // clip to map rectangle so fg stays inside mini-map
@@ -3263,13 +3286,11 @@ function drawMiniMapPreview(scene) {
                 ctx.rect(offX, offY, mapW, mapH);
                 ctx.clip();
                 ctx.globalAlpha = Number.isFinite(ly.parallaxFgAlpha) ? ly.parallaxFgAlpha : 1.0;
-                for (let iy = 0; iy < countY; iy++) {
-                    for (let ix = 0; ix < countX; ix++) {
-                        const dx = offX + offsetX + stepX * ix;
-                        const dy = offY + offsetY + stepY * iy;
-                        const imgW = (ly.width > 0) ? Math.round(ly.width * cell / tileSize) : mapW;
-                        const imgH = (ly.height > 0) ? Math.round(ly.height * cell / tileSize) : mapH;
-                        ctx.drawImage(entry.img, dx, dy, imgW, imgH);
+                for (let iy = 0; iy < lay.countY; iy++) {
+                    for (let ix = 0; ix < lay.countX; ix++) {
+                        const dx = offX + (lay.offsetX + lay.stepX * ix) * scale;
+                        const dy = offY + (lay.offsetY + lay.stepY * iy) * scale;
+                        ctx.drawImage(entry.img, dx, dy, lay.layerW * scale, lay.layerH * scale);
                     }
                 }
                 ctx.restore();
