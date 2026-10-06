@@ -63,6 +63,8 @@ function toast(msg) {
   toast._t = setTimeout(() => t.classList.remove("show"), 2200);
 }
 
+const openScreen = (id) => { window.location.href = `screen_editor.html?screen=${encodeURIComponent(id)}`; };
+
 const LAYOUT = {
   // ------------------------------------------------------------ TOPBAR
   topbar: [
@@ -100,6 +102,17 @@ const LAYOUT = {
         { icon: "🎮", label: "Apri il gioco", onClick: () => window.open("index.html", "_blank", "noopener") },
         { separator: true },
         { icon: "🎬", label: "Editor delle schermate (attract, top ten…)", onClick: () => { window.location.href = "screen_editor.html"; } }
+      ]
+    },
+    {
+      label: "Schermate ▾", pill: true, items: [
+        { icon: "🎬", label: "Attract mode (titolo e demo)", onClick: () => openScreen("attract") },
+        { icon: "📖", label: "Istruzioni / opzioni", onClick: () => openScreen("instructions") },
+        { icon: "🏆", label: "Top ten (classifica)", onClick: () => openScreen("top-ten") },
+        { icon: "🎚", label: "Selezione livello (beginner…)", onClick: () => openScreen("level-select") },
+        { separator: true },
+        { icon: "✚", label: "Editor delle schermate (nuova schermata…)", onClick: () => { window.location.href = "screen_editor.html"; } },
+        { icon: "🧩", label: "Com'è fatto il gioco (motore SpikeCode)", onClick: () => EditorLayout.showStructure() }
       ]
     },
     {
@@ -161,6 +174,13 @@ const LAYOUT = {
     { section: "Layer" },
     { id: "railLayers", icon: "layers", label: "Sposta layer", key: "3", title: "Sposta, ridimensiona, ruota e specchia background e foreground", pressed: false, onClick: () => EditorLayout.setMode(EditorLayout.mode === "layers" ? "paint" : "layers") },
 
+    { section: "Schermate del gioco" },
+    { id: "railAttract", icon: "screens", label: "Attract mode", title: "Disegna l'attract mode: sfondo, scritte, effetti, timeline", onClick: () => openScreen("attract") },
+    { id: "railInstructions", icon: "screens", label: "Istruzioni", title: "Disegna la schermata istruzioni / opzioni", onClick: () => openScreen("instructions") },
+    { id: "railTopTen", icon: "screens", label: "Top ten", title: "Disegna la classifica dei migliori punteggi", onClick: () => openScreen("top-ten") },
+    { id: "railLevelSelect", icon: "screens", label: "Selezione livello", title: "Disegna la scelta della difficoltà (beginner…)", onClick: () => openScreen("level-select") },
+    { id: "railStructure", icon: "panel", label: "Struttura", title: "Com'è fatto il gioco: motore SpikeCode e contenuti", onClick: () => EditorLayout.showStructure() },
+
     { section: "Vista" },
     { id: "railZoomIn", icon: "zoomIn", label: "Ingrandisci", key: "+", title: "Ingrandisci la mappa", onClick: () => EditorLayout.zoomBy(0.25) },
     { id: "railZoomOut", icon: "zoomOut", label: "Riduci", key: "−", title: "Riduci la mappa", onClick: () => EditorLayout.zoomBy(-0.25) },
@@ -175,7 +195,6 @@ const LAYOUT = {
     { id: "railSaveLocal", icon: "save", label: "Salva nel browser", title: "Salva il livello nel browser (localStorage)", onClick: () => clickEl("#saveLocalBtn") },
     { id: "railPlay", icon: "play", label: "Prova livello", key: "F5", title: "Gioca subito il livello che stai creando", onClick: () => api()?.playTestLevel?.() },
     { id: "railPackage", icon: "package", label: "Crea pacchetto", title: "Crea il gioco per web, Windows, Linux, Android", onClick: () => window.SpikePackager?.open() },
-    { id: "railScreens", icon: "screens", label: "Schermate", title: "Editor delle schermate: attract, istruzioni, top ten, selezione livello", onClick: () => { window.location.href = "screen_editor.html"; } },
     { id: "railPanel", icon: "panel", label: "Pannello", key: "]", title: "Mostra/nascondi il pannello delle impostazioni", onClick: () => EditorLayout.toggleSide("right") }
   ],
 
@@ -709,6 +728,35 @@ const EditorLayout = {
       <p>Con la scala <b>1:1</b> una cella dell'editor è grande come una tile del gioco: posizioni e dimensioni
       di background e foreground si vedono come in partita.</p>
       <table class="keys">${keys.map(([k, d]) => `<tr><td><kbd>${k}</kbd></td><td>${d}</td></tr>`).join("")}</table>`);
+  },
+
+  showStructure() {
+    const row = (what, where, how) => `<tr><td><b>${what}</b></td><td><code>${where}</code></td><td>${how}</td></tr>`;
+    this.modal("Com'è fatto il gioco", `
+      <p>Il gioco è diviso in <b>motore SpikeCode</b> (uguale per tutti i giochi, cartella <code>kit/</code>)
+      e <b>contenuti del gioco</b> (cartelle <code>data/</code>, <code>assets/</code>, <code>game/</code>). Ogni parte ha il suo editor:</p>
+      <table class="asset-table">
+        <thead><tr><th>Parte</th><th>File</th><th>Si modifica con</th></tr></thead>
+        <tbody>
+          ${row("Livelli (mappe)", "data/level/*.json", "questo editor · ⇪ Apri / 💾 Salva (con versioni)")}
+          ${row("Attract mode", "data/screens/attract.json", '<button type="button" data-scr="attract">🎬 Apri</button>')}
+          ${row("Istruzioni / opzioni", "data/screens/instructions.json", '<button type="button" data-scr="instructions">📖 Apri</button>')}
+          ${row("Top ten", "data/screens/top-ten.json", '<button type="button" data-scr="top-ten">🏆 Apri</button>')}
+          ${row("Selezione livello", "data/screens/level-select.json", '<button type="button" data-scr="level-select">🎚 Apri</button>')}
+          ${row("Ordine delle schermate", "game.manifest.json", "editor delle schermate · scheda Schermata (eventi)")}
+          ${row("Nemici, oggetti, terreni", "data/game-*-mapping.json", "⋯ → Mapping Studio")}
+          ${row("Testi e lingue", "data/dic/*.json", "⋯ → Dizionari")}
+          ${row("Immagini e musiche", "assets/ · data/data.json", "⋯ → Gestione asset")}
+          ${row("Configurazione", "data/config.json", "⋯ → Configurazione del gioco")}
+          ${row("Motore (codice)", "kit/", "guida: kit/ENGINE.md")}
+        </tbody>
+      </table>
+      <p class="hint">Game over e inserimento nella top ten sono blocchi del motore (kit/blocks/game-over, score-entry):
+      si regolano dalla configurazione; le schermate disegnabili sono quelle con il pulsante Apri.</p>`, { wide: true });
+    document.querySelector(".modal-overlay .modal-body").onclick = (e) => {
+      const b = e.target.closest("[data-scr]");
+      if (b) openScreen(b.dataset.scr);
+    };
   },
 
   showAbout() {
