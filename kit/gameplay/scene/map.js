@@ -799,7 +799,7 @@ return class MapMixin {
                 if (!tileNoTile && this.isDataEntityType(type)) {
                     this.collectDataEntitySpawn(type,
                         offsetX + x * CONFIG.tileSize + CONFIG.tileSize / 2,
-                        offsetY + y * CONFIG.tileSize + CONFIG.tileSize / 2, x, y);
+                        offsetY + y * CONFIG.tileSize + CONFIG.tileSize / 2, x, y, cellEffectOptions?.transform);
                 }
 
                 if (!tileNoTile && type === 'snake') {

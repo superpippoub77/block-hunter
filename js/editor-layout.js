@@ -38,6 +38,7 @@ const LAYOUT_ICONS = {
   play: SC_ICON("M6 4l12 7-12 7z"),
   package: SC_ICON("M11 2l8 4.5v9L11 20l-8-4.5v-9z M3 6.5l8 4.5 8-4.5 M11 11v9 M7 4.3l8 4.4"),
   screens: SC_ICON("M3 5h16v11H3z M8 19h6 M11 16v3 M9 8.5l4 2.5-4 2.5z"),
+  select: SC_ICON("M5 3l11 7-5 1.2 3 5.8-2.2 1.1-3-5.9L5 16z"),
   layers: SC_ICON("M11 3l8 4-8 4-8-4z M3 11l8 4 8-4 M3 15l8 4 8-4"),
   panel: SC_ICON("M3 4h16v14H3z M13 4v14")
 };
@@ -104,6 +105,7 @@ const LAYOUT = {
         { separator: true },
         { icon: "🚫", label: "Strumento zone", shortcut: "2", onClick: () => EditorLayout.setMode("zones") },
         { icon: "🖼", label: "Sposta e trasforma layer", shortcut: "3", onClick: () => EditorLayout.setMode("layers") },
+        { icon: "➚", label: "Seleziona e trasforma oggetti", shortcut: "4", onClick: () => EditorLayout.setMode("select") },
         { icon: "✕", label: "Cancella zone del tipo attivo", onClick: () => clickEl("#clearActiveZones") },
         { icon: "✕", label: "Cancella tutte le zone", onClick: () => EditorLayout.confirmClick("Cancellare tutte le zone?", "#clearAllZones") }
       ]
@@ -142,6 +144,9 @@ const LAYOUT = {
     { id: "railAutoSpawn", icon: "autoSpawn", label: "Auto spawn", title: "Piazza gemme e nemici sul percorso raggiungibile dal player", onClick: () => EditorLayout.runInPanel("map", "#autoPopulatePathSpawnsBtn") },
     { id: "railClear", icon: "clear", label: "Svuota mappa", title: "Svuota tutta la mappa", onClick: () => EditorLayout.confirmClick("Svuotare tutta la mappa?", "#clearGridBtn") },
 
+    { section: "Oggetti" },
+    { id: "railSelect", icon: "select", label: "Seleziona", key: "4", title: "Seleziona un oggetto della mappa per ruotarlo, ridimensionarlo, specchiarlo o eliminarlo", pressed: false, onClick: () => EditorLayout.setMode(EditorLayout.mode === "select" ? "paint" : "select") },
+
     { section: "Zone" },
     { id: "railZones", icon: "zones", label: "Strumento zone", key: "2", title: "Disegna zone invisibili", pressed: false, onClick: () => EditorLayout.setMode(EditorLayout.mode === "zones" ? "paint" : "zones") },
     { id: "railZonesClear", icon: "zonesClear", label: "Cancella zone", title: "Cancella le zone del tipo attivo", onClick: () => clickEl("#clearActiveZones") },
@@ -165,7 +170,7 @@ const LAYOUT = {
   ],
 
   // Nomi delle modalità (barra schede e status bar)
-  modes: { paint: "Disegna", zones: "Zone invisibili", layers: "Layer (background e foreground)" }
+  modes: { paint: "Disegna", zones: "Zone invisibili", layers: "Layer (background e foreground)", select: "Seleziona oggetti" }
 };
 
 const EditorLayout = {
@@ -198,6 +203,7 @@ const EditorLayout = {
     obs($q("#statusText"), () => this.flashStatus(), { childList: true, characterData: true, subtree: true });
     document.addEventListener("leveleditor:zonetool", (e) => this.syncMode(e.detail?.active ? "zones" : (scene()?.layerToolActive ? "layers" : "paint")));
     document.addEventListener("leveleditor:layertool", (e) => this.syncMode(e.detail?.active ? "layers" : (scene()?.zoneToolActive ? "zones" : "paint")));
+    document.addEventListener("leveleditor:selecttool", (e) => this.syncMode(e.detail?.active ? "select" : this.liveMode()));
     this.syncCell();
     this.tick();
     setInterval(() => this.tick(), 700);
@@ -403,11 +409,20 @@ const EditorLayout = {
     const s = scene();
     const wantZones = mode === "zones";
     const wantLayers = mode === "layers";
+    const wantSelect = mode === "select";
+    if (s && !!s.selectToolActive !== wantSelect && !wantSelect) api()?.setSelectTool?.(false);
     if (s && !!s.layerToolActive !== wantLayers) api()?.setLayerTool?.(wantLayers);
     if (s && !!s.zoneToolActive !== wantZones) clickEl("#toggleZoneTool");
+    if (s && wantSelect && !s.selectToolActive) api()?.setSelectTool?.(true);
     this.syncMode(mode);
     if (wantZones) this.showPanelTab("map");
     if (wantLayers) this.showPanelTab("level");
+  },
+
+  liveMode() {
+    const s = scene();
+    if (!s) return "paint";
+    return s.selectToolActive ? "select" : (s.layerToolActive ? "layers" : (s.zoneToolActive ? "zones" : "paint"));
   },
 
   syncMode(mode) {
@@ -419,6 +434,7 @@ const EditorLayout = {
     });
     $q("#railZones")?.setAttribute("aria-pressed", String(mode === "zones"));
     $q("#railLayers")?.setAttribute("aria-pressed", String(mode === "layers"));
+    $q("#railSelect")?.setAttribute("aria-pressed", String(mode === "select"));
     const m = $q("#statusMode");
     if (m) m.textContent = LAYOUT.modes[mode];
   },
@@ -515,7 +531,7 @@ const EditorLayout = {
     if (g) g.textContent = `${s.cols}×${s.rows} celle`;
     const z = $q("#zoomLabel");
     if (z) z.textContent = `${Math.round((Number(s.zoom) || 1) * 100)}%`;
-    const live = s.layerToolActive ? "layers" : (s.zoneToolActive ? "zones" : "paint");
+    const live = this.liveMode();
     if (live !== this.mode) this.syncMode(live);
   },
 
@@ -627,6 +643,7 @@ const EditorLayout = {
         "1": () => this.setMode("paint"),
         "2": () => this.setMode("zones"),
         "3": () => this.setMode("layers"),
+        "4": () => this.setMode("select"),
         "[": () => this.toggleSide("left"),
         "]": () => this.toggleSide("right"),
         "+": () => this.zoomBy(0.25),
@@ -661,7 +678,10 @@ const EditorLayout = {
   showHelp() {
     const mod = isMac ? "⌘" : "Ctrl";
     const keys = [
-      ["1 · 2 · 3", "Disegna · Zone invisibili · Layer"],
+      ["1 · 2 · 3 · 4", "Disegna · Zone invisibili · Layer · Seleziona oggetti"],
+      ["Seleziona: clic", "Sceglie l'oggetto (clic di nuovo = oggetto sotto, se la cella ne ha due)"],
+      ["Q E / ← →", "Ruota l'oggetto selezionato di 90°"], ["H · V", "Specchia orizzontale · verticale"],
+      ["PagSu · PagGiù", "Ingrandisci · rimpicciolisci l'oggetto"], ["Canc", "Elimina solo l'oggetto selezionato"],
       ["Layer: trascina", "Sposta il background/foreground selezionato"], ["Layer: maniglie", "Angoli = ridimensiona (Shift libero) · lati = allarga · tonda = ruota (Shift 15°)"], ["Clic / trascina", "Piazza l'elemento scelto nella palette"],
       [". + trascina", "Piazza l'elemento invisibile (noTile)"], ["← →", "Ruota la tile selezionata"],
       ["H · V", "Specchia la tile selezionata"], ["W", "Varianti del muro"], ["Canc", "Svuota la cella selezionata"],

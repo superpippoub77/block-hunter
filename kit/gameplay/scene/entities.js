@@ -33,9 +33,9 @@ return class EntitiesMixin {
     }
 
     /** called by createTilemap for every cell whose token is a data entity */
-    collectDataEntitySpawn(type, x, y, gridX, gridY) {
+    collectDataEntitySpawn(type, x, y, gridX, gridY, transform = null) {
         if (!this.dataEntitySpawns) this.dataEntitySpawns = [];
-        this.dataEntitySpawns.push({ type: String(type).toLowerCase(), x, y, gridX, gridY });
+        this.dataEntitySpawns.push({ type: String(type).toLowerCase(), x, y, gridX, gridY, transform });
     }
 
     spawnDataEntities() {
@@ -67,7 +67,9 @@ return class EntitiesMixin {
         const sp = def.sprite || {};
         const tex = sp.texture && this.textures.exists(sp.texture) ? sp.texture : 'objects';
         const e = this.dataEntities.create(spawn.x, spawn.y, tex, sp.frame ?? 0);
-        const size = (Number(CONFIG.objectSize) || 64) * (Number(sp.scale) || 1);
+        // the level editor can resize a single placed entity: transform{scale}
+        const tfScale = Number(spawn?.transform?.scale ?? spawn?.transform?.s);
+        const size = (Number(CONFIG.objectSize) || 64) * (Number(sp.scale) || 1) * (tfScale > 0 ? tfScale : 1);
         e.setDisplaySize(size, size);
         if (sp.tint) { try { e.setTint(Phaser.Display.Color.HexStringToColor(sp.tint).color); } catch (err) { } }
         if (sp.animation && this.anims.exists(sp.animation)) e.play(sp.animation);

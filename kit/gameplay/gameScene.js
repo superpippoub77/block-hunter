@@ -1169,7 +1169,7 @@ class GameScene extends Phaser.Scene {
                 if (Array.isArray(this.mapGemPositions) && this.mapGemPositions.length > 0) {
                     for (let i = 0; i < this.mapGemPositions.length; i++) {
                         const p = this.mapGemPositions[i];
-                        try { this.createGemPickupAt(p.x, p.y); } catch (e) { }
+                        try { this.createGemPickupAt(p.x, p.y, p.effects, p.effectOptions); } catch (e) { }
                     }
                     this.mapGemIndex = this.mapGemPositions.length;
                 } else {

@@ -109,7 +109,8 @@ return class ItemsMixin {
 
         this.tweens.add({
             targets: gem,
-            scale: 1.2,
+            // keeps the per-object size set in the level editor (transform{scale})
+            scale: 1.2 * (Number(effectOptions?.transform?.scale) > 0 ? Number(effectOptions.transform.scale) : 1),
             duration: 500,
             yoyo: true,
             repeat: -1

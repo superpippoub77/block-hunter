@@ -1343,6 +1343,45 @@ function getRenderableTokenBase(tokenInput) {
     return parseDecoratedToken(tokenInput).base || String(tokenInput || '').trim();
 }
 
+// ---- per-object transform stored in the token: g(transform{scale:1.5;rot:90;flipX:1}) ----
+// The game applies the same transform (kit/gameplay/scene/effects.js), so what you see is
+// what you play. Walls keep their native rotation/mirror (w<r><c><rot><flip>).
+const TRANSFORM_FX = 'transform';
+const IDENTITY_TRANSFORM = { scale: 1, rot: 0, flipX: false, flipY: false };
+
+function readTransformOptions(options) {
+    const o = {};
+    Object.entries(options || {}).forEach(([k, v]) => { o[String(k).toLowerCase()] = v; });
+    const num = (v, d) => (Number.isFinite(Number(v)) ? Number(v) : d);
+    const bool = (v) => v === true || /^(1|true|yes)$/i.test(String(v ?? ''));
+    return {
+        scale: Math.max(0.1, Math.min(8, num(o.scale ?? o.s, 1))),
+        rot: ((num(o.rot ?? o.rotation ?? o.angle, 0) % 360) + 360) % 360,
+        flipX: bool(o.flipx ?? o.fx),
+        flipY: bool(o.flipy ?? o.fy)
+    };
+}
+
+function parseTokenTransform(token) {
+    const meta = parseDecoratedToken(token);
+    const entry = splitEffectsList(meta.effects).map(parseEffectEntry).find((e) => e.name === TRANSFORM_FX);
+    return entry ? readTransformOptions(entry.options) : { ...IDENTITY_TRANSFORM };
+}
+
+function withTokenTransform(token, tf) {
+    const meta = parseDecoratedToken(token);
+    if (!meta.base) return token;
+    const others = splitEffectsList(meta.effects).filter((e) => parseEffectEntry(e).name !== TRANSFORM_FX);
+    const t = { ...IDENTITY_TRANSFORM, ...tf };
+    const opts = {};
+    if (Math.abs(t.scale - 1) > 1e-3) opts.scale = String(Math.round(t.scale * 100) / 100);
+    if (t.rot) opts.rot = String(t.rot);
+    if (t.flipX) opts.flipX = '1';
+    if (t.flipY) opts.flipY = '1';
+    if (Object.keys(opts).length) others.unshift(buildEffectEntry(TRANSFORM_FX, opts));
+    return composeDecoratedToken({ ...meta, effects: others.join(',') });
+}
+
 function splitEffectsList(text) {
     const raw = String(text || '').trim();
     if (!raw) return [];
@@ -2141,10 +2180,26 @@ class LevelEditorScene extends Phaser.Scene {
 
     setupInputHandlers() {
         installLayerTool(this);
+        installObjectTool(this);
         this.input.on('pointerdown', (pointer) => {
             if (this.layerToolActive) return;
             const cell = this.getGridCellFromPointer(pointer.worldX, pointer.worldY);
             if (!cell) return;
+
+            // Select mode: click picks the object (topmost token) without painting
+            if (this.selectToolActive) {
+                const parts = editorCellParts(this.cells[cell.row]?.[cell.col]);
+                const same = this.selectedCell && this.selectedCell.row === cell.row && this.selectedCell.col === cell.col;
+                this.selectedCell = cell;
+                // clicking again on the same cell cycles through its stacked tokens (A/B)
+                this.selectedTokenIndex = same && parts.length > 1
+                    ? (this.selectedTokenIndex + parts.length - 1) % parts.length
+                    : Math.max(0, parts.length - 1);
+                this.updateSelectedCellInfo();
+                this.renderGrid();
+                this.objectTool?.sync();
+                return;
+            }
 
             // Zone tool mode: click or drag to paint/erase zone cells
             if (this.zoneToolActive) {
@@ -2230,26 +2285,26 @@ class LevelEditorScene extends Phaser.Scene {
         });
 
         this.input.keyboard.on('keydown-LEFT', () => {
-            if (this.layerToolActive) return;
+            if (this.layerToolActive || this.selectToolActive) return;
             this.rotateSelectedCell(-1);
             this.renderGrid();
         });
 
         this.input.keyboard.on('keydown-RIGHT', () => {
-            if (this.layerToolActive) return;
+            if (this.layerToolActive || this.selectToolActive) return;
             this.rotateSelectedCell(1);
             this.renderGrid();
         });
 
         // Mirror: 'H' = horizontal flip (flipX), 'V' = vertical flip (flipY)
         this.input.keyboard.on('keydown-H', () => {
-            if (this.layerToolActive) return;
+            if (this.layerToolActive || this.selectToolActive) return;
             this.mirrorSelectedCell('h');
             this.renderGrid();
         });
 
         this.input.keyboard.on('keydown-V', () => {
-            if (this.layerToolActive) return;
+            if (this.layerToolActive || this.selectToolActive) return;
             this.mirrorSelectedCell('v');
             this.renderGrid();
         });
@@ -2300,14 +2355,14 @@ class LevelEditorScene extends Phaser.Scene {
         });
 
         this.input.keyboard.on('keydown-DELETE', () => {
-            if (this.layerToolActive) return;
+            if (this.layerToolActive || this.selectToolActive) return;
             const active = document.activeElement;
             if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.tagName === 'SELECT')) return;
             this.clearSelectedCell();
         });
 
         this.input.keyboard.on('keydown-BACKSPACE', (event) => {
-            if (this.layerToolActive) return;
+            if (this.layerToolActive || this.selectToolActive) return;
             const active = document.activeElement;
             if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.tagName === 'SELECT')) return;
             event?.preventDefault?.();
@@ -2693,6 +2748,22 @@ class LevelEditorScene extends Phaser.Scene {
     }
 
     addTokenVisual(container, token, x, y, size) {
+        const before = container.list ? container.list.length : 0;
+        this.addTokenVisualRaw(container, token, x, y, size);
+        // per-object transform of the topmost token (scale / rotation / mirror)
+        let top = String(token ?? '-').split('/').map((t) => t.trim()).filter(Boolean).pop() || '-';
+        const tf = parseTokenTransform(top);
+        if (tf.scale === 1 && !tf.rot && !tf.flipX && !tf.flipY) return;
+        (container.list || []).slice(before).forEach((obj) => {
+            if (obj.type !== 'Sprite' && obj.type !== 'Image') return;
+            obj.setScale(obj.scaleX * tf.scale, obj.scaleY * tf.scale);
+            obj.setAngle((obj.angle || 0) + tf.rot);
+            if (tf.flipX) obj.setFlipX(!obj.flipX);
+            if (tf.flipY) obj.setFlipY(!obj.flipY);
+        });
+    }
+
+    addTokenVisualRaw(container, token, x, y, size) {
         // support token lists joined by '/': render the topmost (last) token visually
         let mainToken = String(token ?? '-');
         try {
@@ -3071,6 +3142,8 @@ window.LevelEditorAPI = {
     getScene, readLevelFromForm, importLevelFromText, setStatus, playTestLevel,
     gameTileSize: () => GAME_TILE_SIZE,
     setLayerTool: (on) => getScene()?.layerTool?.setActive(on),
+    setSelectTool: (on) => getScene()?.objectTool?.setActive(on),
+    objectAction: (act) => getScene()?.objectTool?.run(act),
     refreshLayerPalette: () => buildLayerPalette()
 };
 
@@ -5889,6 +5962,7 @@ function bindUI() {
             const scene = getScene();
             if (!scene) return;
             scene.zoneToolActive = !scene.zoneToolActive;
+            if (scene.zoneToolActive && scene.selectToolActive) scene.objectTool?.setActive(false);
             toggleZoneBtn.textContent = scene.zoneToolActive ? '\uD83D\uDEAB Zone: ON' : '\uD83D\uDEAB Zone: OFF';
             toggleZoneBtn.classList.toggle('on', scene.zoneToolActive);
             toggleZoneBtn.setAttribute('aria-pressed', String(scene.zoneToolActive));
@@ -6978,6 +7052,7 @@ function installLayerTool(scene) {
         tool.active = !!on;
         scene.layerToolActive = tool.active;
         if (tool.active && scene.zoneToolActive) el('toggleZoneTool')?.click();
+        if (tool.active && scene.selectToolActive) scene.objectTool?.setActive(false);
         if (!tool.active) tool.select(null);
         try { scene.input.setDefaultCursor(tool.active ? 'default' : ''); } catch (e) { }
         draw();
@@ -7228,3 +7303,156 @@ window.addEventListener('load', () => {
         if (sel) new MutationObserver(() => buildLayerPalette()).observe(sel, { childList: true });
     });
 });
+
+
+// =====================================================================================
+// OBJECT TOOL — select a placed object on the map and transform it
+//   mode "Seleziona" (key 4): click = select (click again = next stacked token)
+//   floating bar / keys: ⟲ ⟳ (Q/E or ←/→) rotate 90° · ↔ ↕ (H/V) mirror
+//   − + (PageDown/PageUp) scale · 1:1 reset · ✕ (Delete) remove only that object
+//   Stored in the token as transform{scale;rot;flipX;flipY}; walls use their native rot/flip.
+// =====================================================================================
+/** all tokens of a cell: "A/B" may be kept in base ("A/B") or split in base + reveal */
+function editorCellParts(cell) {
+    if (!cell) return [];
+    const parts = String(cell.base || '-').split('/').map((t) => t.trim()).filter(Boolean);
+    if (cell.reveal) parts.push(...String(cell.reveal).split('/').map((t) => t.trim()).filter(Boolean));
+    return parts;
+}
+
+function installObjectTool(scene) {
+    if (scene.objectTool) return;
+    const bar = document.createElement('div');
+    bar.className = 'layer-bar object-bar';
+    bar.hidden = true;
+    bar.innerHTML = `
+        <span class="lb-name"></span>
+        <button type="button" data-act="rotL" title="Ruota di −90° (Q o ←)">⟲</button>
+        <span class="lb-rot ob-rot"></span>
+        <button type="button" data-act="rotR" title="Ruota di +90° (E o →)">⟳</button>
+        <button type="button" data-act="flipX" title="Specchia orizzontalmente (H)">↔</button>
+        <button type="button" data-act="flipY" title="Specchia verticalmente (V)">↕</button>
+        <button type="button" data-act="smaller" title="Rimpicciolisci (PagGiù)">−</button>
+        <span class="lb-rot ob-scale"></span>
+        <button type="button" data-act="bigger" title="Ingrandisci (PagSu)">+</button>
+        <button type="button" data-act="reset" title="Annulla le trasformazioni">1:1</button>
+        <button type="button" data-act="delete" title="Elimina l'oggetto (Canc)">✕</button>`;
+    el('editor-game')?.appendChild(bar);
+
+    const selected = () => {
+        const sc = scene.selectedCell;
+        const cell = sc ? scene.cells[sc.row]?.[sc.col] : null;
+        if (!cell) return null;
+        const parts = editorCellParts(cell);
+        if (!parts.length || (parts.length === 1 && parts[0] === '-')) return null;
+        const index = Math.min(Math.max(0, scene.selectedTokenIndex || 0), parts.length - 1);
+        return { cell, parts, index, token: parts[index] };
+    };
+    const isWall = (token) => WALL_TOKEN_REGEX.test(normalizeToken(getRenderableTokenBase(token)));
+
+    const tool = {
+        active: false,
+        bar,
+        setActive(on) {
+            on = !!on;
+            if (on) {
+                if (scene.layerToolActive) scene.layerTool?.setActive(false);
+                if (scene.zoneToolActive) el('toggleZoneTool')?.click();
+            }
+            tool.active = on;
+            scene.selectToolActive = on;
+            document.dispatchEvent(new CustomEvent('leveleditor:selecttool', { detail: { active: on } }));
+            tool.sync();
+        },
+        sync() {
+            const s = selected();
+            bar.hidden = !(tool.active && s);
+            if (bar.hidden) return;
+            const tf = parseTokenTransform(s.token);
+            let rot = tf.rot, fx = tf.flipX, fy = tf.flipY;
+            if (isWall(s.token)) {
+                const m = normalizeToken(getRenderableTokenBase(s.token)).match(WALL_TOKEN_REGEX);
+                rot = Number(m[3]) * 90; fx = m[4] === 'h'; fy = m[4] === 'v';
+            }
+            const base = getRenderableTokenBase(s.token);
+            const ent = editorEntityFor(base);
+            const stack = s.parts.length > 1 ? ` (${s.index + 1}/${s.parts.length})` : '';
+            bar.querySelector('.lb-name').textContent = `${ent ? ent.label : base}${stack} · ${scene.selectedCell.col},${scene.selectedCell.row}`;
+            bar.querySelector('.ob-rot').textContent = `${rot}°`;
+            bar.querySelector('.ob-scale').textContent = `×${Math.round(tf.scale * 100) / 100}`;
+            bar.querySelector('[data-act=flipX]').classList.toggle('on', fx);
+            bar.querySelector('[data-act=flipY]').classList.toggle('on', fy);
+        },
+        run(act) {
+            const s = selected();
+            if (!s) return false;
+            let token = s.token;
+            const tf = parseTokenTransform(token);
+            if (isWall(token) && (act === 'rotL' || act === 'rotR' || act === 'flipX' || act === 'flipY')) {
+                const meta = parseDecoratedToken(token);
+                let wall = normalizeToken(meta.base);
+                if (act === 'rotL' || act === 'rotR') wall = rotateWallToken(wall, act === 'rotR' ? 1 : -1);
+                else {
+                    const m = wall.match(WALL_TOKEN_REGEX);
+                    const want = act === 'flipX' ? 'h' : 'v';
+                    wall = `w${m[1]}${m[2]}${m[3]}${m[4] === want ? '0' : want}`;
+                }
+                token = composeDecoratedToken({ ...meta, base: wall });
+            } else if (act === 'rotL') token = withTokenTransform(token, { ...tf, rot: (tf.rot + 270) % 360 });
+            else if (act === 'rotR') token = withTokenTransform(token, { ...tf, rot: (tf.rot + 90) % 360 });
+            else if (act === 'flipX') token = withTokenTransform(token, { ...tf, flipX: !tf.flipX });
+            else if (act === 'flipY') token = withTokenTransform(token, { ...tf, flipY: !tf.flipY });
+            else if (act === 'bigger') token = withTokenTransform(token, { ...tf, scale: Math.min(4, Math.round((tf.scale + 0.25) * 100) / 100) });
+            else if (act === 'smaller') token = withTokenTransform(token, { ...tf, scale: Math.max(0.25, Math.round((tf.scale - 0.25) * 100) / 100) });
+            else if (act === 'reset') {
+                token = withTokenTransform(token, IDENTITY_TRANSFORM);
+                if (isWall(token)) {
+                    const meta = parseDecoratedToken(token);
+                    const m = normalizeToken(meta.base).match(WALL_TOKEN_REGEX);
+                    token = composeDecoratedToken({ ...meta, base: `w${m[1]}${m[2]}00` });
+                }
+            } else if (act === 'delete') {
+                const parts = s.parts.slice();
+                parts.splice(s.index, 1);
+                s.cell.base = parts.length ? parts.join('/') : '-';
+                s.cell.reveal = null;
+                scene.selectedTokenIndex = Math.max(0, parts.length - 1);
+                scene.updateSelectedCellInfo();
+                scene.renderGrid();
+                tool.sync();
+                return true;
+            } else return false;
+            const parts = s.parts.slice();
+            parts[s.index] = token;
+            s.cell.base = parts.join('/');
+            s.cell.reveal = null;
+            scene.updateSelectedCellInfo();
+            scene.renderGrid();
+            tool.sync();
+            return true;
+        }
+    };
+    scene.objectTool = tool;
+
+    bar.addEventListener('click', (e) => {
+        const act = e.target.closest('[data-act]')?.dataset.act;
+        if (act) tool.run(act);
+    });
+    // keyboard while in select mode (capture phase: wins over the paint-mode shortcuts)
+    window.addEventListener('keydown', (e) => {
+        if (!tool.active || e.ctrlKey || e.metaKey || e.altKey) return;
+        const t = e.target || {};
+        if (t.matches?.('input,select,textarea') || t.isContentEditable) return;
+        if (document.querySelector('.modal-overlay.open, .config-modal.open')) return;
+        const map = {
+            ArrowLeft: 'rotL', ArrowRight: 'rotR', q: 'rotL', Q: 'rotL', e: 'rotR', E: 'rotR',
+            h: 'flipX', H: 'flipX', v: 'flipY', V: 'flipY',
+            PageUp: 'bigger', PageDown: 'smaller', Delete: 'delete', Backspace: 'delete'
+        };
+        const act = map[e.key];
+        if (!act) return;
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        tool.run(act);
+    }, true);
+}

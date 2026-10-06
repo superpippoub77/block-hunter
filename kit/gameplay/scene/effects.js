@@ -66,7 +66,7 @@ return class EffectsMixin {
             glow: 'halo',
             bob: 'float'
         };
-        const known = new Set(['lamp', 'pulse', 'float', 'halo', 'outline']);
+        const known = new Set(['lamp', 'pulse', 'float', 'halo', 'outline', 'transform']);
         const k = String(rawName || '').trim().toLowerCase().replace(/[^a-z0-9_\-]/g, '');
         if (!k) return null;
         const normalized = aliases[k] || k;
@@ -180,6 +180,22 @@ return class EffectsMixin {
         });
     }
 
+    /** transform{scale;rot;flipX;flipY} written by the level editor "Seleziona" tool */
+    applyTokenTransform(target, rawOptions) {
+        const o = {};
+        Object.entries(rawOptions || {}).forEach(([k, v]) => { o[String(k).toLowerCase()] = v; });
+        const num = (v, d) => (Number.isFinite(Number(v)) ? Number(v) : d);
+        const bool = (v) => v === true || /^(1|true|yes)$/i.test(String(v ?? ''));
+        const scale = Math.max(0.1, Math.min(8, num(o.scale ?? o.s, 1)));
+        const rot = num(o.rot ?? o.rotation ?? o.angle, 0);
+        if (scale !== 1 && target.setScale) target.setScale((target.scaleX || 1) * scale, (target.scaleY || 1) * scale);
+        if (rot && target.setAngle) target.setAngle((target.angle || 0) + rot);
+        if (bool(o.flipx ?? o.fx) && target.setFlipX) target.setFlipX(!target.flipX);
+        if (bool(o.flipy ?? o.fy) && target.setFlipY) target.setFlipY(!target.flipY);
+        // static bodies do not follow the sprite by themselves
+        if (target.body && target.body.physicsType === 1 && typeof target.body.updateFromGameObject === 'function') target.body.updateFromGameObject();
+    }
+
     applyTokenEffects(target, rawEffects, worldX = null, worldY = null, rawEffectOptions = null) {
         const effects = this.normalizeTokenEffects(rawEffects);
         if (!target || !effects.length) return;
@@ -190,7 +206,14 @@ return class EffectsMixin {
         const px = Number.isFinite(Number(worldX)) ? Number(worldX) : (target.x || 0);
         const py = Number.isFinite(Number(worldY)) ? Number(worldY) : (target.y || 0);
 
+        // per-object transform from the level editor (scale / rotation / mirror): applied first,
+        // so pulse & co. animate around the transformed size
+        if (effects.includes('transform')) {
+            try { this.applyTokenTransform(target, inlineOptionsMap.transform || {}); } catch (e) { }
+        }
+
         effects.forEach((effectName) => {
+            if (effectName === 'transform') return;
             try {
                 const options = this.getEffectOptions(effectName);
                 const localOptions = (inlineOptionsMap[effectName] && typeof inlineOptionsMap[effectName] === 'object' && !Array.isArray(inlineOptionsMap[effectName]))
