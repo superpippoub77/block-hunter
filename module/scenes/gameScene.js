@@ -49,7 +49,8 @@ const {
     parseExitTargetLevel,
     addSpikeCredit,
     createCreditsManager,
-    createLanguageCarousel
+    createLanguageCarousel,
+    kitFlow
 } = deps;
 class GameScene extends Phaser.Scene {
         // Mostra un messaggio a tutto schermo e lo rimuove dopo alcuni secondi
@@ -7839,7 +7840,7 @@ class GameScene extends Phaser.Scene {
             }
         } catch (e) { }
 
-        this.scene.launch('GameOverScene');
+        this.scene.launch(kitFlow.next('gameplay', 'gameover', 'GameOverScene'));
     }
 
     continueFromGameOver(players = 1) {

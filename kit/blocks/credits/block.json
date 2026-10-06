@@ -1,0 +1,49 @@
+{
+  "id": "credits",
+  "name": "Credits",
+  "version": "1.0.0",
+  "description": "Schermata crediti/gettoni: inserisci gettone, avvia 1P/2P, riconoscimenti del progetto.",
+  "scene": "CreditsScene",
+  "factory": "createCreditsScene",
+  "entry": "index.js",
+  "requires": [
+    "Phaser",
+    "CONFIG",
+    "GAME_STATE",
+    "TRANSLATIONS",
+    "GAME_FONT",
+    "HUD_DEPTH",
+    "drawTextPanel",
+    "createCreditsManager",
+    "createLanguageCarousel",
+    "loadTranslations",
+    "hasStartAccessForPlayers",
+    "consumeCreditsForPlayers",
+    "resetGameStateForNewRun",
+    "isFreeplayEnabled",
+    "kitFlow",
+    "kitGame"
+  ],
+  "events": {
+    "timeout": "Nessuna azione per CONFIG.creditsTimeout",
+    "start": "Avvio partita con crediti sufficienti",
+    "exit": "Spazio/Esc o crediti insufficienti"
+  },
+  "config": [
+    "attractOverlayAlpha",
+    "creditsScene",
+    "creditsTimeout",
+    "height",
+    "width"
+  ],
+  "i18n": [],
+  "assets": {
+    "textures": [
+      "bg"
+    ],
+    "audio": [
+      "coin_sfx",
+      "select_sfx"
+    ]
+  }
+}

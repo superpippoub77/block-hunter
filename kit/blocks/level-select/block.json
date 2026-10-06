@@ -1,0 +1,40 @@
+{
+  "id": "level-select",
+  "name": "LevelSelect",
+  "version": "1.0.0",
+  "description": "Scelta della difficoltà (moltiplicatore in GAME_STATE.difficulty) prima della partita.",
+  "scene": "LevelSelectScene",
+  "factory": "createLevelSelectScene",
+  "entry": "index.js",
+  "requires": [
+    "Phaser",
+    "CONFIG",
+    "GAME_STATE",
+    "GAME_FONT",
+    "TRANSLATIONS",
+    "addSpikeCredit",
+    "kitFlow"
+  ],
+  "events": {
+    "start": "Difficoltà scelta"
+  },
+  "config": [
+    "height",
+    "width"
+  ],
+  "i18n": [
+    "beginner",
+    "expert",
+    "hard",
+    "medium",
+    "selectDifficulty"
+  ],
+  "assets": {
+    "textures": [
+      "bg"
+    ],
+    "audio": [
+      "select_sfx"
+    ]
+  }
+}

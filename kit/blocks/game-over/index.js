@@ -49,7 +49,13 @@ const {
     parseExitTargetLevel,
     addSpikeCredit,
     createCreditsManager,
-    createLanguageCarousel
+    createLanguageCarousel,
+    kitFlow,
+    kitGame,
+    createNameEntry,
+    isHighScore,
+    insertTopScore,
+    saveTopScores
 } = deps;
 class GameOverScene extends Phaser.Scene {
     constructor() {
@@ -104,17 +110,11 @@ class GameOverScene extends Phaser.Scene {
             this.scoreTextObj.setPosition(m.cx, m.scoreY);
             this.scoreTextObj.setFontSize(`${m.scoreFont}px`);
         }
-        if (this.enterNameTextObj) {
-            this.enterNameTextObj.setPosition(m.cx, m.enterNameY);
-            this.enterNameTextObj.setFontSize(`${m.enterNameFont}px`);
-        }
-        if (this.nameText) {
-            this.nameText.setPosition(m.cx, m.nameY);
-            this.nameText.setFontSize(`${m.nameFont}px`);
-        }
-        if (this.countdownTextObj) {
-            this.countdownTextObj.setPosition(m.cx, m.countdownY);
-            this.countdownTextObj.setFontSize(`${m.countdownFont}px`);
+        if (this.nameEntry) {
+            this.nameEntry.layout({
+                x: m.cx, titleY: m.enterNameY, nameY: m.nameY, countdownY: m.countdownY,
+                titleFont: m.enterNameFont, nameFont: m.nameFont, countdownFont: m.countdownFont
+            });
         }
         if (this.continueTextObj) {
             this.continueTextObj.setPosition(m.cx, m.continueY);
@@ -127,6 +127,8 @@ class GameOverScene extends Phaser.Scene {
     }
 
     create() {
+        // the scene instance is reused between games: forget the previous name entry
+        this.nameEntry = null;
         const t = TRANSLATIONS[GAME_STATE.language] || {};
         const metrics = this.getGameOverMetrics();
         this._pendingSceneExit = false;
@@ -192,78 +194,32 @@ class GameOverScene extends Phaser.Scene {
             } catch (e) { }
         }
 
-        // Check if high score
-        const lowestScore = GAME_STATE.topScores[GAME_STATE.topScores.length - 1].score;
-        if (GAME_STATE.score > lowestScore) {
-            this.enterNameTextObj = this.add.text(metrics.cx, metrics.enterNameY, t.enterName || 'ENTER YOUR NAME', {
-                fontSize: `${metrics.enterNameFont}px`,
-                fill: '#00ff00',
-                fontFamily: GAME_FONT
-            }).setOrigin(0.5).setDepth(1);
-
-            // Letter picker: 3 letters, cycle with UP/DOWN, confirm letter with X, 10s timeout
-            this.nameChars = ['A', 'A', 'A'];
-            this.currentCharIndex = 0;
-            this.confirmed = [false, false, false];
-            this.nameText = this.add.text(metrics.cx, metrics.nameY, this._formatNameDisplay(), {
-                fontSize: `${metrics.nameFont}px`,
-                fill: '#ffff00',
-                fontFamily: GAME_FONT
-            }).setOrigin(0.5).setDepth(1);
-
-            const timeLabel = t.time_left || 'TIME';
-            const timeoutMs = 10000;
-            this._nameDeadlineAt = (Number(this.time?.now) || 0) + timeoutMs;
-            this.countdownTextObj = this.add.text(metrics.cx, metrics.countdownY, `${timeLabel}: 10`, {
-                fontSize: `${metrics.countdownFont}px`,
-                fill: '#ffffff',
-                fontFamily: GAME_FONT,
-                stroke: '#000000',
-                strokeThickness: 3
-            }).setOrigin(0.5).setDepth(1);
-
-            this._nameCountdownTimer = this.time.addEvent({
-                delay: 100,
-                loop: true,
-                callback: () => {
-                    try {
-                        const remainMs = Math.max(0, this._nameDeadlineAt - (Number(this.time?.now) || 0));
-                        const remainSec = Math.ceil(remainMs / 1000);
-                        if (this.countdownTextObj) this.countdownTextObj.setText(`${timeLabel}: ${remainSec}`);
-                    } catch (e) { }
+        // High score: arcade initials entry (kit/blocks/score-entry)
+        if (isHighScore(GAME_STATE.topScores, GAME_STATE.score)) {
+            this.nameEntry = createNameEntry(this, {
+                font: GAME_FONT,
+                x: metrics.cx,
+                titleY: metrics.enterNameY, nameY: metrics.nameY, countdownY: metrics.countdownY,
+                titleFont: metrics.enterNameFont, nameFont: metrics.nameFont, countdownFont: metrics.countdownFont,
+                labels: { title: t.enterName || 'ENTER YOUR NAME', time: t.time_left || 'TIME' },
+                length: 3,
+                timeoutMs: 10000,
+                onConfirm: (name) => this.saveScore({ name }),
+                // time is up: keep the default name and go to attract as a fresh start
+                onTimeout: () => {
+                    this._nameWasAutoTimeout = true;
+                    this.saveScore({ useDefaultName: true, goToAttract: true });
                 }
-            });
-
-            // Keyboard handlers
-            this._onKeyDown = (event) => {
-                const key = event.key;
-                if (key === 'ArrowUp') {
-                    this._cycleLetter(1);
-                } else if (key === 'ArrowDown') {
-                    this._cycleLetter(-1);
-                } else if (key && key.toLowerCase() === 'x') {
-                    // confirm current letter (mapped to X key)
-                    this._confirmLetter();
-                } else if (key === 'Backspace') {
-                    // go back to previous letter
-                    this._goBackLetter();
-                } else if (key === 'Enter') {
-                    // if all confirmed, save
-                    if (this.confirmed.every(Boolean)) this.saveScore();
-                }
-            };
-            this.input.keyboard.on('keydown', this._onKeyDown);
-
-            // 10s timeout: keep default name and go to attract as a fresh start.
-            this._nameTimeout = this.time.delayedCall(timeoutMs, () => {
-                this._nameWasAutoTimeout = true;
-                this.saveScore({ useDefaultName: true, goToAttract: true });
             });
         } else {
             if (!canContinue) {
                 this.time.delayedCall(3000, () => {
                     this._goToAttractFresh();
                 });
+            } else {
+                // "Continue" offered but nobody presses 1/2: do not wait forever
+                const continueMs = Number(CONFIG.continueTimeout) > 0 ? Number(CONFIG.continueTimeout) : 10000;
+                this._continueTimeout = this.time.delayedCall(continueMs, () => this._goToAttractFresh());
             }
         }
 
@@ -287,10 +243,6 @@ class GameOverScene extends Phaser.Scene {
         this.applyGameOverLayout();
     }
 
-    updateNameDisplay() {
-        if (this.nameText) this.nameText.setText(this._formatNameDisplay());
-    }
-
     saveScore(options = {}) {
         if (this._pendingSceneExit) return;
         this._pendingSceneExit = true;
@@ -298,34 +250,11 @@ class GameOverScene extends Phaser.Scene {
         const useDefaultName = !!options.useDefaultName;
         const goToAttract = !!options.goToAttract;
 
-        // build final name from nameChars, pad with 'A' if needed
-        const name = useDefaultName
-            ? 'AAA'
-            : (this.nameChars || ['A','A','A']).slice(0,3).map((c) => (typeof c === 'string' && c.length ? c[0] : 'A')).join('').toUpperCase();
+        const name = useDefaultName ? 'AAA' : String(options.name || this.nameEntry?.name || 'AAA').toUpperCase();
+        GAME_STATE.topScores = insertTopScore(GAME_STATE.topScores, { name, score: GAME_STATE.score, level: Number(GAME_STATE.currentLevel) || 0 });
 
-        GAME_STATE.topScores.push({ name, score: GAME_STATE.score, level: Number(GAME_STATE.currentLevel) || 0 });
-        GAME_STATE.topScores.sort((a, b) => b.score - a.score);
-        GAME_STATE.topScores = GAME_STATE.topScores.slice(0, 10);
-
-        // persist to server-side topScores file (falls back to localStorage if server unavailable)
-        try {
-            (async () => {
-                try {
-                    const resp = await fetch('/api/top-scores', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(GAME_STATE.topScores)
-                    });
-                    if (!resp || !resp.ok) {
-                        try { localStorage.setItem('blockHunterTopScores', JSON.stringify(GAME_STATE.topScores)); } catch (e) { }
-                    }
-                } catch (e) {
-                    try { localStorage.setItem('blockHunterTopScores', JSON.stringify(GAME_STATE.topScores)); } catch (err) { }
-                }
-            })();
-        } catch (e) {
-            try { localStorage.setItem('blockHunterTopScores', JSON.stringify(GAME_STATE.topScores)); } catch (err) { }
-        }
+        // persist to the server-side top scores (falls back to localStorage if the server is unavailable)
+        saveTopScores(GAME_STATE.topScores, { endpoint: '/api/top-scores', storageKey: kitGame.storageKey('TopScores') });
 
         // cleanup keyboard handler and timeout
         this._cleanupInputHandlers();
@@ -336,22 +265,18 @@ class GameOverScene extends Phaser.Scene {
         }
 
         // End gameplay scene when game is really over (no continue chosen).
-        try { this.scene.stop('GameScene'); } catch (e) { }
+        try { this.scene.stop(kitFlow.role('gameplay', 'GameScene')); } catch (e) { }
         this._resetAudioHard();
-        this.scene.start('TopTenScene');
+        this.scene.start(kitFlow.next('game-over', 'end', 'TopTenScene'));
     }
 
     _cleanupInputHandlers() {
         try {
-            if (this._onKeyDown) this.input.keyboard.off('keydown', this._onKeyDown);
-        } catch (e) { }
-        try {
             if (this._onKeyOne) this.input.keyboard.off('keydown-ONE', this._onKeyOne);
             if (this._onKeyTwo) this.input.keyboard.off('keydown-TWO', this._onKeyTwo);
         } catch (e) { }
-        try { if (this._nameTimeout) this._nameTimeout.remove(false); } catch (e) { }
-        try { if (this._nameCountdownTimer) this._nameCountdownTimer.remove(false); } catch (e) { }
-        try { if (this.countdownTextObj) { this.countdownTextObj.destroy(); this.countdownTextObj = null; } } catch (e) { }
+        try { if (this.nameEntry) this.nameEntry.stop(); } catch (e) { }
+        try { if (this._continueTimeout) this._continueTimeout.remove(false); } catch (e) { }
     }
 
     _resetAudioHard() {
@@ -372,7 +297,7 @@ class GameOverScene extends Phaser.Scene {
         this._cleanupInputHandlers();
 
         try {
-            const gs = this.scene.get('GameScene');
+            const gs = this.scene.get(kitFlow.role('gameplay', 'GameScene'));
             if (gs && typeof gs._stopAllAudio === 'function') gs._stopAllAudio();
         } catch (e) { }
 
@@ -380,8 +305,8 @@ class GameOverScene extends Phaser.Scene {
 
         try { GAME_STATE.isGameOver = false; } catch (e) { }
         try { clearRuntimeMatchStorage(); } catch (e) { }
-        try { this.scene.stop('GameScene'); } catch (e) { }
-        this.scene.start('AttractScene');
+        try { this.scene.stop(kitFlow.role('gameplay', 'GameScene')); } catch (e) { }
+        this.scene.start(kitFlow.next('game-over', 'exit', 'AttractScene'));
     }
 
     tryContinue(requestedPlayers) {
@@ -395,7 +320,7 @@ class GameOverScene extends Phaser.Scene {
         this._resetAudioHard();
 
         try {
-            const gameScene = this.scene.get('GameScene');
+            const gameScene = this.scene.get(kitFlow.role('gameplay', 'GameScene'));
             if (gameScene && typeof gameScene.continueFromGameOver === 'function') {
                 gameScene.continueFromGameOver(requiredPlayers);
             } else {
@@ -408,60 +333,6 @@ class GameOverScene extends Phaser.Scene {
         this.scene.stop();
     }
 
-    _formatNameDisplay() {
-        const chars = (this.nameChars || ['A','A','A']).slice(0, 3).map((c) => (typeof c === 'string' && c.length ? c[0] : 'A').toUpperCase());
-        return chars.map((ch, i) => {
-            if (this.confirmed && this.confirmed[i]) return ch;
-            if (this.currentCharIndex === i) return `[${ch}]`;
-            return ch;
-        }).join(' ');
-    }
-
-    _cycleLetter(delta) {
-        try {
-            if (!this.nameChars) this.nameChars = ['A', 'A', 'A'];
-            const idx = Number(this.currentCharIndex) || 0;
-            const cur = String(this.nameChars[idx] || 'A').toUpperCase();
-            const code = cur.charCodeAt(0);
-            let pos = (code >= 65 && code <= 90) ? code - 65 : 0;
-            pos = ((pos + delta) % 26 + 26) % 26;
-            this.nameChars[idx] = String.fromCharCode(65 + pos);
-            this.updateNameDisplay();
-        } catch (e) { /* ignore */ }
-    }
-
-    _confirmLetter() {
-        try {
-            if (!this.confirmed) this.confirmed = [false, false, false];
-            this.confirmed[this.currentCharIndex] = true;
-            // advance to next unconfirmed
-            for (let i = this.currentCharIndex + 1; i < 3; i++) {
-                if (!this.confirmed[i]) {
-                    this.currentCharIndex = i;
-                    this.updateNameDisplay();
-                    return;
-                }
-            }
-            // all confirmed? save
-            if (this.confirmed.every(Boolean)) {
-                this.saveScore();
-            } else {
-                this.currentCharIndex = Math.min(2, this.currentCharIndex + 1);
-                this.updateNameDisplay();
-            }
-        } catch (e) { /* ignore */ }
-    }
-
-    _goBackLetter() {
-        try {
-            if (!this.confirmed) this.confirmed = [false, false, false];
-            if (this.currentCharIndex > 0) {
-                this.currentCharIndex--;
-            }
-            this.confirmed[this.currentCharIndex] = false;
-            this.updateNameDisplay();
-        } catch (e) { /* ignore */ }
-    }
 }
 
 

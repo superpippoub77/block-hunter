@@ -49,7 +49,9 @@ const {
     parseExitTargetLevel,
     addSpikeCredit,
     createCreditsManager,
-    createLanguageCarousel
+    createLanguageCarousel,
+    kitFlow,
+    kitGame
 } = deps;
 class AttractScene extends Phaser.Scene {
     constructor() {
@@ -445,7 +447,7 @@ class AttractScene extends Phaser.Scene {
     }
 
     openConfig() {
-        this.scene.start('ConfigScene');
+        this.scene.start(kitFlow.next('attract', 'config', 'ConfigScene'));
     }
 
     insertCoin() {
@@ -473,7 +475,7 @@ class AttractScene extends Phaser.Scene {
             }
             consumeCreditsForPlayers(players);
             resetGameStateForNewRun(players);
-            this.scene.start('LevelSelectScene');
+            this.scene.start(kitFlow.next('attract', 'start', 'LevelSelectScene'));
         }
     }
 
@@ -603,7 +605,7 @@ class AttractScene extends Phaser.Scene {
             this.attractTimer.remove();
         }
         this.attractTimer = this.time.delayedCall(CONFIG.attractTimeout, () => {
-            this.scene.start('TopTenScene');
+            this.scene.start(kitFlow.next('attract', 'idle', 'TopTenScene'));
         });
     }
 }

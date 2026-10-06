@@ -13,7 +13,9 @@ export function createCreditsScene(deps) {
         hasStartAccessForPlayers,
         consumeCreditsForPlayers,
         resetGameStateForNewRun,
-        isFreeplayEnabled
+        isFreeplayEnabled,
+        kitFlow,
+        kitGame
     } = deps;
 
     return class CreditsScene extends Phaser.Scene {
@@ -122,7 +124,7 @@ export function createCreditsScene(deps) {
             const lines = Array.isArray(CONFIG?.creditsScene?.lines) && CONFIG.creditsScene.lines.length > 0
                 ? CONFIG.creditsScene.lines
                 : [
-                    'Project: Block Hunter',
+                    `Project: ${kitGame.title}`,
                     'Version: 1.0.0',
                     '',
                     'Lead developer: Filippo Morano',
@@ -144,7 +146,7 @@ export function createCreditsScene(deps) {
 
             this.creditsTimeoutSecs = Number(CONFIG.creditsTimeout) || 6000;
             this.creditsTimer = this.time.delayedCall(this.creditsTimeoutSecs, () => {
-                this.scene.start('AttractScene');
+                this.scene.start(kitFlow.next('credits', 'timeout', 'AttractScene'));
             });
 
             this.languages = ['it', 'fr', 'de', 'en', 'us', 'ja', 'es', 'zh'];
@@ -196,9 +198,9 @@ export function createCreditsScene(deps) {
                     } catch (e) { }
                     consumeCreditsForPlayers(players);
                     resetGameStateForNewRun(players);
-                    this.scene.start('LevelSelectScene');
+                    this.scene.start(kitFlow.next('credits', 'start', 'LevelSelectScene'));
                 } else {
-                    this.scene.start('AttractScene');
+                    this.scene.start(kitFlow.next('credits', 'exit', 'AttractScene'));
                 }
             };
             this.input.keyboard.on('keydown-ONE', () => this.startGameFromCredits(1));
@@ -217,8 +219,8 @@ export function createCreditsScene(deps) {
             });
             this.applyCreditsLayout();
 
-            this.input.keyboard.once('keydown-SPACE', () => this.scene.start('AttractScene'));
-            this.input.keyboard.once('keydown-ESC', () => this.scene.start('AttractScene'));
+            this.input.keyboard.once('keydown-SPACE', () => this.scene.start(kitFlow.next('credits', 'exit', 'AttractScene')));
+            this.input.keyboard.once('keydown-ESC', () => this.scene.start(kitFlow.next('credits', 'exit', 'AttractScene')));
 
             this.changeLangCredits = (dir) => {
                 if (this.sound) this.sound.play('select_sfx', { volume: 0.4 });
@@ -294,7 +296,7 @@ export function createCreditsScene(deps) {
                 try {
                     if (this.creditsTimer) this.creditsTimer.remove();
                 } catch (e) { }
-                this.creditsTimer = this.time.delayedCall(this.creditsTimeoutSecs, () => { this.scene.start('AttractScene'); });
+                this.creditsTimer = this.time.delayedCall(this.creditsTimeoutSecs, () => { this.scene.start(kitFlow.next('credits', 'timeout', 'AttractScene')); });
             };
 
             loadTranslations(GAME_STATE.language, () => { this.updateCreditsUI(); });

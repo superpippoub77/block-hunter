@@ -1,0 +1,32 @@
+{
+  "id": "score-entry",
+  "name": "ScoreEntry",
+  "version": "1.0.0",
+  "description": "Inserimento in top ten: selettore di iniziali in stile arcade con conto alla rovescia, più le funzioni per sapere se un punteggio entra in classifica, inserirlo e salvarlo (server con ripiego nel browser).",
+  "scene": null,
+  "entry": "index.js",
+  "exports": {
+    "createNameEntry": "createNameEntry(scene, { font, x, titleY, nameY, countdownY, titleFont, nameFont, countdownFont, labels: { title, time }, length, timeoutMs, depth, onConfirm(name), onTimeout(defaultName) }) → { name, finished, layout(m), stop() }",
+    "isHighScore": "isHighScore(topScores, score, size = 10) → boolean",
+    "insertTopScore": "insertTopScore(topScores, { name, score, level }, size = 10) → nuova lista ordinata",
+    "saveTopScores": "saveTopScores(list, { endpoint = \"/api/top-scores\", storageKey }) → Promise<\"server\" | \"local\">"
+  },
+  "keys": {
+    "ArrowUp/ArrowDown": "cambia lettera",
+    "X": "conferma lettera",
+    "Backspace": "lettera precedente",
+    "Enter": "salva (con tutte le lettere confermate)"
+  },
+  "requires": [],
+  "events": {},
+  "config": [],
+  "i18n": [
+    "enterName",
+    "time_left"
+  ],
+  "assets": {
+    "textures": [],
+    "audio": []
+  },
+  "server": "POST /api/top-scores con la lista completa (server.js); se non risponde la lista va in localStorage[storageKey]."
+}

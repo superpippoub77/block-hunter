@@ -10,7 +10,9 @@ export function createTopTenScene(deps) {
         addSpikeCredit,
         createCreditsManager,
         createLanguageCarousel,
-        loadTranslations
+        loadTranslations,
+        kitFlow,
+        kitGame
     } = deps;
 
     return class TopTenScene extends Phaser.Scene {
@@ -249,7 +251,7 @@ export function createTopTenScene(deps) {
             });
 
             this.time.delayedCall(CONFIG.topTenTimeout, () => {
-                this.scene.start('CreditsScene');
+                this.scene.start(kitFlow.next('top-ten', 'timeout', 'CreditsScene'));
             });
 
             this.languages = ['it', 'fr', 'de', 'en', 'us', 'ja', 'es', 'zh'];
@@ -312,14 +314,14 @@ export function createTopTenScene(deps) {
             this.input.keyboard.on('keydown-FIVE', () => this.insertCoin());
             this.input.keyboard.on('keydown-SIX', () => this.insertCoin());
 
-            this.input.keyboard.on('keydown-ONE', () => this.scene.start('LevelSelectScene'));
-            this.input.keyboard.on('keydown-TWO', () => this.scene.start('LevelSelectScene'));
+            this.input.keyboard.on('keydown-ONE', () => this.scene.start(kitFlow.next('top-ten', 'start', 'LevelSelectScene')));
+            this.input.keyboard.on('keydown-TWO', () => this.scene.start(kitFlow.next('top-ten', 'start', 'LevelSelectScene')));
 
             this.input.keyboard.on('keydown-LEFT', () => this.changeLanguage(-1));
             this.input.keyboard.on('keydown-RIGHT', () => this.changeLanguage(1));
 
             this.input.keyboard.on('keydown', () => {
-                this.scene.start('AttractScene');
+                this.scene.start(kitFlow.next('top-ten', 'exit', 'AttractScene'));
             });
         }
 

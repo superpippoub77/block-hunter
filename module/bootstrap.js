@@ -16,12 +16,17 @@ export async function inizialization(deps) {
         blockHunterSceneClasses,
         instrumentSceneMethods,
         loadGameplayMappings,
+        loadKit,
         logger
     } = deps;
 
     try {
         instrumentSceneMethods(blockHunterSceneClasses);
         logger.info('BOOT', 'Tracing scene methods attivato.', `level=${logger.getLevel()}`);
+
+        if (typeof loadKit === 'function') {
+            try { await loadKit(); } catch (e) { logger.warn('BOOT', 'Kit non configurato', e); }
+        }
 
         const mappings = await loadGameplayMappings();
         logger.debug('BOOT', 'Mapping gameplay caricati', `entities=${Object.keys(mappings.entities?.entities || {}).length}, tiles=${Object.keys(mappings.tiles?.tiles || {}).length}, effects=${Object.keys(mappings.effects?.effectProfiles || {}).length}`);

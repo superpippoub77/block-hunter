@@ -1,3 +1,18 @@
+// Coins / credits: free play, start access, credit consumption and the credits HUD.
+export function isFreeplayEnabled(config) {
+    return Boolean(config && config.freeplay === true);
+}
+
+export function hasStartAccessForPlayers(config, gameState, players) {
+    if (isFreeplayEnabled(config)) return true;
+    return (Number(gameState.credits) || 0) >= players;
+}
+
+export function consumeCreditsForPlayers(config, gameState, players) {
+    if (isFreeplayEnabled(config)) return;
+    gameState.credits = Math.max(0, (Number(gameState.credits) || 0) - players);
+}
+
 // Credits manager: creates credit UI and exposes insertCoin()/helpers
 export function createCreditsManager(scene, opts = {}) {
     const GAME_STATE = opts.gameState || {};

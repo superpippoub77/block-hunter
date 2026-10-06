@@ -1,0 +1,21 @@
+{
+  "game": {
+    "id": "block-hunter",
+    "title": "Block Hunter",
+    "storagePrefix": "blockHunter"
+  },
+  "kitPath": "kit",
+  "blocks": ["attract", "language", "top-ten", "credits", "config", "level-select", "game-over", "score-entry"],
+  "roles": {
+    "gameplay": "GameScene"
+  },
+  "flow": {
+    "attract": { "start": "LevelSelectScene", "idle": "TopTenScene", "config": "ConfigScene" },
+    "top-ten": { "timeout": "CreditsScene", "start": "LevelSelectScene", "exit": "AttractScene" },
+    "credits": { "timeout": "AttractScene", "start": "LevelSelectScene", "exit": "AttractScene" },
+    "config": { "exit": "AttractScene" },
+    "level-select": { "start": "GameScene" },
+    "game-over": { "end": "TopTenScene", "exit": "AttractScene" },
+    "gameplay": { "gameover": "GameOverScene" }
+  }
+}

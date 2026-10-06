@@ -49,7 +49,9 @@ const {
     parseExitTargetLevel,
     addSpikeCredit,
     createCreditsManager,
-    createLanguageCarousel
+    createLanguageCarousel,
+    kitFlow,
+    kitGame
 } = deps;
 class ConfigScene extends Phaser.Scene {
     constructor() {
@@ -214,7 +216,7 @@ class ConfigScene extends Phaser.Scene {
 
         applyBtn.on('pointerdown', () => {
             try {
-                localStorage.setItem('blockHunterConfig', JSON.stringify({
+                localStorage.setItem(kitGame.storageKey('Config'), JSON.stringify({
                     __fullConfig: true,
                     values: JSON.parse(JSON.stringify(CONFIG || {}))
                 }));
@@ -235,7 +237,7 @@ class ConfigScene extends Phaser.Scene {
             this.objectSizeText.setText(String(CONFIG.objectSize));
             this.playerSizeText.setText(String(CONFIG.playerSize));
             if (this.wallSizeText) this.wallSizeText.setText(String(CONFIG.wallSize ?? CONFIG.tileSize));
-            try { localStorage.removeItem('blockHunterConfig'); } catch (e) { }
+            try { localStorage.removeItem(kitGame.storageKey('Config')); } catch (e) { }
             this.updatePreviewSizes();
             this.refreshAllConfigRows();
         });
@@ -489,7 +491,7 @@ class ConfigScene extends Phaser.Scene {
 
         // Setup input
         this.input.keyboard.on('keydown-ESC', () => {
-            this.scene.start('AttractScene');
+            this.scene.start(kitFlow.next('config', 'exit', 'AttractScene'));
         });
 
         // Helper to update preview sprites scaling when CONFIG changes

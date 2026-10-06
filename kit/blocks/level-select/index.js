@@ -49,7 +49,9 @@ const {
     parseExitTargetLevel,
     addSpikeCredit,
     createCreditsManager,
-    createLanguageCarousel
+    createLanguageCarousel,
+    kitFlow,
+    kitGame
 } = deps;
 class LevelSelectScene extends Phaser.Scene {
     constructor() {
@@ -193,7 +195,7 @@ class LevelSelectScene extends Phaser.Scene {
             text.on('pointerdown', () => {
                 this.playSelectSfx();
                 GAME_STATE.difficulty = diff.mult;
-                this.scene.start('GameScene');
+                this.scene.start(kitFlow.next('level-select', 'start', 'GameScene'));
             });
 
             this.diffTexts.push(text);
@@ -225,13 +227,13 @@ class LevelSelectScene extends Phaser.Scene {
             this.playSelectSfx();
             const diff = this.difficulties[this.selectedIndex];
             GAME_STATE.difficulty = diff.mult;
-            this.scene.start('GameScene');
+            this.scene.start(kitFlow.next('level-select', 'start', 'GameScene'));
         });
         this.input.keyboard.on('keydown-SPACE', () => {
             this.playSelectSfx();
             const diff = this.difficulties[this.selectedIndex];
             GAME_STATE.difficulty = diff.mult;
-            this.scene.start('GameScene');
+            this.scene.start(kitFlow.next('level-select', 'start', 'GameScene'));
         });
 
         // Keep numeric shortcuts (also update selection visuals before starting)
@@ -240,21 +242,21 @@ class LevelSelectScene extends Phaser.Scene {
             this.selectedIndex = 0;
             this.updateSelection();
             GAME_STATE.difficulty = this.difficulties[0].mult;
-            this.scene.start('GameScene');
+            this.scene.start(kitFlow.next('level-select', 'start', 'GameScene'));
         });
         this.input.keyboard.on('keydown-TWO', () => {
             this.playSelectSfx();
             this.selectedIndex = 1;
             this.updateSelection();
             GAME_STATE.difficulty = this.difficulties[1].mult;
-            this.scene.start('GameScene');
+            this.scene.start(kitFlow.next('level-select', 'start', 'GameScene'));
         });
         this.input.keyboard.on('keydown-THREE', () => {
             this.playSelectSfx();
             this.selectedIndex = 2;
             this.updateSelection();
             GAME_STATE.difficulty = this.difficulties[2].mult;
-            this.scene.start('GameScene');
+            this.scene.start(kitFlow.next('level-select', 'start', 'GameScene'));
         });
     }
 }

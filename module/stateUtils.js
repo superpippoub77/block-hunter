@@ -1,17 +1,3 @@
-export function isFreeplayEnabled(config) {
-    return Boolean(config && config.freeplay === true);
-}
-
-export function hasStartAccessForPlayers(config, gameState, players) {
-    if (isFreeplayEnabled(config)) return true;
-    return (Number(gameState.credits) || 0) >= players;
-}
-
-export function consumeCreditsForPlayers(config, gameState, players) {
-    if (isFreeplayEnabled(config)) return;
-    gameState.credits = Math.max(0, (Number(gameState.credits) || 0) - players);
-}
-
 export function clearRuntimeMatchStorage(logger) {
     logger.trace('clearRuntimeMatchStorage', 'Pulizia storage runtime/sessione');
     try {

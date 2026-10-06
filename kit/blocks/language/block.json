@@ -1,0 +1,21 @@
+{
+  "id": "language",
+  "name": "LanguageCarousel",
+  "version": "1.0.0",
+  "description": "Carosello per la scelta della lingua (bandiere/etichette con frecce), usato da attract, top ten e crediti.",
+  "factory": "createLanguageCarousel",
+  "entry": "index.js",
+  "scene": null,
+  "requires": [],
+  "usage": "createLanguageCarousel(scene, { font, hudDepth, index, languages, onIndexChange, onRequestChange, x, y })",
+  "events": {},
+  "config": [],
+  "i18n": [],
+  "assets": {
+    "textures": [
+      "flags"
+    ],
+    "audio": []
+  },
+  "notes": "Spritesheet \"flags\": un frame per lingua, nello stesso ordine di opts.languages."
+}

@@ -4,21 +4,22 @@
 
 import { OBJECT_FRAMES, TILE_FRAMES, WALL_TILE_COLS } from './data/module/constants.js';
 import { createPreloadScene } from './module/scenes/preloadScene.js';
-import { createAttractScene } from './module/scenes/attractScene.js';
-import { createTopTenScene } from './module/scenes/topTenScene.js';
-import { createCreditsScene } from './module/scenes/creditsScene.js';
-import { createConfigScene } from './module/scenes/configScene.js';
-import { createLevelSelectScene } from './module/scenes/levelSelectScene.js';
+import { createAttractScene } from './kit/blocks/attract/index.js';
+import { createTopTenScene } from './kit/blocks/top-ten/index.js';
+import { createCreditsScene } from './kit/blocks/credits/index.js';
+import { createConfigScene } from './kit/blocks/config/index.js';
+import { createLevelSelectScene } from './kit/blocks/level-select/index.js';
 import { createGameScene } from './module/scenes/gameScene.js';
 import { createBonusScene } from './module/scenes/bonusScene.js';
-import { createGameOverScene } from './module/scenes/gameOverScene.js';
-import { createLanguageCarousel } from './module/languageCarousel.js';
-import { createCreditsManager } from './module/creditsManager.js';
+import { createGameOverScene } from './kit/blocks/game-over/index.js';
+import { createLanguageCarousel } from './kit/blocks/language/index.js';
+import { createCreditsManager, isFreeplayEnabled as isFreeplayEnabledBase, hasStartAccessForPlayers as hasStartAccessForPlayersBase, consumeCreditsForPlayers as consumeCreditsForPlayersBase } from './kit/core/coins.js';
+import { configureKit, kitFlow, kitGame } from './kit/core/flow.js';
+import { createNameEntry, isHighScore, insertTopScore, saveTopScores } from './kit/blocks/score-entry/index.js';
+import { loadManifest, checkBlocks } from './kit/core/blocks.js';
+import { loadTranslations as loadTranslationsBase } from './kit/core/i18n.js';
 import { applyMappingFrameOverrides as applyMappingFrameOverridesBase, loadGameplayMappings as loadGameplayMappingsBase } from './module/mappingUtils.js';
 import {
-    isFreeplayEnabled as isFreeplayEnabledBase,
-    hasStartAccessForPlayers as hasStartAccessForPlayersBase,
-    consumeCreditsForPlayers as consumeCreditsForPlayersBase,
     clearRuntimeMatchStorage as clearRuntimeMatchStorageBase,
     resetGameStateForNewRun as resetGameStateForNewRunBase
 } from './module/stateUtils.js';
@@ -34,12 +35,12 @@ import {
     instrumentSceneMethods as instrumentSceneMethodsBase
 } from './module/docUtils.js';
 import { queueLegacyPreloadAssets as queueLegacyPreloadAssetsBase, queueAssetsFromManifest as queueAssetsFromManifestBase } from './module/preloadUtils.js';
-import { mergeLocalConfig as mergeLocalConfigBase, loadTranslations as loadTranslationsBase } from './module/configUtils.js';
+import { mergeLocalConfig as mergeLocalConfigBase } from './module/configUtils.js';
 import {
     drawTextPanel as drawTextPanelBase,
     getTextureMaxNumericFrame as getTextureMaxNumericFrameBase,
     playLoopAudioSafely as playLoopAudioSafelyBase
-} from './module/renderAudioUtils.js';
+} from './kit/core/ui.js';
 import { resolveContactSpec as resolveContactSpecBase } from './module/contactUtils.js';
 import {
     LEVEL_CONFIG,
@@ -47,7 +48,7 @@ import {
     getLevelMasterNumber as getLevelMasterNumberBase,
     parseExitTargetLevel as parseExitTargetLevelBase
 } from './module/levelUtils.js';
-import { addSpikeCredit as addSpikeCreditBase } from './module/uiUtils.js';
+import { addSpikeCredit as addSpikeCreditBase } from './kit/core/ui.js';
 import { inizialization as inizializationBase } from './module/bootstrap.js';
 
 try {
@@ -168,6 +169,15 @@ const inizialization = () => inizializationBase({
     blockHunterSceneClasses: BLOCKHUNTER_SCENE_CLASSES,
     instrumentSceneMethods,
     loadGameplayMappings,
+    loadKit: async () => {
+        // game.manifest.json: game identity, blocks used and scene flow (see kit/README.md)
+        const manifest = await loadManifest('game.manifest.json');
+        configureKit(manifest);
+        if (manifest) {
+            const report = await checkBlocks(manifest, sceneDeps, LOGGER);
+            try { window.SPIKE_KIT = { manifest, blocks: report }; } catch (e) { }
+        }
+    },
     logger: LOGGER
 });
 
@@ -224,7 +234,13 @@ const sceneDeps = {
     parseExitTargetLevel,
     addSpikeCredit,
     createCreditsManager,
-    createLanguageCarousel
+    createLanguageCarousel,
+    createNameEntry,
+    isHighScore,
+    insertTopScore,
+    saveTopScores,
+    kitFlow,
+    kitGame
 };
 
 const PreloadScene = createPreloadScene(sceneDeps);
