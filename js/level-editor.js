@@ -223,6 +223,35 @@ const gameConfigReady = fetch(CONFIG_JSON_PATH, { cache: 'no-store' })
     .catch(() => { /* keep defaults */ })
     .then(() => applySavedGameConfig());
 
+// Data-driven entities (data/game-entities-mapping.json entries with a "behaviour"): the
+// editor shows them in the palette and on the grid with their editor.icon (and tint), so a new
+// enemy/character added to the mapping is immediately placeable without touching this file.
+const EDITOR_ENTITIES = new Map(); // token -> { id, token, label, icon, tint, textureKey }
+const editorEntitiesReady = fetch('data/game-entities-mapping.json', { cache: 'no-store' })
+    .then((resp) => (resp.ok ? resp.json() : null))
+    .then((json) => {
+        Object.entries(json?.entities || {}).forEach(([id, def]) => {
+            if (!def || !def.behaviour) return;
+            const icon = def.editor?.icon || null;
+            const tintStr = def.editor?.tint || def.sprite?.tint || null;
+            const tint = tintStr ? parseInt(String(tintStr).replace('#', ''), 16) : null;
+            (def.tokens && def.tokens.length ? def.tokens : [id]).forEach((t) => {
+                const token = String(t).toLowerCase();
+                EDITOR_ENTITIES.set(token, {
+                    id, token, label: def.label || id, icon,
+                    tint: Number.isFinite(tint) ? tint : null, tintCss: tintStr,
+                    textureKey: icon?.src ? `entity_${id}` : null
+                });
+                AUTO_TILE_PROTECTED_TOKENS.add(token);
+            });
+        });
+    })
+    .catch(() => { /* no data entities */ });
+
+function editorEntityFor(token) {
+    return EDITOR_ENTITIES.get(String(token ?? '').trim().toLowerCase()) || null;
+}
+
 // Mirrors GameScene resolveLayerSize/resolveLayerPlacement: returns the layout of a bg/fg layer
 // in game pixels, relative to the map origin.
 // Same transform as GameScene placeLayerImage: (x, y, w, h) is the unrotated box
@@ -1563,6 +1592,12 @@ class LevelEditorScene extends Phaser.Scene {
             .spritesheet('objects', `${COMMON_ASSETS_DIR}/obj_game.png`, { frameWidth: 64, frameHeight: 64 })
             .spritesheet('ghost_anim', `${COMMON_ASSETS_DIR}/ghost.png`, { frameWidth: 64, frameHeight: 64 })
             .spritesheet('bat_anim', `${COMMON_ASSETS_DIR}/batpng.png`, { frameWidth: 64, frameHeight: 64 });
+        EDITOR_ENTITIES.forEach((ent) => {
+            if (!ent.textureKey || this.textures.exists(ent.textureKey)) return;
+            this.load.spritesheet(ent.textureKey, ent.icon.src, {
+                frameWidth: Number(ent.icon.frameWidth) || 64, frameHeight: Number(ent.icon.frameHeight) || 64
+            });
+        });
 
         // preload possible game backgrounds so the editor can offer them
         // Fallback default background (game_bg.png is not present in this repo)
@@ -2649,7 +2684,11 @@ class LevelEditorScene extends Phaser.Scene {
             case 'bat': return { kind: 'bat' };
             case 'spider': return { kind: 'obj', frame: OBJECT_FRAMES.spider };
             case 'snake': return { kind: 'obj', frame: OBJECT_FRAMES.snake };
-            default: return { kind: 'text', text: normalized };
+            default: {
+                const ent = editorEntityFor(normalized);
+                if (ent && ent.textureKey) return { kind: 'entity', entity: ent };
+                return { kind: 'text', text: normalized };
+            }
         }
     }
 
@@ -2711,6 +2750,16 @@ class LevelEditorScene extends Phaser.Scene {
             const bat = this.add.sprite(x, y, 'bat_anim', 0);
             bat.setScale(scale * 0.9);
             container.add(bat);
+            return;
+        }
+
+        if (info.kind === 'entity' && this.textures.exists(info.entity.textureKey)) {
+            const ent = info.entity;
+            const spr = this.add.sprite(x, y, ent.textureKey, Number(ent.icon?.frame) || 0);
+            spr.setScale((size / Math.max(spr.width, spr.height, 1)) * 0.9);
+            if (ent.tint != null) spr.setTint(ent.tint);
+            if (invisible) spr.setAlpha(0.35);
+            container.add(spr);
             return;
         }
 
@@ -2997,7 +3046,8 @@ const phaserConfig = {
     scene: [LevelEditorScene]
 };
 
-new Phaser.Game(phaserConfig);
+// boot after the data entities are known (their icons are loaded in preload)
+editorEntitiesReady.then(() => new Phaser.Game(phaserConfig));
 
 function getScene() {
     return window.__levelEditorScene || null;
@@ -3059,17 +3109,31 @@ function drawMiniMapFrame(scene, ctx, textureKey, frameIndex, x, y, size, opts =
     }
     if (rotation !== 0) ctx.rotate(rotation);
 
-    ctx.drawImage(
-        sourceImage,
-        frame.cutX,
-        frame.cutY,
-        frame.cutWidth,
-        frame.cutHeight,
-        -size / 2,
-        -size / 2,
-        size,
-        size
-    );
+    if (opts.tint) {
+        // multiply the frame by the tint colour, keeping its alpha (like Phaser setTint)
+        const off = document.createElement('canvas');
+        off.width = frame.cutWidth; off.height = frame.cutHeight;
+        const o = off.getContext('2d');
+        o.drawImage(sourceImage, frame.cutX, frame.cutY, frame.cutWidth, frame.cutHeight, 0, 0, off.width, off.height);
+        o.globalCompositeOperation = 'multiply';
+        o.fillStyle = opts.tint;
+        o.fillRect(0, 0, off.width, off.height);
+        o.globalCompositeOperation = 'destination-in';
+        o.drawImage(sourceImage, frame.cutX, frame.cutY, frame.cutWidth, frame.cutHeight, 0, 0, off.width, off.height);
+        ctx.drawImage(off, -size / 2, -size / 2, size, size);
+    } else {
+        ctx.drawImage(
+            sourceImage,
+            frame.cutX,
+            frame.cutY,
+            frame.cutWidth,
+            frame.cutHeight,
+            -size / 2,
+            -size / 2,
+            size,
+            size
+        );
+    }
 
     ctx.restore();
     return true;
@@ -3161,8 +3225,13 @@ function drawMiniMapToken(scene, ctx, token, x, y, size, opts = {}) {
             return drawMiniMapFrame(scene, ctx, 'objects', OBJECT_FRAMES.spider, x, y, size, { alpha: opts.alpha });
         case 'snake':
             return drawMiniMapFrame(scene, ctx, 'objects', OBJECT_FRAMES.snake, x, y, size, { alpha: opts.alpha });
-        default:
+        default: {
+            const ent = editorEntityFor(normalized);
+            if (ent && ent.textureKey) {
+                return drawMiniMapFrame(scene, ctx, ent.textureKey, Number(ent.icon?.frame) || 0, x, y, size, { alpha: opts.alpha, tint: ent.tintCss });
+            }
             return false;
+        }
     }
 }
 
@@ -6328,6 +6397,16 @@ function buildDomPalette() {
         const elItem = makePaletteItem(it.label || it.token, tokenNorm);
         objectsContainer.appendChild(elItem);
     });
+
+    // data-driven entities (enemies / characters declared in data/game-entities-mapping.json)
+    if (objectsContainer) {
+        EDITOR_ENTITIES.forEach((ent) => {
+            const elItem = makePaletteItem(ent.label, ent.token);
+            elItem.classList.add('palette-entity');
+            elItem.title = `Entità definita nei dati (${ent.id})`;
+            objectsContainer.appendChild(elItem);
+        });
+    }
 
     // populate walls
     if (wallsContainer) {

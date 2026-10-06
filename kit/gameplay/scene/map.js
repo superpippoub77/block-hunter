@@ -521,7 +521,7 @@ return class MapMixin {
                     || type === 'wooden')
                     ? 'empty'
                     : type;
-                const normalizedTileType = (tileType === 'bat' || tileType === 'ghost' || tileType === 'spider' || tileType === 'snake') ? 'floor' : tileType;
+                const normalizedTileType = (tileType === 'bat' || tileType === 'ghost' || tileType === 'spider' || tileType === 'snake' || this.isDataEntityType(tileType)) ? 'floor' : tileType;
                 let tileSprite = null;
                 let coverSprite = null;
 
@@ -793,6 +793,13 @@ return class MapMixin {
                         gridX: x,
                         gridY: y
                     });
+                }
+
+                // entities defined in data/game-entities-mapping.json (scene/entities.js)
+                if (!tileNoTile && this.isDataEntityType(type)) {
+                    this.collectDataEntitySpawn(type,
+                        offsetX + x * CONFIG.tileSize + CONFIG.tileSize / 2,
+                        offsetY + y * CONFIG.tileSize + CONFIG.tileSize / 2, x, y);
                 }
 
                 if (!tileNoTile && type === 'snake') {

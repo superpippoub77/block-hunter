@@ -718,6 +718,134 @@
           "move": []
         }
       }
+    },
+    "redghost": {
+      "category": "enemy",
+      "label": "Fantasma rosso",
+      "tokens": [
+        "redghost"
+      ],
+      "sprite": {
+        "texture": "ghost",
+        "frame": 0,
+        "animation": "ghost_float",
+        "tint": "#ff5a5a",
+        "scale": 1
+      },
+      "behaviour": {
+        "type": "chase",
+        "speed": 60,
+        "rangeTiles": 6
+      },
+      "collision": {
+        "walls": true,
+        "radius": 0.3
+      },
+      "touchCooldownMs": 1200,
+      "on": {
+        "touchPlayer": [
+          {
+            "action": "blood",
+            "intensity": 1.5
+          },
+          {
+            "action": "loseLife"
+          }
+        ],
+        "hitByDynamite": [
+          {
+            "action": "addScore",
+            "amount": 30
+          },
+          {
+            "action": "explosion"
+          },
+          {
+            "action": "explodeDynamite"
+          },
+          {
+            "action": "destroy"
+          },
+          {
+            "action": "respawn",
+            "delay": 6000
+          }
+        ]
+      },
+      "editor": {
+        "icon": {
+          "src": "assets/images/common/ghost.png",
+          "frameWidth": 64,
+          "frameHeight": 64,
+          "frame": 0
+        },
+        "tint": "#ff5a5a",
+        "autoSpawn": true
+      }
+    },
+    "beetle": {
+      "category": "enemy",
+      "label": "Scarabeo",
+      "tokens": [
+        "beetle"
+      ],
+      "sprite": {
+        "texture": "spider",
+        "frame": 0,
+        "animation": "spider_float",
+        "tint": "#7dff6a",
+        "scale": 0.8
+      },
+      "behaviour": {
+        "type": "patrol",
+        "axis": "x",
+        "speed": 90,
+        "rangeTiles": 0
+      },
+      "collision": {
+        "walls": true,
+        "radius": 0.3
+      },
+      "on": {
+        "touchPlayer": [
+          {
+            "action": "knockback",
+            "force": 280
+          },
+          {
+            "action": "addScore",
+            "amount": -10
+          },
+          {
+            "action": "loseLife"
+          }
+        ],
+        "hitByDynamite": [
+          {
+            "action": "addScore",
+            "amount": 50
+          },
+          {
+            "action": "explosion"
+          },
+          {
+            "action": "explodeDynamite"
+          },
+          {
+            "action": "destroy"
+          }
+        ]
+      },
+      "editor": {
+        "icon": {
+          "src": "assets/images/common/spider.png",
+          "frameWidth": 64,
+          "frameHeight": 64,
+          "frame": 0
+        },
+        "tint": "#7dff6a",
+        "autoSpawn": true
+      }
     }
   }
 }

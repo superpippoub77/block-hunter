@@ -12,6 +12,7 @@ import { createEnemiesBatMixin } from './scene/enemies/bat.js';
 import { createEnemiesGhostMixin } from './scene/enemies/ghost.js';
 import { createEnemiesSpiderMixin } from './scene/enemies/spider.js';
 import { createEnemiesSnakeMixin } from './scene/enemies/snake.js';
+import { createEntitiesMixin } from './scene/entities.js';
 
 export function createGameScene(deps) {
 const {
@@ -657,6 +658,9 @@ class GameScene extends Phaser.Scene {
         this.mapGemIndex = 0;
         this.keySpawnPositions = [];
         this.ghostSpawnPositions = [];
+        this.dataEntitySpawns = [];
+        this.dataEntities = null;
+        this._dataEntityDefs = null;
         this.batSpawnPositions = [];
         this.spiderSpawnPositions = [];
         this.snakeSpawnPositions = [];
@@ -1154,6 +1158,7 @@ class GameScene extends Phaser.Scene {
         this.spawnBatsFromMap();
         this.spawnSpidersFromMap();
         this.spawnSnakesFromMap();
+        this.spawnDataEntities();
 
         // Spawn gems according to mode: one-by-one (spawn first only) or all-at-once
         if ((Number(this.gemsRemaining) || 0) > 0) {
@@ -1185,6 +1190,7 @@ class GameScene extends Phaser.Scene {
 
         // Setup collisions
         this.setupCollisions();
+        this.setupDataEntityCollisions();
 
         // Setup world bounds bounce for dynamite
         if (!this.worldBoundsHandlerAdded) {
@@ -1957,6 +1963,7 @@ class GameScene extends Phaser.Scene {
         this.updateBatPerspective();
         this.updateSpiders();
         this.updateSnakes();
+        this.updateDataEntities(time, delta);
 
         // Dynamic boulders roll and slow down over time
         if (!this.dynamicBouldersRuntimeDisabled) {
@@ -1981,7 +1988,7 @@ class GameScene extends Phaser.Scene {
 }
 
     // methods grouped by topic in kit/gameplay/scene/*.js
-    [createMapMixin, createEffectsMixin, createPlayerMixin, createItemsMixin, createLevelflowMixin, createRocksMixin, createDynamiteMixin, createHudMixin, createCollisionsMixin, createEnemiesCommonMixin, createEnemiesBatMixin, createEnemiesGhostMixin, createEnemiesSpiderMixin, createEnemiesSnakeMixin].forEach((createMixin) => {
+    [createMapMixin, createEffectsMixin, createPlayerMixin, createItemsMixin, createLevelflowMixin, createRocksMixin, createDynamiteMixin, createHudMixin, createCollisionsMixin, createEnemiesCommonMixin, createEnemiesBatMixin, createEnemiesGhostMixin, createEnemiesSpiderMixin, createEnemiesSnakeMixin, createEntitiesMixin].forEach((createMixin) => {
         const Mixin = createMixin(deps);
         Object.getOwnPropertyNames(Mixin.prototype).forEach((name) => {
             if (name === 'constructor') return;
