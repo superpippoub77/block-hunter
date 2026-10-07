@@ -24,7 +24,7 @@ const opt = (name, def = null) => {
 const flag = (name) => args.includes(`--${name}`);
 const target = args.find((a, i) => !a.startsWith('--') && !(i > 0 && args[i - 1].startsWith('--') && !['--force'].includes(args[i - 1])));
 if (!target || flag('help')) {
-    console.log('Uso: node tools/new-game/new-game.js <cartella> --title "Nome del gioco" [--id id] [--prefix prefisso] [--app-id com.x.y] [--force]');
+    console.log('Uso: node tools/new-game/new-game.js <cartella> --title "Nome del gioco" [--type topdown|platform] [--id id] [--prefix prefisso] [--app-id com.x.y] [--force]');
     process.exit(target ? 0 : 1);
 }
 const DEST = path.resolve(process.cwd(), target);
@@ -34,6 +34,7 @@ const camel = slug.replace(/-([a-z0-9])/g, (m, c) => c.toUpperCase());
 const prefix = opt('prefix', camel);
 const compact = title.replace(/[^A-Za-z0-9]/g, '') || 'SpikeGame';
 const appId = opt('app-id', `com.spikecode.${slug.replace(/-/g, '')}`);
+const type = String(opt('type', 'topdown')).toLowerCase() === 'platform' ? 'platform' : 'topdown';
 
 if (DEST === SRC || DEST.startsWith(SRC + path.sep)) {
     console.error('La cartella del nuovo gioco deve stare fuori da questo progetto.');
@@ -114,6 +115,22 @@ Il punto di partenza sono i contenuti di Block Hunter: sostituisci immagini (\`a
 Guida del motore: \`kit/ENGINE.md\`.
 `);
 
+// ---------------------------------------------------------------- platform starter
+if (type === 'platform') {
+    const starter = path.join(SRC, 'kit', 'platform', 'starter');
+    const levelDir = path.join(DEST, 'data', 'level');
+    fs.readdirSync(levelDir).filter((f) => /^level\d+\.json$|^bonus\d*\.json$/.test(f)).forEach((f) => fs.unlinkSync(path.join(levelDir, f)));
+    const levels = fs.readdirSync(path.join(starter, 'level')).filter((f) => f.endsWith('.json')).sort();
+    levels.forEach((f) => fs.copyFileSync(path.join(starter, 'level', f), path.join(levelDir, f)));
+    editJson('game.manifest.json', (m) => ({ ...m, gameplay: 'platform', levels: levels.map((f) => f.replace(/\.json$/, '')) }));
+    const extra = JSON.parse(fs.readFileSync(path.join(starter, 'entities.json'), 'utf8'));
+    editJson('data/game-entities-mapping.json', (m) => ({ ...m, entities: { ...(m.entities || {}), ...extra } }));
+    edit('game.js', (t) => t
+        .replace(/\n\s*\/\/ scenes of this game only[^\n]*\n\s*scenes: \[[^\n]*\]\n/, '\n')
+        .replace(/newRun: \{[^}]*\},?/, "newRun: { lives: 5, dynamiteCount: 0 },\n\n    // platform gameplay: gravity, jumps, platforms, ladders, scrolling (kit/platform)\n    gameplay: 'platform'"));
+}
+
 console.log(`Creato "${title}" in ${DEST}`);
+console.log(`  tipo di gioco: ${type === 'platform' ? 'platform (kit/platform)' : 'visto dall\'alto (kit/gameplay)'}`);
 console.log(`  id ${slug} · chiavi browser ${prefix}… · app ${appId} · ${files} file copiati`);
 console.log(`  cd ${path.relative(process.cwd(), DEST) || '.'} && node server.js`);

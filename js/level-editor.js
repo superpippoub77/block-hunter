@@ -1,3 +1,5 @@
+import { makePlatformTextures } from '../kit/platform/textures.js';
+
 const OBJECT_FRAMES = {
     dynamite: 0,
     heart: 1,
@@ -95,6 +97,20 @@ const WALL_PALETTE_ITEMS = (() => {
 })();
 
 const PALETTE_ITEMS = [...BASE_PALETTE_ITEMS, ...WALL_PALETTE_ITEMS];
+
+// Platform games (game.manifest.json → "gameplay": "platform", engine kit/platform): their pieces
+const PLATFORM_PALETTE_ITEMS = [
+    { token: 'block', label: 'terreno / blocco pieno', texture: 'pf_block_top' },
+    { token: 'plat', label: 'piattaforma (si salta da sotto)', texture: 'pf_plat' },
+    { token: 'ladder', label: 'scala', texture: 'pf_ladder' },
+    { token: 'spikes', label: 'spuntoni', texture: 'pf_spikes' },
+    { token: 'cp', label: 'checkpoint', texture: 'pf_checkpoint' },
+    { token: 'player', label: 'partenza del player', texture: null }
+];
+const PLATFORM_TOKEN_TEXTURES = Object.fromEntries(PLATFORM_PALETTE_ITEMS.filter((i) => i.texture).map((i) => [i.token, i.texture]));
+const isPlatformGame = () => {
+    try { return String(window.SPIKE_GAME_MANIFEST?.gameplay || '').toLowerCase() === 'platform'; } catch (e) { return false; }
+};
 
 const DEFAULT_LEVEL = {
     id: '1.0',
@@ -363,7 +379,8 @@ function layerFilenameFromSrc(src, type) {
 
 const AUTO_TILE_PROTECTED_TOKENS = new Set([
     'g', 'd', 'k', 'p', 'l', 'exit', 'wooden', 'helmet', 'b', 'c', 'm', 'stones',
-    'ghost', 'bat', 'spider', 'snake', 'player', 'door', 'key', 'gem', 'heart'
+    'ghost', 'bat', 'spider', 'snake', 'player', 'door', 'key', 'gem', 'heart',
+    'block', 'plat', 'ladder', 'spikes', 'cp'
 ]);
 
 function randomWallVariantToken() {
@@ -1662,6 +1679,7 @@ class LevelEditorScene extends Phaser.Scene {
     }
 
     create() {
+        try { makePlatformTextures(this, 32); } catch (e) { /* platform pieces only */ }
         this.input.mouse?.disableContextMenu();
         // Darker background to increase tile visibility
         this.cameras.main.setBackgroundColor('#03050a');
@@ -2751,6 +2769,9 @@ class LevelEditorScene extends Phaser.Scene {
             case 'bat': return { kind: 'bat' };
             case 'spider': return { kind: 'obj', frame: OBJECT_FRAMES.spider };
             case 'snake': return { kind: 'obj', frame: OBJECT_FRAMES.snake };
+            case 'block': case 'plat': case 'ladder': case 'spikes': case 'cp':
+                return { kind: 'pf', texture: PLATFORM_TOKEN_TEXTURES[normalized] };
+            case 'player': return { kind: 'obj', frame: OBJECT_FRAMES.player };
             default: {
                 const ent = editorEntityFor(normalized);
                 if (ent && ent.textureKey) return { kind: 'entity', entity: ent };
@@ -2833,6 +2854,15 @@ class LevelEditorScene extends Phaser.Scene {
             const bat = this.add.sprite(x, y, 'bat_anim', 0);
             bat.setScale(scale * 0.9);
             container.add(bat);
+            return;
+        }
+
+        if (info.kind === 'pf' && this.textures.exists(info.texture)) {
+            const spr = this.add.image(x, y, info.texture);
+            if (info.texture === 'pf_plat') { spr.setDisplaySize(size, size * 0.32); spr.y = y - size / 2 + size * 0.16; }
+            else spr.setDisplaySize(size, size);
+            if (invisible) spr.setAlpha(0.35);
+            container.add(spr);
             return;
         }
 
@@ -3310,6 +3340,10 @@ function drawMiniMapToken(scene, ctx, token, x, y, size, opts = {}) {
             return drawMiniMapFrame(scene, ctx, 'objects', OBJECT_FRAMES.spider, x, y, size, { alpha: opts.alpha });
         case 'snake':
             return drawMiniMapFrame(scene, ctx, 'objects', OBJECT_FRAMES.snake, x, y, size, { alpha: opts.alpha });
+        case 'block': case 'plat': case 'ladder': case 'spikes': case 'cp':
+            return drawMiniMapFrame(scene, ctx, PLATFORM_TOKEN_TEXTURES[normalized], undefined, x, y, size, { alpha: opts.alpha });
+        case 'player':
+            return drawMiniMapFrame(scene, ctx, 'objects', OBJECT_FRAMES.player, x, y, size, { alpha: opts.alpha });
         default: {
             const ent = editorEntityFor(normalized);
             if (ent && ent.textureKey) {
@@ -6483,6 +6517,14 @@ function buildDomPalette() {
         const elItem = makePaletteItem(it.label || it.token, tokenNorm);
         objectsContainer.appendChild(elItem);
     });
+
+    // platform pieces (only for platform games: game.manifest.json → "gameplay": "platform")
+    const platformContainer = el('domPalette-platform');
+    if (platformContainer) {
+        const show = isPlatformGame();
+        platformContainer.closest('.accordion')?.toggleAttribute('hidden', !show);
+        if (show) PLATFORM_PALETTE_ITEMS.forEach((it) => platformContainer.appendChild(makePaletteItem(it.label, it.token)));
+    }
 
     // data-driven entities (enemies / characters declared in data/game-entities-mapping.json)
     if (objectsContainer) {
