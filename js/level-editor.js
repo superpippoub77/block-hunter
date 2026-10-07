@@ -6295,6 +6295,12 @@ function bindUI() {
         });
 }
 
+// level_editor.html?panel=mapping opens the mapping dialog (link from the studio's game workflow)
+window.addEventListener('level-editor-ready', () => {
+    try {
+        if (new URLSearchParams(location.search).get('panel') === 'mapping') setTimeout(() => document.getElementById('openMappingsDialogBtn')?.click(), 400);
+    } catch (e) { /* ignore */ }
+}, { once: true });
 window.addEventListener('level-editor-ready', () => {
     applyLevelToForm(DEFAULT_LEVEL);
     const scene = getScene();
