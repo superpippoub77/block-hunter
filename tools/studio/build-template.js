@@ -71,6 +71,7 @@ writeJson('data/config.json', config);
 copy('data/dic');
 copy('data/screens');
 writeJson('data/topScores.json', []);
+writeJson('data/rules.json', { rules: [] });   // "when … then …" rules (studio → Regole, kit/genres/lib/rules.js)
 mkdir(path.join(OUT, 'data/level'));
 write('data/level/LEGGIMI.txt', 'I livelli del gioco (level10.json, level11.json…) vengono creati da SpikeEngine Studio e si modificano con level_editor.html.\n');
 
