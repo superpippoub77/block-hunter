@@ -12,12 +12,21 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          # kit/ (SpikeCode engine) can be a submodule pointing to the private spikeengine repo:
-          # add a KIT_TOKEN secret (token with read access to it); without one the default token is used
-          submodules: recursive
-          token: ${{ secrets.KIT_TOKEN || github.token }}
+        uses: actions/checkout@v5
+
+      # kit/ is the SpikeCode engine, a submodule pointing to the private repo superpippoub77/spikeengine.
+      # Needs the secret KIT_TOKEN: a GitHub token with read access (Contents: Read-only) to spikeengine.
+      - name: Checkout SpikeCode engine (kit/)
+        env:
+          KIT_TOKEN: ${{ secrets.KIT_TOKEN }}
+        run: |
+          if [ -z "$KIT_TOKEN" ]; then
+            echo "::error::Manca il secret KIT_TOKEN (Settings > Secrets and variables > Actions): token con accesso in lettura a superpippoub77/spikeengine"
+            exit 1
+          fi
+          git config --global url."https://x-access-token:${KIT_TOKEN}@github.com/superpippoub77/spikeengine".insteadOf "https://github.com/superpippoub77/spikeengine"
+          git submodule update --init --recursive
+          test -f kit/engine/index.js && echo "Motore SpikeCode: $(git -C kit log -1 --format='%h %s')"
 
       - name: FTP Deploy
         uses: SamKirkland/FTP-Deploy-Action@v4.3.0
