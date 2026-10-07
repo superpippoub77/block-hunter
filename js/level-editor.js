@@ -1,5 +1,5 @@
 import { makePlatformTextures } from '../kit/platform/textures.js';
-import { makeMazeTextures, MAZE_PALETTE_ITEMS } from '../kit/genres/maze/textures.js';
+import { GENRE_EDITOR } from '../kit/genres/palettes.js';
 
 const OBJECT_FRAMES = {
     dynamite: 0,
@@ -112,7 +112,7 @@ const PLATFORM_TOKEN_TEXTURES = Object.fromEntries(PLATFORM_PALETTE_ITEMS.filter
 // pieces of each genre (game.manifest.json → "gameplay"): the palette group shows the game's ones
 const GENRE_PALETTES = {
     platform: { title: 'Platform', items: PLATFORM_PALETTE_ITEMS },
-    maze: { title: 'Labirinto', items: MAZE_PALETTE_ITEMS }
+    ...GENRE_EDITOR
 };
 const gameGenre = () => { try { return String(window.SPIKE_GAME_MANIFEST?.gameplay || '').toLowerCase(); } catch (e) { return ''; } };
 const genreTokenTexture = (tok) => (GENRE_PALETTES[gameGenre()]?.items || []).find((i) => i.token === tok && i.texture)?.texture || null;
@@ -388,7 +388,7 @@ function layerFilenameFromSrc(src, type) {
 const AUTO_TILE_PROTECTED_TOKENS = new Set([
     'g', 'd', 'k', 'p', 'l', 'exit', 'wooden', 'helmet', 'b', 'c', 'm', 'stones',
     'ghost', 'bat', 'spider', 'snake', 'player', 'door', 'key', 'gem', 'heart',
-    'block', 'plat', 'ladder', 'spikes', 'cp', 'power', 'gate', 'house', 'fruit', 'mghost', 'x'
+    'block', 'plat', 'ladder', 'spikes', 'cp', 'power', 'gate', 'house', 'fruit', 'mghost', 'x', 'mush', 'shield', 'alien'
 ]);
 
 function randomWallVariantToken() {
@@ -1692,7 +1692,7 @@ class LevelEditorScene extends Phaser.Scene {
 
     create() {
         try { makePlatformTextures(this, 32); } catch (e) { /* platform pieces only */ }
-        try { makeMazeTextures(this, 32); } catch (e) { /* maze pieces only */ }
+        Object.values(GENRE_EDITOR).forEach((g) => { try { g.make(this, 32); } catch (e) { /* genre pieces */ } });
         this.input.mouse?.disableContextMenu();
         // Darker background to increase tile visibility
         this.cameras.main.setBackgroundColor('#03050a');
