@@ -1,0 +1,4 @@
+[submodule "kit"]
+	path = kit
+	url = https://github.com/superpippoub77/spikeengine.git
+	branch = main
