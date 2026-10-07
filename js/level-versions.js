@@ -13,7 +13,8 @@
   "use strict";
 
   const API = "api/levels/";
-  const CURRENT_KEY = "bh-editor-game-level";
+  // one "current level" per game folder (several games can live on the same site)
+  const CURRENT_KEY = "bh-editor-game-level" + (location.pathname.replace(/[^/]*$/, "").replace(/^\/$/, "") ? ":" + location.pathname.replace(/[^/]*$/, "") : "");
   const editorApi = () => window.LevelEditorAPI || null;
   const layout = () => window.EditorLayout || null;
 
@@ -68,6 +69,22 @@
         `<option value="${esc(it.id)}">${esc(it.id)}${it.levelId ? " · " + esc(it.levelId) : ""}${it.cols ? ` (${esc(it.cols)}×${esc(it.rows)})` : ""}</option>`).join("");
       sel.disabled = !items.length;
       if (!items.length) sel.title = "Livelli del gioco non disponibili: avvia node server.js (o PHP)";
+      this.syncSelect();
+      this.openFromUrl(items);
+    },
+    /** level_editor.html?level=level10 (links from SpikeEngine Studio) opens that game level directly */
+    async openFromUrl(items) {
+      if (this._openedFromUrl) return;
+      this._openedFromUrl = true;
+      let want = "";
+      try { want = new URLSearchParams(location.search).get("level") || ""; } catch (e) { }
+      if (!want) return;
+      if (want === "first") want = items[0]?.id || "";
+      if (!items.some((it) => it.id === want)) return;
+      // wait for the editor scene (it resets the map when it starts)
+      if (!window.__levelEditorScene) await new Promise((r) => { window.addEventListener("level-editor-ready", r, { once: true }); setTimeout(r, 20000); });
+      await new Promise((r) => setTimeout(r, 300));
+      await this.openLevel(want, null, { ask: false });
       this.syncSelect();
     },
     syncSelect() {
@@ -136,10 +153,10 @@
       });
     },
 
-    async openLevel(id, version = null) {
+    async openLevel(id, version = null, { ask = true } = {}) {
       const api = editorApi();
       if (!api) return;
-      if (!window.confirm(`Aprire ${id}${version ? " (versione " + shortVersion(version) + ")" : ""} nell'editor?\nLe modifiche non salvate del livello attuale andranno perse.`)) return;
+      if (ask && !window.confirm(`Aprire ${id}${version ? " (versione " + shortVersion(version) + ")" : ""} nell'editor?\nLe modifiche non salvate del livello attuale andranno perse.`)) return;
       try {
         const body = version ? await call(`?id=${encodeURIComponent(id)}&version=${encodeURIComponent(version)}`) : await call(`?id=${encodeURIComponent(id)}`);
         api.importLevelFromText(JSON.stringify(body.data), `data/level/${id}.json`);
