@@ -1,4 +1,5 @@
 import { makePlatformTextures } from '../kit/platform/textures.js';
+import { makeMazeTextures, MAZE_PALETTE_ITEMS } from '../kit/genres/maze/textures.js';
 
 const OBJECT_FRAMES = {
     dynamite: 0,
@@ -108,6 +109,13 @@ const PLATFORM_PALETTE_ITEMS = [
     { token: 'player', label: 'partenza del player', texture: null }
 ];
 const PLATFORM_TOKEN_TEXTURES = Object.fromEntries(PLATFORM_PALETTE_ITEMS.filter((i) => i.texture).map((i) => [i.token, i.texture]));
+// pieces of each genre (game.manifest.json → "gameplay"): the palette group shows the game's ones
+const GENRE_PALETTES = {
+    platform: { title: 'Platform', items: PLATFORM_PALETTE_ITEMS },
+    maze: { title: 'Labirinto', items: MAZE_PALETTE_ITEMS }
+};
+const gameGenre = () => { try { return String(window.SPIKE_GAME_MANIFEST?.gameplay || '').toLowerCase(); } catch (e) { return ''; } };
+const genreTokenTexture = (tok) => (GENRE_PALETTES[gameGenre()]?.items || []).find((i) => i.token === tok && i.texture)?.texture || null;
 const isPlatformGame = () => {
     try { return String(window.SPIKE_GAME_MANIFEST?.gameplay || '').toLowerCase() === 'platform'; } catch (e) { return false; }
 };
@@ -380,7 +388,7 @@ function layerFilenameFromSrc(src, type) {
 const AUTO_TILE_PROTECTED_TOKENS = new Set([
     'g', 'd', 'k', 'p', 'l', 'exit', 'wooden', 'helmet', 'b', 'c', 'm', 'stones',
     'ghost', 'bat', 'spider', 'snake', 'player', 'door', 'key', 'gem', 'heart',
-    'block', 'plat', 'ladder', 'spikes', 'cp'
+    'block', 'plat', 'ladder', 'spikes', 'cp', 'power', 'gate', 'house', 'fruit', 'mghost', 'x'
 ]);
 
 function randomWallVariantToken() {
@@ -1684,6 +1692,7 @@ class LevelEditorScene extends Phaser.Scene {
 
     create() {
         try { makePlatformTextures(this, 32); } catch (e) { /* platform pieces only */ }
+        try { makeMazeTextures(this, 32); } catch (e) { /* maze pieces only */ }
         this.input.mouse?.disableContextMenu();
         // Darker background to increase tile visibility
         this.cameras.main.setBackgroundColor('#03050a');
@@ -2820,9 +2829,10 @@ class LevelEditorScene extends Phaser.Scene {
             case 'spider': return { kind: 'obj', frame: OBJECT_FRAMES.spider };
             case 'snake': return { kind: 'obj', frame: OBJECT_FRAMES.snake };
             case 'block': case 'plat': case 'ladder': case 'spikes': case 'cp':
-                return { kind: 'pf', texture: PLATFORM_TOKEN_TEXTURES[normalized] };
+                return { kind: 'pf', texture: genreTokenTexture(normalized) || PLATFORM_TOKEN_TEXTURES[normalized] };
             case 'player': return { kind: 'obj', frame: OBJECT_FRAMES.player };
             default: {
+                if (genreTokenTexture(normalized)) return { kind: 'pf', texture: genreTokenTexture(normalized) };
                 const ent = editorEntityFor(normalized);
                 if (ent && ent.textureKey) return { kind: 'entity', entity: ent };
                 return { kind: 'text', text: normalized };
@@ -3395,10 +3405,11 @@ function drawMiniMapToken(scene, ctx, token, x, y, size, opts = {}) {
         case 'snake':
             return drawMiniMapFrame(scene, ctx, 'objects', OBJECT_FRAMES.snake, x, y, size, { alpha: opts.alpha });
         case 'block': case 'plat': case 'ladder': case 'spikes': case 'cp':
-            return drawMiniMapFrame(scene, ctx, PLATFORM_TOKEN_TEXTURES[normalized], undefined, x, y, size, { alpha: opts.alpha });
+            return drawMiniMapFrame(scene, ctx, genreTokenTexture(normalized) || PLATFORM_TOKEN_TEXTURES[normalized], undefined, x, y, size, { alpha: opts.alpha });
         case 'player':
             return drawMiniMapFrame(scene, ctx, 'objects', OBJECT_FRAMES.player, x, y, size, { alpha: opts.alpha });
         default: {
+            if (genreTokenTexture(normalized)) return drawMiniMapFrame(scene, ctx, genreTokenTexture(normalized), undefined, x, y, size, { alpha: opts.alpha });
             const ent = editorEntityFor(normalized);
             if (ent && ent.textureKey) {
                 return drawMiniMapFrame(scene, ctx, ent.textureKey, Number(ent.icon?.frame) || 0, x, y, size, { alpha: opts.alpha, tint: ent.tintCss });
@@ -6604,9 +6615,14 @@ function buildDomPalette() {
     // platform pieces (only for platform games: game.manifest.json → "gameplay": "platform")
     const platformContainer = el('domPalette-platform');
     if (platformContainer) {
-        const show = isPlatformGame();
-        platformContainer.closest('.accordion')?.toggleAttribute('hidden', !show);
-        if (show) PLATFORM_PALETTE_ITEMS.forEach((it) => platformContainer.appendChild(makePaletteItem(it.label, it.token)));
+        const genre = GENRE_PALETTES[gameGenre()];
+        const acc = platformContainer.closest('.accordion');
+        acc?.toggleAttribute('hidden', !genre);
+        if (genre) {
+            const title = acc?.querySelector('h3');
+            if (title) title.textContent = genre.title;
+            genre.items.forEach((it) => platformContainer.appendChild(makePaletteItem(it.label, it.token)));
+        }
     }
 
     try { buildDecorPalette(); } catch (e) { /* decorations palette */ }

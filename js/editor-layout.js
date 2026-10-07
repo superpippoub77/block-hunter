@@ -549,7 +549,10 @@ const EditorLayout = {
     if (b) {
       let text, cls;
       const hidden = hiddenGems ? ` (+${hiddenGems} nascoste)` : "";
+      const genre = String(window.SPIKE_GAME_MANIFEST?.gameplay || "").toLowerCase();
+      const needsExit = !genre || genre === "topdown" || genre === "platform";
       if (!filled) { text = "● Livello vuoto"; cls = ""; }
+      else if (!needsExit) { text = `✓ Pronto · ${enemies} nemici`; cls = "ready"; }
       else if (!exits) { text = "⚠ Manca l'uscita"; cls = "warn"; }
       else if (!gems) { text = `⚠ Nessuna gemma visibile${hidden}`; cls = "warn"; }
       else if (crowded) { text = `⚠ ${crowded} celle con più di 2 elementi`; cls = "warn"; }
