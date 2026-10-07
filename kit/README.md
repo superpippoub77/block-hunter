@@ -113,12 +113,12 @@ fatto diversamente:
 
 ## Spostarlo in un repo separato
 
-Il kit è pensato per vivere nel repo `spike-game-kit` ed essere incluso in ogni gioco come
+Il kit è pensato per vivere nel repo `spikeengine` ed essere incluso in ogni gioco come
 git submodule nella cartella `kit/`:
 
 Tutto è già pronto in uno script (testato):
 
-1. su GitHub crea il repository **vuoto** `superpippoub77/spike-game-kit` (privato, senza README);
+1. su GitHub crea il repository **vuoto** `superpippoub77/spikeengine` (privato, senza README);
 2. dalla cartella del gioco, con tutto committato:
    ```bash
    bash tools/kit-repo/kit-to-submodule.sh      # (facoltativo: URL del repo come argomento)
@@ -128,7 +128,7 @@ Tutto è già pronto in uno script (testato):
    la ricollega come submodule.
 3. per il deploy (`.github/workflows/deploy.yml`, già pronto con `submodules: recursive`): nel
    repo del gioco aggiungi il secret **`KIT_TOKEN`**, un token GitHub con accesso in lettura a
-   `spike-game-kit` (serve perché il repo del kit è privato).
+   `spikeengine` (serve perché il repo del kit è privato).
 
 Dopo: `git clone --recursive` per clonare un gioco, `git submodule update --remote kit` per
 portare in un gioco l'ultima versione del motore.

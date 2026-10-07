@@ -29,7 +29,7 @@ tools/new-game/  crea un nuovo gioco
 
 Regola: **niente dentro `kit/` importa file fuori da `kit/`**. Il gioco passa al motore quello
 che è suo; il motore non conosce Block Hunter. Per questo `kit/` potrà diventare un repository a
-sé (es. `spike-game-kit`) incluso nei giochi come *git submodule*.
+sé (es. `spikeengine`) incluso nei giochi come *git submodule*.
 
 ## Avvio: `game.js`
 
