@@ -3,7 +3,7 @@ name: Deploy block-hunter to Aruba via FTP
 on:
   push:
     branches:
-      - main
+      - master
   workflow_dispatch:
 
 jobs:
