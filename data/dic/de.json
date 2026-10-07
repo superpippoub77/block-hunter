@@ -7,7 +7,9 @@
     "SAMMLE DAS OBJEKT",
     "WEICHE DEN BLÖCKEN AUS"
   ],
-  "attractmode": { "staticcredits": "INSERT COIN" },
+  "attractmode": {
+    "staticcredits": "INSERT COIN"
+  },
   "players_1": "1 SPIELER",
   "players_2": "2 SPIELER",
   "score_label": "PUNKTE",
@@ -28,8 +30,7 @@
   "hard": "EXPERTE",
   "byline": "von SpikeCode",
   "topTen": "BESTENLISTE",
-  "story": "In den tiefen unterirdischen Labyrinthen,\n sucht der Blockjäger nach Edelsteinen\n und weicht rollenden Felsen aus.\n Wirst du überleben und der Beste werden?"
-  ,
+  "story": "In den tiefen unterirdischen Labyrinthen,\n sucht der Blockjäger nach Edelsteinen\n und weicht rollenden Felsen aus.\n Wirst du überleben und der Beste werden?",
   "obj_dynamite": "Dynamit — Projektil: verursacht Explosionen und Schaden.",
   "obj_heart": "Herz — stellt ein Leben wieder her.",
   "obj_stone": "Fels — rollendes Hindernis, das dich zerquetschen kann.",
@@ -47,5 +48,27 @@
   "obj_hole1": "Loch — eine Grube im Boden; kann mit einer Planke bedeckt werden.",
   "obj_hole2": "Loch (Variante) — verhält sich wie ein normales Loch.",
   "obj_explosion": "Explosion — visueller Effekt bei Detonationen.",
-  "obj_bat": "Fledermaus — fliegender Gegner (vorsicht beim Sammeln von Edelsteinen)."
+  "obj_bat": "Fledermaus — fliegender Gegner (vorsicht beim Sammeln von Edelsteinen).",
+  "controls_title": "STEUERUNG",
+  "controls_player": "SPIELER",
+  "controls_keyboard": "TASTATUR",
+  "controls_joystick": "JOYSTICK",
+  "controls_press": "DRÜCKE EINE TASTE ODER KNOPF FÜR",
+  "controls_cancel": "ESC = ABBRECHEN",
+  "controls_reset": "STANDARD WIEDERHERSTELLEN",
+  "controls_back": "ZURÜCK",
+  "controls_help": "↑↓ WÄHLEN  ←→ SPIELER  ENTER ZUWEISEN  ENTF LÖSCHEN  ESC ZURÜCK",
+  "controls_pads": "JOYSTICKS",
+  "controls_none": "KEINER",
+  "controls_saved": "GESPEICHERT",
+  "controls_taken": "AUCH BELEGT VON",
+  "controls_up": "HOCH",
+  "controls_down": "RUNTER",
+  "controls_left": "LINKS",
+  "controls_right": "RECHTS",
+  "controls_fire": "FEUER",
+  "controls_action": "AKTION",
+  "controls_jump": "SPRUNG",
+  "controls_start": "START",
+  "controls_coin": "MÜNZE"
 }

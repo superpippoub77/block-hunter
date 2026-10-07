@@ -11,6 +11,7 @@
     "top-ten",
     "credits",
     "config",
+    "controls",
     "level-select",
     "game-over",
     "score-entry",
@@ -70,6 +71,9 @@
       "timeout": "TopTenScene",
       "start": "LevelSelectScene",
       "config": "ConfigScene"
+    },
+    "controls": {
+      "exit": "ConfigScene"
     }
   }
 }
