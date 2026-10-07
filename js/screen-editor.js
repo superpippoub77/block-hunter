@@ -1098,6 +1098,7 @@ function modal(title, html) {
     ov.classList.add('open');
 }
 function showHelp() {
+    if (window.SpikeGuide) { window.SpikeGuide('schermate-tasti'); return; }   // the searchable guide (kit/core/guide.js)
     const keys = [['Clic', 'Seleziona un elemento'], ['Trascina', 'Sposta (Shift: griglia di 10 px)'], ['Maniglie', 'Angoli = scala · tonda = ruota (Shift: 15°)'],
         ['Frecce', 'Sposta di 1 px (Shift: 10 px)'], ['Spazio', 'Riproduci / pausa'], ['Home', 'Torna all\'inizio'], ['T · R', 'Aggiungi testo · rettangolo'],
         ['Ctrl+D', 'Duplica'], ['Canc', 'Elimina'], ['Ctrl+Z / Ctrl+Y', 'Annulla / ripeti'], ['Ctrl+S', 'Salva'], ['[  ]', 'Strumenti / pannello'], ['F1', 'Questa guida']];

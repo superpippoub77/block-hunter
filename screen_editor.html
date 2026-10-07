@@ -108,6 +108,23 @@
 <script src="vendor/phaser.min.js"></script>
 <script src="js/package-dialog.js"></script>
 <script type="module" src="js/screen-editor.js"></script>
+<script type="module">
+// interface languages and the searchable guide (kit/core): ? and F1 open the guide on this editor's topic
+import { initUiI18n, languageMenu } from './kit/core/ui-i18n.js';
+import { openGuide } from './kit/core/guide.js';
+window.SpikeGuide = (id) => openGuide(id || 'schermate-tasti');
+
+await initUiI18n();
+const place = () => {
+    const help = document.getElementById('btnHelpTop');
+    if (!help) return false;
+    const host = document.createElement('span'); host.className = 'grp spike-lang-grp';
+    help.parentNode.insertBefore(host, help);
+    languageMenu(host);
+    return true;
+};
+if (!place()) { const iv = setInterval(() => { if (place()) clearInterval(iv); }, 300); setTimeout(() => clearInterval(iv), 15000); }
+</script>
 </body>
 
 </html>
