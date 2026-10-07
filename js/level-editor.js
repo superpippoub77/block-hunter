@@ -106,7 +106,19 @@ const PLATFORM_PALETTE_ITEMS = [
     { token: 'ladder', label: 'scala', texture: 'pf_ladder' },
     { token: 'spikes', label: 'spuntoni', texture: 'pf_spikes' },
     { token: 'cp', label: 'checkpoint', texture: 'pf_checkpoint' },
-    { token: 'player', label: 'partenza del player', texture: null }
+    { token: 'player', label: 'partenza del player', texture: null },
+    // stile Mario
+    { token: 'qblock', label: 'blocco “?” (moneta)', texture: 'pf_qblock' },
+    { token: 'qpower', label: 'blocco “?” (fungo / fiore)', texture: 'pf_qblock' },
+    { token: 'brick', label: 'mattone (si rompe da grandi)', texture: 'pf_brick' },
+    { token: 'coin', label: 'moneta', texture: 'pf_coin' },
+    { token: 'pipe', label: 'tubo', texture: 'pf_pipe_top' },
+    { token: 'flag', label: 'bandiera (fine livello)', texture: 'pf_flag' },
+    { token: 'mushroom', label: 'fungo (cresci)', texture: 'pf_mushroom' },
+    { token: 'flower', label: 'fiore (palle di fuoco)', texture: 'pf_flower' },
+    // stile Ghosts 'n Goblins
+    { token: 'grave', label: 'tomba (escono gli zombi)', texture: 'pf_tomb' },
+    { token: 'armor', label: 'armatura', texture: 'pf_armor' }
 ];
 const PLATFORM_TOKEN_TEXTURES = Object.fromEntries(PLATFORM_PALETTE_ITEMS.filter((i) => i.texture).map((i) => [i.token, i.texture]));
 // pieces of each genre (game.manifest.json → "gameplay"): the palette group shows the game's ones
@@ -388,7 +400,7 @@ function layerFilenameFromSrc(src, type) {
 const AUTO_TILE_PROTECTED_TOKENS = new Set([
     'g', 'd', 'k', 'p', 'l', 'exit', 'wooden', 'helmet', 'b', 'c', 'm', 'stones',
     'ghost', 'bat', 'spider', 'snake', 'player', 'door', 'key', 'gem', 'heart',
-    'block', 'plat', 'ladder', 'spikes', 'cp', 'power', 'gate', 'house', 'fruit', 'mghost', 'x', 'mush', 'shield', 'alien'
+    'block', 'plat', 'ladder', 'spikes', 'cp', 'power', 'gate', 'house', 'fruit', 'mghost', 'x', 'mush', 'shield', 'alien', 'qblock', 'qpower', 'brick', 'coin', 'pipe', 'flag', 'mushroom', 'flower', 'grave', 'armor'
 ]);
 
 function randomWallVariantToken() {
@@ -2829,6 +2841,7 @@ class LevelEditorScene extends Phaser.Scene {
             case 'spider': return { kind: 'obj', frame: OBJECT_FRAMES.spider };
             case 'snake': return { kind: 'obj', frame: OBJECT_FRAMES.snake };
             case 'block': case 'plat': case 'ladder': case 'spikes': case 'cp':
+            case 'qblock': case 'qpower': case 'brick': case 'coin': case 'pipe': case 'flag': case 'mushroom': case 'flower': case 'grave': case 'armor':
                 return { kind: 'pf', texture: genreTokenTexture(normalized) || PLATFORM_TOKEN_TEXTURES[normalized] };
             case 'player': return { kind: 'obj', frame: OBJECT_FRAMES.player };
             default: {
@@ -3405,6 +3418,7 @@ function drawMiniMapToken(scene, ctx, token, x, y, size, opts = {}) {
         case 'snake':
             return drawMiniMapFrame(scene, ctx, 'objects', OBJECT_FRAMES.snake, x, y, size, { alpha: opts.alpha });
         case 'block': case 'plat': case 'ladder': case 'spikes': case 'cp':
+        case 'qblock': case 'qpower': case 'brick': case 'coin': case 'pipe': case 'flag': case 'mushroom': case 'flower': case 'grave': case 'armor':
             return drawMiniMapFrame(scene, ctx, genreTokenTexture(normalized) || PLATFORM_TOKEN_TEXTURES[normalized], undefined, x, y, size, { alpha: opts.alpha });
         case 'player':
             return drawMiniMapFrame(scene, ctx, 'objects', OBJECT_FRAMES.player, x, y, size, { alpha: opts.alpha });
