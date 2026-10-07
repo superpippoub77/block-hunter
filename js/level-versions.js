@@ -42,7 +42,41 @@
       try { cur ? localStorage.setItem(CURRENT_KEY, JSON.stringify(cur)) : localStorage.removeItem(CURRENT_KEY); } catch (e) { }
       this.refreshBadge();
     },
+    /** select box in the top bar with the game's levels: choosing one opens it */
+    async buildSelect() {
+      let sel = document.getElementById("gameLevelSelect");
+      if (!sel) {
+        const anchor = document.getElementById("gameLevelBadge");
+        if (!anchor) return;
+        sel = document.createElement("select");
+        sel.id = "gameLevelSelect";
+        sel.className = "game-level-select";
+        sel.title = "Livelli del gioco (data/level): scegline uno per aprirlo e modificarlo";
+        const grp = anchor.closest(".grp") || anchor.parentElement;
+        grp.parentElement.insertBefore(Object.assign(document.createElement("div"), { className: "grp game-level-grp" }), grp).appendChild(sel);
+        // the select already shows the open level: the 🎮 badge would only take room (versions: File ▾)
+        grp.classList.add("replaced-by-select");
+        sel.addEventListener("change", () => {
+          const id = sel.value;
+          if (!id || id === this.current?.id) return;
+          this.openLevel(id).finally(() => this.syncSelect());
+        });
+      }
+      let items = [];
+      try { items = (await call("")).items || []; } catch (e) { items = []; }
+      sel.innerHTML = `<option value="">🎮 Livello del gioco…</option>` + items.map((it) =>
+        `<option value="${esc(it.id)}">${esc(it.id)}${it.levelId ? " · " + esc(it.levelId) : ""}${it.cols ? ` (${esc(it.cols)}×${esc(it.rows)})` : ""}</option>`).join("");
+      sel.disabled = !items.length;
+      if (!items.length) sel.title = "Livelli del gioco non disponibili: avvia node server.js (o PHP)";
+      this.syncSelect();
+    },
+    syncSelect() {
+      const sel = document.getElementById("gameLevelSelect");
+      if (sel) sel.value = this.current?.id && [...sel.options].some((o) => o.value === this.current.id) ? this.current.id : "";
+    },
+
     refreshBadge() {
+      this.syncSelect();
       const b = document.getElementById("gameLevelBadge");
       if (!b) return;
       b.hidden = !this.current;
@@ -166,6 +200,7 @@
           method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ data, note })
         });
         if (!dataOverride || this.current?.id === id) this.setCurrent({ id, version: body.version });
+        this.buildSelect();
         layout()?.closeModal();
         status(`Salvato nel gioco: ${body.file} · versione ${shortVersion(body.version)}${note ? " · " + note : ""}`);
         return true;
@@ -254,6 +289,7 @@
 
   LevelVersions.loadCurrent();
   window.LevelVersions = LevelVersions;
-  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", () => LevelVersions.refreshBadge());
-  else LevelVersions.refreshBadge();
+  const boot = () => { LevelVersions.refreshBadge(); LevelVersions.buildSelect(); };
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot);
+  else boot();
 })();

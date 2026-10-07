@@ -38,6 +38,7 @@ const LAYOUT_ICONS = {
   play: SC_ICON("M6 4l12 7-12 7z"),
   package: SC_ICON("M11 2l8 4.5v9L11 20l-8-4.5v-9z M3 6.5l8 4.5 8-4.5 M11 11v9 M7 4.3l8 4.4"),
   screens: SC_ICON("M3 5h16v11H3z M8 19h6 M11 16v3 M9 8.5l4 2.5-4 2.5z"),
+  decor: SC_ICON("M11 4c2 3 5 3 6 6-3 0-4 2-6 6-2-4-3-6-6-6 1-3 4-3 6-6z"),
   history: SC_ICON("M4 11a7 7 0 1 0 2-5 M4 3v3.5h3.5 M11 7v4l3 2"),
   select: SC_ICON("M5 3l11 7-5 1.2 3 5.8-2.2 1.1-3-5.9L5 16z"),
   layers: SC_ICON("M11 3l8 4-8 4-8-4z M3 11l8 4 8-4 M3 15l8 4 8-4"),
@@ -126,6 +127,8 @@ const LAYOUT = {
         { icon: "🚫", label: "Strumento zone", shortcut: "2", onClick: () => EditorLayout.setMode("zones") },
         { icon: "🖼", label: "Sposta e trasforma layer", shortcut: "3", onClick: () => EditorLayout.setMode("layers") },
         { icon: "➚", label: "Seleziona e trasforma oggetti", shortcut: "4", onClick: () => EditorLayout.setMode("select") },
+        { icon: "✿", label: "Decorazioni libere", shortcut: "5", onClick: () => EditorLayout.setMode("decor") },
+        { icon: "⊞", label: "Allinea alla griglia (on/off)", shortcut: "G", onClick: () => api()?.toggleSnap?.() },
         { icon: "✕", label: "Cancella zone del tipo attivo", onClick: () => clickEl("#clearActiveZones") },
         { icon: "✕", label: "Cancella tutte le zone", onClick: () => EditorLayout.confirmClick("Cancellare tutte le zone?", "#clearAllZones") }
       ]
@@ -165,6 +168,7 @@ const LAYOUT = {
     { id: "railClear", icon: "clear", label: "Svuota mappa", title: "Svuota tutta la mappa", onClick: () => EditorLayout.confirmClick("Svuotare tutta la mappa?", "#clearGridBtn") },
 
     { section: "Oggetti" },
+    { id: "railDecor", icon: "decor", label: "Decorazioni", key: "5", title: "Frame degli sprite posizionati liberamente: sposta, ingrandisci, ruota, specchia", pressed: false, onClick: () => EditorLayout.setMode(EditorLayout.mode === "decor" ? "paint" : "decor") },
     { id: "railSelect", icon: "select", label: "Seleziona", key: "4", title: "Seleziona un oggetto della mappa per ruotarlo, ridimensionarlo, specchiarlo o eliminarlo", pressed: false, onClick: () => EditorLayout.setMode(EditorLayout.mode === "select" ? "paint" : "select") },
 
     { section: "Zone" },
@@ -199,7 +203,7 @@ const LAYOUT = {
   ],
 
   // Nomi delle modalità (barra schede e status bar)
-  modes: { paint: "Disegna", zones: "Zone invisibili", layers: "Layer (background e foreground)", select: "Seleziona oggetti" }
+  modes: { paint: "Disegna", zones: "Zone invisibili", layers: "Layer (background e foreground)", select: "Seleziona oggetti", decor: "Decorazioni" }
 };
 
 const EditorLayout = {
@@ -233,6 +237,7 @@ const EditorLayout = {
     document.addEventListener("leveleditor:zonetool", (e) => this.syncMode(e.detail?.active ? "zones" : (scene()?.layerToolActive ? "layers" : "paint")));
     document.addEventListener("leveleditor:layertool", (e) => this.syncMode(e.detail?.active ? "layers" : (scene()?.zoneToolActive ? "zones" : "paint")));
     document.addEventListener("leveleditor:selecttool", (e) => this.syncMode(e.detail?.active ? "select" : this.liveMode()));
+    document.addEventListener("leveleditor:decortool", (e) => this.syncMode(e.detail?.active ? "decor" : this.liveMode()));
     this.syncCell();
     this.tick();
     setInterval(() => this.tick(), 700);
@@ -439,10 +444,13 @@ const EditorLayout = {
     const wantZones = mode === "zones";
     const wantLayers = mode === "layers";
     const wantSelect = mode === "select";
+    const wantDecor = mode === "decor";
+    if (s && !!s.decorToolActive !== wantDecor && !wantDecor) api()?.setDecorTool?.(false);
     if (s && !!s.selectToolActive !== wantSelect && !wantSelect) api()?.setSelectTool?.(false);
     if (s && !!s.layerToolActive !== wantLayers) api()?.setLayerTool?.(wantLayers);
     if (s && !!s.zoneToolActive !== wantZones) clickEl("#toggleZoneTool");
     if (s && wantSelect && !s.selectToolActive) api()?.setSelectTool?.(true);
+    if (s && wantDecor && !s.decorToolActive) api()?.setDecorTool?.(true);
     this.syncMode(mode);
     if (wantZones) this.showPanelTab("map");
     if (wantLayers) this.showPanelTab("level");
@@ -451,7 +459,7 @@ const EditorLayout = {
   liveMode() {
     const s = scene();
     if (!s) return "paint";
-    return s.selectToolActive ? "select" : (s.layerToolActive ? "layers" : (s.zoneToolActive ? "zones" : "paint"));
+    return s.decorToolActive ? "decor" : s.selectToolActive ? "select" : (s.layerToolActive ? "layers" : (s.zoneToolActive ? "zones" : "paint"));
   },
 
   syncMode(mode) {
@@ -464,6 +472,7 @@ const EditorLayout = {
     $q("#railZones")?.setAttribute("aria-pressed", String(mode === "zones"));
     $q("#railLayers")?.setAttribute("aria-pressed", String(mode === "layers"));
     $q("#railSelect")?.setAttribute("aria-pressed", String(mode === "select"));
+    $q("#railDecor")?.setAttribute("aria-pressed", String(mode === "decor"));
     const m = $q("#statusMode");
     if (m) m.textContent = LAYOUT.modes[mode];
   },
@@ -674,6 +683,9 @@ const EditorLayout = {
         "2": () => this.setMode("zones"),
         "3": () => this.setMode("layers"),
         "4": () => this.setMode("select"),
+        "5": () => this.setMode("decor"),
+        "g": () => api()?.toggleSnap?.(),
+        "G": () => api()?.toggleSnap?.(),
         "[": () => this.toggleSide("left"),
         "]": () => this.toggleSide("right"),
         "+": () => this.zoomBy(0.25),
@@ -709,7 +721,10 @@ const EditorLayout = {
   showHelp() {
     const mod = isMac ? "⌘" : "Ctrl";
     const keys = [
-      ["1 · 2 · 3 · 4", "Disegna · Zone invisibili · Layer · Seleziona oggetti"],
+      ["1 · 2 · 3 · 4 · 5", "Disegna · Zone invisibili · Layer · Seleziona oggetti · Decorazioni"],
+      ["G", "Allinea alla griglia (layer e decorazioni) · passo 1, ½, ¼ casella"],
+      ["Decorazioni", "Clic su un frame e poi sulla mappa · maniglie: dimensione e rotazione · F davanti/dietro · Ctrl+D duplica"],
+      ["Zone: Shift + trascina", "Rettangolo · Alt = cancella · pennello 1/2/4/8"],
       [`${mod}+O`, "Apri un livello del gioco"], [`${mod}+⇧+S`, "Salva nel gioco (ogni salvataggio è una versione)"],
       ["Seleziona: clic", "Sceglie l'oggetto (clic di nuovo = oggetto sotto, se la cella ne ha due)"],
       ["Q E / ← →", "Ruota l'oggetto selezionato di 90°"], ["H · V", "Specchia orizzontale · verticale"],

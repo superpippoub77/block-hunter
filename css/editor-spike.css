@@ -694,3 +694,19 @@ kbd { font-family: var(--mono); font-size: 11px; background: var(--bg-2); border
 .game-level-badge[hidden] { display: none !important; }
 
 .accordion[hidden] { display: none !important; }
+
+/* ------------------------------ decorazioni libere e allineamento alla griglia */
+.decor-sheet { width: 100%; margin-bottom: 6px; background: var(--bg-2); border: 1px solid var(--line); color: var(--ink); border-radius: 5px; padding: 4px 6px; font-size: 12px; }
+.decor-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
+.decor-item { aspect-ratio: 1; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 6px; background: var(--bg-0); cursor: grab; }
+.decor-item canvas { width: 40px; height: 40px; image-rendering: pixelated; }
+.decor-item:hover { border-color: var(--brass-dim); }
+.decor-item.armed { border-color: #59b97c; box-shadow: 0 0 0 1px #59b97c; background: rgba(89, 185, 124, .12); }
+.decor-bar { border-color: rgba(89, 185, 124, .5); }
+.snap-btn.on { color: #59b97c !important; border-color: rgba(89, 185, 124, .6) !important; background: rgba(89, 185, 124, .14) !important; }
+.snap-step { background: var(--bg-2); border: 1px solid var(--line); color: var(--ink-dim); border-radius: 5px; padding: 2px 4px; font-size: 11px; margin-left: 2px; }
+.game-level-select { background: var(--bg-2); border: 1px solid var(--line); color: var(--ink); border-radius: 6px; padding: 4px 8px; font-size: 12px; max-width: 240px; }
+.game-level-select:hover { border-color: var(--brass-dim); }
+.menu-bar .replaced-by-select { display: none !important; }
+.game-level-select { max-width: 190px; }
+.menu-bar .topbar-left { overflow: hidden; }

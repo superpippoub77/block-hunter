@@ -1621,6 +1621,10 @@ const ZONE_TYPE_DEFS = [
     { id: 'sand',  label: 'Sabbia', color: 0xddaa11, hex: '#ddaa11', alpha: 0.38, stroke: 0xffcc44 },
     { id: 'mud',   label: 'Fango',  color: 0x995533, hex: '#995533', alpha: 0.38, stroke: 0xbb7744 },
     { id: 'water', label: 'Acqua',  color: 0x1199cc, hex: '#1199cc', alpha: 0.38, stroke: 0x44bbff },
+    // platform games (kit/platform): one-way platform, ladder, hazard
+    { id: 'plat',   label: 'Piattaforma', color: 0xc58a4a, hex: '#c58a4a', alpha: 0.45, stroke: 0xffb066, platform: true },
+    { id: 'ladder', label: 'Scala',       color: 0x59b97c, hex: '#59b97c', alpha: 0.40, stroke: 0x8be0a8, platform: true },
+    { id: 'hazard', label: 'Pericolo',    color: 0xff00aa, hex: '#ff00aa', alpha: 0.40, stroke: 0xff66cc, platform: true },
 ];
 
 class LevelEditorScene extends Phaser.Scene {
@@ -2211,8 +2215,9 @@ class LevelEditorScene extends Phaser.Scene {
     setupInputHandlers() {
         installLayerTool(this);
         installObjectTool(this);
+        installDecorTool(this);
         this.input.on('pointerdown', (pointer) => {
-            if (this.layerToolActive) return;
+            if (this.layerToolActive || this.decorToolActive) return;
             const cell = this.getGridCellFromPointer(pointer.worldX, pointer.worldY);
             if (!cell) return;
 
@@ -2231,30 +2236,18 @@ class LevelEditorScene extends Phaser.Scene {
                 return;
             }
 
-            // Zone tool mode: click or drag to paint/erase zone cells
+            // Zone tool mode: brush (size N) or Shift + drag rectangle; Alt erases
             if (this.zoneToolActive) {
+                const unit = this.zoneUnitAt(pointer.worldX, pointer.worldY);
+                if (!unit) return;
                 const ztype = this.activeZoneType || 'wall';
-                const sub = this.getSubCellFromPointer(pointer.worldX, pointer.worldY);
-                if (sub) {
-                    const bag = this.zoneSubCells.get(ztype) || (this.zoneSubCells.set(ztype, new Set()), this.zoneSubCells.get(ztype));
-                    const key = `${sub.gsc},${sub.gsr}`;
-                    if (bag.has(key)) {
-                        this._zonePaintMode = 'erase';
-                        bag.delete(key);
-                    } else {
-                        this._zonePaintMode = 'paint';
-                        bag.add(key);
-                    }
+                const ev = pointer.event || {};
+                this._zonePaintMode = (ev.altKey || this.zoneBag(unit.sub, ztype).has(`${unit.x},${unit.y}`)) ? 'erase' : 'paint';
+                if (ev.shiftKey) {
+                    this._zoneRect = { start: unit, end: unit, type: ztype };
+                    this.drawZoneRectPreview();
                 } else {
-                    const bag = this.zoneCells.get(ztype) || (this.zoneCells.set(ztype, new Set()), this.zoneCells.get(ztype));
-                    const key = `${cell.col},${cell.row}`;
-                    if (bag.has(key)) {
-                        this._zonePaintMode = 'erase';
-                        bag.delete(key);
-                    } else {
-                        this._zonePaintMode = 'paint';
-                        bag.add(key);
-                    }
+                    this.applyZoneBrush(unit, ztype, this._zonePaintMode);
                 }
                 this._zoneIsDragging = true;
                 this.renderGrid();
@@ -2281,32 +2274,30 @@ class LevelEditorScene extends Phaser.Scene {
         this.input.on('pointermove', (pointer) => {
             if (!this._zoneIsDragging || !this.zoneToolActive) return;
             if (!pointer.isDown) { this._zoneIsDragging = false; return; }
-            const ztype = this.activeZoneType || 'wall';
-            const sub = this.getSubCellFromPointer(pointer.worldX, pointer.worldY);
-            if (sub) {
-                const bag = this.zoneSubCells.get(ztype) || (this.zoneSubCells.set(ztype, new Set()), this.zoneSubCells.get(ztype));
-                const key = `${sub.gsc},${sub.gsr}`;
-                if (this._zonePaintMode === 'erase') {
-                    if (bag.has(key)) { bag.delete(key); this.renderGrid(); }
-                } else {
-                    if (!bag.has(key)) { bag.add(key); this.renderGrid(); }
-                }
-            } else {
-                const cell = this.getGridCellFromPointer(pointer.worldX, pointer.worldY);
-                if (!cell) return;
-                const bag = this.zoneCells.get(ztype) || (this.zoneCells.set(ztype, new Set()), this.zoneCells.get(ztype));
-                const key = `${cell.col},${cell.row}`;
-                if (this._zonePaintMode === 'erase') {
-                    if (bag.has(key)) { bag.delete(key); this.renderGrid(); }
-                } else {
-                    if (!bag.has(key)) { bag.add(key); this.renderGrid(); }
-                }
+            const unit = this.zoneUnitAt(pointer.worldX, pointer.worldY);
+            if (!unit) return;
+            if (this._zoneRect) {
+                if (unit.sub !== this._zoneRect.start.sub) return;
+                this._zoneRect.end = unit;
+                this.drawZoneRectPreview();
+                return;
+            }
+            if (this.applyZoneBrush(unit, this.activeZoneType || 'wall', this._zonePaintMode)) this.renderGrid();
+        });
+
+        this.input.on('pointerup', () => {
+            this._zoneIsDragging = false;
+            if (this._zoneRect) {
+                const r = this._zoneRect;
+                this._zoneRect = null;
+                this.drawZoneRectPreview();
+                this.applyZoneRect(r.start, r.end, r.type, this._zonePaintMode);
+                this.renderGrid();
             }
         });
 
-        this.input.on('pointerup', () => { this._zoneIsDragging = false; });
-
         this.input.on('wheel', (pointer, _gameObjects, _deltaX, deltaY) => {
+            if (this.decorToolActive || this.layerToolActive) return;
             const cell = this.getGridCellFromPointer(pointer.worldX, pointer.worldY);
             if (!cell) return;
             this.selectedCell = cell;
@@ -2315,26 +2306,26 @@ class LevelEditorScene extends Phaser.Scene {
         });
 
         this.input.keyboard.on('keydown-LEFT', () => {
-            if (this.layerToolActive || this.selectToolActive) return;
+            if (this.layerToolActive || this.selectToolActive || this.decorToolActive) return;
             this.rotateSelectedCell(-1);
             this.renderGrid();
         });
 
         this.input.keyboard.on('keydown-RIGHT', () => {
-            if (this.layerToolActive || this.selectToolActive) return;
+            if (this.layerToolActive || this.selectToolActive || this.decorToolActive) return;
             this.rotateSelectedCell(1);
             this.renderGrid();
         });
 
         // Mirror: 'H' = horizontal flip (flipX), 'V' = vertical flip (flipY)
         this.input.keyboard.on('keydown-H', () => {
-            if (this.layerToolActive || this.selectToolActive) return;
+            if (this.layerToolActive || this.selectToolActive || this.decorToolActive) return;
             this.mirrorSelectedCell('h');
             this.renderGrid();
         });
 
         this.input.keyboard.on('keydown-V', () => {
-            if (this.layerToolActive || this.selectToolActive) return;
+            if (this.layerToolActive || this.selectToolActive || this.decorToolActive) return;
             this.mirrorSelectedCell('v');
             this.renderGrid();
         });
@@ -2385,14 +2376,14 @@ class LevelEditorScene extends Phaser.Scene {
         });
 
         this.input.keyboard.on('keydown-DELETE', () => {
-            if (this.layerToolActive || this.selectToolActive) return;
+            if (this.layerToolActive || this.selectToolActive || this.decorToolActive) return;
             const active = document.activeElement;
             if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.tagName === 'SELECT')) return;
             this.clearSelectedCell();
         });
 
         this.input.keyboard.on('keydown-BACKSPACE', (event) => {
-            if (this.layerToolActive || this.selectToolActive) return;
+            if (this.layerToolActive || this.selectToolActive || this.decorToolActive) return;
             const active = document.activeElement;
             if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.tagName === 'SELECT')) return;
             event?.preventDefault?.();
@@ -2519,6 +2510,65 @@ class LevelEditorScene extends Phaser.Scene {
             this.paletteItems.push(container);
             this.paletteLayer.add(container);
         });
+    }
+
+    // ---- zone brush: a "unit" is a sub-cell when the sub-grid is on, otherwise a cell ----
+    zoneUnitAt(worldX, worldY) {
+        const sub = this.getSubCellFromPointer(worldX, worldY);
+        if (sub) return { sub: true, x: sub.gsc, y: sub.gsr, N: sub.N };
+        const cell = this.getGridCellFromPointer(worldX, worldY);
+        return cell ? { sub: false, x: cell.col, y: cell.row, N: 1 } : null;
+    }
+
+    zoneBag(sub, type) {
+        const store = sub ? this.zoneSubCells : this.zoneCells;
+        if (!store.has(type)) store.set(type, new Set());
+        return store.get(type);
+    }
+
+    /** sets/clears every unit of the rectangle a..b (inclusive); returns true if something changed */
+    applyZoneRect(a, b, type, mode) {
+        const bag = this.zoneBag(a.sub, type);
+        const N = a.sub ? a.N : 1;
+        const maxX = this.cols * N - 1, maxY = this.rows * N - 1;
+        const x0 = Math.max(0, Math.min(a.x, b.x)), x1 = Math.min(maxX, Math.max(a.x, b.x));
+        const y0 = Math.max(0, Math.min(a.y, b.y)), y1 = Math.min(maxY, Math.max(a.y, b.y));
+        let changed = false;
+        for (let y = y0; y <= y1; y++) {
+            for (let x = x0; x <= x1; x++) {
+                const key = `${x},${y}`;
+                if (mode === 'erase') { if (bag.delete(key)) changed = true; }
+                else if (!bag.has(key)) { bag.add(key); changed = true; }
+            }
+        }
+        return changed;
+    }
+
+    /** square brush of zoneBrush units centred on the pointer */
+    applyZoneBrush(unit, type, mode) {
+        const n = Math.max(1, Number(this.zoneBrush) || 1);
+        const off = Math.floor((n - 1) / 2);
+        const a = { ...unit, x: unit.x - off, y: unit.y - off };
+        const b = { ...unit, x: unit.x - off + n - 1, y: unit.y - off + n - 1 };
+        return this.applyZoneRect(a, b, type, mode);
+    }
+
+    drawZoneRectPreview() {
+        if (!this._zoneRectGfx) this._zoneRectGfx = this.add.graphics().setDepth(4000);
+        const g = this._zoneRectGfx;
+        g.clear();
+        const r = this._zoneRect;
+        if (!r) return;
+        const unitPx = this.cellSize / (r.start.sub ? r.start.N : 1);
+        const x0 = Math.min(r.start.x, r.end.x), x1 = Math.max(r.start.x, r.end.x);
+        const y0 = Math.min(r.start.y, r.end.y), y1 = Math.max(r.start.y, r.end.y);
+        const def = ZONE_TYPE_DEFS.find((d) => d.id === r.type) || ZONE_TYPE_DEFS[0];
+        const erase = this._zonePaintMode === 'erase';
+        g.fillStyle(erase ? 0x000000 : def.color, erase ? 0.35 : 0.3);
+        g.lineStyle(2, erase ? 0xffffff : def.stroke, 0.95);
+        const X = this.gridOffsetX + x0 * unitPx, Y = this.gridOffsetY + y0 * unitPx;
+        const W = (x1 - x0 + 1) * unitPx, H = (y1 - y0 + 1) * unitPx;
+        g.fillRect(X, Y, W, H).strokeRect(X, Y, W, H);
     }
 
     getGridCellFromPointer(worldX, worldY) {
@@ -3068,6 +3118,8 @@ class LevelEditorScene extends Phaser.Scene {
 
     loadFromJson(levelData) {
         if (!levelData || typeof levelData !== 'object') return;
+        this.decorations = Array.isArray(levelData.decorations) ? levelData.decorations.map((d) => ({ ...d })) : [];
+        try { this.decorTool?.select(null); this.decorTool?.redraw(); } catch (e) { }
         const mapObj = levelData.map || {};
         const tiles = Array.isArray(mapObj.tiles) ? mapObj.tiles : [];
         const rows = clamp(Number(mapObj.rows) || tiles.length || 12, 4, 120);
@@ -3185,6 +3237,8 @@ window.LevelEditorAPI = {
     gameTileSize: () => GAME_TILE_SIZE,
     setLayerTool: (on) => getScene()?.layerTool?.setActive(on),
     setSelectTool: (on) => getScene()?.objectTool?.setActive(on),
+    setDecorTool: (on) => getScene()?.decorTool?.setActive(on),
+    toggleSnap: () => setSnap(!EDITOR_SNAP.on),
     objectAction: (act) => getScene()?.objectTool?.run(act),
     refreshLayerPalette: () => buildLayerPalette()
 };
@@ -3845,7 +3899,24 @@ function readLevelFromForm() {
         }
     } catch (e) { }
 
-    return { ...level, ...extra, map: level.map, playerStart: level.playerStart };
+    // free decorations (mode "Decorazioni"): frames of the spritesheets, game pixels from the map corner
+    if (scene && Array.isArray(scene.decorations) && scene.decorations.length) {
+        level.decorations = scene.decorations.map((d) => {
+            const r2 = (v) => Math.round(Number(v) * 100) / 100;
+            const out = { texture: d.texture, frame: d.frame, x: r2(d.x), y: r2(d.y), w: r2(d.w), h: r2(d.h) };
+            if (d.rotation) out.rotation = r2(d.rotation);
+            if (d.flipX) out.flipX = true;
+            if (d.flipY) out.flipY = true;
+            if (d.alpha != null && Number(d.alpha) !== 1) out.alpha = r2(d.alpha);
+            if (d.front) out.front = true;
+            return out;
+        });
+    }
+
+    const result = { ...level, ...extra, map: level.map, playerStart: level.playerStart };
+    // the editor's decorations win over the ones kept from the imported file (extra)
+    if (level.decorations) result.decorations = level.decorations; else delete result.decorations;
+    return result;
 }
 
 function applyLevelToForm(levelData) {
@@ -6009,6 +6080,7 @@ function bindUI() {
             if (!scene) return;
             scene.zoneToolActive = !scene.zoneToolActive;
             if (scene.zoneToolActive && scene.selectToolActive) scene.objectTool?.setActive(false);
+            if (scene.zoneToolActive && scene.decorToolActive) scene.decorTool?.setActive(false);
             toggleZoneBtn.textContent = scene.zoneToolActive ? '\uD83D\uDEAB Zone: ON' : '\uD83D\uDEAB Zone: OFF';
             toggleZoneBtn.classList.toggle('on', scene.zoneToolActive);
             toggleZoneBtn.setAttribute('aria-pressed', String(scene.zoneToolActive));
@@ -6034,6 +6106,17 @@ function bindUI() {
         });
     });
     _updateZoneTypeBtns('wall'); // highlight default
+    // platform zone types only for platform games
+    gameManifestReady.then(() => {
+        document.querySelectorAll('.zone-type-btn[data-platform]').forEach((btn) => { btn.hidden = !isPlatformGame(); });
+    });
+    const zoneBrushSel = el('zoneBrushSize');
+    if (zoneBrushSel) {
+        zoneBrushSel.addEventListener('change', () => {
+            const scene = getScene();
+            if (scene) scene.zoneBrush = Number(zoneBrushSel.value) || 1;
+        });
+    }
     const clearZonesBtn = el('clearAllZones');
     if (clearZonesBtn) {
         clearZonesBtn.addEventListener('click', () => {
@@ -6525,6 +6608,8 @@ function buildDomPalette() {
         platformContainer.closest('.accordion')?.toggleAttribute('hidden', !show);
         if (show) PLATFORM_PALETTE_ITEMS.forEach((it) => platformContainer.appendChild(makePaletteItem(it.label, it.token)));
     }
+
+    try { buildDecorPalette(); } catch (e) { /* decorations palette */ }
 
     // data-driven entities (enemies / characters declared in data/game-entities-mapping.json)
     if (objectsContainer) {
@@ -7107,6 +7192,7 @@ function installLayerTool(scene) {
         scene.layerToolActive = tool.active;
         if (tool.active && scene.zoneToolActive) el('toggleZoneTool')?.click();
         if (tool.active && scene.selectToolActive) scene.objectTool?.setActive(false);
+        if (tool.active && scene.decorToolActive) scene.decorTool?.setActive(false);
         if (!tool.active) tool.select(null);
         try { scene.input.setDefaultCursor(tool.active ? 'default' : ''); } catch (e) { }
         draw();
@@ -7153,10 +7239,10 @@ function installLayerTool(scene) {
         const k = scale();
         const shift = !!pointer.event?.shiftKey;
         if (d.kind === 'move') {
-            writeRow(row, { offsetX: d.vals.offsetX + (x - d.start.x) / k, offsetY: d.vals.offsetY + (y - d.start.y) / k });
+            writeRow(row, { offsetX: snapPx(d.vals.offsetX + (x - d.start.x) / k), offsetY: snapPx(d.vals.offsetY + (y - d.start.y) / k) });
         } else if (d.kind === 'rotate') {
             let deg = Phaser.Math.RadToDeg(Math.atan2(y - d.box.cy, x - d.box.cx)) + 90;
-            deg = shift ? Math.round(deg / 15) * 15 : Math.round(deg);
+            deg = shift ? Math.round(deg / 15) * 15 : snapDeg(deg);
             writeRow(row, { rotation: ((deg % 360) + 360) % 360 });
         } else if (d.kind === 'resize') {
             const local = toLocal({ ...d.box, cx: 0, cy: 0 }, x - d.start.x, y - d.start.y); // delta in the layer's own axes
@@ -7167,6 +7253,7 @@ function installLayerTool(scene) {
                 const f = Math.max(w / d.game.w, h / d.game.h);
                 w = d.game.w * f; h = d.game.h * f;
             }
+            if (EDITOR_SNAP.on) { const r = h / w; if (d.sx) w = snapSize(w); h = (d.sx && d.sy && !shift) ? w * r : (d.sy ? snapSize(h) : h); }
             // keep the opposite side fixed: move the centre by half the growth, along the layer's axes
             const gx = (d.sx || 0) * (w - d.game.w) / 2, gy = (d.sy || 0) * (h - d.game.h) / 2;
             const shiftW = toWorld({ ...d.box, cx: 0, cy: 0 }, gx, gy);
@@ -7412,6 +7499,7 @@ function installObjectTool(scene) {
             if (on) {
                 if (scene.layerToolActive) scene.layerTool?.setActive(false);
                 if (scene.zoneToolActive) el('toggleZoneTool')?.click();
+                if (scene.decorToolActive) scene.decorTool?.setActive(false);
             }
             tool.active = on;
             scene.selectToolActive = on;
@@ -7510,3 +7598,394 @@ function installObjectTool(scene) {
         tool.run(act);
     }, true);
 }
+
+
+// =====================================================================================
+// SNAP TO GRID — one setting for layers and decorations
+//   on/off (button ⊞ in the zoom bar, key G) · step 1, ½, ¼ of a game tile
+//   positions and sizes move in steps, rotations in 15° steps (Shift = 90°)
+// =====================================================================================
+const EDITOR_SNAP = { on: false, step: 1 };
+function snapPx(v) {
+    if (!EDITOR_SNAP.on) return v;
+    const s = GAME_TILE_SIZE * (Number(EDITOR_SNAP.step) || 1);
+    return Math.round(v / s) * s;
+}
+function snapSize(v) {
+    if (!EDITOR_SNAP.on) return v;
+    const s = GAME_TILE_SIZE * (Number(EDITOR_SNAP.step) || 1);
+    return Math.max(s, Math.round(v / s) * s);
+}
+function snapDeg(deg, coarse = false) {
+    const step = coarse ? 90 : (EDITOR_SNAP.on ? 15 : 1);
+    return ((Math.round(deg / step) * step) % 360 + 360) % 360;
+}
+function setSnap(on, step) {
+    if (on != null) EDITOR_SNAP.on = !!on;
+    if (step != null) EDITOR_SNAP.step = Number(step) || 1;
+    const btn = el('snapBtn');
+    if (btn) { btn.classList.toggle('on', EDITOR_SNAP.on); btn.setAttribute('aria-pressed', String(EDITOR_SNAP.on)); }
+    const sel = el('snapStep');
+    if (sel && String(sel.value) !== String(EDITOR_SNAP.step)) sel.value = String(EDITOR_SNAP.step);
+    try { localStorage.setItem('bh-editor-snap', JSON.stringify(EDITOR_SNAP)); } catch (e) { }
+    try { getScene()?.decorTool?.drawGuides(); } catch (e) { }
+}
+window.addEventListener('load', () => {
+    try { const saved = JSON.parse(localStorage.getItem('bh-editor-snap') || 'null'); if (saved) Object.assign(EDITOR_SNAP, saved); } catch (e) { }
+    el('snapBtn')?.addEventListener('click', () => setSnap(!EDITOR_SNAP.on));
+    el('snapStep')?.addEventListener('change', (e) => setSnap(true, e.target.value));
+    setSnap();
+});
+
+
+// =====================================================================================
+// DECORATIONS — frames of the game's spritesheets placed freely on the map
+//   mode "Decorazioni" (key 5): click a frame in the palette, click on the map to place it
+//   (or drag it there) · click = select · drag = move · corners = resize (Shift = free)
+//   · round handle = rotate · bar: rotate, mirror, size, opacity, front/behind, duplicate, delete
+//   Saved as level.decorations (game pixels from the map corner); the game draws them with
+//   kit/core/decorations.js. They are scenery only: the rules stay in tiles and zones.
+// =====================================================================================
+const DECOR_SHEETS = [
+    { texture: 'objects', label: 'Oggetti', frames: 16 },
+    { texture: 'wall_tiles', label: 'Muri e arredi', frames: 24 },
+    { texture: 'tiles', label: 'Terreni', frames: 6 }
+];
+
+function installDecorTool(scene) {
+    if (scene.decorTool) return;
+    const HANDLE = 7, ROT_OFFSET = 24;
+    scene.decorations = scene.decorations || [];
+    const gfx = scene.add.graphics().setDepth(5001);
+    const guides = scene.add.graphics().setDepth(-90);
+    let images = [];
+    const k = () => scene.cellSize / GAME_TILE_SIZE;
+    const toScreen = (d) => ({ cx: scene.gridOffsetX + d.x * k(), cy: scene.gridOffsetY + d.y * k(), w: d.w * k(), h: d.h * k(), a: Phaser.Math.DegToRad(d.rotation || 0) });
+    const toWorld = (b, lx, ly) => ({ x: b.cx + lx * Math.cos(b.a) - ly * Math.sin(b.a), y: b.cy + lx * Math.sin(b.a) + ly * Math.cos(b.a) });
+    const toLocal = (b, x, y) => { const dx = x - b.cx, dy = y - b.cy; return { x: dx * Math.cos(-b.a) - dy * Math.sin(-b.a), y: dx * Math.sin(-b.a) + dy * Math.cos(-b.a) }; };
+    const handles = (b) => {
+        const list = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([sx, sy]) => ({ sx, sy, ...toWorld(b, sx * b.w / 2, sy * b.h / 2) }));
+        list.push({ rotate: true, ...toWorld(b, 0, -b.h / 2 - ROT_OFFSET) });
+        return list;
+    };
+
+    const tool = {
+        active: false,
+        selected: -1,
+        armed: null,       // { texture, frame } waiting to be placed
+        drag: null,
+        redraw() {
+            images.forEach((i) => i.destroy());
+            images = scene.decorations.map((d, i) => {
+                if (!scene.textures.exists(d.texture)) return null;
+                const b = toScreen(d);
+                const img = scene.add.image(b.cx, b.cy, d.texture, d.frame).setDisplaySize(Math.max(1, b.w), Math.max(1, b.h));
+                img.setAngle(d.rotation || 0).setFlip(!!d.flipX, !!d.flipY).setAlpha(d.alpha == null ? 1 : Number(d.alpha));
+                img.setDepth((d.front ? 700 : -100) + i * 0.001); // front: above characters and foreground layers (500+)
+                return img;
+            }).filter(Boolean);
+            tool.drawSelection();
+            tool.drawGuides();
+        },
+        drawSelection() {
+            gfx.clear();
+            const d = scene.decorations[tool.selected];
+            if (!tool.active || !d) return;
+            const b = toScreen(d);
+            const c = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([sx, sy]) => toWorld(b, sx * b.w / 2, sy * b.h / 2));
+            gfx.lineStyle(2, 0x59b97c, 1).strokePoints([...c, c[0]], false);
+            const top = toWorld(b, 0, -b.h / 2), rot = toWorld(b, 0, -b.h / 2 - ROT_OFFSET);
+            gfx.lineBetween(top.x, top.y, rot.x, rot.y);
+            handles(b).forEach((h) => {
+                gfx.fillStyle(h.rotate ? 0x59b97c : 0xe9e6df, 1);
+                if (h.rotate) gfx.fillCircle(h.x, h.y, HANDLE); else gfx.fillRect(h.x - HANDLE / 2, h.y - HANDLE / 2, HANDLE, HANDLE);
+            });
+        },
+        /** fine grid lines for ½ and ¼ steps while snapping in this mode */
+        drawGuides() {
+            guides.clear();
+            if (!tool.active || !EDITOR_SNAP.on || Number(EDITOR_SNAP.step) >= 1) return;
+            const step = scene.cellSize * Number(EDITOR_SNAP.step);
+            const W = scene.cols * scene.cellSize, H = scene.rows * scene.cellSize;
+            guides.lineStyle(1, 0x59b97c, 0.18);
+            for (let x = step; x < W; x += step) guides.lineBetween(scene.gridOffsetX + x, scene.gridOffsetY, scene.gridOffsetX + x, scene.gridOffsetY + H);
+            for (let y = step; y < H; y += step) guides.lineBetween(scene.gridOffsetX, scene.gridOffsetY + y, scene.gridOffsetX + W, scene.gridOffsetY + y);
+        },
+        setActive(on) {
+            on = !!on;
+            if (on) {
+                if (scene.layerToolActive) scene.layerTool?.setActive(false);
+                if (scene.selectToolActive) scene.objectTool?.setActive(false);
+                if (scene.zoneToolActive) el('toggleZoneTool')?.click();
+            }
+            tool.active = on;
+            scene.decorToolActive = on;
+            // open the "Decorazioni" group of the palette
+            const pal = el('domPalette-decor');
+            if (on && pal && getComputedStyle(pal).display === 'none') pal.previousElementSibling?.click();
+            if (!on) { tool.selected = -1; tool.arm(null); }
+            document.dispatchEvent(new CustomEvent('leveleditor:decortool', { detail: { active: on } }));
+            tool.drawSelection();
+            tool.drawGuides();
+            tool.sync();
+            if (on) setStatus('Decorazioni: scegli un frame nella palette e clicca sulla mappa, oppure trascinalo. Clic su una decorazione per spostarla, ridimensionarla o ruotarla.');
+        },
+        arm(spec) {
+            tool.armed = spec;
+            document.querySelectorAll('#domPalette-decor .decor-item').forEach((n) => n.classList.toggle('armed', !!spec && n.dataset.texture === spec.texture && Number(n.dataset.frame) === Number(spec.frame)));
+        },
+        /** adds a decoration centred at game pixel (gx, gy) */
+        place(spec, gx, gy) {
+            const f = scene.textures.getFrame(spec.texture, spec.frame);
+            const nat = f ? Math.max(f.width, f.height) : 64;
+            const size = GAME_TILE_SIZE * Math.max(1, Math.round(nat / 64)); // 64-px frames → 1 tile
+            const ratio = f ? f.height / f.width : 1;
+            const d = { texture: spec.texture, frame: spec.frame, w: size, h: size * ratio, rotation: 0, alpha: 1, front: false };
+            d.x = snapPx(gx - d.w / 2) + d.w / 2;
+            d.y = snapPx(gy - d.h / 2) + d.h / 2;
+            scene.decorations.push(d);
+            tool.selected = scene.decorations.length - 1;
+            tool.redraw();
+            tool.sync();
+            return d;
+        },
+        pick(x, y) {
+            for (let i = scene.decorations.length - 1; i >= 0; i--) {
+                const order = scene.decorations[i];
+                const b = toScreen(order);
+                const l = toLocal(b, x, y);
+                if (Math.abs(l.x) <= b.w / 2 && Math.abs(l.y) <= b.h / 2) return i;
+            }
+            return -1;
+        },
+        select(i) { tool.selected = (i == null) ? -1 : i; tool.drawSelection(); tool.sync(); },
+        run(act) {
+            const d = scene.decorations[tool.selected];
+            if (!d) return;
+            const coarse = EDITOR_SNAP.on;
+            if (act === 'rotL') d.rotation = snapDeg((d.rotation || 0) - (coarse ? 90 : 15), coarse);
+            else if (act === 'rotR') d.rotation = snapDeg((d.rotation || 0) + (coarse ? 90 : 15), coarse);
+            else if (act === 'flipX') d.flipX = !d.flipX;
+            else if (act === 'flipY') d.flipY = !d.flipY;
+            else if (act === 'bigger' || act === 'smaller') {
+                const r = d.h / d.w;
+                const cx = d.x, cy = d.y;
+                if (EDITOR_SNAP.on) {
+                    // one grid step at a time
+                    const st = GAME_TILE_SIZE * (Number(EDITOR_SNAP.step) || 1);
+                    d.w = Math.max(st, snapSize(d.w) + (act === 'bigger' ? st : -st));
+                } else {
+                    d.w = Math.max(4, d.w * (act === 'bigger' ? 1.25 : 0.8));
+                }
+                d.h = d.w * r;
+                d.x = cx; d.y = cy;
+            } else if (act === 'front') d.front = !d.front;
+            else if (act === 'dup') { scene.decorations.push({ ...d, x: d.x + GAME_TILE_SIZE / 2, y: d.y + GAME_TILE_SIZE / 2 }); tool.selected = scene.decorations.length - 1; }
+            else if (act === 'snap') { d.x = snapPx(d.x - d.w / 2) + d.w / 2; d.y = snapPx(d.y - d.h / 2) + d.h / 2; d.w = snapSize(d.w); d.rotation = snapDeg(d.rotation || 0); }
+            else if (act === 'delete') { scene.decorations.splice(tool.selected, 1); tool.selected = -1; }
+            tool.redraw();
+            tool.sync();
+        },
+        sync() {
+            const d = scene.decorations[tool.selected];
+            bar.hidden = !(tool.active && d);
+            if (bar.hidden) return;
+            bar.querySelector('.lb-name').textContent = `${d.texture} #${d.frame}`;
+            bar.querySelector('.db-rot').textContent = `${Math.round(d.rotation || 0)}°`;
+            bar.querySelector('.db-size').textContent = `${Math.round(d.w)}×${Math.round(d.h)}`;
+            bar.querySelector('[data-act=flipX]').classList.toggle('on', !!d.flipX);
+            bar.querySelector('[data-act=flipY]').classList.toggle('on', !!d.flipY);
+            const fb = bar.querySelector('[data-act=front]');
+            fb.textContent = d.front ? 'Davanti' : 'Dietro';
+            fb.classList.toggle('on', !!d.front);
+            const a = bar.querySelector('[data-act=alpha]');
+            if (document.activeElement !== a) a.value = String(d.alpha == null ? 1 : d.alpha);
+        }
+    };
+    scene.decorTool = tool;
+
+    // ---- pointer ----
+    scene.input.on('pointerdown', (pointer) => {
+        if (!tool.active) return;
+        const x = pointer.worldX, y = pointer.worldY;
+        const sel = scene.decorations[tool.selected];
+        if (sel) {
+            const b = toScreen(sel);
+            const hit = handles(b).find((h) => Math.hypot(h.x - x, h.y - y) <= HANDLE + 3);
+            if (hit) { tool.drag = { kind: hit.rotate ? 'rotate' : 'resize', sx: hit.sx, sy: hit.sy, start: { x, y }, d0: { ...sel }, b }; return; }
+        }
+        const i = tool.pick(x, y);
+        if (i >= 0) {
+            tool.select(i);
+            tool.drag = { kind: 'move', start: { x, y }, d0: { ...scene.decorations[i] } };
+            return;
+        }
+        if (tool.armed && scene.getGridCellFromPointer(x, y)) {
+            tool.place(tool.armed, (x - scene.gridOffsetX) / k(), (y - scene.gridOffsetY) / k());
+            return;
+        }
+        tool.select(-1);
+    });
+    scene.input.on('pointermove', (pointer) => {
+        const dr = tool.drag;
+        const d = scene.decorations[tool.selected];
+        if (!tool.active || !dr || !d || !pointer.isDown) return;
+        const x = pointer.worldX, y = pointer.worldY;
+        const shift = !!pointer.event?.shiftKey;
+        if (dr.kind === 'move') {
+            const nx = dr.d0.x + (x - dr.start.x) / k(), ny = dr.d0.y + (y - dr.start.y) / k();
+            d.x = snapPx(nx - d.w / 2) + d.w / 2;
+            d.y = snapPx(ny - d.h / 2) + d.h / 2;
+        } else if (dr.kind === 'rotate') {
+            const deg = Phaser.Math.RadToDeg(Math.atan2(y - dr.b.cy, x - dr.b.cx)) + 90;
+            d.rotation = snapDeg(deg, shift);
+        } else if (dr.kind === 'resize') {
+            const l = toLocal({ ...dr.b, cx: 0, cy: 0 }, x - dr.start.x, y - dr.start.y);
+            let w = Math.max(4, dr.d0.w + dr.sx * l.x / k());
+            let h = Math.max(4, dr.d0.h + dr.sy * l.y / k());
+            if (!shift) { const f = Math.max(w / dr.d0.w, h / dr.d0.h); w = dr.d0.w * f; h = dr.d0.h * f; }
+            if (EDITOR_SNAP.on) { const r = h / w; w = snapSize(w); h = shift ? snapSize(h) : w * r; }
+            // the opposite corner stays where it was
+            const gx = dr.sx * (w - dr.d0.w) / 2, gy = dr.sy * (h - dr.d0.h) / 2;
+            const off = toWorld({ ...dr.b, cx: 0, cy: 0 }, gx, gy);
+            d.w = w; d.h = h;
+            d.x = dr.d0.x + off.x / k(); d.y = dr.d0.y + off.y / k();
+        }
+        tool.redraw();
+        tool.sync();
+    });
+    const end = () => { if (tool.drag) { tool.drag = null; try { drawMiniMapPreview(scene); } catch (e) { } } };
+    scene.input.on('pointerup', end);
+    scene.input.on('pointerupoutside', end);
+
+    // keep in sync with zoom / scroll / grid redraws
+    const origRender = scene.renderGrid.bind(scene);
+    scene.renderGrid = (...args) => { const r = origRender(...args); try { tool.redraw(); } catch (e) { } return r; };
+
+    // ---- floating bar ----
+    const bar = document.createElement('div');
+    bar.className = 'layer-bar decor-bar';
+    bar.hidden = true;
+    bar.innerHTML = `
+        <span class="lb-name"></span>
+        <button type="button" data-act="rotL" title="Ruota (Q) · con la griglia 90°">⟲</button>
+        <span class="lb-rot db-rot"></span>
+        <button type="button" data-act="rotR" title="Ruota (E) · con la griglia 90°">⟳</button>
+        <button type="button" data-act="flipX" title="Specchia orizzontalmente (H)">↔</button>
+        <button type="button" data-act="flipY" title="Specchia verticalmente (V)">↕</button>
+        <button type="button" data-act="smaller" title="Rimpicciolisci (PagGiù)">−</button>
+        <span class="lb-rot db-size"></span>
+        <button type="button" data-act="bigger" title="Ingrandisci (PagSu)">+</button>
+        <label title="Opacità">◐ <input type="range" min="0" max="1" step="0.05" data-act="alpha"></label>
+        <button type="button" data-act="front" title="Davanti o dietro ai personaggi (F)">Dietro</button>
+        <button type="button" data-act="snap" title="Allinea alla griglia questa decorazione">⊞</button>
+        <button type="button" data-act="dup" title="Duplica (Ctrl+D)">⧉</button>
+        <button type="button" data-act="delete" title="Elimina (Canc)">✕</button>`;
+    el('editor-game')?.appendChild(bar);
+    bar.addEventListener('click', (e) => { const act = e.target.closest('[data-act]')?.dataset.act; if (act && act !== 'alpha') tool.run(act); });
+    bar.addEventListener('input', (e) => {
+        if (e.target.dataset.act !== 'alpha') return;
+        const d = scene.decorations[tool.selected];
+        if (d) { d.alpha = Number(e.target.value); tool.redraw(); }
+    });
+
+    // ---- keyboard (capture: wins over the paint-mode shortcuts) ----
+    window.addEventListener('keydown', (e) => {
+        if (!tool.active) return;
+        const t = e.target || {};
+        if (t.matches?.('input,select,textarea') || t.isContentEditable) return;
+        if (document.querySelector('.modal-overlay.open, .config-modal.open')) return;
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'd') { e.preventDefault(); tool.run('dup'); return; }
+        if (e.ctrlKey || e.metaKey || e.altKey) return;
+        const d = scene.decorations[tool.selected];
+        const nudge = EDITOR_SNAP.on ? GAME_TILE_SIZE * EDITOR_SNAP.step : (e.shiftKey ? 8 : 1);
+        const arrows = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
+        if (arrows[e.key] && d) {
+            e.preventDefault(); e.stopImmediatePropagation();
+            d.x += arrows[e.key][0] * nudge; d.y += arrows[e.key][1] * nudge;
+            tool.redraw(); tool.sync();
+            return;
+        }
+        const map = { q: 'rotL', Q: 'rotL', e: 'rotR', E: 'rotR', h: 'flipX', H: 'flipX', v: 'flipY', V: 'flipY', f: 'front', F: 'front', PageUp: 'bigger', PageDown: 'smaller', Delete: 'delete', Backspace: 'delete' };
+        if (e.key === 'Escape') { tool.arm(null); tool.select(-1); return; }
+        const act = map[e.key];
+        if (!act || !d) return;
+        e.preventDefault(); e.stopImmediatePropagation();
+        tool.run(act);
+    }, true);
+
+    tool.redraw();
+}
+
+/** palette "Decorazioni": the frames of the spritesheets, by sheet */
+function buildDecorPalette() {
+    const box = el('domPalette-decor');
+    const scene = getScene();
+    if (!box || !scene) return;
+    box.innerHTML = '';
+    const sheetSel = document.createElement('select');
+    sheetSel.className = 'decor-sheet';
+    DECOR_SHEETS.forEach((s) => { const o = document.createElement('option'); o.value = s.texture; o.textContent = s.label; sheetSel.appendChild(o); });
+    const grid = document.createElement('div');
+    grid.className = 'decor-grid';
+    box.appendChild(sheetSel);
+    box.appendChild(grid);
+    const hint = document.createElement('p');
+    hint.className = 'palette-hint';
+    hint.textContent = 'Clic e poi clic sulla mappa, oppure trascina. Posizione, dimensione e rotazione libere (⊞ per allinearle alla griglia).';
+    box.appendChild(hint);
+    const fill = () => {
+        grid.innerHTML = '';
+        const sheet = DECOR_SHEETS.find((s) => s.texture === sheetSel.value) || DECOR_SHEETS[0];
+        if (!scene.textures.exists(sheet.texture)) return;
+        for (let f = 0; f < sheet.frames; f++) {
+            const item = document.createElement('div');
+            item.className = 'decor-item';
+            item.draggable = true;
+            item.dataset.texture = sheet.texture;
+            item.dataset.frame = String(f);
+            item.title = `${sheet.label} · frame ${f}`;
+            const c = document.createElement('canvas');
+            c.width = 40; c.height = 40;
+            const ctx = c.getContext('2d');
+            ctx.imageSmoothingEnabled = false;
+            try { drawMiniMapFrame(scene, ctx, sheet.texture, f, 0, 0, 40); } catch (e) { }
+            item.appendChild(c);
+            item.addEventListener('click', () => {
+                const sc = getScene();
+                if (!sc?.decorTool) return;
+                if (!sc.decorToolActive) window.EditorLayout?.setMode('decor');
+                sc.decorTool.arm({ texture: sheet.texture, frame: f });
+            });
+            item.addEventListener('dragstart', (ev) => {
+                try { ev.dataTransfer.setData('application/x-spike-decor', JSON.stringify({ texture: sheet.texture, frame: f })); } catch (e) { }
+            });
+            grid.appendChild(item);
+        }
+    };
+    sheetSel.addEventListener('change', fill);
+    fill();
+}
+
+function setupDecorDrop() {
+    const target = el('editor-game');
+    if (!target || target.dataset.decorDrop === '1') return;
+    target.dataset.decorDrop = '1';
+    target.addEventListener('drop', (ev) => {
+        const raw = ev.dataTransfer?.getData('application/x-spike-decor');
+        if (!raw) return;
+        ev.preventDefault();
+        ev.stopImmediatePropagation();
+        const scene = getScene();
+        if (!scene?.decorTool) return;
+        let spec = null;
+        try { spec = JSON.parse(raw); } catch (e) { return; }
+        const rect = target.getBoundingClientRect();
+        const x = ev.clientX - rect.left, y = ev.clientY - rect.top;
+        if (!scene.getGridCellFromPointer(x, y)) { setStatus('Rilascia la decorazione dentro la mappa', true); return; }
+        if (!scene.decorToolActive) window.EditorLayout?.setMode('decor');
+        const k = scene.cellSize / GAME_TILE_SIZE;
+        scene.decorTool.place(spec, (x - scene.gridOffsetX) / k, (y - scene.gridOffsetY) / k);
+    }, true);
+}
+window.addEventListener('load', () => setupDecorDrop());

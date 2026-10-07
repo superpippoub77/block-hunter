@@ -41,6 +41,7 @@
         <button class="tab" type="button" data-mode="zones" aria-pressed="false" title="Disegna zone invisibili: muro, buca, sabbia, fango, acqua (2)">🚫 Zone</button>
         <button class="tab" type="button" data-mode="layers" aria-pressed="false" title="Sposta, ridimensiona, ruota e specchia background e foreground sulla mappa (3)">🖼 Layer</button>
         <button class="tab" type="button" data-mode="select" aria-pressed="false" title="Seleziona un oggetto: ruota, ingrandisci/rimpicciolisci, specchia, elimina (4)">➚ Seleziona</button>
+        <button class="tab" type="button" data-mode="decor" aria-pressed="false" title="Decorazioni libere: frame degli sprite posizionati, ingranditi e ruotati a piacere (5)">✿ Decorazioni</button>
     </div>
 </nav>
 
@@ -52,6 +53,10 @@
             <div class="accordion">
                 <h3 data-group="tiles">Tiles</h3>
                 <div class="content" id="domPalette-tiles"></div>
+            </div>
+            <div class="accordion">
+                <h3 data-group="decor">Decorazioni</h3>
+                <div class="content" id="domPalette-decor"></div>
             </div>
             <div class="accordion" hidden>
                 <h3 data-group="platform">Platform</h3>
@@ -88,6 +93,10 @@
                 <span class="pagelabel" id="zoomLabel">200%</span>
                 <button class="iconbtn" type="button" id="zoomInBtn" title="Ingrandisci (+)" aria-label="Ingrandisci">+</button>
                 <button class="iconbtn" type="button" id="zoomGameBtn" title="Scala di gioco: 1 cella = 1 tile del gioco (0)">1:1</button>
+                <button class="iconbtn snap-btn" type="button" id="snapBtn" aria-pressed="false" title="Allinea alla griglia layer e decorazioni (G)">⊞</button>
+                <select id="snapStep" class="snap-step" title="Passo della griglia">
+                    <option value="1">1 casella</option><option value="0.5">½ casella</option><option value="0.25">¼ casella</option>
+                </select>
             </div>
         </div>
         <div id="editor-game">
@@ -189,6 +198,19 @@
                         <button class="zone-type-btn" data-zone="sand" type="button">Sabbia</button>
                         <button class="zone-type-btn" data-zone="mud" type="button">Fango</button>
                         <button class="zone-type-btn" data-zone="water" type="button">Acqua</button>
+                        <button class="zone-type-btn" data-zone="plat" data-platform type="button" hidden title="Piattaforma: ci si sale saltando da sotto">Piattaforma</button>
+                        <button class="zone-type-btn" data-zone="ladder" data-platform type="button" hidden title="Scala">Scala</button>
+                        <button class="zone-type-btn" data-zone="hazard" data-platform type="button" hidden title="Pericolo: toglie una vita">Pericolo</button>
+                    </div>
+                    <div class="grid2" style="margin:8px 0 4px;">
+                        <div>
+                            <label for="zoneBrushSize">Pennello</label>
+                            <select id="zoneBrushSize">
+                                <option value="1">1 × 1</option><option value="2">2 × 2</option>
+                                <option value="4">4 × 4</option><option value="8">8 × 8</option>
+                            </select>
+                        </div>
+                        <div class="tiny" style="align-self:end;">Shift + trascina = rettangolo · Alt = cancella. Con la sotto-griglia il pennello usa le sotto-celle.</div>
                     </div>
                     <div class="btn-row" style="grid-template-columns:1fr 1fr 1fr;">
                         <button id="toggleZoneTool" type="button">&#128683; Zone: OFF</button>
