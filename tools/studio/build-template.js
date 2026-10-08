@@ -79,7 +79,55 @@ mkdir(path.join(OUT, 'assets/images/foreground'));
 mkdir(path.join(OUT, 'assets/images/background'));
 write('assets/images/background/LEGGIMI.txt', 'Metti qui gli sfondi dei livelli (PNG/JPG). Li trovi poi nella palette Background del level editor.\n');
 copy('assets/fonts');
-copy('assets/icons');
+// the games' icons are SpikeEngine's (kit/studio/brand, tools/studio/build-brand.js), not Block Hunter's
+{
+    const BRAND = path.join(SRC, 'kit/studio/brand'), ICONS = path.join(OUT, 'assets/icons');
+    fs.rmSync(ICONS, { recursive: true, force: true }); mkdir(ICONS);
+    [['icon-192.png', 'icon-192.png'], ['icon-512.png', 'icon-512.png'], ['icon-maskable-512.png', 'icon-maskable-512.png'], ['apple-touch-icon.png', 'apple-touch-icon.png'],
+     ['favicon-32.png', 'favicon-32.png'], ['favicon-16.png', 'favicon-16.png'], ['favicon.ico', 'icon.ico'], ['favicon.svg', 'favicon.svg'], ['mark.svg', 'icon.svg']]
+        .forEach(([from, to]) => { fs.copyFileSync(path.join(BRAND, from), path.join(ICONS, to)); files++; });
+}
+// the game page's metadata: the studio fills in title, description and address (api/games.php)
+{
+    const p = path.join(OUT, 'index.html');
+    let html = fs.readFileSync(p, 'utf8');
+    html = html.replace(/<title>[^<]*<\/title>/, '<title>{{GAME_TITLE}}</title>');
+    html = html.replace(/\s*<link rel="manifest"[\s\S]*?<meta name="theme-color"[^>]*>/, `
+    <meta name="description" content="{{GAME_DESC}}">
+    <meta name="generator" content="SpikeEngine Studio">
+    <meta name="theme-color" content="#0b0e16">
+    <meta name="color-scheme" content="dark">
+    <link rel="canonical" href="{{GAME_URL}}">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="SpikeEngine">
+    <meta property="og:title" content="{{GAME_TITLE}}">
+    <meta property="og:description" content="{{GAME_DESC}}">
+    <meta property="og:url" content="{{GAME_URL}}">
+    <meta property="og:image" content="{{GAME_URL}}assets/images/common/attract_bg.png">
+    <meta property="og:image:alt" content="{{GAME_TITLE}}">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="{{GAME_TITLE}}">
+    <meta name="twitter:description" content="{{GAME_DESC}}">
+    <meta name="twitter:image" content="{{GAME_URL}}assets/images/common/attract_bg.png">
+    <link rel="manifest" href="manifest.json">
+    <link rel="icon" href="assets/icons/favicon.svg" type="image/svg+xml">
+    <link rel="icon" href="assets/icons/favicon-32.png" sizes="32x32" type="image/png">
+    <link rel="icon" href="assets/icons/favicon-16.png" sizes="16x16" type="image/png">
+    <link rel="shortcut icon" href="assets/icons/icon.ico">
+    <link rel="apple-touch-icon" href="assets/icons/apple-touch-icon.png">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-title" content="{{GAME_TITLE}}">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">`);
+    fs.writeFileSync(p, html);
+    const m = JSON.parse(fs.readFileSync(path.join(OUT, 'manifest.json'), 'utf8'));
+    Object.assign(m, { name: '{{GAME_TITLE}}', short_name: '{{GAME_TITLE}}', background_color: '#0b0e16', theme_color: '#0b0e16', icons: [
+        { src: 'assets/icons/icon-192.png', sizes: '192x192', type: 'image/png' },
+        { src: 'assets/icons/icon-512.png', sizes: '512x512', type: 'image/png' },
+        { src: 'assets/icons/icon-maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+        { src: 'assets/icons/icon.svg', sizes: 'any', type: 'image/svg+xml' }] });
+    fs.writeFileSync(path.join(OUT, 'manifest.json'), JSON.stringify(m, null, 2) + '\n');
+}
 // sounds synthesized by the studio's own synthesizer (neutral "arcade" world): studio/js/sfx.js
 mkdir(path.join(OUT, 'assets/music'));
 const { execFileSync } = require('child_process');
