@@ -1006,7 +1006,7 @@ function buildShell() {
     tool('railRect', ICONS.rect, 'Rettangolo', 'Aggiungi un rettangolo (pannello)', addRect, 'R');
     listWidgets().forEach((w) => tool(`railW_${w.id}`, `<span style="width:18px;text-align:center;font-size:15px">${WIDGET_ICONS[w.id] || '⚙'}</span>`, w.label.split(' (')[0], `Aggiungi: ${w.label}`, () => addWidget(w.id)));
     section('Schermata');
-    tool('railPlay', ICONS.play, 'Riproduci', 'Riproduci la timeline', togglePlay, 'Spazio');
+    tool('railPlay', ICONS.play, 'Riproduci', 'Riproduci la timeline', togglePlay, '␣');
     tool('railSave', ICONS.save, 'Salva', 'Salva la schermata', saveScreen, 'Ctrl+S');
     tool('railUndo', ICONS.undo, 'Annulla', 'Annulla l\'ultima modifica', undo, 'Ctrl+Z');
     tool('railPackage', ICONS.pkg, 'Crea pacchetto', 'Crea il gioco per web, Windows, Linux, Android', () => window.SpikePackager?.open());
@@ -1100,7 +1100,7 @@ function modal(title, html) {
 function showHelp() {
     if (window.SpikeGuide) { window.SpikeGuide('schermate-tasti'); return; }   // the searchable guide (kit/core/guide.js)
     const keys = [['Clic', 'Seleziona un elemento'], ['Trascina', 'Sposta (Shift: griglia di 10 px)'], ['Maniglie', 'Angoli = scala · tonda = ruota (Shift: 15°)'],
-        ['Frecce', 'Sposta di 1 px (Shift: 10 px)'], ['Spazio', 'Riproduci / pausa'], ['Home', 'Torna all\'inizio'], ['T · R', 'Aggiungi testo · rettangolo'],
+        ['Frecce', 'Sposta di 1 px (Shift: 10 px)'], ['Barra spaziatrice', 'Riproduci / pausa'], ['Home', 'Torna all\'inizio'], ['T · R', 'Aggiungi testo · rettangolo'],
         ['Ctrl+D', 'Duplica'], ['Canc', 'Elimina'], ['Ctrl+Z / Ctrl+Y', 'Annulla / ripeti'], ['Ctrl+S', 'Salva'], ['[  ]', 'Strumenti / pannello'], ['F1', 'Questa guida']];
     modal('Guida e scorciatoie', `
       <p>Ogni schermata (attract, istruzioni, top ten, selezione livello…) è un file <code>data/screens/&lt;nome&gt;.json</code>
