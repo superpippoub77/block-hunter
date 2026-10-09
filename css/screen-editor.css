@@ -114,3 +114,10 @@
 /* the timeline can be much wider than the view: keep the centre column inside its track */
 .screen-main { grid-template-columns: minmax(0, 1fr); }
 #timeline, #screenStage { min-width: 0; }
+
+/* phone: a narrower names column in the timeline, the zoom slider shorter */
+@media (max-width: 760px) {
+  .tl-body { --label-w: 96px; }
+  .tl-zoom input { width: 70px; }
+  .tl-time { min-width: 84px; }
+}

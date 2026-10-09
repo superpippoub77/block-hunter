@@ -713,3 +713,21 @@ kbd { font-family: var(--mono); font-size: 11px; background: var(--bg-2); border
 
 /* language menu (kit/core/ui-i18n.js) */
 .spike-lang-grp select.spike-lang { background: var(--bg-0, #1a1b1d); color: var(--ink, #e8e6e3); border: 1px solid var(--line, #3a3d40); border-radius: 6px; padding: 4px 6px; font-size: 12.5px; height: 30px; }
+
+/* ------------------------------------------------ tablet and phone: nothing cut off in the menu bar */
+@media (max-width: 900px) {
+  .menu-bar { height: auto; min-height: 46px; flex-wrap: wrap; padding: 4px 6px; row-gap: 4px; }
+  .menu-bar .topbar-left { flex: 1 1 100%; flex-wrap: wrap; overflow: visible; row-gap: 4px; height: auto; }
+  .menu-bar .grp { padding: 0 3px; }
+}
+@media (max-width: 760px) {
+  #topLevelId { width: 60px; }
+  .game-level-select { max-width: 132px; }
+}
+@media (max-width: 760px) {
+  .bar { flex-wrap: wrap; row-gap: 4px; padding-left: 8px; padding-right: 8px; height: auto; min-height: 40px; }
+  #btnSaveGame { font-size: 0; padding: 0 8px; }
+  #btnSaveGame::before { content: "💾"; font-size: 14px; }
+  .spike-lang-grp select.spike-lang { max-width: 96px; }
+}
+@media (pointer: coarse) { .iconbtn { min-width: 36px; height: 36px; } .tab { height: 34px; } }
